@@ -1,0 +1,22 @@
+/** Rotas base da API v1 (alinhar com apps/api) */
+export const API_PREFIX = "/api/v1";
+
+export type Role = "ADMIN" | "SELLER" | "SUPERVISOR" | "MANAGER";
+
+export type OrderStatus = "DRAFT" | "CONFIRMED" | "CANCELLED" | "PENDING_CREDIT_APPROVAL";
+
+export const ORDER_STATUSES: OrderStatus[] = [
+  "DRAFT",
+  "CONFIRMED",
+  "CANCELLED",
+  "PENDING_CREDIT_APPROVAL",
+];
+
+export type { CnpjCompanyData } from "./cnpj.js";
+export {
+  cnpjDigitsOnly,
+  formatBrazilPhoneDigits,
+  formatCnpjMask,
+  isCnpjComplete,
+  suggestedTradeName,
+} from "./cnpj.js";

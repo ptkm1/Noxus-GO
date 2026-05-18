@@ -1,0 +1,25 @@
+import type { StyleProp, ViewStyle } from "react-native";
+
+export type RoutePlanMapCustomerPin = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  distanceKm: number;
+  assignedToMe: boolean;
+};
+
+export type RoutePlanMapCoord = { latitude: number; longitude: number };
+
+export type RoutePlanMapProps = {
+  style?: StyleProp<ViewStyle>;
+  region: RoutePlanMapCoord & { latitudeDelta: number; longitudeDelta: number };
+  followUser: boolean;
+  customers: RoutePlanMapCustomerPin[];
+  polyCoords: RoutePlanMapCoord[];
+  onMarkerPress: (c: RoutePlanMapCustomerPin) => void;
+};
+
+export type RoutePlanMapRef = {
+  fitRoute: (coords: RoutePlanMapCoord[]) => void;
+};

@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "Pedidos",
+    "slug": "pedidos-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "pedidos",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pedidos.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.pedidos.app",
+      "edgeToEdgeEnabled": true,
+      "usesCleartextTraffic": true
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Usamos a câmara só para ler códigos de barras ao registar vendas.",
+          "microphonePermission": "Opcional para vídeo; não é necessário para vendas rápidas.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "O Pedidos usa a sua localização para mostrar clientes próximos e registar visitas.",
+          "locationWhenInUsePermission": "O Pedidos usa a sua localização para o mapa de rota e check-in de visitas."
+        }
+      ]
+    ]
+  }
+}

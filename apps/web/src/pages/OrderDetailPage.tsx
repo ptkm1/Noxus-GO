@@ -1,0 +1,135 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useParams } from "react-router-dom";
+import { apiFetch } from "../lib/api";
+
+type Order = {
+  id: string;
+  status: string;
+  totalAmount: unknown;
+  notes: string | null;
+  creditHoldReasons?: unknown;
+  createdAt: string;
+  seller: { user: { name: string; email: string } };
+  customer: { name: string; email: string | null } | null;
+  items: {
+    id: string;
+    productName: string;
+    quantity: number;
+    unitPrice: unknown;
+    product: { name: string; sku: string | null };
+  }[];
+};
+
+export function OrderDetailPage() {
+  const { orderId } = useParams<{ orderId: string }>();
+  const qc = useQueryClient();
+
+  const { data: order, isLoading } = useQuery({
+    queryKey: ["admin", "order", orderId],
+    queryFn: () => apiFetch<Order>(`/admin/orders/${orderId}`),
+    enabled: !!orderId,
+  });
+
+  const patchStatus = useMutation({
+    mutationFn: (status: string) =>
+      apiFetch(`/admin/orders/${orderId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin", "order", orderId] });
+      void qc.invalidateQueries({ queryKey: ["admin", "orders"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "pending-credit-summary"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "notifications-unread"] });
+    },
+  });
+
+  if (!orderId) return null;
+
+  return (
+    <div className="space-y-6">
+      <Link to="/vendas" className="text-sm text-brand-600">
+        ← Todas as vendas
+      </Link>
+
+      {isLoading || !order ? (
+        <p className="text-slate-500">Carregando…</p>
+      ) : (
+        <div className="rounded-xl border border-slate-200 bg-white p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h1 className="text-xl font-semibold">Venda {order.id.slice(0, 8)}…</h1>
+              <p className="mt-1 text-sm text-slate-500">
+                {new Date(order.createdAt).toLocaleString("pt-BR")}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-600">Status:</span>
+              <select
+                className="rounded border px-2 py-1 text-sm"
+                value={order.status}
+                onChange={(e) => patchStatus.mutate(e.target.value)}
+                disabled={patchStatus.isPending}
+              >
+                <option value="DRAFT">DRAFT</option>
+                <option value="CONFIRMED">CONFIRMED</option>
+                <option value="PENDING_CREDIT_APPROVAL">Aguardando crédito</option>
+                <option value="CANCELLED">CANCELLED</option>
+              </select>
+            </div>
+          </div>
+
+          <dl className="mt-6 grid gap-2 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-slate-500">Vendedor</dt>
+              <dd className="font-medium">
+                {order.seller.user.name} ({order.seller.user.email})
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Cliente</dt>
+              <dd className="font-medium">{order.customer?.name ?? "—"}</dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-slate-500">Motivos de crédito (se aguardando)</dt>
+              <dd className="whitespace-pre-wrap font-mono text-xs text-slate-700">
+                {order.creditHoldReasons != null
+                  ? JSON.stringify(order.creditHoldReasons, null, 2)
+                  : "—"}
+              </dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-slate-500">Observações</dt>
+              <dd>{order.notes ?? "—"}</dd>
+            </div>
+          </dl>
+
+          <h2 className="mt-8 font-medium">Itens</h2>
+          <table className="mt-2 w-full text-sm">
+            <thead className="text-left text-slate-500">
+              <tr>
+                <th className="pb-2">Produto</th>
+                <th className="pb-2">Qtd</th>
+                <th className="pb-2">Preço unit.</th>
+                <th className="pb-2">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {order.items.map((it) => (
+                <tr key={it.id} className="border-t border-slate-100">
+                  <td className="py-2">{it.productName}</td>
+                  <td>{it.quantity}</td>
+                  <td>R$ {Number(it.unitPrice).toFixed(2)}</td>
+                  <td>R$ {(Number(it.unitPrice) * it.quantity).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-4 text-right text-lg font-semibold">
+            Total: R$ {Number(order.totalAmount).toFixed(2)}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}

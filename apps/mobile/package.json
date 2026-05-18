@@ -1,0 +1,41 @@
+{
+  "name": "@pedidos/mobile",
+  "version": "1.0.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "node ../../node_modules/expo/bin/cli start",
+    "android": "node ../../node_modules/expo/bin/cli start --android",
+    "ios": "node ../../node_modules/expo/bin/cli start --ios",
+    "web": "node ../../node_modules/expo/bin/cli start --web",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit"
+  },
+  "dependencies": {
+    "@pedidos/shared": "workspace:*",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/netinfo": "11.5.2",
+    "@tanstack/react-query": "^5.100.10",
+    "dotenv": "^17.4.2",
+    "expo": "~55.0.23",
+    "expo-camera": "~55.0.18",
+    "expo-constants": "~55.0.16",
+    "expo-crypto": "~55.0.15",
+    "expo-linking": "~55.0.15",
+    "expo-location": "~55.1.10",
+    "expo-router": "~55.0.14",
+    "expo-sqlite": "~55.0.16",
+    "expo-status-bar": "~55.0.6",
+    "lucide-react-native": "^1.16.0",
+    "react": "19.2.6",
+    "react-native": "0.83.6",
+    "react-native-maps": "1.27.2",
+    "react-native-safe-area-context": "~5.6.2",
+    "react-native-screens": "~4.23.0",
+    "react-native-svg": "15.15.3",
+    "react-native-web": "^0.21.2"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.14",
+    "typescript": "~6.0.3"
+  }
+}

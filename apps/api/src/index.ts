@@ -1,0 +1,37 @@
+import "./load-env.js";
+import { prisma } from "./db.js";
+import { buildApp } from "./app.js";
+
+const port = Number(process.env.API_PORT ?? 4000);
+const host = process.env.API_HOST ?? "0.0.0.0";
+
+function requireJwtEnv() {
+  const a = process.env.JWT_SECRET?.trim();
+  const r = process.env.JWT_REFRESH_SECRET?.trim();
+  if (!a || !r) {
+    console.error(
+      "[pedidos-api] JWT_SECRET e JWT_REFRESH_SECRET são obrigatórios em apps/api/.env.",
+    );
+    process.exit(1);
+  }
+  if (a.length < 16 || r.length < 16) {
+    console.error("[pedidos-api] Cada segredo JWT deve ter pelo menos 16 caracteres.");
+    process.exit(1);
+  }
+}
+
+requireJwtEnv();
+
+const app = await buildApp();
+
+try {
+  await app.listen({ port, host });
+  const userCount = await prisma.user.count();
+  app.log.info(
+    `[db] ${userCount} utilizador(es). Se for 0, na raiz do repo: pnpm db:seed`,
+  );
+  app.log.info(`API http://${host}:${port}`);
+} catch (err) {
+  app.log.error(err);
+  process.exit(1);
+}

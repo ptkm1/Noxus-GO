@@ -1,0 +1,454 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  SELLER
+  SUPERVISOR
+  MANAGER
+}
+
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+  PENDING_CREDIT_APPROVAL
+}
+
+enum CreditPolicy {
+  WARN_ONLY
+  BLOCK_ORDER
+  REQUIRE_APPROVAL
+}
+
+enum CreditTitleStatus {
+  OPEN
+  PAID
+  CANCELLED
+}
+
+/// Quem pode usufruir da promoção neste produto.
+enum PromotionScope {
+  PRODUCT_GLOBAL
+  SELLER
+  CUSTOMER
+}
+
+/// Como o valor altera o preço de catálogo (tabela/base).
+enum PromotionKind {
+  PERCENT_OFF
+  FIXED_AMOUNT_OFF
+  SALE_PRICE
+}
+
+/// Desconto aplicado quando o carrinho forma um combo completo (prioridade configurável).
+enum ProductComboDiscountKind {
+  FIXED_PER_COMPLETE_SET
+  PERCENT_OF_SET_SUBTOTAL
+}
+
+model Organization {
+  id               String             @id @default(cuid())
+  name             String
+  /// Nome amigável para UI / whitelabel (fallback: `name`).
+  displayName      String?
+  logoUrl          String?
+  /// Cor principal da marca (hex, ex.: #0284c7) para tema futuro no app.
+  primaryColor     String?
+  /// Identificador opcional para futuro subdomínio (único global quando preenchido).
+  slug             String?            @unique
+  /// Política quando cliente está bloqueado, com limite estourado ou títulos vencidos.
+  creditPolicy     CreditPolicy       @default(WARN_ONLY)
+  /// Desconto máximo extra do vendedor (%) quando o produto não define `maxSellerDiscountPercent`.
+  defaultMaxSellerDiscountPercent Decimal @default(50) @db.Decimal(5, 2)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  users            User[]
+  sellers          Seller[]
+  regions          Region[]
+  priceTables      PriceTable[]
+  products         Product[]
+  productCategories ProductCategory[]
+  productPromotions ProductPromotion[]
+  productCombos    ProductCombo[]
+  sellerCommissionRules SellerCommissionRule[]
+  commissionProgressiveTiers CommissionProgressiveTier[]
+  sellerMonthlyGoals SellerMonthlyGoal[]
+  customers        Customer[]
+  orders           Order[]
+  customerCreditTitles CustomerCreditTitle[]
+  sellerCustomerVisits SellerCustomerVisit[]
+}
+
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  passwordHash   String
+  name           String
+  role           Role
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  seller         Seller?
+  notifications  Notification[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model Seller {
+  id                String             @id @default(cuid())
+  userId            String             @unique
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId    String
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  commissionPercent Decimal            @db.Decimal(5, 2)
+  active            Boolean            @default(true)
+  sellerProducts    SellerProduct[]
+  productPromotions ProductPromotion[]
+  priceTables       PriceTable[]
+  commissionRules   SellerCommissionRule[]
+  commissionProgressiveTiers CommissionProgressiveTier[]
+  monthlyGoals      SellerMonthlyGoal[]
+  orders            Order[]
+  customers         Customer[]
+  sellerCustomerVisits SellerCustomerVisit[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime         @updatedAt
+}
+
+model Region {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code           String
+  name           String
+  customers      Customer[]
+  priceTables    PriceTable[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, code])
+}
+
+model PriceTable {
+  id             String           @id @default(cuid())
+  name           String
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  validFrom      DateTime?
+  validTo        DateTime?
+  /// Maior prioridade escolhe entre tabelas igualmente aplicáveis (mesma especificidade).
+  priority       Int              @default(0)
+  /// Escopo opcional: todos os filtros não-nulos devem coincidir com o contexto da venda.
+  customerId     String?
+  customer       Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  sellerId       String?
+  seller         Seller?          @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+  regionId       String?
+  region         Region?          @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  items          PriceTableItem[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+/// Categoria de produto por organização (valores estáveis em `code`, como um enum persistido).
+model ProductCategory {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code             String
+  name             String
+  /// JSON: lista de definições de campos dinâmicos (tipo PIM por categoria).
+  attributeSchema  Json?
+  products         Product[]
+  commissionRules  SellerCommissionRule[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@unique([organizationId, code])
+  @@map("product_categories")
+}
+
+model Product {
+  id               String             @id @default(cuid())
+  name             String
+  sku              String?
+  description      String?
+  /// URL pública da foto (CDN, bucket, etc.) para catálogo no app do vendedor.
+  imageUrl         String?
+  basePrice        Decimal            @db.Decimal(12, 2)
+  /// Limite extra do vendedor sobre preço já promocional (null = usa limite da organização).
+  maxSellerDiscountPercent Decimal?    @db.Decimal(5, 2)
+  /// Piso por unidade após promoções e desconto do vendedor (null = sem piso específico).
+  minSaleUnitPrice Decimal?           @db.Decimal(12, 2)
+  /// JSON: valores dos campos definidos em `category.attributeSchema`.
+  attributes       Json               @default("{}")
+  organizationId   String
+  organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  categoryId       String?
+  category         ProductCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  priceTableItems  PriceTableItem[]
+  sellerProducts   SellerProduct[]
+  promotions       ProductPromotion[]
+  comboLines       ProductComboLine[]
+  commissionRules  SellerCommissionRule[]
+  orderItems       OrderItem[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+}
+
+model ProductPromotion {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  scope          PromotionScope
+  sellerId       String?
+  seller         Seller?         @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  customerId     String?
+  customer       Customer?       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  kind           PromotionKind
+  /// PERCENT_OFF: 0–100 | FIXED_AMOUNT_OFF: R$ por unidade | SALE_PRICE: preço final por unidade.
+  value          Decimal         @db.Decimal(12, 2)
+  /// Se definido, a promo só concorre quando `quantity >= minQuantity` na linha.
+  minQuantity    Int?
+  label          String?
+  active         Boolean         @default(true)
+  validFrom      DateTime?
+  validTo        DateTime?
+  priority       Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([organizationId, productId])
+  @@map("product_promotions")
+}
+
+model ProductCombo {
+  id             String                   @id @default(cuid())
+  organizationId String
+  organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  label          String?
+  active         Boolean                  @default(true)
+  validFrom      DateTime?
+  validTo        DateTime?
+  priority       Int                      @default(0)
+  kind           ProductComboDiscountKind
+  /// FIXED_PER_COMPLETE_SET: R$ por cada conjunto completo | PERCENT_OF_SET_SUBTOTAL: % sobre subtotal do conjunto.
+  value          Decimal                  @db.Decimal(12, 2)
+  lines          ProductComboLine[]
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  @@index([organizationId])
+}
+
+model ProductComboLine {
+  id        String       @id @default(cuid())
+  comboId   String
+  combo     ProductCombo @relation(fields: [comboId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int
+
+  @@unique([comboId, productId])
+}
+
+model SellerCommissionRule {
+  id                 String           @id @default(cuid())
+  organizationId     String
+  organization       Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sellerId           String
+  seller             Seller           @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  productId          String?
+  product            Product?         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  categoryId         String?
+  category           ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  commissionPercent  Decimal          @db.Decimal(5, 2)
+  priority           Int              @default(0)
+  active             Boolean          @default(true)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([organizationId, sellerId])
+}
+
+/// Faixa de comissão progressiva pelo faturamento confirmado no mês (MTD).
+model CommissionProgressiveTier {
+  id                 String       @id @default(cuid())
+  organizationId     String
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Null = faixa global da organização (vale para todos os vendedores sem faixas próprias).
+  sellerId           String?
+  seller             Seller?      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  /// Vendas confirmadas no mês (R$) desde as quais esta faixa se aplica (inclusive).
+  thresholdAmount    Decimal      @db.Decimal(14, 2)
+  commissionPercent  Decimal      @db.Decimal(5, 2)
+  label              String?
+  priority           Int          @default(0)
+  active             Boolean      @default(true)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([organizationId, sellerId])
+}
+
+/// Meta de faturamento por vendedor e mês civil.
+model SellerMonthlyGoal {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sellerId         String
+  seller           Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  year             Int
+  month            Int
+  title            String       @default("Meta do mês")
+  targetAmount     Decimal      @db.Decimal(14, 2)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@unique([organizationId, sellerId, year, month])
+}
+
+model PriceTableItem {
+  id           String     @id @default(cuid())
+  priceTableId String
+  priceTable   PriceTable @relation(fields: [priceTableId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  price        Decimal    @db.Decimal(12, 2)
+
+  @@unique([priceTableId, productId])
+}
+
+model SellerProduct {
+  id        String   @id @default(cuid())
+  sellerId  String
+  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([sellerId, productId])
+}
+
+model Customer {
+  id             String             @id @default(cuid())
+  name           String
+  email          String?
+  phone          String?
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sellerId       String?
+  seller         Seller?            @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+  regionId       String?
+  region         Region?            @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  /// Limite de crédito (saldo em aberto máximo). Null = sem limite configurado.
+  creditLimit    Decimal?           @db.Decimal(14, 2)
+  /// Bloqueio manual — não permite novo pedido confirmado (conforme política da organização).
+  creditBlocked  Boolean            @default(false)
+  promotions     ProductPromotion[]
+  priceTables    PriceTable[]
+  orders         Order[]
+  creditTitles   CustomerCreditTitle[]
+  sellerCustomerVisits SellerCustomerVisit[]
+  /// Coordenadas para mapa / rota (opcional; configuradas pelo admin).
+  latitude       Decimal?           @db.Decimal(10, 8)
+  longitude      Decimal?           @db.Decimal(11, 8)
+  addressNote    String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+}
+
+model CustomerCreditTitle {
+  id               String            @id @default(cuid())
+  organizationId   String
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerId       String
+  customer         Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  reference        String?
+  amount           Decimal           @db.Decimal(14, 2)
+  paidAmount       Decimal           @default(0) @db.Decimal(14, 2)
+  issueDate        DateTime          @default(now())
+  dueDate          DateTime
+  status           CreditTitleStatus @default(OPEN)
+  notes            String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([organizationId, customerId])
+}
+
+model SellerCustomerVisit {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sellerId         String
+  seller           Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  customerId       String
+  customer         Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  checkedInAt      DateTime     @default(now())
+  checkedOutAt     DateTime?
+  checkInLat       Decimal?     @db.Decimal(10, 8)
+  checkInLng       Decimal?     @db.Decimal(11, 8)
+  checkOutLat      Decimal?     @db.Decimal(10, 8)
+  checkOutLng      Decimal?     @db.Decimal(11, 8)
+  notes            String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([sellerId, checkedInAt])
+  @@index([organizationId, checkedInAt])
+}
+
+model Order {
+  id             String       @id @default(cuid())
+  status         OrderStatus  @default(DRAFT)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sellerId       String
+  seller         Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  customerId     String?
+  customer       Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  totalAmount    Decimal      @db.Decimal(14, 2)
+  /// Total descontado por combos aplicados sobre as linhas (já refletido em `totalAmount`).
+  comboDiscountTotal Decimal   @default(0) @db.Decimal(14, 2)
+  notes          String?
+  /// UUID gerado no cliente para vendas offline — replay idempotente (sem duplicar pedido).
+  clientMutationId String? @unique
+  /// Motivos registrados quando o pedido ficou aguardando aprovação de crédito.
+  creditHoldReasons Json?
+  items          OrderItem[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity    Int
+  unitPrice   Decimal  @db.Decimal(12, 2)
+  productName String
+  commissionPercent Decimal? @db.Decimal(5, 2)
+  commissionAmount  Decimal? @db.Decimal(14, 2)
+  createdAt   DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}

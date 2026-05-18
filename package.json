@@ -1,0 +1,43 @@
+{
+  "name": "pedidos",
+  "private": true,
+  "scripts": {
+    "dev:api": "pnpm --filter @pedidos/api dev",
+    "dev:web": "pnpm --filter @pedidos/web dev",
+    "dev:mobile": "pnpm --filter @pedidos/mobile start",
+    "build": "pnpm -r run build",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:migrate": "dotenv -e apps/api/.env -- prisma migrate dev --config apps/api/prisma.config.ts",
+    "db:migrate:deploy": "dotenv -e apps/api/.env -- prisma migrate deploy --config apps/api/prisma.config.ts",
+    "db:push": "dotenv -e apps/api/.env -- prisma db push --config apps/api/prisma.config.ts",
+    "db:seed": "dotenv -e apps/api/.env -- prisma db seed --config apps/api/prisma.config.ts",
+    "predb:seed": "pnpm db:generate",
+    "db:generate": "dotenv -e apps/api/.env -- prisma generate --config apps/api/prisma.config.ts",
+    "db:studio": "dotenv -e apps/api/.env -- prisma studio --config apps/api/prisma.config.ts"
+  },
+  "engines": {
+    "node": ">=20.19.0 <21.0.0-0 || >=22.12.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "react": "19.2.6",
+      "react-dom": "19.2.6"
+    },
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma"
+    ]
+  },
+  "devDependencies": {
+    "dotenv-cli": "^11.0.0",
+    "prisma": "^7.8.0",
+    "tsx": "^4.21.0",
+    "typescript": "~6.0.3"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.8.0"
+  }
+}
