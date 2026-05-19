@@ -32,17 +32,21 @@ link_pkg() {
   local pkg="$1"
   local src="${REPO_ROOT}/node_modules/${pkg}"
   local dest="${APP_DIR}/node_modules/${pkg}"
-  if [ ! -d "${src}" ]; then
+  if [ ! -e "${src}" ]; then
     echo "WARN: skip missing package ${pkg} at ${src}" >&2
     return 0
   fi
+  mkdir -p "$(dirname "${dest}")"
   ln -sfn "${src}" "${dest}"
   echo "    linked ${pkg}"
 }
 
-for pkg in expo expo-router expo-constants expo-modules-core @expo/cli react react-native; do
+for pkg in expo expo-router expo-constants expo-modules-core react react-native; do
   link_pkg "${pkg}"
 done
+
+# Scoped package (optional; prebuild uses expo + pnpm exec).
+link_pkg "@expo/cli"
 
 cd "${APP_DIR}"
 node -e "console.log('expo sdk', require('expo/package.json').version)"
