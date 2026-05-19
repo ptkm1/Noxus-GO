@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { API_PREFIX } from "@pedidos/shared";
+import { getCachedApiBaseOverride, normalizeApiBaseInput } from "./devtools/api-base-override";
 
 const ACCESS = "pedidos_access";
 const REFRESH = "pedidos_refresh";
@@ -12,29 +13,21 @@ function applyTunnelHeaders(h: Headers, absoluteUrl: string) {
   }
 }
 
-/**
- * Emulador Android: localhost é o próprio emulador — a API no Mac/PC é 10.0.2.2.
- * Simulador iOS: localhost costuma apontar para a máquina host.
- * Dispositivo físico: define EXPO_PUBLIC_API_URL=http://IP_DA_TUA_REDE:4000
- */
-function normalizeApiBase(raw: string): string {
-  let base = raw.replace(/\/$/, "");
-  // Emulador Android: .env com localhost aponta para o próprio emulador; trocar pelo host.
-  if (Platform.OS === "android") {
-    base = base.replace(/^(https?:\/\/)(localhost|127\.0\.0\.1)(:\d+)?/i, (_, proto, _h, port) => {
-      return `${proto}10.0.2.2${port ?? ""}`;
-    });
-  }
-  return base;
-}
-
-export function apiBase(): string {
+/** Default base when no DevTools override and no EXPO_PUBLIC_API_URL. */
+export function defaultApiBaseWithoutOverride(): string {
   const fromEnv = process.env.EXPO_PUBLIC_API_URL;
-  if (fromEnv) return normalizeApiBase(fromEnv);
+  if (fromEnv) return normalizeApiBaseInput(fromEnv);
   const extra = Constants.expoConfig?.extra as { apiUrl?: string } | undefined;
-  if (extra?.apiUrl) return normalizeApiBase(extra.apiUrl);
+  if (extra?.apiUrl) return normalizeApiBaseInput(extra.apiUrl);
   if (Platform.OS === "android") return "http://10.0.2.2:4000";
   return "http://localhost:4000";
+}
+
+/** DevTools override wins, then env / platform default. */
+export function apiBase(): string {
+  const override = getCachedApiBaseOverride();
+  if (override) return normalizeApiBaseInput(override);
+  return defaultApiBaseWithoutOverride();
 }
 
 export function apiUrl(path: string): string {

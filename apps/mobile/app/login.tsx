@@ -11,10 +11,12 @@ import {
 import { ShoppingBag } from "lucide-react-native";
 import { Redirect } from "expo-router";
 import { useLoginScreen } from "../hooks/screens/useLoginScreen";
+import { useSecretDevToolsGesture } from "../lib/devtools/secret-gesture";
 
 export default function LoginScreen() {
   const { email, setEmail, password, setPassword, err, pending, shouldRedirectSeller, onSubmit } =
     useLoginScreen();
+  const { onSecretPress } = useSecretDevToolsGesture();
 
   if (shouldRedirectSeller) {
     return <Redirect href="/(tabs)/sales" />;
@@ -26,10 +28,10 @@ export default function LoginScreen() {
       style={styles.wrap}
     >
       <View style={styles.card}>
-        <View style={styles.brand}>
+        <Pressable style={styles.brand} onPress={onSecretPress} accessibilityRole="button">
           <ShoppingBag color="#0284c7" size={36} strokeWidth={2} />
           <Text style={styles.title}>Pedidos</Text>
-        </View>
+        </Pressable>
         <Text style={styles.sub}>Acesso vendedor</Text>
         <TextInput
           style={styles.input}
