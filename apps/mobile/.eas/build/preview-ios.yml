@@ -6,7 +6,7 @@ build:
     - eas/install_node_modules
     - run:
         name: Build @pedidos/shared
-        command: cd ../.. && pnpm --filter @pedidos/shared run build
+        command: cd ../.. && npx pnpm@10.22.0 --filter @pedidos/shared run build
     - eas/resolve_build_config
     - eas/prebuild
     - eas/configure_eas_update:

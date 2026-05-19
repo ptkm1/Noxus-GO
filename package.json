@@ -5,6 +5,8 @@
     "dev:api": "pnpm --filter @pedidos/api dev",
     "dev:web": "pnpm --filter @pedidos/web dev",
     "dev:mobile": "pnpm --filter @pedidos/mobile start",
+    "build:mobile:android": "pnpm --filter @pedidos/mobile build:preview:android",
+    "build:mobile:ios": "pnpm --filter @pedidos/mobile build:preview:ios",
     "build": "pnpm -r run build",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
