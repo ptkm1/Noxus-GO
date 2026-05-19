@@ -7,8 +7,21 @@ build:
     - run:
         name: Build @pedidos/shared
         command: cd ../.. && npx pnpm@10.22.0 --filter @pedidos/shared run build
+    - run:
+        name: Prepare monorepo node_modules for Expo CLI
+        command: |
+          set -euo pipefail
+          mkdir -p node_modules
+          for pkg in expo expo-router expo-constants expo-modules-core react react-native; do
+            if [ ! -e "node_modules/${pkg}" ] && [ -d "../../node_modules/${pkg}" ]; then
+              ln -sf "../../node_modules/${pkg}" "node_modules/${pkg}"
+            fi
+          done
+          node -e "console.log('expo sdk', require('expo/package.json').version)"
     - eas/resolve_build_config
-    - eas/prebuild
+    - run:
+        name: Expo prebuild (iOS)
+        command: pnpm exec expo prebuild --no-install --platform ios
     - eas/configure_eas_update:
         inputs:
           throw_if_not_configured: false
