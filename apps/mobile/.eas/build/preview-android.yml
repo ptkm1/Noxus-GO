@@ -1,24 +1,15 @@
-# Monorepo (pnpm hoisted): Expo CLI procura expo em apps/mobile/node_modules.
+# Monorepo pnpm hoisted: install na raiz + links para apps/mobile/node_modules.
 build:
   name: Pedidos preview Android
   steps:
     - eas/checkout
     - eas/use_npm_token
-    - eas/install_node_modules
+    - run:
+        name: Install monorepo and link Expo for CLI
+        command: bash ./scripts/eas-prepare-monorepo.sh
     - run:
         name: Build @pedidos/shared
-        command: cd ../.. && npx pnpm@10.22.0 --filter @pedidos/shared run build
-    - run:
-        name: Prepare monorepo node_modules for Expo CLI
-        command: |
-          set -euo pipefail
-          mkdir -p node_modules
-          for pkg in expo expo-router expo-constants expo-modules-core react react-native; do
-            if [ ! -e "node_modules/${pkg}" ] && [ -d "../../node_modules/${pkg}" ]; then
-              ln -sf "../../node_modules/${pkg}" "node_modules/${pkg}"
-            fi
-          done
-          node -e "console.log('expo sdk', require('expo/package.json').version)"
+        command: cd ../.. && pnpm --filter @pedidos/shared run build
     - eas/resolve_build_config
     - run:
         name: Expo prebuild (Android)
