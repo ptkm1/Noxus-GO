@@ -1,6 +1,7 @@
 node_modules
 dist
-build
+# Não usar "build" solto — ignora apps/mobile/.eas/build/ (workflows EAS).
+/build
 .next
 .expo
 .turbo

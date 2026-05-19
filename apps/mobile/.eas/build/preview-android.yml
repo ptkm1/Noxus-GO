@@ -1,0 +1,19 @@
+# Monorepo: install at repo root before resolving Expo config (needs expo-router plugins).
+build:
+  name: Pedidos preview Android
+  steps:
+    - eas/checkout
+    - eas/use_npm_token
+    - eas/install_node_modules
+    - run:
+        name: Build @pedidos/shared
+        command: cd ../.. && pnpm --filter @pedidos/shared run build
+    - eas/resolve_build_config
+    - eas/prebuild
+    - eas/configure_eas_update:
+        inputs:
+          throw_if_not_configured: false
+    - eas/inject_android_credentials
+    - eas/configure_android_version
+    - eas/run_gradle
+    - eas/find_and_upload_build_artifacts
