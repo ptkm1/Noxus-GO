@@ -1296,7 +1296,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       take: limit,
       include: {
         seller: { include: { user: { select: { name: true } } } },
-        customer: { select: { id: true, name: true } },
+        customer: { select: { id: true, name: true, latitude: true, longitude: true } },
       },
     });
 
@@ -1311,8 +1311,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         sellerName: v.seller.user.name,
         customerId: v.customerId,
         customerName: v.customer.name,
+        customerLatitude: v.customer.latitude != null ? decToNum(v.customer.latitude) : null,
+        customerLongitude: v.customer.longitude != null ? decToNum(v.customer.longitude) : null,
         checkedInAt: v.checkedInAt.toISOString(),
         checkedOutAt: v.checkedOutAt?.toISOString() ?? null,
+        checkInLat: v.checkInLat != null ? decToNum(v.checkInLat) : null,
+        checkInLng: v.checkInLng != null ? decToNum(v.checkInLng) : null,
+        checkOutLat: v.checkOutLat != null ? decToNum(v.checkOutLat) : null,
+        checkOutLng: v.checkOutLng != null ? decToNum(v.checkOutLng) : null,
         durationSeconds,
         openVisit: v.checkedOutAt == null,
         notes: v.notes,
