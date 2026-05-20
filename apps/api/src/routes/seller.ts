@@ -716,6 +716,42 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     return serializeSellerVisit(updated);
   });
 
+  app.post("/location", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        latitude: z.number().gte(-90).lte(90),
+        longitude: z.number().gte(-180).lte(180),
+        accuracyMeters: z.number().positive().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+
+    const recordedAt = new Date();
+    const row = await prisma.sellerLiveLocation.upsert({
+      where: { sellerId: auth.sellerId! },
+      create: {
+        sellerId: auth.sellerId!,
+        organizationId: auth.organizationId,
+        latitude: body.data.latitude,
+        longitude: body.data.longitude,
+        accuracyMeters: body.data.accuracyMeters,
+        recordedAt,
+      },
+      update: {
+        latitude: body.data.latitude,
+        longitude: body.data.longitude,
+        accuracyMeters: body.data.accuracyMeters,
+        recordedAt,
+      },
+    });
+
+    return {
+      ok: true,
+      recordedAt: row.recordedAt.toISOString(),
+    };
+  });
+
   app.get("/notifications", async (req) => {
     const auth = req.auth!;
     return prisma.notification.findMany({

@@ -20,6 +20,7 @@ import { RegisterPage } from "./pages/RegisterPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { SellerProductsPage } from "./pages/SellerProductsPage";
 import { SellersPage } from "./pages/SellersPage";
+import { SellerTrackingPage } from "./pages/SellerTrackingPage";
 
 const qc = new QueryClient();
 
@@ -114,6 +115,7 @@ function AppRoutes() {
         <Route path="vendedores/:sellerId/produtos" element={<SellerProductsPage />} />
         <Route path="clientes" element={<CustomersPage />} />
         <Route path="visitas" element={<CustomerVisitsPage />} />
+        <Route path="rastreio" element={<SellerTrackingPage />} />
         <Route path="vendas" element={<OrdersPage />} />
         <Route path="vendas/:orderId" element={<OrderDetailPage />} />
         <Route path="notificacoes" element={<NotificationsPage />} />

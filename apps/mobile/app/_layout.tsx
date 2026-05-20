@@ -3,6 +3,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { DevToolsBootstrap } from "../components/DevToolsBootstrap";
 import { OfflineSyncBootstrap } from "../components/OfflineSyncBootstrap";
+import { SellerLocationReporter } from "../components/SellerLocationReporter";
 import { AuthProvider } from "../context/AuthContext";
 import { ThemeProvider, useTheme } from "../lib/theme";
 
@@ -44,6 +45,7 @@ export default function RootLayout() {
         <DevToolsBootstrap>
           <AuthProvider>
             <OfflineSyncBootstrap />
+            <SellerLocationReporter />
             <RootStack />
           </AuthProvider>
         </DevToolsBootstrap>

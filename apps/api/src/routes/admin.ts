@@ -7,6 +7,7 @@ import { hashPassword } from "../auth/password.js";
 import { decToNum } from "../util/money.js";
 import { computeSaleOrder, OrderPricingError } from "../services/order-pricing.js";
 import { buildDistributorInsights } from "../services/distributor-insights.js";
+import { listAdminSellerLocations } from "../services/seller-locations-admin.js";
 import type { AttributeFieldDef } from "../services/product-attributes.js";
 import { parseCategoryAttributeSchema, validateProductAttributes } from "../services/product-attributes.js";
 import { Prisma, type OrderStatus, type PromotionKind, type PromotionScope } from "@prisma/client";
@@ -1330,6 +1331,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       limit,
       visits,
     };
+  });
+
+  app.get("/seller-locations", async (req) => {
+    const auth = req.auth!;
+    return listAdminSellerLocations(auth.organizationId);
   });
 
   /* --- Títulos / crédito do cliente --- */

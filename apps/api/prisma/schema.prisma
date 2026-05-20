@@ -83,6 +83,7 @@ model Organization {
   orders           Order[]
   customerCreditTitles CustomerCreditTitle[]
   sellerCustomerVisits SellerCustomerVisit[]
+  sellerLiveLocations  SellerLiveLocation[]
 }
 
 model User {
@@ -116,8 +117,24 @@ model Seller {
   orders            Order[]
   customers         Customer[]
   sellerCustomerVisits SellerCustomerVisit[]
+  liveLocation         SellerLiveLocation?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime         @updatedAt
+}
+
+/// Última posição reportada pelo app do vendedor (foreground).
+model SellerLiveLocation {
+  sellerId         String       @id
+  seller           Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  latitude         Decimal      @db.Decimal(10, 8)
+  longitude        Decimal      @db.Decimal(11, 8)
+  accuracyMeters   Float?
+  recordedAt       DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([organizationId, recordedAt])
 }
 
 model Region {
