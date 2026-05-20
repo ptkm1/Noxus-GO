@@ -87,7 +87,7 @@ export default function DevToolsScreen() {
       </View>
 
       <Text style={styles.hint}>
-        Acesso secreto: toque 7× rápido no título «Pedidos» no login, ou 7× na versão no Perfil.
+        Acesso secreto: toque 7× rápido no rodapé «Pedidos v…» no login ou no Perfil.
       </Text>
     </ScrollView>
   );

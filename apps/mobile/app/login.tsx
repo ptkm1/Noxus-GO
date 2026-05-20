@@ -10,13 +10,12 @@ import {
 } from "react-native";
 import { ShoppingBag } from "lucide-react-native";
 import { Redirect } from "expo-router";
+import { DevToolsVersionTap } from "../components/molecules/DevToolsVersionTap";
 import { useLoginScreen } from "../hooks/screens/useLoginScreen";
-import { useSecretDevToolsGesture } from "../lib/devtools/secret-gesture";
 
 export default function LoginScreen() {
   const { email, setEmail, password, setPassword, err, pending, shouldRedirectSeller, onSubmit } =
     useLoginScreen();
-  const { onSecretPress } = useSecretDevToolsGesture();
 
   if (shouldRedirectSeller) {
     return <Redirect href="/(tabs)/sales" />;
@@ -27,42 +26,46 @@ export default function LoginScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={styles.wrap}
     >
-      <View style={styles.card}>
-        <Pressable style={styles.brand} onPress={onSecretPress} accessibilityRole="button">
-          <ShoppingBag color="#0284c7" size={36} strokeWidth={2} />
-          <Text style={styles.title}>Pedidos</Text>
-        </Pressable>
-        <Text style={styles.sub}>Acesso vendedor</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          autoCapitalize="none"
-          keyboardType="email-address"
-          value={email}
-          onChangeText={setEmail}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Senha"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
-        {err ? <Text style={styles.err}>{err}</Text> : null}
-        <Pressable
-          style={[styles.btn, pending && styles.btnDisabled]}
-          onPress={() => void onSubmit()}
-          disabled={pending}
-        >
-          {pending ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Entrar</Text>}
-        </Pressable>
+      <View style={styles.inner}>
+        <View style={styles.card}>
+          <View style={styles.brand}>
+            <ShoppingBag color="#0284c7" size={36} strokeWidth={2} />
+            <Text style={styles.title}>Pedidos</Text>
+          </View>
+          <Text style={styles.sub}>Acesso vendedor</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            autoCapitalize="none"
+            keyboardType="email-address"
+            value={email}
+            onChangeText={setEmail}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Senha"
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+          />
+          {err ? <Text style={styles.err}>{err}</Text> : null}
+          <Pressable
+            style={[styles.btn, pending && styles.btnDisabled]}
+            onPress={() => void onSubmit()}
+            disabled={pending}
+          >
+            {pending ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Entrar</Text>}
+          </Pressable>
+        </View>
+        <DevToolsVersionTap variant="onDark" />
       </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, justifyContent: "center", padding: 24, backgroundColor: "#0c4a6e" },
+  wrap: { flex: 1, backgroundColor: "#0c4a6e" },
+  inner: { flex: 1, justifyContent: "center", padding: 24 },
   card: {
     backgroundColor: "#fff",
     borderRadius: 16,
