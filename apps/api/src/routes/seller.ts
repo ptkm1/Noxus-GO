@@ -14,6 +14,7 @@ import {
   violationsToJson,
 } from "../services/credit.js";
 import { notifyAdminsCreditPending } from "../services/admin-notifications.js";
+import { buildRouteDirections } from "../services/route-directions.js";
 import { greedyNearestRoute, haversineKm } from "../services/route-plan.js";
 
 const idParam = z.object({ id: z.string().min(1) });
@@ -552,6 +553,57 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       legKm: route.legKm,
       totalKmApprox: route.totalKm,
       orderedCustomers,
+    };
+  });
+
+  app.post("/route-plan/directions", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        originLat: z.number().gte(-90).lte(90),
+        originLng: z.number().gte(-180).lte(180),
+        customerIds: z.array(z.string()).min(1).max(24),
+      })
+      .safeParse(req.body);
+    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+
+    const rows = await prisma.customer.findMany({
+      where: {
+        id: { in: body.data.customerIds },
+        organizationId: auth.organizationId,
+        OR: [{ sellerId: auth.sellerId }, { sellerId: null }],
+        latitude: { not: null },
+        longitude: { not: null },
+      },
+      select: { id: true, name: true, latitude: true, longitude: true },
+    });
+
+    const missingCoords = body.data.customerIds.filter(
+      (cid) => !rows.some((r) => r.id === cid),
+    );
+    if (missingCoords.length > 0) {
+      return reply.status(400).send({
+        error: "Todos os clientes precisam existir e ter latitude/longitude cadastradas.",
+        missingCustomerIds: missingCoords,
+      });
+    }
+
+    const customers = rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      latitude: decToNum(r.latitude),
+      longitude: decToNum(r.longitude),
+    }));
+
+    const result = await buildRouteDirections(
+      body.data.originLat,
+      body.data.originLng,
+      customers,
+    );
+
+    return {
+      ...result,
+      totalKmApprox: result.totalKm,
     };
   });
 

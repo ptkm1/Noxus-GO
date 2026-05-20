@@ -6,7 +6,7 @@ import { Alert } from "react-native";
 import type { RoutePlanMapRef } from "../../components/RoutePlanMap";
 import type { RouteListCustomer } from "../../components/molecules/RouteCustomerListItem";
 import { apiFetch } from "../../lib/api";
-import type { NearbyCustomersResp, OptimizeRouteResp, SellerVisit } from "../../lib/route/types";
+import type { DirectionsRouteResp, NearbyCustomersResp, SellerVisit } from "../../lib/route/types";
 import { formatDurationSeconds } from "../../lib/utils/format-duration";
 import { openNavigationApp } from "../../lib/utils/open-navigation";
 
@@ -23,7 +23,7 @@ export function useRoutePlanScreen() {
   const [myLng, setMyLng] = useState<number | null>(null);
   const [locErr, setLocErr] = useState<string | null>(null);
   const [, setTick] = useState(0);
-  const [optimized, setOptimized] = useState<OptimizeRouteResp | null>(null);
+  const [optimized, setOptimized] = useState<DirectionsRouteResp | null>(null);
   const [radiusKm, setRadiusKm] = useState<RouteRadiusKm>(30);
   const [myClientsOnly, setMyClientsOnly] = useState(false);
   const [checkInModal, setCheckInModal] = useState<{ id: string; name: string } | null>(null);
@@ -129,24 +129,32 @@ export function useRoutePlanScreen() {
       );
       const ids = withPins.slice(0, 14).map((c) => c.id);
       if (ids.length === 0) throw new Error("Nenhum cliente com GPS por perto.");
-      return apiFetch<OptimizeRouteResp>("/seller/route-plan/optimize-order", {
+      return apiFetch<DirectionsRouteResp>("/seller/route-plan/directions", {
         method: "POST",
         body: JSON.stringify({ originLat: myLat, originLng: myLng, customerIds: ids }),
       });
     },
     onSuccess: (data) => {
       setOptimized(data);
-      const coords = [
-        { latitude: myLat!, longitude: myLng! },
-        ...data.orderedCustomers.map((c) => ({ latitude: c.latitude, longitude: c.longitude })),
-      ];
-      requestAnimationFrame(() => mapRef.current?.fitRoute(coords));
+      const fit =
+        data.routePolyline.length >= 2
+          ? data.routePolyline
+          : [
+              { latitude: myLat!, longitude: myLng! },
+              ...data.orderedCustomers.map((c) => ({
+                latitude: c.latitude,
+                longitude: c.longitude,
+              })),
+            ];
+      requestAnimationFrame(() => mapRef.current?.fitRoute(fit));
     },
     onError: (e: Error) => Alert.alert("Rota", e.message),
   });
 
   const polyCoords = useMemo(() => {
-    if (!optimized || myLat == null || myLng == null) return [];
+    if (!optimized) return [];
+    if (optimized.routePolyline.length >= 2) return optimized.routePolyline;
+    if (myLat == null || myLng == null) return [];
     return [
       { latitude: myLat, longitude: myLng },
       ...optimized.orderedCustomers.map((c) => ({ latitude: c.latitude, longitude: c.longitude })),

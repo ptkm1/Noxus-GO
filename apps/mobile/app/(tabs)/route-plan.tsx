@@ -103,7 +103,7 @@ export default function RoutePlanScreen() {
             onPress={() => s.optimizeMutation.mutate()}
           >
             <Text style={styles.toolBtnPrimaryTxt}>
-              {s.optimizeMutation.isPending ? "…" : "Otimizar ordem"}
+              {s.optimizeMutation.isPending ? "…" : "Rota por estrada"}
             </Text>
           </Pressable>
         </View>
@@ -128,23 +128,40 @@ export default function RoutePlanScreen() {
 
         {s.optimized ? (
           <View style={styles.routeBox}>
-            <Text style={styles.routeTitle}>Ordem sugerida (~{s.optimized.totalKmApprox} km linha reta)</Text>
+            <Text style={styles.routeTitle}>
+              Ordem sugerida · {s.optimized.totalKm.toFixed(1)} km · ~{s.optimized.totalMinutes} min
+            </Text>
+            <Text style={styles.routeDisclaimer}>
+              {s.optimized.source === "google_routes"
+                ? "Traçado por estrada (Google Routes)"
+                : "Linha reta (Google indisponível)"}
+            </Text>
             {s.optimized.orderedCustomers.map((c) => {
+              const route = s.optimized!;
               const full = s.filteredCustomers.find((x) => x.id === c.id);
               if (!full) return null;
+              const idx = s.routeOrderIndex.get(c.id);
+              const legI = idx != null ? idx - 1 : -1;
               return (
-                <RouteCustomerListItem
-                  key={c.id}
-                  customer={full}
-                  routeIndex={s.routeOrderIndex.get(c.id)}
-                  isActiveVisit={s.activeVisit?.customerId === c.id}
-                  canCheckIn={!s.hasOpenVisit}
-                  checkInPending={s.checkIn.isPending}
-                  onPressCustomer={() => s.openCustomer(c.id)}
-                  onCheckIn={() => s.requestCheckIn(full)}
-                  onNavigateGoogle={() => void s.navigateToCustomer(full, "google")}
-                  onNavigateWaze={() => void s.navigateToCustomer(full, "waze")}
-                />
+                <View key={c.id}>
+                  {legI >= 0 && route.legKm[legI] != null ? (
+                    <Text style={styles.routeLegMeta}>
+                      Perna {idx}: {route.legKm[legI]!.toFixed(1)} km
+                      {route.legMinutes[legI] != null ? ` · ~${route.legMinutes[legI]} min` : ""}
+                    </Text>
+                  ) : null}
+                  <RouteCustomerListItem
+                    customer={full}
+                    routeIndex={idx}
+                    isActiveVisit={s.activeVisit?.customerId === c.id}
+                    canCheckIn={!s.hasOpenVisit}
+                    checkInPending={s.checkIn.isPending}
+                    onPressCustomer={() => s.openCustomer(c.id)}
+                    onCheckIn={() => s.requestCheckIn(full)}
+                    onNavigateGoogle={() => void s.navigateToCustomer(full, "google")}
+                    onNavigateWaze={() => void s.navigateToCustomer(full, "waze")}
+                  />
+                </View>
               );
             })}
             <Pressable onPress={s.clearOptimized}>

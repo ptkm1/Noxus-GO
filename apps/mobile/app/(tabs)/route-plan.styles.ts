@@ -93,6 +93,14 @@ export function createRoutePlanStyles(c: AppColors) {
       gap: 6,
     },
     routeTitle: { fontWeight: "700", color: c.text, marginBottom: 4 },
+    routeDisclaimer: { fontSize: 12, color: c.textSecondary, marginBottom: 8 },
+    routeLegMeta: {
+      marginHorizontal: 16,
+      marginTop: 10,
+      fontSize: 11,
+      fontWeight: "600",
+      color: c.textMuted,
+    },
     clearRoute: { marginTop: 8, fontSize: 13, fontWeight: "600", color: c.primary },
     section: {
       marginHorizontal: 16,
