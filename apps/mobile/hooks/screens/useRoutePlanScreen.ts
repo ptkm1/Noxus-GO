@@ -147,6 +147,13 @@ export function useRoutePlanScreen() {
               })),
             ];
       requestAnimationFrame(() => mapRef.current?.fitRoute(fit));
+      if (data.source === "air_fallback") {
+        Alert.alert(
+          "Rota em linha reta",
+          data.disclaimer +
+            "\n\nPara traçado pelas vias: GOOGLE_MAPS_SERVER_API_KEY em apps/api/.env + Routes API no Google Cloud. Reinicie a API.",
+        );
+      }
     },
     onError: (e: Error) => Alert.alert("Rota", e.message),
   });

@@ -9,6 +9,8 @@ const DEMO_ADMIN_EMAIL = "admin@demo.com";
 const DEMO_ADMIN_PASSWORD = "admin123";
 const DEMO_SELLER_EMAIL = "vendedor@demo.com";
 const DEMO_SELLER_PASSWORD = "vendedor123";
+const DEMO_MANAGER_EMAIL = "manager@demo.com";
+const DEMO_MANAGER_PASSWORD = "manager123";
 
 async function upsertDemoCategories(organizationId: string) {
   const entries = [
@@ -62,6 +64,7 @@ async function main() {
 
   const adminPass = await bcrypt.hash(DEMO_ADMIN_PASSWORD, 10);
   const sellerPass = await bcrypt.hash(DEMO_SELLER_PASSWORD, 10);
+  const managerPass = await bcrypt.hash(DEMO_MANAGER_PASSWORD, 10);
 
   await prisma.user.upsert({
     where: { email: DEMO_ADMIN_EMAIL },
@@ -76,6 +79,23 @@ async function main() {
       passwordHash: adminPass,
       name: "Admin Demo",
       role: Role.ADMIN,
+      organizationId: org.id,
+    },
+  });
+
+  const managerUser = await prisma.user.upsert({
+    where: { email: DEMO_MANAGER_EMAIL },
+    update: {
+      passwordHash: managerPass,
+      name: "Gestor Demo",
+      role: Role.MANAGER,
+      organizationId: org.id,
+    },
+    create: {
+      email: DEMO_MANAGER_EMAIL,
+      passwordHash: managerPass,
+      name: "Gestor Demo",
+      role: Role.MANAGER,
       organizationId: org.id,
     },
   });
@@ -103,17 +123,20 @@ async function main() {
       organizationId: org.id,
       commissionPercent: 10,
       active: true,
+      managerUserId: managerUser.id,
     },
     create: {
       userId: sellerUser.id,
       organizationId: org.id,
       commissionPercent: 10,
       active: true,
+      managerUserId: managerUser.id,
     },
   });
 
   console.log("Contas demo (senhas atualizadas):");
   console.log(`  Admin:    ${DEMO_ADMIN_EMAIL} / ${DEMO_ADMIN_PASSWORD}`);
+  console.log(`  Gestor:   ${DEMO_MANAGER_EMAIL} / ${DEMO_MANAGER_PASSWORD}`);
   console.log(`  Vendedor: ${DEMO_SELLER_EMAIL} / ${DEMO_SELLER_PASSWORD}`);
 
   try {

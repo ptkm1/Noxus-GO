@@ -84,6 +84,7 @@ model Organization {
   customerCreditTitles CustomerCreditTitle[]
   sellerCustomerVisits SellerCustomerVisit[]
   sellerLiveLocations  SellerLiveLocation[]
+  sellerLocationHistory SellerLocationHistory[]
 }
 
 model User {
@@ -95,6 +96,7 @@ model User {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   seller         Seller?
+  managedSellers Seller[]     @relation("SellerManager")
   notifications  Notification[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -106,6 +108,8 @@ model Seller {
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   organizationId    String
   organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  managerUserId     String?
+  manager           User?              @relation("SellerManager", fields: [managerUserId], references: [id], onDelete: SetNull)
   commissionPercent Decimal            @db.Decimal(5, 2)
   active            Boolean            @default(true)
   sellerProducts    SellerProduct[]
@@ -118,8 +122,11 @@ model Seller {
   customers         Customer[]
   sellerCustomerVisits SellerCustomerVisit[]
   liveLocation         SellerLiveLocation?
+  locationHistory      SellerLocationHistory[]
   createdAt         DateTime           @default(now())
   updatedAt         DateTime         @updatedAt
+
+  @@index([organizationId, managerUserId])
 }
 
 /// Última posição reportada pelo app do vendedor (foreground).
@@ -134,6 +141,22 @@ model SellerLiveLocation {
   recordedAt       DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
+  @@index([organizationId, recordedAt])
+}
+
+/// Pontos de trajeto (amostrados) para replay no mapa admin.
+model SellerLocationHistory {
+  id               String       @id @default(cuid())
+  sellerId         String
+  seller           Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  latitude         Decimal      @db.Decimal(10, 8)
+  longitude        Decimal      @db.Decimal(11, 8)
+  accuracyMeters   Float?
+  recordedAt       DateTime     @default(now())
+
+  @@index([sellerId, recordedAt])
   @@index([organizationId, recordedAt])
 }
 

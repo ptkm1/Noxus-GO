@@ -1,5 +1,7 @@
 import { prisma } from "../db.js";
 import { decToNum } from "../util/money.js";
+import type { AccessPayload } from "../auth/jwt.js";
+import { sellerScopeWhere } from "../auth/org-roles.js";
 import { isSellerLocationOnline, SELLER_ONLINE_MAX_AGE_MS } from "./seller-live-location.js";
 
 export type AdminSellerLocationRow = {
@@ -20,15 +22,16 @@ export type AdminSellerLocationRow = {
   } | null;
 };
 
-export async function listAdminSellerLocations(organizationId: string): Promise<{
+export async function listAdminSellerLocations(auth: AccessPayload): Promise<{
   onlineThresholdMinutes: number;
   sellers: AdminSellerLocationRow[];
 }> {
   const now = new Date();
+  const scope = sellerScopeWhere(auth);
 
   const [sellers, openVisits] = await Promise.all([
     prisma.seller.findMany({
-      where: { organizationId, active: true },
+      where: { ...scope, active: true },
       include: {
         user: { select: { name: true, email: true } },
         liveLocation: true,
@@ -36,7 +39,11 @@ export async function listAdminSellerLocations(organizationId: string): Promise<
       orderBy: { user: { name: "asc" } },
     }),
     prisma.sellerCustomerVisit.findMany({
-      where: { organizationId, checkedOutAt: null },
+      where: {
+        organizationId: auth.organizationId,
+        checkedOutAt: null,
+        seller: scope,
+      },
       include: { customer: { select: { id: true, name: true } } },
     }),
   ]);

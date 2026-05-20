@@ -1,3 +1,5 @@
+import type { Role } from "@pedidos/shared";
+
 export type NavItem = { to: string; label: string; end?: boolean };
 
 export const DASHBOARD_NAV: NavItem[] = [
@@ -12,3 +14,14 @@ export const DASHBOARD_NAV: NavItem[] = [
   { to: "/vendas", label: "Vendas" },
   { to: "/relatorios", label: "Relatórios" },
 ];
+
+export const MANAGER_NAV: NavItem[] = [
+  { to: "/", label: "Início", end: true },
+  { to: "/rastreio", label: "Rastreio ao vivo" },
+  { to: "/visitas", label: "Visitas em campo" },
+  { to: "/vendas", label: "Vendas" },
+];
+
+export function navForRole(role: Role | undefined): NavItem[] {
+  return role === "MANAGER" ? MANAGER_NAV : DASHBOARD_NAV;
+}

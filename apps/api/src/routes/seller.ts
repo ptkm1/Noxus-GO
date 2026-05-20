@@ -14,8 +14,10 @@ import {
   violationsToJson,
 } from "../services/credit.js";
 import { notifyAdminsCreditPending } from "../services/admin-notifications.js";
+import { isGoogleRoutesConfigured } from "../services/google-routes.js";
 import { buildRouteDirections } from "../services/route-directions.js";
 import { greedyNearestRoute, haversineKm } from "../services/route-plan.js";
+import { recordSellerLocation } from "../services/seller-location-write.js";
 
 const idParam = z.object({ id: z.string().min(1) });
 
@@ -492,8 +494,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       origin: { lat: q.data.lat, lng: q.data.lng },
       radiusKm,
       customers,
+      roadRoutingConfigured: isGoogleRoutesConfigured(),
       disclaimerAirKm:
-        "Distâncias em linha reta (km). Rota «otimizada» usa vizinho mais próximo — não segue estradas nem trânsito.",
+        "Distâncias em linha reta (km). Toque «Rota por estrada» para traçado pelas vias (Google Routes).",
     };
   });
 
@@ -727,29 +730,15 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       .safeParse(req.body);
     if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
 
-    const recordedAt = new Date();
-    const row = await prisma.sellerLiveLocation.upsert({
-      where: { sellerId: auth.sellerId! },
-      create: {
-        sellerId: auth.sellerId!,
-        organizationId: auth.organizationId,
-        latitude: body.data.latitude,
-        longitude: body.data.longitude,
-        accuracyMeters: body.data.accuracyMeters,
-        recordedAt,
-      },
-      update: {
-        latitude: body.data.latitude,
-        longitude: body.data.longitude,
-        accuracyMeters: body.data.accuracyMeters,
-        recordedAt,
-      },
+    const result = await recordSellerLocation({
+      sellerId: auth.sellerId!,
+      organizationId: auth.organizationId,
+      latitude: body.data.latitude,
+      longitude: body.data.longitude,
+      accuracyMeters: body.data.accuracyMeters,
     });
 
-    return {
-      ok: true,
-      recordedAt: row.recordedAt.toISOString(),
-    };
+    return { ok: true, recordedAt: result.recordedAt };
   });
 
   app.get("/notifications", async (req) => {

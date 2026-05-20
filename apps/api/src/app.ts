@@ -1,5 +1,6 @@
 import Fastify, { type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
+import websocket from "@fastify/websocket";
 import { verifyAccessToken, type AccessPayload } from "./auth/jwt.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
@@ -27,6 +28,8 @@ export async function buildApp() {
       "ngrok-skip-browser-warning",
     ],
   });
+
+  await app.register(websocket);
 
   // Hook na raiz: plugins irmãos não herdam hooks de outro `register()` encapsulado.
   app.addHook("onRequest", async (request: FastifyRequest) => {

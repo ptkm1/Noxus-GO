@@ -7,7 +7,18 @@ import { hashPassword } from "../auth/password.js";
 import { decToNum } from "../util/money.js";
 import { computeSaleOrder, OrderPricingError } from "../services/order-pricing.js";
 import { buildDistributorInsights } from "../services/distributor-insights.js";
+import {
+  isManagerGetAllowed,
+  requireAdmin,
+  requireOrgStaff,
+  sellerScopeWhere,
+  validateManagerAssignment,
+} from "../auth/org-roles.js";
 import { listAdminSellerLocations } from "../services/seller-locations-admin.js";
+import { getSellerLocationHistory } from "../services/seller-location-history.js";
+import { verifyAccessToken } from "../auth/jwt.js";
+import { isOrgStaff } from "../auth/org-roles.js";
+import { registerSellerLocationClient } from "../services/seller-location-ws.js";
 import type { AttributeFieldDef } from "../services/product-attributes.js";
 import { parseCategoryAttributeSchema, validateProductAttributes } from "../services/product-attributes.js";
 import { Prisma, type OrderStatus, type PromotionKind, type PromotionScope } from "@prisma/client";
@@ -126,11 +137,21 @@ function assertPromotionCoherence(p: {
 
 export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", async (req: FastifyRequest, reply: FastifyReply) => {
-    if (!req.auth) {
-      return reply.status(401).send({ error: "Não autorizado" });
+    if (!requireOrgStaff(reply, req.auth)) return;
+
+    const auth = req.auth!;
+    const method = req.method.toUpperCase();
+    const routePath = req.routeOptions?.url ?? req.url.split("?")[0] ?? req.url;
+
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+      if (!requireAdmin(reply, auth)) return;
+      return;
     }
-    if (req.auth.role !== "ADMIN") {
-      return reply.status(403).send({ error: "Apenas administradores" });
+
+    if (routePath === "/seller-locations/ws") return;
+
+    if (auth.role === "MANAGER" && method === "GET" && !isManagerGetAllowed(routePath)) {
+      return reply.status(403).send({ error: "Gestores não têm acesso a este recurso" });
     }
   });
 
@@ -972,11 +993,23 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   });
 
   /* --- Vendedores --- */
+  app.get("/managers", async (req) => {
+    const auth = req.auth!;
+    return prisma.user.findMany({
+      where: { organizationId: auth.organizationId, role: "MANAGER" },
+      select: { id: true, email: true, name: true },
+      orderBy: { name: "asc" },
+    });
+  });
+
   app.get("/sellers", async (req) => {
     const auth = req.auth!;
     return prisma.seller.findMany({
-      where: { organizationId: auth.organizationId },
-      include: { user: { select: { id: true, email: true, name: true, role: true } } },
+      where: sellerScopeWhere(auth),
+      include: {
+        user: { select: { id: true, email: true, name: true, role: true } },
+        manager: { select: { id: true, name: true, email: true } },
+      },
       orderBy: { createdAt: "desc" },
     });
   });
@@ -1034,6 +1067,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         commissionPercent: z.number().min(0).max(100).optional(),
         active: z.boolean().optional(),
         name: z.string().min(1).optional(),
+        managerUserId: z.string().min(1).nullable().optional(),
       })
       .safeParse(req.body);
     if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
@@ -1044,12 +1078,20 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!seller) return reply.status(404).send({ error: "Não encontrado" });
 
+    if (body.data.managerUserId !== undefined) {
+      const v = await validateManagerAssignment(auth.organizationId, body.data.managerUserId);
+      if (!v.ok) return reply.status(400).send({ error: v.error });
+    }
+
     await prisma.$transaction([
       prisma.seller.update({
         where: { id },
         data: {
           commissionPercent: body.data.commissionPercent ?? undefined,
           active: body.data.active ?? undefined,
+          ...(body.data.managerUserId !== undefined
+            ? { managerUserId: body.data.managerUserId }
+            : {}),
         },
       }),
       ...(body.data.name
@@ -1059,7 +1101,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
     return prisma.seller.findUnique({
       where: { id },
-      include: { user: { select: { id: true, email: true, name: true } } },
+      include: {
+        user: { select: { id: true, email: true, name: true } },
+        manager: { select: { id: true, name: true, email: true } },
+      },
     });
   });
 
@@ -1277,9 +1322,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (fromDt > toDt) return reply.status(400).send({ error: "O início do período deve ser antes do fim" });
 
     const sellerId = q.data.sellerId?.trim();
+    const scope = sellerScopeWhere(auth);
     if (sellerId) {
       const sRow = await prisma.seller.findFirst({
-        where: { id: sellerId, organizationId: auth.organizationId },
+        where: { id: sellerId, ...scope },
         select: { id: true },
       });
       if (!sRow) return reply.status(400).send({ error: "Vendedor inválido" });
@@ -1291,6 +1337,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       where: {
         organizationId: auth.organizationId,
         checkedInAt: { gte: fromDt, lte: toDt },
+        seller: scope,
         ...(sellerId ? { sellerId } : {}),
       },
       orderBy: { checkedInAt: "desc" },
@@ -1335,7 +1382,53 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/seller-locations", async (req) => {
     const auth = req.auth!;
-    return listAdminSellerLocations(auth.organizationId);
+    return listAdminSellerLocations(auth);
+  });
+
+  app.get("/seller-locations/ws", { websocket: true }, (socket, req) => {
+    const q = req.query as { access_token?: string };
+    const token = typeof q.access_token === "string" ? q.access_token.trim() : "";
+    if (!token) {
+      socket.close(4401, "Token obrigatório");
+      return;
+    }
+    let auth;
+    try {
+      auth = verifyAccessToken(token);
+    } catch {
+      socket.close(4401, "Token inválido");
+      return;
+    }
+    if (!isOrgStaff(auth.role)) {
+      socket.close(4403, "Sem permissão");
+      return;
+    }
+
+    const role = auth.role === "MANAGER" ? ("MANAGER" as const) : ("ADMIN" as const);
+    const unregister = registerSellerLocationClient(auth.organizationId, {
+      socket,
+      role,
+      userId: auth.sub,
+    });
+
+    const heartbeat = setInterval(() => {
+      if (socket.readyState === 1) socket.ping();
+    }, 30_000);
+
+    socket.on("close", () => {
+      clearInterval(heartbeat);
+      unregister();
+    });
+  });
+
+  app.get("/sellers/:id/location-history", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const q = z.object({ date: z.string().optional() }).safeParse(req.query);
+    if (!q.success) return reply.status(400).send({ error: "Query inválida" });
+    const result = await getSellerLocationHistory(auth, reply, id, q.data.date);
+    if (!result) return;
+    return result;
   });
 
   /* --- Títulos / crédito do cliente --- */

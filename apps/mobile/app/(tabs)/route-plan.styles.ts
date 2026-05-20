@@ -6,6 +6,7 @@ export function createRoutePlanStyles(c: AppColors) {
     root: { flex: 1, backgroundColor: c.background },
     scroll: { paddingBottom: 120 },
     lead: { paddingHorizontal: 16, paddingTop: 12, fontSize: 13, color: c.textSecondary, lineHeight: 18 },
+    leadStrong: { fontWeight: "700", color: c.text },
     filterRow: {
       flexDirection: "row",
       flexWrap: "wrap",

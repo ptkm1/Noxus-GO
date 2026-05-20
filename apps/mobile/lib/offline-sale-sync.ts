@@ -94,7 +94,11 @@ export async function flushOfflineSaleOutbox(qc?: QueryClient): Promise<{ proces
   syncRunning = true;
   let processed = 0;
   try {
-    await releaseStaleSyncingClaims();
+    try {
+      await releaseStaleSyncingClaims();
+    } catch {
+      return { processed: 0 };
+    }
     const now = Date.now();
     const rows = await claimRowsForSync(now, 10);
     for (const row of rows) {

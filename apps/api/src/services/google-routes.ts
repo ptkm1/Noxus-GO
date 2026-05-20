@@ -32,6 +32,11 @@ function getServerApiKey(): string | undefined {
   return key || undefined;
 }
 
+/** Indica se a API pode pedir rotas por estrada (chave no apps/api/.env). */
+export function isGoogleRoutesConfigured(): boolean {
+  return !!getServerApiKey();
+}
+
 /**
  * Rota de condução com paradas na ordem dada (sem reordenar waypoints).
  * Retorna null se chave em falta ou erro da API.

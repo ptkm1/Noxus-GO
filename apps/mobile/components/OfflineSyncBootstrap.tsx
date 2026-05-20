@@ -14,7 +14,9 @@ export function OfflineSyncBootstrap() {
     if (Platform.OS === "web" || loading || !user) return;
 
     const run = () => {
-      void flushOfflineSaleOutbox(qc);
+      void flushOfflineSaleOutbox(qc).catch(() => {
+        /* SQLite/rede — não poluir o LogBox no mapa ou outras telas */
+      });
     };
 
     run();

@@ -1,20 +1,36 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext";
 import { apiFetch } from "../lib/api";
+import { isWebAdmin } from "../lib/staff";
+
+type Manager = { id: string; name: string; email: string };
 
 type Seller = {
   id: string;
   commissionPercent: unknown;
   active: boolean;
+  managerUserId: string | null;
   user: { id: string; email: string; name: string };
+  manager: Manager | null;
 };
 
 export function SellersPage() {
+  const { user } = useAuth();
+  const admin = isWebAdmin(user?.role);
   const qc = useQueryClient();
+
   const { data: sellers = [], isLoading } = useQuery({
     queryKey: ["admin", "sellers"],
     queryFn: () => apiFetch<Seller[]>("/admin/sellers"),
+    enabled: admin,
+  });
+
+  const { data: managers = [] } = useQuery({
+    queryKey: ["admin", "managers"],
+    queryFn: () => apiFetch<Manager[]>("/admin/managers"),
+    enabled: admin,
   });
 
   const [email, setEmail] = useState("");
@@ -42,13 +58,28 @@ export function SellersPage() {
   });
 
   const patch = useMutation({
-    mutationFn: ({ id, commissionPercent, active }: { id: string; commissionPercent?: number; active?: boolean }) =>
-      apiFetch(`/admin/sellers/${id}`, {
+    mutationFn: (body: {
+      id: string;
+      commissionPercent?: number;
+      active?: boolean;
+      managerUserId?: string | null;
+    }) =>
+      apiFetch(`/admin/sellers/${body.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ commissionPercent, active }),
+        body: JSON.stringify({
+          commissionPercent: body.commissionPercent,
+          active: body.active,
+          managerUserId: body.managerUserId,
+        }),
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "sellers"] }),
   });
+
+  if (!admin) {
+    return (
+      <p className="text-slate-600">A gestão de vendedores é exclusiva de administradores.</p>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -105,6 +136,7 @@ export function SellersPage() {
               <tr>
                 <th className="px-4 py-3">Nome</th>
                 <th className="px-4 py-3">Email</th>
+                <th className="px-4 py-3">Gestor</th>
                 <th className="px-4 py-3">Comissão %</th>
                 <th className="px-4 py-3">Ativo</th>
                 <th className="px-4 py-3" />
@@ -115,6 +147,26 @@ export function SellersPage() {
                 <tr key={s.id} className="border-t border-slate-100">
                   <td className="px-4 py-3">{s.user.name}</td>
                   <td className="px-4 py-3">{s.user.email}</td>
+                  <td className="px-4 py-3">
+                    <select
+                      className="max-w-[180px] rounded border px-2 py-1 text-sm"
+                      value={s.managerUserId ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        patch.mutate({
+                          id: s.id,
+                          managerUserId: v === "" ? null : v,
+                        });
+                      }}
+                    >
+                      <option value="">— Sem gestor —</option>
+                      {managers.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
                   <td className="px-4 py-3">
                     <input
                       type="number"

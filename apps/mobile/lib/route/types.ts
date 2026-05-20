@@ -1,6 +1,8 @@
 export type NearbyCustomersResp = {
   origin: { lat: number; lng: number };
   radiusKm: number;
+  /** API tem GOOGLE_MAPS_SERVER_API_KEY — necessário para «Rota por estrada». */
+  roadRoutingConfigured?: boolean;
   customers: Array<{
     id: string;
     name: string;
@@ -18,6 +20,7 @@ export type RouteCoord = { latitude: number; longitude: number };
 export type DirectionsRouteResp = {
   heuristic: string;
   source: "google_routes" | "air_fallback";
+  roadRoutingConfigured?: boolean;
   orderedCustomerIds: string[];
   legKm: number[];
   legMinutes: number[];

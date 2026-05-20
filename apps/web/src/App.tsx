@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { AppLogo } from "./components/layout/AppLogo";
 import { PublicAuthLayout } from "./components/layout/PublicAuthLayout";
@@ -21,6 +21,7 @@ import { ReportsPage } from "./pages/ReportsPage";
 import { SellerProductsPage } from "./pages/SellerProductsPage";
 import { SellersPage } from "./pages/SellersPage";
 import { SellerTrackingPage } from "./pages/SellerTrackingPage";
+import { isWebStaff } from "./lib/staff";
 
 const qc = new QueryClient();
 
@@ -45,14 +46,27 @@ function SellerNotice() {
       </header>
       <div className="flex flex-1 flex-col items-center justify-center p-6">
         <p className="max-w-md text-center text-slate-700">
-          O painel web é apenas para administradores. Vendedores devem usar o aplicativo mobile.
+          O painel web é para administradores e gestores. Vendedores devem usar o aplicativo mobile.
         </p>
       </div>
     </div>
   );
 }
 
-function AdminGate({ children }: { children: React.ReactNode }) {
+const MANAGER_ROUTE_PREFIXES = ["/", "/rastreio", "/visitas", "/vendas"];
+
+function ManagerRouteGuard() {
+  const { user } = useAuth();
+  const { pathname } = useLocation();
+  if (user?.role !== "MANAGER") return <Outlet />;
+  const allowed = MANAGER_ROUTE_PREFIXES.some(
+    (p) => pathname === p || (p !== "/" && pathname.startsWith(`${p}/`)),
+  );
+  if (!allowed) return <Navigate to="/" replace />;
+  return <Outlet />;
+}
+
+function StaffGate({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) {
     return (
@@ -62,7 +76,7 @@ function AdminGate({ children }: { children: React.ReactNode }) {
     );
   }
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role !== "ADMIN") {
+  if (!isWebStaff(user.role)) {
     return <SellerNotice />;
   }
   return <>{children}</>;
@@ -75,7 +89,7 @@ function AppRoutes() {
       <Route
         path="/login"
         element={
-          !loading && user?.role === "ADMIN" ? (
+          !loading && isWebStaff(user?.role) ? (
             <Navigate to="/" replace />
           ) : (
             <PublicAuthLayout variant="login">
@@ -99,11 +113,12 @@ function AppRoutes() {
       <Route
         path="/"
         element={
-          <AdminGate>
+          <StaffGate>
             <DashboardLayout />
-          </AdminGate>
+          </StaffGate>
         }
       >
+        <Route element={<ManagerRouteGuard />}>
         <Route index element={<DashboardHome />} />
         <Route path="tabelas-preco" element={<PriceTablesPage />} />
         <Route path="produtos/categorias" element={<ProductCategoriesPage />} />
@@ -120,6 +135,7 @@ function AppRoutes() {
         <Route path="vendas/:orderId" element={<OrderDetailPage />} />
         <Route path="notificacoes" element={<NotificationsPage />} />
         <Route path="relatorios" element={<ReportsPage />} />
+        </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

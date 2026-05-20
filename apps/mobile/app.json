@@ -44,10 +44,13 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "O Pedidos usa a sua localização para mostrar clientes próximos e registar visitas.",
-          "locationWhenInUsePermission": "O Pedidos usa a sua localização para o mapa de rota e check-in de visitas."
+          "locationAlwaysAndWhenInUsePermission": "O Pedidos usa a sua localização em segundo plano para o gestor acompanhar a rota da equipa (uso profissional).",
+          "locationWhenInUsePermission": "O Pedidos usa a sua localização para o mapa de rota, check-in de visitas e rastreio.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true
         }
-      ]
+      ],
+      "expo-task-manager"
     ]
   }
 }

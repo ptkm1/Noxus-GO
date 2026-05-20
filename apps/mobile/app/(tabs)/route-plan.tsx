@@ -19,9 +19,16 @@ export default function RoutePlanScreen() {
     <View style={styles.root}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.lead}>
-          Clientes com GPS cadastrado pelo escritório aparecem no mapa. A ordem usa o vizinho mais próximo em linha reta
-          (não segue estradas nem trânsito).
+          Clientes com GPS cadastrado pelo escritório aparecem no mapa. Toque{" "}
+          <Text style={styles.leadStrong}>Rota por estrada</Text> para traçar pelas vias (Google Routes). Sem isso, só
+          há linha reta entre pontos.
         </Text>
+
+        {s.nearbyQuery.data?.roadRoutingConfigured === false ? (
+          <Text style={styles.warn}>
+            Servidor sem GOOGLE_MAPS_SERVER_API_KEY — configure em apps/api/.env e reinicie a API para rotas por pista.
+          </Text>
+        ) : null}
 
         <View style={styles.filterRow}>
           <Pressable

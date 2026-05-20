@@ -7,8 +7,12 @@ export function useOfflineOutboxCounts(): { pending: number; dead: number; refre
   const [dead, setDead] = useState(0);
 
   const refresh = useCallback(() => {
-    void countPendingOfflineSales().then(setPending);
-    void countDeadOfflineSales().then(setDead);
+    void countPendingOfflineSales()
+      .then(setPending)
+      .catch(() => setPending(0));
+    void countDeadOfflineSales()
+      .then(setDead)
+      .catch(() => setDead(0));
   }, []);
 
   useEffect(() => {

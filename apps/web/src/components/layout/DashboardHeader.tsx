@@ -5,7 +5,8 @@ import { useAuth } from "../../auth/AuthContext";
 import { apiFetch } from "../../lib/api";
 import { AppLogo } from "./AppLogo";
 import { dashboardBackTarget } from "./dashboardBackTarget";
-import { DASHBOARD_NAV } from "./navConfig";
+import { isWebAdmin } from "../../lib/staff";
+import { navForRole } from "./navConfig";
 
 function navClassName(isActive: boolean) {
   return `rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap ${
@@ -54,12 +55,16 @@ export function DashboardHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   const backTo = dashboardBackTarget(location.pathname);
 
+  const showAlerts = isWebAdmin(user?.role);
+  const navItems = navForRole(user?.role);
+
   const { data: unreadPayload } = useQuery({
     queryKey: ["admin", "notifications-unread"],
     queryFn: () => apiFetch<{ count: number }>("/admin/notifications/unread-count"),
     staleTime: 10_000,
     refetchInterval: 15_000,
     refetchIntervalInBackground: false,
+    enabled: showAlerts,
   });
   const unreadCount = unreadPayload?.count ?? 0;
 
@@ -106,7 +111,7 @@ export function DashboardHeader() {
         </div>
 
         <nav className="hidden items-center gap-0.5 lg:flex" aria-label="Principal">
-          {DASHBOARD_NAV.map((item) => (
+          {navItems.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => navClassName(isActive)}>
               {item.label}
             </NavLink>
@@ -114,7 +119,7 @@ export function DashboardHeader() {
         </nav>
 
         <div className="flex items-center gap-2 md:gap-3">
-          <AlertsBellNavLink unreadCount={unreadCount} />
+          {showAlerts ? <AlertsBellNavLink unreadCount={unreadCount} /> : null}
           <p className="hidden max-w-[180px] truncate text-right text-xs text-slate-500 lg:block lg:text-sm xl:max-w-[260px]">
             {user?.email}
           </p>
@@ -174,32 +179,34 @@ export function DashboardHeader() {
               </button>
             </div>
             <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-3">
-              <NavLink
-                to="/notificacoes"
-                onClick={() => setMenuOpen(false)}
-                className={({ isActive }) =>
-                  `${navClassName(isActive)} relative flex items-center justify-between gap-2 px-4 py-3 text-base`
-                }
-              >
-                <span className="flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
-                    <path
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75v-.7V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"
-                    />
-                  </svg>
-                  Alertas
-                </span>
-                {unreadCount > 0 ? (
-                  <span className="rounded-full bg-amber-500 px-2 py-0.5 text-center text-xs font-semibold leading-none text-white">
-                    {unreadCount > 99 ? "99+" : unreadCount}
+              {showAlerts ? (
+                <NavLink
+                  to="/notificacoes"
+                  onClick={() => setMenuOpen(false)}
+                  className={({ isActive }) =>
+                    `${navClassName(isActive)} relative flex items-center justify-between gap-2 px-4 py-3 text-base`
+                  }
+                >
+                  <span className="flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <path
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75v-.7V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"
+                      />
+                    </svg>
+                    Alertas
                   </span>
-                ) : null}
-              </NavLink>
-              {DASHBOARD_NAV.map((item) => (
+                  {unreadCount > 0 ? (
+                    <span className="rounded-full bg-amber-500 px-2 py-0.5 text-center text-xs font-semibold leading-none text-white">
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  ) : null}
+                </NavLink>
+              ) : null}
+              {navItems.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
