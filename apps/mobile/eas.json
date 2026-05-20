@@ -8,7 +8,14 @@
       "developmentClient": true,
       "distribution": "internal",
       "node": "22.12.0",
-      "pnpm": "10.22.0"
+      "pnpm": "10.22.0",
+      "env": {
+        "EXPO_USE_LOCAL_CLI": "1"
+      },
+      "android": {
+        "buildType": "apk",
+        "config": "development-android.yml"
+      }
     },
     "preview": {
       "distribution": "internal",

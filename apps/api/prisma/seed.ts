@@ -1,6 +1,7 @@
 import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/db.js";
+import { upsertRouteDemoCustomer } from "./seed-route-customer.js";
 import { CATEGORY_SCHEMA_BY_CODE } from "./category-schemas.js";
 
 /** Senhas conhecidas — sempre re-hasheadas para recuperar login após DB “estranho”. */
@@ -114,6 +115,15 @@ async function main() {
   console.log("Contas demo (senhas atualizadas):");
   console.log(`  Admin:    ${DEMO_ADMIN_EMAIL} / ${DEMO_ADMIN_PASSWORD}`);
   console.log(`  Vendedor: ${DEMO_SELLER_EMAIL} / ${DEMO_SELLER_PASSWORD}`);
+
+  try {
+    await upsertRouteDemoCustomer();
+  } catch (e) {
+    console.warn(
+      "Seed cliente de rota (Googleplex):",
+      e instanceof Error ? e.message : e,
+    );
+  }
 
   const productCount = await prisma.product.count({ where: { organizationId: org.id } });
   if (productCount > 0) {

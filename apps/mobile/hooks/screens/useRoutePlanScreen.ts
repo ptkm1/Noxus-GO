@@ -4,9 +4,14 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 import type { RoutePlanMapRef } from "../../components/RoutePlanMap";
+import type { RouteListCustomer } from "../../components/molecules/RouteCustomerListItem";
 import { apiFetch } from "../../lib/api";
 import type { NearbyCustomersResp, OptimizeRouteResp, SellerVisit } from "../../lib/route/types";
 import { formatDurationSeconds } from "../../lib/utils/format-duration";
+import { openNavigationApp } from "../../lib/utils/open-navigation";
+
+const RADIUS_OPTIONS = [30, 60, 120] as const;
+export type RouteRadiusKm = (typeof RADIUS_OPTIONS)[number];
 
 export function useRoutePlanScreen() {
   const router = useRouter();
@@ -19,6 +24,10 @@ export function useRoutePlanScreen() {
   const [locErr, setLocErr] = useState<string | null>(null);
   const [, setTick] = useState(0);
   const [optimized, setOptimized] = useState<OptimizeRouteResp | null>(null);
+  const [radiusKm, setRadiusKm] = useState<RouteRadiusKm>(30);
+  const [myClientsOnly, setMyClientsOnly] = useState(false);
+  const [checkInModal, setCheckInModal] = useState<{ id: string; name: string } | null>(null);
+  const [checkOutModalOpen, setCheckOutModalOpen] = useState(false);
 
   const refreshLocation = useCallback(async () => {
     setLocErr(null);
@@ -47,13 +56,19 @@ export function useRoutePlanScreen() {
   }, []);
 
   const nearbyQuery = useQuery({
-    queryKey: ["seller", "route-nearby", myLat, myLng],
+    queryKey: ["seller", "route-nearby", myLat, myLng, radiusKm],
     enabled: myLat != null && myLng != null,
     queryFn: () =>
       apiFetch<NearbyCustomersResp>(
-        `/seller/route-plan/nearby?lat=${encodeURIComponent(String(myLat))}&lng=${encodeURIComponent(String(myLng))}&radiusKm=120`,
+        `/seller/route-plan/nearby?lat=${encodeURIComponent(String(myLat))}&lng=${encodeURIComponent(String(myLng))}&radiusKm=${radiusKm}`,
       ),
   });
+
+  const filteredCustomers = useMemo(() => {
+    const list = nearbyQuery.data?.customers ?? [];
+    if (!myClientsOnly) return list;
+    return list.filter((c) => c.assignedToMe);
+  }, [nearbyQuery.data?.customers, myClientsOnly]);
 
   const activeVisitQuery = useQuery({
     queryKey: ["seller", "visit-active"],
@@ -67,24 +82,40 @@ export function useRoutePlanScreen() {
   });
 
   const checkIn = useMutation({
-    mutationFn: (payload: { customerId: string; latitude?: number; longitude?: number }) =>
+    mutationFn: (payload: {
+      customerId: string;
+      latitude?: number;
+      longitude?: number;
+      notes?: string;
+    }) =>
       apiFetch<SellerVisit>("/seller/visits/check-in", {
         method: "POST",
         body: JSON.stringify(payload),
       }),
     onSuccess: () => {
+      setCheckInModal(null);
       void qc.invalidateQueries({ queryKey: ["seller", "visit-active"] });
       void qc.invalidateQueries({ queryKey: ["seller", "visits-recent"] });
     },
   });
 
   const checkOut = useMutation({
-    mutationFn: (payload: { id: string; latitude?: number; longitude?: number }) =>
+    mutationFn: (payload: {
+      id: string;
+      latitude?: number;
+      longitude?: number;
+      notes?: string;
+    }) =>
       apiFetch<SellerVisit>(`/seller/visits/${payload.id}/check-out`, {
         method: "PATCH",
-        body: JSON.stringify({ latitude: payload.latitude, longitude: payload.longitude }),
+        body: JSON.stringify({
+          latitude: payload.latitude,
+          longitude: payload.longitude,
+          notes: payload.notes,
+        }),
       }),
     onSuccess: () => {
+      setCheckOutModalOpen(false);
       void qc.invalidateQueries({ queryKey: ["seller", "visit-active"] });
       void qc.invalidateQueries({ queryKey: ["seller", "visits-recent"] });
     },
@@ -93,8 +124,9 @@ export function useRoutePlanScreen() {
   const optimizeMutation = useMutation({
     mutationFn: async () => {
       if (myLat == null || myLng == null) throw new Error("Sem localização");
-      const customers = nearbyQuery.data?.customers ?? [];
-      const withPins = customers.filter((c) => Number.isFinite(c.latitude) && Number.isFinite(c.longitude));
+      const withPins = filteredCustomers.filter(
+        (c) => Number.isFinite(c.latitude) && Number.isFinite(c.longitude),
+      );
       const ids = withPins.slice(0, 14).map((c) => c.id);
       if (ids.length === 0) throw new Error("Nenhum cliente com GPS por perto.");
       return apiFetch<OptimizeRouteResp>("/seller/route-plan/optimize-order", {
@@ -128,67 +160,125 @@ export function useRoutePlanScreen() {
   }, [myLat, myLng]);
 
   const activeVisit = activeVisitQuery.data;
+  const hasOpenVisit = !!activeVisit && activeVisit.checkedOutAt == null;
 
   const displayElapsed =
-    activeVisit && activeVisit.checkedOutAt == null
+    hasOpenVisit && activeVisit
       ? formatDurationSeconds(
           Math.max(0, Math.floor((Date.now() - new Date(activeVisit.checkedInAt).getTime()) / 1000)),
         )
       : null;
 
-  const openCustomerActions = useCallback(
-    (c: { id: string; name: string }) => {
-      const hasActive = !!activeVisit && activeVisit.checkedOutAt == null;
-      Alert.alert(c.name, undefined, [
-        { text: "Ver cliente", onPress: () => router.push(`/customer/${c.id}`) },
-        ...(hasActive
-          ? [{ text: "Já há visita em curso — faz check-out primeiro", style: "cancel" as const }]
-          : [
-              {
-                text: "Check-in aqui",
-                onPress: () => {
-                  if (myLat == null || myLng == null) {
-                    Alert.alert("GPS", "Atualize a sua localização primeiro.");
-                    return;
-                  }
-                  checkIn.mutate(
-                    { customerId: c.id, latitude: myLat, longitude: myLng },
-                    { onError: (err: Error) => Alert.alert("Check-in", err.message) },
-                  );
-                },
-              },
-            ]),
+  const routeOrderIndex = useMemo(() => {
+    if (!optimized) return new Map<string, number>();
+    return new Map(optimized.orderedCustomers.map((c, i) => [c.id, i + 1]));
+  }, [optimized]);
+
+  const openCustomer = useCallback(
+    (customerId: string) => {
+      router.push(`/customer/${customerId}`);
+    },
+    [router],
+  );
+
+  const navigateToCustomer = useCallback(async (c: RouteListCustomer, app: "google" | "waze") => {
+    try {
+      await openNavigationApp(app, c.latitude, c.longitude, c.name);
+    } catch (e) {
+      Alert.alert("Navegação", e instanceof Error ? e.message : "Não foi possível abrir o app.");
+    }
+  }, []);
+
+  const submitCheckIn = useCallback(
+    (customerId: string, notes?: string) => {
+      if (myLat == null || myLng == null) {
+        Alert.alert("GPS", "Atualize a sua localização antes do check-in.");
+        return;
+      }
+      checkIn.mutate(
+        { customerId, latitude: myLat, longitude: myLng, notes },
+        { onError: (err: Error) => Alert.alert("Check-in", err.message) },
+      );
+    },
+    [checkIn, myLat, myLng],
+  );
+
+  const requestCheckIn = useCallback(
+    (c: RouteListCustomer) => {
+      if (hasOpenVisit) {
+        Alert.alert(
+          "Visita em curso",
+          `Termine o check-out em ${activeVisit?.customerName} antes de iniciar outra visita.`,
+        );
+        return;
+      }
+      setCheckInModal({ id: c.id, name: c.name });
+    },
+    [activeVisit?.customerName, hasOpenVisit],
+  );
+
+  const submitCheckOut = useCallback(
+    (notes?: string) => {
+      if (!activeVisit) return;
+      const finish = () =>
+        checkOut.mutate(
+          {
+            id: activeVisit.id,
+            ...(myLat != null && myLng != null
+              ? { latitude: myLat, longitude: myLng }
+              : {}),
+            notes,
+          },
+          { onError: (e: Error) => Alert.alert("Check-out", e.message) },
+        );
+
+      if (myLat == null || myLng == null) {
+        Alert.alert("GPS", "Encerrar sem gravar coordenadas de saída?", [
+          { text: "Cancelar", style: "cancel" },
+          { text: "Encerrar", onPress: finish },
+        ]);
+        return;
+      }
+      finish();
+    },
+    [activeVisit, checkOut, myLat, myLng],
+  );
+
+  const requestCheckOut = useCallback(() => {
+    setCheckOutModalOpen(true);
+  }, []);
+
+  const openCustomerFromMap = useCallback(
+    (c: Pick<RouteListCustomer, "id" | "name" | "latitude" | "longitude">) => {
+      const full: RouteListCustomer =
+        filteredCustomers.find((x) => x.id === c.id) ?? {
+          ...c,
+          addressNote: null,
+          distanceKm: 0,
+          assignedToMe: false,
+        };
+      const isActive = activeVisit?.customerId === full.id && hasOpenVisit;
+      Alert.alert(full.name, undefined, [
+        { text: "Ver cliente", onPress: () => openCustomer(full.id) },
+        { text: "Google Maps", onPress: () => void navigateToCustomer(full, "google") },
+        { text: "Waze", onPress: () => void navigateToCustomer(full, "waze") },
+        ...(isActive
+          ? [{ text: "Visita em curso", style: "cancel" as const }]
+          : hasOpenVisit
+            ? [{ text: "Check-in (visita aberta)", style: "cancel" as const }]
+            : [{ text: "Check-in", onPress: () => requestCheckIn(full) }]),
         { text: "Fechar", style: "cancel" },
       ]);
     },
-    [activeVisit, checkIn, myLat, myLng, router],
+    [activeVisit?.customerId, filteredCustomers, hasOpenVisit, navigateToCustomer, openCustomer, requestCheckIn],
   );
 
-  const handleCheckOut = useCallback(() => {
-    if (!activeVisit) return;
-    if (myLat == null || myLng == null) {
-      Alert.alert("GPS", "Encerrar sem gravar coordenadas de saída?", [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Encerrar",
-          onPress: () =>
-            checkOut.mutate(
-              { id: activeVisit.id },
-              { onError: (e: Error) => Alert.alert("Check-out", e.message) },
-            ),
-        },
-      ]);
-      return;
-    }
-    checkOut.mutate(
-      { id: activeVisit.id, latitude: myLat, longitude: myLng },
-      { onError: (e: Error) => Alert.alert("Check-out", e.message) },
-    );
-  }, [activeVisit, checkOut, myLat, myLng]);
-
-  const showMapHint = useCallback(() => {
-    Alert.alert("Marcadores", "Toque num ícone no mapa para abrir opções (cliente ou check-in).");
-  }, []);
+  const goQuickSaleWithCustomer = useCallback(
+    (customerId: string) => {
+      router.push({ pathname: "/quick-sale", params: { customerId } });
+    },
+    [router],
+  );
 
   const clearOptimized = useCallback(() => setOptimized(null), []);
 
@@ -200,18 +290,36 @@ export function useRoutePlanScreen() {
     myLng,
     refreshLocation,
     nearbyQuery,
+    filteredCustomers,
+    radiusKm,
+    setRadiusKm,
+    radiusOptions: RADIUS_OPTIONS,
+    myClientsOnly,
+    setMyClientsOnly,
     activeVisit,
+    hasOpenVisit,
     displayElapsed,
     recentVisits: recentVisitsQuery.data ?? [],
+    checkIn,
     checkOut,
     optimizeMutation,
     polyCoords,
     region,
     optimized,
-    openCustomerActions,
-    handleCheckOut,
-    showMapHint,
+    routeOrderIndex,
+    openCustomer,
+    navigateToCustomer,
+    requestCheckIn,
+    submitCheckIn,
+    requestCheckOut,
+    submitCheckOut,
+    openCustomerFromMap,
+    goQuickSaleWithCustomer,
     clearOptimized,
     formatVisitDuration: formatDurationSeconds,
+    checkInModal,
+    setCheckInModal,
+    checkOutModalOpen,
+    setCheckOutModalOpen,
   };
 }

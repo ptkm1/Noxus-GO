@@ -1,0 +1,23 @@
+# Monorepo pnpm hoisted: development client com expo-dev-client.
+build:
+  name: Pedidos development Android
+  steps:
+    - eas/checkout
+    - eas/use_npm_token
+    - run:
+        name: Install monorepo and link Expo for CLI
+        command: bash ./scripts/eas-prepare-monorepo.sh
+    - run:
+        name: Build @pedidos/shared
+        command: cd ../.. && pnpm --filter @pedidos/shared run build
+    - eas/resolve_build_config
+    - run:
+        name: Expo prebuild (Android)
+        command: pnpm exec expo prebuild --no-install --platform android
+    - eas/configure_eas_update:
+        inputs:
+          throw_if_not_configured: false
+    - eas/inject_android_credentials
+    - eas/configure_android_version
+    - eas/run_gradle
+    - eas/find_and_upload_build_artifacts

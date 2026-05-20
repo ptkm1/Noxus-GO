@@ -1,30 +1,32 @@
 import { useMemo } from "react";
 import { StyleSheet } from "react-native";
+import { useTheme } from "../../../lib/theme";
 
 export type CategoryFilterBarStylesParams = {
   chipActiveBackgroundColor?: string;
 };
 
 export function useCategoryFilterBarStyles(params: CategoryFilterBarStylesParams = {}) {
-  const { chipActiveBackgroundColor = "#0284c7" } = params;
+  const { colors } = useTheme();
+  const { chipActiveBackgroundColor = colors.chipActive } = params;
 
   return useMemo(
     () =>
       StyleSheet.create({
         wrap: { marginTop: 12, marginBottom: 4 },
-        title: { fontSize: 13, fontWeight: "700", color: "#475569", marginBottom: 8 },
+        title: { fontSize: 13, fontWeight: "700", color: colors.textSecondary, marginBottom: 8 },
         chip: {
           paddingHorizontal: 14,
           paddingVertical: 9,
           borderRadius: 20,
-          backgroundColor: "#e2e8f0",
+          backgroundColor: colors.chip,
           marginRight: 8,
           maxWidth: 200,
         },
         chipOn: { backgroundColor: chipActiveBackgroundColor },
-        chipTxt: { color: "#334155", fontSize: 14, fontWeight: "600" },
-        chipTxtOn: { color: "#fff" },
+        chipTxt: { color: colors.chipText, fontSize: 14, fontWeight: "600" },
+        chipTxtOn: { color: colors.chipTextActive },
       }),
-    [chipActiveBackgroundColor],
+    [chipActiveBackgroundColor, colors],
   );
 }

@@ -6,12 +6,17 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
+import { ThemedTextInput } from "../../components/atoms/ThemedTextInput";
+import { useThemedStyles } from "../../hooks/useThemedStyles";
 import { useCustomersScreen } from "../../hooks/screens/useCustomersScreen";
+import { useTheme } from "../../lib/theme";
+import type { AppColors } from "../../lib/theme/types";
 
 export default function CustomersScreen() {
+  const styles = useThemedStyles(createCustomersStyles);
+  const { colors } = useTheme();
   const {
     customers,
     isLoading,
@@ -40,8 +45,8 @@ export default function CustomersScreen() {
         <Text style={styles.formTitle}>Novo cliente</Text>
         <Text style={styles.label}>CNPJ (opcional · PJ)</Text>
         <View style={styles.cnpjRow}>
-          <TextInput
-            style={[styles.input, styles.cnpjInput]}
+          <ThemedTextInput
+            style={[styles.cnpjInput]}
             placeholder="00.000.000/0001-00"
             keyboardType="number-pad"
             value={formatCnpjMask(cnpjDigits)}
@@ -54,7 +59,7 @@ export default function CustomersScreen() {
             onPress={() => void lookupCnpj()}
           >
             {cnpjLoading ? (
-              <ActivityIndicator color="#0369a1" />
+              <ActivityIndicator color={colors.link} />
             ) : (
               <Text style={styles.cnpjBtnText}>Buscar</Text>
             )}
@@ -63,29 +68,28 @@ export default function CustomersScreen() {
         {cnpjErr ? <Text style={styles.err}>{cnpjErr}</Text> : null}
         {cnpjOk ? <Text style={styles.ok}>{cnpjOk}</Text> : null}
         <Text style={styles.hint}>Dados públicos via BrasilAPI — pode editar antes de gravar.</Text>
-        <TextInput style={styles.input} placeholder="Nome" value={name} onChangeText={setName} />
-        <TextInput
-          style={styles.input}
+        <ThemedTextInput placeholder="Nome" value={name} onChangeText={setName} />
+        <ThemedTextInput
           placeholder="Email"
           keyboardType="email-address"
           autoCapitalize="none"
           value={email}
           onChangeText={setEmail}
         />
-        <TextInput style={styles.input} placeholder="Telefone" value={phone} onChangeText={setPhone} />
+        <ThemedTextInput placeholder="Telefone" value={phone} onChangeText={setPhone} />
         <Pressable
           style={[styles.btn, !canSubmit && styles.btnOff]}
           disabled={!canSubmit}
           onPress={() => create.mutate()}
         >
           <View style={styles.btnInner}>
-            <UserPlus color="#fff" size={18} strokeWidth={2} />
+            <UserPlus color={colors.primaryForeground} size={18} strokeWidth={2} />
             <Text style={styles.btnText}>Adicionar</Text>
           </View>
         </Pressable>
       </View>
       {isLoading ? (
-        <ActivityIndicator style={{ marginTop: 16 }} />
+        <ActivityIndicator style={{ marginTop: 16 }} color={colors.primary} />
       ) : (
         <FlatList
           data={customers}
@@ -108,63 +112,57 @@ export default function CustomersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc" },
-  form: {
-    padding: 16,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-    gap: 8,
-  },
-  formTitle: { fontWeight: "600", color: "#0f172a", marginBottom: 4 },
-  label: { fontSize: 13, fontWeight: "600", color: "#475569", marginTop: 4 },
-  hint: { fontSize: 11, color: "#94a3b8", marginBottom: 4 },
-  err: { fontSize: 12, color: "#dc2626" },
-  ok: { fontSize: 12, color: "#059669", fontWeight: "600" },
-  cnpjRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-  cnpjInput: { flex: 1, fontFamily: "monospace", fontSize: 14 },
-  cnpjBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: "#e0f2fe",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#7dd3fc",
-    minWidth: 88,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  cnpjBtnText: { fontWeight: "700", color: "#0369a1", fontSize: 14 },
-  input: {
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: "#f8fafc",
-  },
-  btn: {
-    marginTop: 4,
-    backgroundColor: "#0284c7",
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  btnOff: { opacity: 0.5 },
-  btnInner: { flexDirection: "row", alignItems: "center", gap: 8 },
-  btnText: { color: "#fff", fontWeight: "600" },
-  list: { padding: 12, paddingBottom: 32 },
-  card: {
-    padding: 14,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-  },
-  name: { fontSize: 16, fontWeight: "600", color: "#0f172a" },
-  meta: { fontSize: 14, color: "#64748b", marginTop: 4 },
-  finHint: { marginTop: 10, fontSize: 12, fontWeight: "600", color: "#0369a1" },
-  empty: { textAlign: "center", color: "#94a3b8", marginTop: 24 },
-});
+function createCustomersStyles(c: AppColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.background },
+    form: {
+      padding: 16,
+      backgroundColor: c.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+      gap: 8,
+    },
+    formTitle: { fontWeight: "600", color: c.text, marginBottom: 4 },
+    label: { fontSize: 13, fontWeight: "600", color: c.textSecondary, marginTop: 4 },
+    hint: { fontSize: 11, color: c.textMuted, marginBottom: 4 },
+    err: { fontSize: 12, color: c.danger },
+    ok: { fontSize: 12, color: c.success, fontWeight: "600" },
+    cnpjRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+    cnpjInput: { flex: 1, fontFamily: "monospace", fontSize: 14 },
+    cnpjBtn: {
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      backgroundColor: c.primaryMuted,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: c.primary,
+      minWidth: 88,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    cnpjBtnText: { fontWeight: "700", color: c.link, fontSize: 14 },
+    btn: {
+      marginTop: 4,
+      backgroundColor: c.primary,
+      paddingVertical: 12,
+      borderRadius: 10,
+      alignItems: "center",
+    },
+    btnOff: { opacity: 0.5 },
+    btnInner: { flexDirection: "row", alignItems: "center", gap: 8 },
+    btnText: { color: c.primaryForeground, fontWeight: "600" },
+    list: { padding: 12, paddingBottom: 32 },
+    card: {
+      padding: 14,
+      backgroundColor: c.card,
+      borderRadius: 12,
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    name: { fontSize: 16, fontWeight: "600", color: c.text },
+    meta: { fontSize: 14, color: c.textSecondary, marginTop: 4 },
+    finHint: { marginTop: 10, fontSize: 12, fontWeight: "600", color: c.link },
+    empty: { textAlign: "center", color: c.textMuted, marginTop: 24 },
+  });
+}

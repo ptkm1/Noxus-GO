@@ -5,9 +5,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { ClipboardCheck, Minus, Plus, ScanBarcode, Search } from "lucide-react-native";
@@ -17,11 +15,17 @@ import {
   ProductCatalogTile,
 } from "../components/ProductCatalogViews";
 import { BarcodeScannerModal } from "../components/BarcodeScannerModal";
+import { ThemedTextInput } from "../components/atoms/ThemedTextInput";
 import { fmtMoney } from "../components/atoms/formatMoney";
+import { useThemedStyles } from "../hooks/useThemedStyles";
 import { useQuickSaleScreen } from "../hooks/screens/useQuickSaleScreen";
+import { useTheme } from "../lib/theme";
 import type { SaleProduct } from "../lib/sale/types";
+import { createQuickSaleStyles } from "./quick-sale.styles";
 
 export default function QuickSaleScreen() {
+  const styles = useThemedStyles(createQuickSaleStyles);
+  const { colors } = useTheme();
   const s = useQuickSaleScreen();
   const { catalog, layout } = s;
 
@@ -29,10 +33,8 @@ export default function QuickSaleScreen() {
     <View style={styles.headerBlock}>
       <Text style={styles.sectionTitle}>Cliente</Text>
       <Text style={styles.hint}>Opcional — usa promoções por cliente quando existirem.</Text>
-      <TextInput
-        style={styles.input}
+      <ThemedTextInput
         placeholder="Filtrar cliente…"
-        placeholderTextColor="#94a3b8"
         value={s.customerQuery}
         onChangeText={s.setCustomerQuery}
         autoCapitalize="words"
@@ -118,7 +120,7 @@ export default function QuickSaleScreen() {
           ) : null}
         </View>
       ) : s.creditLoading && s.customerId ? (
-        <ActivityIndicator style={{ marginVertical: 10 }} color="#0284c7" />
+        <ActivityIndicator style={{ marginVertical: 10 }} color={colors.primary} />
       ) : null}
 
       {s.cartLines.length > 0 ? (
@@ -143,7 +145,7 @@ export default function QuickSaleScreen() {
                     style={styles.iconBtn}
                     onPress={() => s.bumpQty(s.cartProductStub(line), -1)}
                   >
-                    <Minus size={20} color="#0f172a" strokeWidth={2.5} />
+                    <Minus size={20} color={colors.text} strokeWidth={2.5} />
                   </Pressable>
                   <Text style={styles.qtyTxt}>{line.qty}</Text>
                   <Pressable
@@ -151,7 +153,7 @@ export default function QuickSaleScreen() {
                     style={styles.iconBtn}
                     onPress={() => s.bumpQty(s.cartProductStub(line), 1)}
                   >
-                    <Plus size={20} color="#0f172a" strokeWidth={2.5} />
+                    <Plus size={20} color={colors.text} strokeWidth={2.5} />
                   </Pressable>
                 </View>
                 <Pressable style={styles.discBtn} onPress={() => s.cycleDiscount(line.productId)}>
@@ -166,17 +168,16 @@ export default function QuickSaleScreen() {
 
       <Text style={[styles.sectionTitle, { marginTop: s.cartLines.length ? 12 : 8 }]}>Catálogo visual</Text>
       <View style={styles.searchRow}>
-        <Search size={18} color="#64748b" style={styles.searchIcon} />
-        <TextInput
+        <Search size={18} color={colors.iconMuted} style={styles.searchIcon} />
+        <ThemedTextInput
           style={styles.searchInput}
           placeholder="Buscar nome, SKU ou categoria…"
-          placeholderTextColor="#94a3b8"
           value={catalog.productQuery}
           onChangeText={catalog.setProductQuery}
           autoCorrect={false}
         />
         <Pressable style={styles.scanBtn} onPress={() => s.setBarcodeOpen(true)}>
-          <ScanBarcode size={22} color="#fff" strokeWidth={2.2} />
+          <ScanBarcode size={22} color={colors.primaryForeground} strokeWidth={2.2} />
         </Pressable>
       </View>
       <Text style={styles.microHint}>
@@ -256,10 +257,10 @@ export default function QuickSaleScreen() {
           onPress={s.finalize}
         >
           {s.create.isPending ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.primaryForeground} />
           ) : (
             <View style={styles.finalInner}>
-              <ClipboardCheck color="#fff" size={22} strokeWidth={2} />
+              <ClipboardCheck color={colors.primaryForeground} size={22} strokeWidth={2} />
               <Text style={styles.finalTxt}>Finalizar · R$ {fmtMoney(s.cartTotal)}</Text>
             </View>
           )}
@@ -275,144 +276,3 @@ export default function QuickSaleScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: "#f8fafc" },
-  listContent: { paddingHorizontal: 16, paddingTop: 12 },
-  headerBlock: { paddingBottom: 8 },
-  sectionTitle: { fontSize: 17, fontWeight: "700", color: "#0f172a" },
-  subSection: { marginTop: 14, marginBottom: 8, fontSize: 13, fontWeight: "600", color: "#475569" },
-  hint: { marginTop: 4, marginBottom: 10, fontSize: 12, color: "#64748b" },
-  input: {
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    backgroundColor: "#fff",
-    marginBottom: 10,
-  },
-  hScroll: { marginBottom: 4 },
-  pill: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 20,
-    backgroundColor: "#e2e8f0",
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  pillActive: { backgroundColor: "#0284c7" },
-  pillOutline: {
-    backgroundColor: "#fff",
-    borderWidth: 1.5,
-    borderColor: "#38bdf8",
-  },
-  pillText: { color: "#334155", fontSize: 14, fontWeight: "500" },
-  pillTextActive: { color: "#fff", fontWeight: "700" },
-  cartSection: {
-    marginTop: 14,
-    padding: 12,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    gap: 10,
-  },
-  cartRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 10,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#e2e8f0",
-  },
-  cartMain: { flex: 1 },
-  cartName: { fontSize: 15, fontWeight: "600", color: "#0f172a" },
-  cartMeta: { marginTop: 4, fontSize: 12, color: "#64748b" },
-  cartActions: { alignItems: "flex-end", gap: 8 },
-  qtyRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "#f1f5f9",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  qtyTxt: { fontSize: 16, fontWeight: "700", color: "#0f172a", minWidth: 22, textAlign: "center" },
-  discBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: "#fef3c7",
-    borderWidth: 1,
-    borderColor: "#fcd34d",
-  },
-  discBtnTxt: { fontSize: 12, fontWeight: "700", color: "#92400e" },
-  cartTotal: { marginTop: 4, fontSize: 17, fontWeight: "800", color: "#047857", textAlign: "right" },
-  searchRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    paddingLeft: 10,
-    marginTop: 8,
-    overflow: "hidden",
-  },
-  searchIcon: { marginRight: 4 },
-  searchInput: { flex: 1, paddingVertical: 12, fontSize: 16, color: "#0f172a" },
-  scanBtn: {
-    backgroundColor: "#0284c7",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  scanWarn: { color: "#b45309", marginTop: 8, fontSize: 13 },
-  microHint: { marginTop: 8, fontSize: 11, color: "#64748b", lineHeight: 15 },
-  warn: { paddingVertical: 24, color: "#b45309", textAlign: "center" },
-  footer: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    backgroundColor: "#f8fafcf2",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#e2e8f0",
-  },
-  errFoot: { color: "#dc2626", marginBottom: 8, textAlign: "center", fontSize: 13 },
-  creditLinkBtn: {
-    alignSelf: "flex-start",
-    marginTop: 6,
-    marginBottom: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 2,
-  },
-  creditLinkTxt: { fontSize: 13, fontWeight: "700", color: "#0369a1", textDecorationLine: "underline" },
-  creditBanner: {
-    marginTop: 6,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  creditBannerWarn: { backgroundColor: "#fffbeb", borderColor: "#fcd34d" },
-  creditBannerDanger: { backgroundColor: "#fef2f2", borderColor: "#fca5a5" },
-  creditBannerTitle: { fontSize: 14, fontWeight: "800", color: "#0f172a", marginBottom: 6 },
-  creditBannerTxt: { fontSize: 12, color: "#334155", marginBottom: 4 },
-  creditBannerBold: { marginTop: 8, fontSize: 13, fontWeight: "800", color: "#991b1b" },
-  finalBtn: {
-    backgroundColor: "#0284c7",
-    paddingVertical: 15,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  finalBtnDis: { opacity: 0.45 },
-  finalInner: { flexDirection: "row", alignItems: "center", gap: 10 },
-  finalTxt: { color: "#fff", fontWeight: "800", fontSize: 17 },
-});

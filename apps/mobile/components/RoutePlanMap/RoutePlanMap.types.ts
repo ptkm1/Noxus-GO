@@ -17,6 +17,8 @@ export type RoutePlanMapProps = {
   followUser: boolean;
   customers: RoutePlanMapCustomerPin[];
   polyCoords: RoutePlanMapCoord[];
+  /** Cliente com visita em aberto — marcador destacado. */
+  activeVisitCustomerId?: string | null;
   onMarkerPress: (c: RoutePlanMapCustomerPin) => void;
 };
 

@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Crypto from "expo-crypto";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 import { useWindowDimensions } from "react-native";
@@ -28,6 +28,7 @@ type SubmitSaleResult = { mode: "online"; status?: string } | { mode: "offlineQu
 
 export function useQuickSaleScreen() {
   const router = useRouter();
+  const { customerId: customerIdParam } = useLocalSearchParams<{ customerId?: string }>();
   const qc = useQueryClient();
   const insets = useSafeAreaInsets();
   const layout = computeCatalogTileWidths(useWindowDimensions().width);
@@ -43,6 +44,12 @@ export function useQuickSaleScreen() {
 
   const catalog = useSellerProductCatalog({ customerId });
   const { products } = catalog;
+
+  useEffect(() => {
+    if (typeof customerIdParam === "string" && customerIdParam.length > 0) {
+      setCustomerId(customerIdParam);
+    }
+  }, [customerIdParam]);
 
   const { data: customers = [] } = useQuery({
     queryKey: ["seller", "customers"],

@@ -1,20 +1,19 @@
 import { Search } from "lucide-react-native";
-import {
-  ActivityIndicator,
-  FlatList,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
+import { ThemedTextInput } from "../../components/atoms/ThemedTextInput";
 import {
   CategoryFilterBar,
   HorizontalProductRail,
   ProductCatalogTile,
 } from "../../components/ProductCatalogViews";
+import { useThemedStyles } from "../../hooks/useThemedStyles";
 import { useProductsScreen } from "../../hooks/screens/useProductsScreen";
+import { useTheme } from "../../lib/theme";
+import type { AppColors } from "../../lib/theme/types";
 
 export default function ProductsScreen() {
+  const styles = useThemedStyles(createProductsStyles);
+  const { colors } = useTheme();
   const {
     layout,
     catalog,
@@ -31,11 +30,10 @@ export default function ProductsScreen() {
         <Text style={styles.leadBold}>Venda rápida</Text>.
       </Text>
       <View style={styles.searchRow}>
-        <Search size={18} color="#64748b" style={styles.searchIcon} />
-        <TextInput
+        <Search size={18} color={colors.iconMuted} style={styles.searchIcon} />
+        <ThemedTextInput
           style={styles.searchInput}
           placeholder="Buscar nome, SKU ou categoria…"
-          placeholderTextColor="#94a3b8"
           value={catalog.productQuery}
           onChangeText={catalog.setProductQuery}
           autoCorrect={false}
@@ -73,7 +71,7 @@ export default function ProductsScreen() {
   return (
     <View style={styles.container}>
       {catalog.isLoading ? (
-        <ActivityIndicator style={{ marginTop: 24 }} />
+        <ActivityIndicator style={{ marginTop: 24 }} color={colors.primary} />
       ) : (
         <FlatList
           numColumns={2}
@@ -101,25 +99,32 @@ export default function ProductsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc" },
-  list: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 32 },
-  header: { paddingBottom: 8 },
-  lead: { fontSize: 13, color: "#475569", marginBottom: 12, lineHeight: 18 },
-  leadBold: { fontWeight: "700", color: "#0284c7" },
-  searchRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    paddingLeft: 10,
-    marginBottom: 4,
-    overflow: "hidden",
-  },
-  searchIcon: { marginRight: 4 },
-  searchInput: { flex: 1, paddingVertical: 12, fontSize: 16, color: "#0f172a" },
-  subSection: { marginTop: 14, marginBottom: 8, fontSize: 13, fontWeight: "600", color: "#475569" },
-  empty: { textAlign: "center", marginTop: 48, color: "#94a3b8", paddingHorizontal: 24 },
-});
+function createProductsStyles(c: AppColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.background },
+    list: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 32 },
+    header: { paddingBottom: 8 },
+    lead: { fontSize: 13, color: c.textSecondary, marginBottom: 12, lineHeight: 18 },
+    leadBold: { fontWeight: "700", color: c.primary },
+    searchRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: c.searchBackground,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: c.inputBorder,
+      paddingLeft: 10,
+      marginBottom: 4,
+      overflow: "hidden",
+    },
+    searchIcon: { marginRight: 4 },
+    searchInput: {
+      flex: 1,
+      borderWidth: 0,
+      backgroundColor: "transparent",
+      paddingVertical: 12,
+    },
+    subSection: { marginTop: 14, marginBottom: 8, fontSize: 13, fontWeight: "600", color: c.textSecondary },
+    empty: { textAlign: "center", marginTop: 48, color: c.textMuted, paddingHorizontal: 24 },
+  });
+}

@@ -5,15 +5,20 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { ShoppingBag } from "lucide-react-native";
 import { Redirect } from "expo-router";
+import { ThemedTextInput } from "../components/atoms/ThemedTextInput";
 import { DevToolsVersionTap } from "../components/molecules/DevToolsVersionTap";
+import { useThemedStyles } from "../hooks/useThemedStyles";
 import { useLoginScreen } from "../hooks/screens/useLoginScreen";
+import { useTheme } from "../lib/theme";
+import type { AppColors } from "../lib/theme/types";
 
 export default function LoginScreen() {
+  const styles = useThemedStyles(createLoginStyles);
+  const { colors } = useTheme();
   const { email, setEmail, password, setPassword, err, pending, shouldRedirectSeller, onSubmit } =
     useLoginScreen();
 
@@ -29,20 +34,18 @@ export default function LoginScreen() {
       <View style={styles.inner}>
         <View style={styles.card}>
           <View style={styles.brand}>
-            <ShoppingBag color="#0284c7" size={36} strokeWidth={2} />
+            <ShoppingBag color={colors.primary} size={36} strokeWidth={2} />
             <Text style={styles.title}>Pedidos</Text>
           </View>
           <Text style={styles.sub}>Acesso vendedor</Text>
-          <TextInput
-            style={styles.input}
+          <ThemedTextInput
             placeholder="Email"
             autoCapitalize="none"
             keyboardType="email-address"
             value={email}
             onChangeText={setEmail}
           />
-          <TextInput
-            style={styles.input}
+          <ThemedTextInput
             placeholder="Senha"
             secureTextEntry
             value={password}
@@ -54,7 +57,11 @@ export default function LoginScreen() {
             onPress={() => void onSubmit()}
             disabled={pending}
           >
-            {pending ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Entrar</Text>}
+            {pending ? (
+              <ActivityIndicator color={colors.primaryForeground} />
+            ) : (
+              <Text style={styles.btnText}>Entrar</Text>
+            )}
           </Pressable>
         </View>
         <DevToolsVersionTap variant="onDark" />
@@ -63,34 +70,28 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: "#0c4a6e" },
-  inner: { flex: 1, justifyContent: "center", padding: 24 },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 24,
-    gap: 12,
-  },
-  brand: { flexDirection: "row", alignItems: "center", gap: 12 },
-  title: { fontSize: 24, fontWeight: "700", color: "#0f172a" },
-  sub: { fontSize: 14, color: "#64748b", marginBottom: 8 },
-  input: {
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-  },
-  err: { color: "#dc2626", fontSize: 14 },
-  btn: {
-    backgroundColor: "#0284c7",
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: 8,
-  },
-  btnDisabled: { opacity: 0.6 },
-  btnText: { color: "#fff", fontWeight: "600", fontSize: 16 },
-});
+function createLoginStyles(c: AppColors) {
+  return StyleSheet.create({
+    wrap: { flex: 1, backgroundColor: c.loginHero },
+    inner: { flex: 1, justifyContent: "center", padding: 24 },
+    card: {
+      backgroundColor: c.loginCard,
+      borderRadius: 16,
+      padding: 24,
+      gap: 12,
+    },
+    brand: { flexDirection: "row", alignItems: "center", gap: 12 },
+    title: { fontSize: 24, fontWeight: "700", color: c.text },
+    sub: { fontSize: 14, color: c.textSecondary, marginBottom: 8 },
+    err: { color: c.danger, fontSize: 14 },
+    btn: {
+      backgroundColor: c.primary,
+      borderRadius: 10,
+      paddingVertical: 14,
+      alignItems: "center",
+      marginTop: 8,
+    },
+    btnDisabled: { opacity: 0.6 },
+    btnText: { color: c.primaryForeground, fontWeight: "600", fontSize: 16 },
+  });
+}

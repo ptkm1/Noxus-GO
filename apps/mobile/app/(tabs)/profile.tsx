@@ -1,16 +1,22 @@
 import { Settings } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { ThemedTextInput } from "../../components/atoms/ThemedTextInput";
 import { DevToolsVersionTap } from "../../components/molecules/DevToolsVersionTap";
+import { useThemedStyles } from "../../hooks/useThemedStyles";
 import { useProfileScreen } from "../../hooks/screens/useProfileScreen";
+import { useTheme } from "../../lib/theme";
+import type { AppColors } from "../../lib/theme/types";
 
 export default function ProfileScreen() {
+  const styles = useThemedStyles(createProfileStyles);
+  const { colors } = useTheme();
   const { me, name, setName, saveName, goSettings } = useProfileScreen();
 
   return (
     <View style={styles.container}>
       <View style={styles.card}>
         <Text style={styles.label}>Nome</Text>
-        <TextInput style={styles.input} value={name} onChangeText={setName} />
+        <ThemedTextInput value={name} onChangeText={setName} />
         <Text style={styles.label}>Email</Text>
         <Text style={styles.static}>{me?.email}</Text>
         {me?.commissionPercent != null ? (
@@ -25,7 +31,7 @@ export default function ProfileScreen() {
       </View>
       <Pressable style={styles.secondary} onPress={goSettings}>
         <View style={styles.secondaryInner}>
-          <Settings color="#0284c7" size={20} strokeWidth={2} />
+          <Settings color={colors.primary} size={20} strokeWidth={2} />
           <Text style={styles.secondaryText}>Configurações</Text>
         </View>
       </Pressable>
@@ -34,34 +40,29 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f8fafc", padding: 16 },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-  },
-  label: { marginTop: 12, fontSize: 12, fontWeight: "600", color: "#64748b" },
-  input: {
-    marginTop: 4,
-    borderWidth: 1,
-    borderColor: "#cbd5e1",
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 16,
-  },
-  static: { marginTop: 4, fontSize: 16, color: "#0f172a" },
-  btn: {
-    marginTop: 20,
-    backgroundColor: "#0284c7",
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  btnText: { color: "#fff", fontWeight: "600" },
-  secondary: { marginTop: 16, padding: 14, alignItems: "center" },
-  secondaryInner: { flexDirection: "row", alignItems: "center", gap: 10 },
-  secondaryText: { color: "#0284c7", fontWeight: "600", fontSize: 16 },
-});
+function createProfileStyles(c: AppColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.background, padding: 16 },
+    card: {
+      backgroundColor: c.card,
+      borderRadius: 12,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: c.border,
+      gap: 4,
+    },
+    label: { marginTop: 12, fontSize: 12, fontWeight: "600", color: c.textSecondary },
+    static: { marginTop: 4, fontSize: 16, color: c.text },
+    btn: {
+      marginTop: 20,
+      backgroundColor: c.primary,
+      paddingVertical: 12,
+      borderRadius: 10,
+      alignItems: "center",
+    },
+    btnText: { color: c.primaryForeground, fontWeight: "600" },
+    secondary: { marginTop: 16, padding: 14, alignItems: "center" },
+    secondaryInner: { flexDirection: "row", alignItems: "center", gap: 10 },
+    secondaryText: { color: c.primary, fontWeight: "600", fontSize: 16 },
+  });
+}

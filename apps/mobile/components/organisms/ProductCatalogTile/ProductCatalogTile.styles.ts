@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { StyleSheet } from "react-native";
+import { useTheme } from "../../../lib/theme";
 
 export type ProductCatalogTileStylesParams = {
   tileWidth: number;
@@ -8,17 +9,18 @@ export type ProductCatalogTileStylesParams = {
 };
 
 export function useProductCatalogTileStyles(params: ProductCatalogTileStylesParams) {
-  const { tileWidth, imgHeight, badgeBackgroundColor = "#0284c7" } = params;
+  const { colors } = useTheme();
+  const { tileWidth, imgHeight, badgeBackgroundColor = colors.primary } = params;
 
   return useMemo(
     () =>
       StyleSheet.create({
         card: {
           width: tileWidth,
-          backgroundColor: "#fff",
+          backgroundColor: colors.card,
           borderRadius: 14,
           borderWidth: 1,
-          borderColor: "#e2e8f0",
+          borderColor: colors.border,
           overflow: "hidden",
           marginBottom: 2,
         },
@@ -29,14 +31,14 @@ export function useProductCatalogTileStyles(params: ProductCatalogTileStylesPara
           zIndex: 2,
           padding: 6,
           borderRadius: 20,
-          backgroundColor: "#ffffffe8",
+          backgroundColor: colors.surfaceOverlay,
         },
         mainTap: { paddingHorizontal: 10, paddingBottom: 10, paddingTop: 8 },
         imgBox: {
           height: imgHeight,
           borderRadius: 10,
           overflow: "hidden",
-          backgroundColor: "#f1f5f9",
+          backgroundColor: colors.surfaceMuted,
           marginBottom: 8,
         },
         img: { width: "100%", height: "100%" },
@@ -52,12 +54,12 @@ export function useProductCatalogTileStyles(params: ProductCatalogTileStylesPara
           borderRadius: 10,
           alignItems: "center",
         },
-        badgeTxt: { color: "#fff", fontWeight: "800", fontSize: 13 },
-        name: { fontSize: 14, fontWeight: "700", color: "#0f172a", lineHeight: 18, minHeight: 36 },
-        catLine: { marginTop: 2, fontSize: 11, fontWeight: "600", color: "#0369a1" },
-        price: { marginTop: 6, fontSize: 15, fontWeight: "800", color: "#047857" },
-        noPrice: { marginTop: 6, fontSize: 13, fontWeight: "600", color: "#94a3b8" },
+        badgeTxt: { color: colors.chipTextActive, fontWeight: "800", fontSize: 13 },
+        name: { fontSize: 14, fontWeight: "700", color: colors.text, lineHeight: 18, minHeight: 36 },
+        catLine: { marginTop: 2, fontSize: 11, fontWeight: "600", color: colors.link },
+        price: { marginTop: 6, fontSize: 15, fontWeight: "800", color: colors.success },
+        noPrice: { marginTop: 6, fontSize: 13, fontWeight: "600", color: colors.textMuted },
       }),
-    [tileWidth, imgHeight, badgeBackgroundColor],
+    [tileWidth, imgHeight, badgeBackgroundColor, colors],
   );
 }
