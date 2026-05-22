@@ -1,5 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { FilterBar, FormField } from "@/components/forms";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { fieldControlClass } from "@/lib/field-styles";
 import { apiFetch } from "../lib/api";
 import { fmtCoord, googleMapsSearchUrl } from "../lib/maps-links";
 
@@ -62,15 +66,15 @@ function LocationPoint({
 }) {
   if (lat == null || lng == null) {
     return (
-      <div className="text-slate-500">
-        <span className="font-medium text-slate-600">{label}:</span> —
+      <div className="text-muted-foreground">
+        <span className="font-medium text-muted-foreground">{label}:</span> —
       </div>
     );
   }
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="font-medium text-slate-600">{label}</span>
-      <span className="font-mono text-xs text-slate-500">{fmtCoord(lat, lng)}</span>
+      <span className="font-medium text-muted-foreground">{label}</span>
+      <span className="font-mono text-xs text-muted-foreground">{fmtCoord(lat, lng)}</span>
       <a
         href={googleMapsSearchUrl(lat, lng, mapsLabel)}
         target="_blank"
@@ -101,9 +105,9 @@ function VisitLocationsCell({ v }: { v: CustomerVisitRow }) {
         mapsLabel={`${v.customerName} — check-out`}
       />
       {customerHasGps ? (
-        <div className="border-t border-slate-100 pt-2">
-          <span className="text-xs text-slate-500">Cliente (cadastro)</span>
-          <div className="mt-1 font-mono text-xs text-slate-500">
+        <div className="border-t border-border pt-2">
+          <span className="text-xs text-muted-foreground">Cliente (cadastro)</span>
+          <div className="mt-1 font-mono text-xs text-muted-foreground">
             {fmtCoord(v.customerLatitude!, v.customerLongitude!)}
           </div>
           <a
@@ -161,36 +165,29 @@ export function CustomerVisitsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Visitas em campo</h1>
-        <p className="mt-2 max-w-2xl text-slate-600">
+        <h1 className="text-2xl font-semibold text-foreground">Visitas em campo</h1>
+        <p className="mt-2 max-w-2xl text-muted-foreground">
           Check-in e check-out registados pelo app do vendedor, com coordenadas GPS quando o telemóvel as
           enviou. Use os links para abrir o ponto no Google Maps.
         </p>
       </div>
 
-      <div className="flex flex-wrap items-end gap-4 rounded-xl border border-slate-200 bg-white p-4">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">De</span>
-          <input
+      <FilterBar className="p-4">
+        <FormField label="De" htmlFor="visits-from">
+          <Input
+            id="visits-from"
             type="date"
-            className="rounded border border-slate-200 px-3 py-2 text-sm"
             value={from}
             onChange={(e) => setFrom(e.target.value)}
           />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Até</span>
-          <input
-            type="date"
-            className="rounded border border-slate-200 px-3 py-2 text-sm"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-          />
-        </label>
-        <label className="flex min-w-[200px] flex-col gap-1 text-sm">
-          <span className="font-medium text-slate-700">Vendedor</span>
+        </FormField>
+        <FormField label="Até" htmlFor="visits-to">
+          <Input id="visits-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        </FormField>
+        <FormField label="Vendedor" htmlFor="visits-seller">
           <select
-            className="rounded border border-slate-200 px-3 py-2 text-sm"
+            id="visits-seller"
+            className={fieldControlClass}
             value={sellerId}
             onChange={(e) => setSellerId(e.target.value)}
           >
@@ -201,54 +198,57 @@ export function CustomerVisitsPage() {
               </option>
             ))}
           </select>
-        </label>
-        <button
-          type="button"
-          className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-          disabled={visitsQ.isFetching}
-          onClick={() => void visitsQ.refetch()}
-        >
-          {visitsQ.isFetching ? "Carregando…" : "Atualizar"}
-        </button>
-      </div>
+        </FormField>
+        <div className="flex items-end">
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full sm:w-auto"
+            disabled={visitsQ.isFetching}
+            onClick={() => void visitsQ.refetch()}
+          >
+            {visitsQ.isFetching ? "Carregando…" : "Atualizar"}
+          </Button>
+        </div>
+      </FilterBar>
 
       {visitsQ.isError ? (
-        <p className="text-sm text-red-700">
+        <p className="text-sm text-destructive">
           Não foi possível carregar as visitas. Verifique as datas ou tente novamente.
         </p>
       ) : null}
 
       {visitsQ.data ? (
-        <div className="flex flex-wrap gap-4 text-sm text-slate-600">
+        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
           <span>
-            Período: <strong className="text-slate-800">{fmtDateTime(visitsQ.data.period.from)}</strong>
+            Período: <strong className="text-foreground">{fmtDateTime(visitsQ.data.period.from)}</strong>
             {" → "}
-            <strong className="text-slate-800">{fmtDateTime(visitsQ.data.period.to)}</strong>
+            <strong className="text-foreground">{fmtDateTime(visitsQ.data.period.to)}</strong>
           </span>
           <span>
-            Linhas: <strong className="text-slate-800">{visits.length}</strong>
+            Linhas: <strong className="text-foreground">{visits.length}</strong>
             {visits.length >= visitsQ.data.limit ? (
               <span className="text-amber-700"> (limite {visitsQ.data.limit})</span>
             ) : null}
           </span>
           <span>
-            Concluídas: <strong className="text-slate-800">{completed}</strong>
+            Concluídas: <strong className="text-foreground">{completed}</strong>
           </span>
           <span>
-            Em aberto: <strong className="text-slate-800">{open}</strong>
+            Em aberto: <strong className="text-foreground">{open}</strong>
           </span>
           <span>
-            Com GPS no check-in: <strong className="text-slate-800">{withCheckInGps}</strong>
+            Com GPS no check-in: <strong className="text-foreground">{withCheckInGps}</strong>
           </span>
         </div>
       ) : null}
 
       {visitsQ.isLoading ? (
-        <p className="text-slate-500">Carregando…</p>
+        <p className="text-muted-foreground">Carregando…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-border bg-card">
           <table className="w-full min-w-[1100px] text-sm">
-            <thead className="bg-slate-50 text-left text-slate-600">
+            <thead className="bg-background text-left text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Entrada</th>
                 <th className="px-4 py-3">Saída</th>
@@ -263,13 +263,13 @@ export function CustomerVisitsPage() {
             <tbody>
               {visits.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-8 text-center text-slate-500" colSpan={8}>
+                  <td className="px-4 py-8 text-center text-muted-foreground" colSpan={8}>
                     Nenhuma visita neste período.
                   </td>
                 </tr>
               ) : (
                 visits.map((v) => (
-                  <tr key={v.id} className="border-t border-slate-100 align-top">
+                  <tr key={v.id} className="border-t border-border align-top">
                     <td className="whitespace-nowrap px-4 py-3">{fmtDateTime(v.checkedInAt)}</td>
                     <td className="whitespace-nowrap px-4 py-3">
                       {v.checkedOutAt ? fmtDateTime(v.checkedOutAt) : "—"}
@@ -282,7 +282,7 @@ export function CustomerVisitsPage() {
                     </td>
                     <td className="px-4 py-3">
                       {v.openVisit ? (
-                        <span className="rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
+                        <span className="rounded-md bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">
                           Em aberto
                         </span>
                       ) : (
@@ -291,7 +291,7 @@ export function CustomerVisitsPage() {
                         </span>
                       )}
                     </td>
-                    <td className="max-w-[240px] px-4 py-3 text-slate-600" title={v.notes ?? undefined}>
+                    <td className="max-w-[240px] px-4 py-3 text-muted-foreground" title={v.notes ?? undefined}>
                       <span className="line-clamp-3">{v.notes?.trim() ? v.notes : "—"}</span>
                     </td>
                   </tr>

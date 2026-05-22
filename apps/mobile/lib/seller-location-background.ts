@@ -102,7 +102,7 @@ export async function startSellerBackgroundLocation(): Promise<boolean> {
     foregroundService: {
       notificationTitle: "Pedidos",
       notificationBody: "Rastreio de rota ativo",
-      notificationColor: "#0284c7",
+      notificationColor: "#10b981",
     },
   });
   return true;

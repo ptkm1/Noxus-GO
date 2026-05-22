@@ -50,6 +50,9 @@ export default function TabsLayout() {
           tabBarStyle: {
             backgroundColor: colors.tabBar,
             borderTopColor: colors.tabBarBorder,
+            borderTopWidth: 1,
+            height: Platform.select({ ios: 88, android: 64 }),
+            paddingTop: 6,
           },
           headerStyle: { backgroundColor: colors.headerBackground },
           headerTintColor: colors.primary,

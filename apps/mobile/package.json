@@ -16,6 +16,7 @@
     "eas-build-post-install": "cd ../.. && npx pnpm@10.22.0 --filter @pedidos/shared run build"
   },
   "dependencies": {
+    "@pedidos/design-tokens": "workspace:*",
     "@pedidos/shared": "workspace:*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "11.5.2",

@@ -11,9 +11,9 @@ import { getGoogleMapsApiKey } from "../lib/google-maps-config";
 import { googleMapsSearchUrl } from "../lib/maps-links";
 import type { SellerMapMarker, SellerTrackingMapProps } from "./SellerTrackingMap.types";
 
-const ONLINE_COLOR = "#16a34a";
-const OFFLINE_COLOR = "#64748b";
-const TRAIL_COLOR = "#0284c7";
+const ONLINE_COLOR = "#5ee9a8";
+const OFFLINE_COLOR = "#9ca3af";
+const TRAIL_COLOR = "#6b9ee8";
 const LIVE_TRAIL_COLOR = "#7c3aed";
 const MAP_PADDING = 48;
 
@@ -110,13 +110,13 @@ function SelectedInfoWindow({
       position={{ lat: marker.latitude, lng: marker.longitude }}
       onCloseClick={onClose}
     >
-      <div className="max-w-[220px] text-sm text-slate-800">
+      <div className="max-w-[220px] text-sm text-foreground">
         <p className="font-semibold">{marker.sellerName}</p>
         <p className="mt-1">
           {marker.isOnline ? "Online" : "Offline"} · {when}
         </p>
         {marker.activeVisitCustomerName ? (
-          <p className="mt-1 text-amber-800">Visita: {marker.activeVisitCustomerName}</p>
+          <p className="mt-1 text-warning">Visita: {marker.activeVisitCustomerName}</p>
         ) : null}
         <p className="mt-2">
           <a
@@ -188,7 +188,7 @@ export function SellerTrackingMapGoogle(props: SellerTrackingMapProps) {
 
   return (
     <APIProvider apiKey={apiKey} language="pt-BR" region="BR">
-      <div className="h-[min(520px,60vh)] w-full overflow-hidden rounded-xl border border-slate-200">
+      <div className="h-[min(520px,60vh)] w-full overflow-hidden rounded-xl border border-border">
         <Map
           defaultCenter={defaultCenter}
           defaultZoom={markers.length ? 10 : 4}

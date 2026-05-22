@@ -140,7 +140,7 @@ export function SellerTrackingMapLeaflet({
   return (
     <div
       ref={containerRef}
-      className="h-[min(520px,60vh)] w-full rounded-xl border border-slate-200 bg-slate-100"
+      className="h-[min(520px,60vh)] w-full rounded-xl border border-border bg-muted"
     />
   );
 }

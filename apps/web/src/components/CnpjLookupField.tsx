@@ -6,6 +6,9 @@ import {
   suggestedTradeName,
 } from "@pedidos/shared";
 import { useCallback, useState } from "react";
+import { FormField } from "@/components/forms";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { apiFetch } from "../lib/api";
 
 type Props = {
@@ -50,16 +53,33 @@ export function CnpjLookupField({
   }, [digits, onApply]);
 
   return (
-    <div className="space-y-2">
-      <label className="block text-sm font-medium text-slate-700">CNPJ (opcional)</label>
-      <div className="flex flex-wrap gap-2">
-        <input
+    <FormField
+      label="CNPJ (opcional)"
+      htmlFor="cnpj-lookup"
+      hint={
+        <>
+          Consulta pública via{" "}
+          <a
+            href="https://brasilapi.com.br/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline"
+          >
+            BrasilAPI
+          </a>
+          . Os dados podem estar desatualizados — confira sempre na Receita Federal.
+        </>
+      }
+    >
+      <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-start">
+        <Input
+          id="cnpj-lookup"
           type="text"
           inputMode="numeric"
           autoComplete="off"
           placeholder="00.000.000/0001-00"
           disabled={disabled || loading}
-          className="min-w-[200px] flex-1 rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-100"
+          className="font-mono"
           value={formatCnpjMask(digits)}
           onChange={(e) => setDigits(cnpjDigitsOnly(e.target.value))}
           onKeyDown={(e) => {
@@ -69,29 +89,18 @@ export function CnpjLookupField({
             }
           }}
         />
-        <button
+        <Button
           type="button"
+          variant="outline"
+          className="shrink-0"
           disabled={disabled || loading || !isCnpjComplete(digits)}
           onClick={() => void lookup()}
-          className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-800 hover:bg-brand-100 disabled:opacity-50"
         >
           {loading ? "A consultar…" : buttonLabel}
-        </button>
+        </Button>
       </div>
-      <p className="text-xs text-slate-500">
-        Consulta pública via{" "}
-        <a
-          href="https://brasilapi.com.br/"
-          target="_blank"
-          rel="noreferrer"
-          className="text-brand-600 underline"
-        >
-          BrasilAPI
-        </a>
-        . Os dados podem estar desatualizados — confira sempre na Receita Federal.
-      </p>
-      {hint ? <p className="text-sm text-red-600">{hint}</p> : null}
-      {lastOk ? <p className="text-sm text-emerald-700">{lastOk}</p> : null}
-    </div>
+      {hint ? <p className="text-sm text-destructive">{hint}</p> : null}
+      {lastOk ? <p className="text-sm text-success">{lastOk}</p> : null}
+    </FormField>
   );
 }

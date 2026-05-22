@@ -63,9 +63,9 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
   });
 
   return (
-    <div className="mt-6 rounded-lg border border-slate-100 bg-slate-50/80 p-4">
-      <h3 className="text-sm font-semibold text-slate-800">Títulos em aberto / histórico recente</h3>
-      <p className="mt-1 text-xs text-slate-500">
+    <div className="mt-6 rounded-lg border border-border bg-background/80 p-4">
+      <h3 className="text-sm font-semibold text-foreground">Títulos em aberto / histórico recente</h3>
+      <p className="mt-1 text-xs text-muted-foreground">
         Cadastre duplicatas ou carnês; vencidos bloqueiam ou pedem aprovação conforme a política da empresa.
       </p>
 
@@ -90,7 +90,7 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
         />
         <button
           type="button"
-          className="rounded bg-slate-800 px-3 py-1 text-xs text-white disabled:opacity-50"
+          className="rounded bg-primary px-3 py-1 text-xs text-white disabled:opacity-50"
           disabled={!amount || !due || create.isPending}
           onClick={() => create.mutate()}
         >
@@ -99,11 +99,11 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
       </div>
 
       {isLoading ? (
-        <p className="mt-3 text-xs text-slate-500">Carregando títulos…</p>
+        <p className="mt-3 text-xs text-muted-foreground">Carregando títulos…</p>
       ) : (
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[560px] text-xs">
-            <thead className="text-left text-slate-500">
+            <thead className="text-left text-muted-foreground">
               <tr>
                 <th className="py-2 pr-2">Ref.</th>
                 <th className="py-2 pr-2">Valor</th>
@@ -115,7 +115,7 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
             </thead>
             <tbody>
               {titles.map((t) => (
-                <tr key={t.id} className="border-t border-slate-200">
+                <tr key={t.id} className="border-t border-border">
                   <td className="py-2 pr-2">{t.reference ?? "—"}</td>
                   <td className="py-2 pr-2 tabular-nums">R$ {num(t.amount).toFixed(2)}</td>
                   <td className="py-2 pr-2 tabular-nums">R$ {num(t.paidAmount).toFixed(2)}</td>
@@ -127,7 +127,7 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
                     {t.status === "OPEN" ? (
                       <button
                         type="button"
-                        className="text-brand-600 hover:underline"
+                        className="text-primary hover:underline"
                         disabled={markPaid.isPending}
                         onClick={() => markPaid.mutate(t.id)}
                       >
@@ -136,7 +136,7 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
                     ) : null}{" "}
                     <button
                       type="button"
-                      className="text-red-600 hover:underline"
+                      className="text-destructive hover:underline"
                       onClick={() => {
                         if (confirm("Remover este título do sistema?")) remove.mutate(t.id);
                       }}
@@ -149,7 +149,7 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
             </tbody>
           </table>
           {titles.length === 0 ? (
-            <p className="mt-2 text-xs text-slate-400">Nenhum título cadastrado.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Nenhum título cadastrado.</p>
           ) : null}
         </div>
       )}

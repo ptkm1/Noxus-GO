@@ -2,6 +2,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { CnpjCompanyData } from "@pedidos/shared";
 import { suggestedTradeName } from "@pedidos/shared";
+import { FormActions, FormField, FormGrid, FormSection } from "@/components/forms";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { fieldControlClass } from "@/lib/field-styles";
 import { apiFetch } from "../lib/api";
 import { CnpjLookupField } from "../components/CnpjLookupField";
 import { CustomerTitlesPanel } from "../components/CustomerTitlesPanel";
@@ -206,163 +210,181 @@ export function CustomersPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Clientes</h1>
 
-      <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-4">
-        <h2 className="text-sm font-semibold text-sky-950">Quando o cliente está “ruim” no crédito</h2>
-        <p className="mt-1 text-xs text-sky-900/80">
-          Escolha se o app só avisa o vendedor, bloqueia o pedido ou envia para aprovação no escritório.
-        </p>
-        <label className="mt-3 flex flex-wrap items-center gap-2 text-sm text-sky-950">
-          Política da empresa
-          <select
-            className="rounded border border-sky-200 bg-white px-2 py-1.5 text-sm"
-            value={pricingSettings?.creditPolicy ?? "WARN_ONLY"}
-            disabled={patchPricing.isPending || pricingSettings === undefined}
-            onChange={(e) => patchPricing.mutate(e.target.value)}
-          >
-            <option value="WARN_ONLY">Só avisar (não bloqueia)</option>
-            <option value="BLOCK_ORDER">Bloquear pedido</option>
-            <option value="REQUIRE_APPROVAL">Pedir aprovação no escritório</option>
-          </select>
-        </label>
-      </div>
+      <FormSection
+        title="Quando o cliente está “ruim” no crédito"
+        description="Escolha se o app só avisa o vendedor, bloqueia o pedido ou envia para aprovação no escritório."
+        className="border-sky-100 bg-sky-50/70 dark:border-sky-900/40 dark:bg-sky-950/30"
+      >
+        <FormGrid cols={2}>
+          <FormField label="Política da empresa" htmlFor="credit-policy" className="sm:col-span-2 max-w-md">
+            <select
+              id="credit-policy"
+              className={fieldControlClass}
+              value={pricingSettings?.creditPolicy ?? "WARN_ONLY"}
+              disabled={patchPricing.isPending || pricingSettings === undefined}
+              onChange={(e) => patchPricing.mutate(e.target.value)}
+            >
+              <option value="WARN_ONLY">Só avisar (não bloqueia)</option>
+              <option value="BLOCK_ORDER">Bloquear pedido</option>
+              <option value="REQUIRE_APPROVAL">Pedir aprovação no escritório</option>
+            </select>
+          </FormField>
+        </FormGrid>
+      </FormSection>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <h2 className="font-medium">{editing ? "Editar cliente" : "Novo cliente"}</h2>
+      <FormSection title={editing ? "Editar cliente" : "Novo cliente"}>
         {!editing ? (
-          <div className="mt-3">
-            <CnpjLookupField
-              buttonLabel="Buscar empresa (CNPJ)"
-              onApply={(d: CnpjCompanyData) => {
-                setName(suggestedTradeName(d));
-                setEmail(d.email ?? "");
-                setPhone(d.telefone ?? "");
-              }}
-            />
-          </div>
+          <CnpjLookupField
+            buttonLabel="Buscar empresa (CNPJ)"
+            onApply={(d: CnpjCompanyData) => {
+              setName(suggestedTradeName(d));
+              setEmail(d.email ?? "");
+              setPhone(d.telefone ?? "");
+            }}
+          />
         ) : null}
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <input
-            className="rounded border px-3 py-2 text-sm"
-            placeholder="Nome"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <input
-            className="rounded border px-3 py-2 text-sm"
-            placeholder="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <input
-            className="rounded border px-3 py-2 text-sm"
-            placeholder="Telefone"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-          />
-          <select
-            className="rounded border px-3 py-2 text-sm"
-            value={sellerId}
-            onChange={(e) => setSellerId(e.target.value)}
-          >
-            <option value="">Vendedor (opcional)</option>
-            {sellers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.user.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50/90 px-3 py-3">
-          <p className="text-xs font-semibold text-slate-700">Localização no mapa (app do vendedor)</p>
-          <p className="mt-1 text-xs text-slate-500">
+        <FormGrid cols={4} className="mt-4">
+          <FormField label="Nome" htmlFor="cust-name" required className="sm:col-span-2">
+            <Input
+              id="cust-name"
+              placeholder="Nome"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Email" htmlFor="cust-email">
+            <Input
+              id="cust-email"
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Telefone" htmlFor="cust-phone">
+            <Input
+              id="cust-phone"
+              placeholder="Telefone"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Vendedor" htmlFor="cust-seller">
+            <select
+              id="cust-seller"
+              className={fieldControlClass}
+              value={sellerId}
+              onChange={(e) => setSellerId(e.target.value)}
+            >
+              <option value="">Opcional</option>
+              {sellers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.user.name}
+                </option>
+              ))}
+            </select>
+          </FormField>
+        </FormGrid>
+
+        <div className="mt-4 rounded-lg border border-dashed border-border bg-background/90 p-4">
+          <p className="text-xs font-semibold text-foreground">Localização no mapa (app do vendedor)</p>
+          <p className="mt-1 text-xs text-muted-foreground">
             Latitude/longitude em graus decimais (ex.: −23.5505, −46.6333). Opcional; necessário para rota e «próximos».
           </p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-3">
-            <input
-              className="rounded border px-3 py-2 text-sm"
-              placeholder="Latitude"
-              value={geoLatStr}
-              onChange={(e) => setGeoLatStr(e.target.value)}
-              autoComplete="off"
-            />
-            <input
-              className="rounded border px-3 py-2 text-sm"
-              placeholder="Longitude"
-              value={geoLngStr}
-              onChange={(e) => setGeoLngStr(e.target.value)}
-              autoComplete="off"
-            />
-            <input
-              className="rounded border px-3 py-2 text-sm sm:col-span-3"
-              placeholder="Nota de endereço / como chegar (opcional)"
-              value={geoNoteStr}
-              onChange={(e) => setGeoNoteStr(e.target.value)}
-              autoComplete="off"
-            />
-          </div>
+          <FormGrid cols={3} className="mt-3">
+            <FormField label="Latitude" htmlFor="cust-lat">
+              <Input
+                id="cust-lat"
+                placeholder="Ex.: -23.5505"
+                value={geoLatStr}
+                onChange={(e) => setGeoLatStr(e.target.value)}
+                autoComplete="off"
+              />
+            </FormField>
+            <FormField label="Longitude" htmlFor="cust-lng">
+              <Input
+                id="cust-lng"
+                placeholder="Ex.: -46.6333"
+                value={geoLngStr}
+                onChange={(e) => setGeoLngStr(e.target.value)}
+                autoComplete="off"
+              />
+            </FormField>
+            <FormField
+              label="Nota de endereço"
+              htmlFor="cust-geo-note"
+              className="sm:col-span-2 lg:col-span-3"
+              hint="Como chegar (opcional)"
+            >
+              <Input
+                id="cust-geo-note"
+                placeholder="Referência ou instruções"
+                value={geoNoteStr}
+                onChange={(e) => setGeoNoteStr(e.target.value)}
+                autoComplete="off"
+              />
+            </FormField>
+          </FormGrid>
           {editing ? (
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-xs text-muted-foreground">
               Para remover coordenadas, limpe latitude e longitude e guarde.
             </p>
           ) : null}
         </div>
+
         {editing ? (
-          <div className="mt-3 flex flex-wrap items-center gap-6 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-3">
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={creditBlockedEdit}
-                onChange={(e) => setCreditBlockedEdit(e.target.checked)}
-              />
-              Cliente bloqueado para vendas
-            </label>
-            <label className="flex items-center gap-2 text-sm text-slate-600">
-              Limite de crédito (R$)
-              <input
-                className="w-32 rounded border px-2 py-1 text-sm"
-                placeholder="vazio = sem limite"
+          <FormGrid cols={2} className="mt-4 rounded-lg border border-border bg-background/80 p-4">
+            <FormField label="Crédito" className="flex flex-row items-center gap-2 sm:col-span-2">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  className="size-4 rounded border-border"
+                  checked={creditBlockedEdit}
+                  onChange={(e) => setCreditBlockedEdit(e.target.checked)}
+                />
+                Cliente bloqueado para vendas
+              </label>
+            </FormField>
+            <FormField label="Limite de crédito (R$)" htmlFor="cust-credit-limit" hint="Vazio = sem limite">
+              <Input
+                id="cust-credit-limit"
+                placeholder="Sem limite"
                 value={creditLimitStr}
                 onChange={(e) => setCreditLimitStr(e.target.value)}
               />
-            </label>
-          </div>
+            </FormField>
+          </FormGrid>
         ) : null}
-        <div className="mt-3 flex gap-2">
+
+        <FormActions>
           {editing ? (
             <>
-              <button
-                type="button"
-                className="rounded bg-brand-600 px-4 py-2 text-sm text-white"
-                disabled={!name || update.isPending}
-                onClick={() => update.mutate()}
-              >
+              <Button type="button" disabled={!name || update.isPending} onClick={() => update.mutate()}>
                 Salvar
-              </button>
-              <button type="button" className="text-sm text-slate-600" onClick={cancelEdit}>
+              </Button>
+              <Button type="button" variant="ghost" onClick={cancelEdit}>
                 Cancelar
-              </button>
+              </Button>
             </>
           ) : (
-            <button
+            <Button
               type="button"
-              className="rounded bg-brand-600 px-4 py-2 text-sm text-white"
               disabled={!name || create.isPending}
               onClick={() => create.mutate()}
             >
               Adicionar
-            </button>
+            </Button>
           )}
-        </div>
+        </FormActions>
         {editing ? <CustomerTitlesPanel customerId={editing.id} /> : null}
-      </div>
+      </FormSection>
 
       {isLoading ? (
-        <p className="text-slate-500">Carregando…</p>
+        <p className="text-muted-foreground">Carregando…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-border bg-card">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-600">
+            <thead className="bg-background text-left text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Nome</th>
                 <th className="px-4 py-3">Email</th>
@@ -375,18 +397,18 @@ export function CustomersPage() {
             </thead>
             <tbody>
               {customers.map((c) => (
-                <tr key={c.id} className="border-t border-slate-100">
+                <tr key={c.id} className="border-t border-border">
                   <td className="px-4 py-3">{c.name}</td>
                   <td className="px-4 py-3">{c.email ?? "—"}</td>
                   <td className="px-4 py-3">{c.phone ?? "—"}</td>
                   <td className="px-4 py-3">{c.seller?.user.name ?? "—"}</td>
                   <td className="px-4 py-3">
                     {customerHasMapCoords(c) ? (
-                      <span className="rounded-md bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-900">
+                      <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary900">
                         Sim
                       </span>
                     ) : (
-                      <span className="text-slate-400">Não</span>
+                      <span className="text-muted-foreground">Não</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -395,16 +417,16 @@ export function CustomersPage() {
                         Bloqueado
                       </span>
                     ) : (
-                      <span className="text-slate-400">—</span>
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button type="button" className="text-brand-600" onClick={() => startEdit(c)}>
+                    <button type="button" className="text-primary" onClick={() => startEdit(c)}>
                       Editar
                     </button>
                     <button
                       type="button"
-                      className="ml-3 text-red-600"
+                      className="ml-3 text-destructive"
                       onClick={() => {
                         if (confirm("Excluir cliente?")) remove.mutate(c.id);
                       }}

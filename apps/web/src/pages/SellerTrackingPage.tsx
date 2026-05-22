@@ -135,51 +135,51 @@ export function SellerTrackingPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Rastreio em tempo real</h1>
-        <p className="mt-2 max-w-3xl text-slate-600">
+        <h1 className="text-2xl font-semibold text-foreground">Rastreio em tempo real</h1>
+        <p className="mt-2 max-w-3xl text-muted-foreground">
           Posição enviada pelo app do vendedor (primeiro plano e, com permissão, em segundo plano).
           Mapa: {isGoogleMapsConfigured() ? "Google Maps" : "OpenStreetMap (configure a chave Google)"}.
           Online = GPS nos últimos {q.data?.onlineThresholdMinutes ?? 5} minutos.
           {wsConnected ? (
-            <span className="ml-1 font-medium text-emerald-700">· Ao vivo (WebSocket)</span>
+            <span className="ml-1 font-medium text-success">· Ao vivo (WebSocket)</span>
           ) : (
-            <span className="ml-1 text-slate-500">· Atualização periódica (reconectando…)</span>
+            <span className="ml-1 text-muted-foreground">· Atualização periódica (reconectando…)</span>
           )}
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600">
+      <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
         <span>
           {isManager ? "Equipe ativa" : "Vendedores ativos"}:{" "}
-          <strong className="text-slate-900">{sellers.length}</strong>
+          <strong className="text-foreground">{sellers.length}</strong>
         </span>
         <span>
-          Online: <strong className="text-emerald-700">{onlineCount}</strong>
+          Online: <strong className="text-success">{onlineCount}</strong>
         </span>
         <span>
-          Com GPS no mapa: <strong className="text-slate-900">{withGps.length}</strong>
+          Com GPS no mapa: <strong className="text-foreground">{withGps.length}</strong>
         </span>
-        <span className="text-slate-500">
+        <span className="text-muted-foreground">
           {q.isFetching ? "Atualizando…" : `Última leitura: ${new Date().toLocaleTimeString("pt-BR")}`}
         </span>
       </div>
 
       {isManager && sellers.length === 0 && !q.isLoading ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
           Nenhum vendedor na sua equipe. Peça ao administrador para associar vendedores ao seu perfil de
           gestor.
         </div>
       ) : null}
 
       {q.isError ? (
-        <p className="text-sm text-red-700">Não foi possível carregar as posições dos vendedores.</p>
+        <p className="text-sm text-destructive">Não foi possível carregar as posições dos vendedores.</p>
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(260px,320px)_1fr]">
-        <div className="max-h-[min(520px,60vh)] overflow-y-auto rounded-xl border border-slate-200 bg-white">
-          <ul className="divide-y divide-slate-100">
+        <div className="max-h-[min(520px,60vh)] overflow-y-auto rounded-xl border border-border bg-card">
+          <ul className="divide-y divide-border">
             {sellers.length === 0 && !q.isLoading ? (
-              <li className="px-4 py-8 text-center text-sm text-slate-500">
+              <li className="px-4 py-8 text-center text-sm text-muted-foreground">
                 {isManager ? "Nenhum vendedor na equipe." : "Nenhum vendedor ativo."}
               </li>
             ) : null}
@@ -188,23 +188,23 @@ export function SellerTrackingPage() {
                 <button
                   type="button"
                   onClick={() => setSelectedId(s.sellerId)}
-                  className={`w-full px-4 py-3 text-left transition hover:bg-slate-50 ${
+                  className={`w-full px-4 py-3 text-left transition hover:bg-background ${
                     selectedId === s.sellerId ? "bg-sky-50" : ""
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="font-semibold text-slate-900">{s.sellerName}</p>
-                      <p className="text-xs text-slate-500">{fmtWhen(s.recordedAt)}</p>
+                      <p className="font-semibold text-foreground">{s.sellerName}</p>
+                      <p className="text-xs text-muted-foreground">{fmtWhen(s.recordedAt)}</p>
                       {s.activeVisit ? (
-                        <p className="mt-1 text-xs font-medium text-amber-800">
+                        <p className="mt-1 text-xs font-medium text-warning">
                           Em visita: {s.activeVisit.customerName}
                         </p>
                       ) : null}
                     </div>
                     <span
                       className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
-                        s.isOnline ? "bg-emerald-500" : "bg-slate-300"
+                        s.isOnline ? "bg-success" : "bg-muted"
                       }`}
                       title={s.isOnline ? "Online" : "Offline"}
                     />
@@ -225,19 +225,19 @@ export function SellerTrackingPage() {
           />
 
           {selected ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-              <p className="font-semibold text-slate-900">{selected.sellerName}</p>
-              <p className="mt-1 text-slate-500">{selected.sellerEmail}</p>
+            <div className="rounded-xl border border-border bg-card p-4 text-sm text-foreground">
+              <p className="font-semibold text-foreground">{selected.sellerName}</p>
+              <p className="mt-1 text-muted-foreground">{selected.sellerEmail}</p>
               <p className="mt-2">
                 Estado:{" "}
-                <strong className={selected.isOnline ? "text-emerald-700" : "text-slate-600"}>
+                <strong className={selected.isOnline ? "text-success" : "text-muted-foreground"}>
                   {selected.isOnline ? "Online" : "Offline"}
                 </strong>
                 {" · "}
                 {fmtWhen(selected.recordedAt)}
               </p>
 
-              <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3">
+              <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-3">
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
@@ -249,7 +249,7 @@ export function SellerTrackingPage() {
                 {showTrail ? (
                   <input
                     type="date"
-                    className="rounded border border-slate-300 px-2 py-1 text-sm"
+                    className="rounded border border-border px-2 py-1 text-sm"
                     value={trailDate}
                     max={todayIso()}
                     onChange={(e) => setTrailDate(e.target.value)}
@@ -258,10 +258,10 @@ export function SellerTrackingPage() {
               </div>
 
               {showTrail && historyQ.isLoading ? (
-                <p className="mt-2 text-xs text-slate-500">Carregando trajeto…</p>
+                <p className="mt-2 text-xs text-muted-foreground">Carregando trajeto…</p>
               ) : null}
               {showTrail && historyQ.data && historyQ.data.points.length > 0 ? (
-                <p className="mt-2 text-xs text-slate-600">
+                <p className="mt-2 text-xs text-muted-foreground">
                   {historyQ.data.points.length} amostra(s) GPS
                   {historyQ.data.simplified ? " (reduzidas)" : ""}
                   {" · "}
@@ -293,11 +293,11 @@ export function SellerTrackingPage() {
                 </p>
               ) : null}
               {showTrail && historyQ.data && historyQ.data.points.length === 0 ? (
-                <p className="mt-2 text-xs text-amber-800">Sem pontos de trajeto nesta data.</p>
+                <p className="mt-2 text-xs text-warning">Sem pontos de trajeto nesta data.</p>
               ) : null}
 
               {showTrail && mapsFeatures ? (
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-muted-foreground">
                   Google Routes:{" "}
                   {mapsFeatures.googleRoutesEnabled
                     ? mapsFeatures.googleRoutesQuotaAllowed
@@ -335,7 +335,7 @@ export function SellerTrackingPage() {
                   </a>
                 </p>
               ) : (
-                <p className="mt-2 text-amber-800">
+                <p className="mt-2 text-warning">
                   Ainda sem GPS — o vendedor precisa abrir o app mobile com localização permitida.
                 </p>
               )}
@@ -347,12 +347,12 @@ export function SellerTrackingPage() {
             </div>
           ) : null}
 
-          <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" /> Online
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-success" /> Online
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-400" /> Offline / sem sinal recente
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-muted-foreground" /> Offline / sem sinal recente
             </span>
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-3 w-6 rounded bg-sky-600" /> Trajeto do dia

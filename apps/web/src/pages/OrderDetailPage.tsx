@@ -48,23 +48,23 @@ export function OrderDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link to="/vendas" className="text-sm text-brand-600">
+      <Link to="/vendas" className="text-sm text-primary">
         ← Todas as vendas
       </Link>
 
       {isLoading || !order ? (
-        <p className="text-slate-500">Carregando…</p>
+        <p className="text-muted-foreground">Carregando…</p>
       ) : (
-        <div className="rounded-xl border border-slate-200 bg-white p-6">
+        <div className="rounded-xl border border-border bg-card p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h1 className="text-xl font-semibold">Venda {order.id.slice(0, 8)}…</h1>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-muted-foreground">
                 {new Date(order.createdAt).toLocaleString("pt-BR")}
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-600">Status:</span>
+              <span className="text-sm text-muted-foreground">Status:</span>
               <select
                 className="rounded border px-2 py-1 text-sm"
                 value={order.status}
@@ -81,32 +81,32 @@ export function OrderDetailPage() {
 
           <dl className="mt-6 grid gap-2 text-sm sm:grid-cols-2">
             <div>
-              <dt className="text-slate-500">Vendedor</dt>
+              <dt className="text-muted-foreground">Vendedor</dt>
               <dd className="font-medium">
                 {order.seller.user.name} ({order.seller.user.email})
               </dd>
             </div>
             <div>
-              <dt className="text-slate-500">Cliente</dt>
+              <dt className="text-muted-foreground">Cliente</dt>
               <dd className="font-medium">{order.customer?.name ?? "—"}</dd>
             </div>
             <div className="sm:col-span-2">
-              <dt className="text-slate-500">Motivos de crédito (se aguardando)</dt>
-              <dd className="whitespace-pre-wrap font-mono text-xs text-slate-700">
+              <dt className="text-muted-foreground">Motivos de crédito (se aguardando)</dt>
+              <dd className="whitespace-pre-wrap font-mono text-xs text-foreground">
                 {order.creditHoldReasons != null
                   ? JSON.stringify(order.creditHoldReasons, null, 2)
                   : "—"}
               </dd>
             </div>
             <div className="sm:col-span-2">
-              <dt className="text-slate-500">Observações</dt>
+              <dt className="text-muted-foreground">Observações</dt>
               <dd>{order.notes ?? "—"}</dd>
             </div>
           </dl>
 
           <h2 className="mt-8 font-medium">Itens</h2>
           <table className="mt-2 w-full text-sm">
-            <thead className="text-left text-slate-500">
+            <thead className="text-left text-muted-foreground">
               <tr>
                 <th className="pb-2">Produto</th>
                 <th className="pb-2">Qtd</th>
@@ -116,7 +116,7 @@ export function OrderDetailPage() {
             </thead>
             <tbody>
               {order.items.map((it) => (
-                <tr key={it.id} className="border-t border-slate-100">
+                <tr key={it.id} className="border-t border-border">
                   <td className="py-2">{it.productName}</td>
                   <td>{it.quantity}</td>
                   <td>R$ {Number(it.unitPrice).toFixed(2)}</td>

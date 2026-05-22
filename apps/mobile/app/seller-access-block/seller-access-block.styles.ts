@@ -1,28 +1,32 @@
 import { useMemo } from "react";
 import { StyleSheet } from "react-native";
+import { useTheme } from "@/lib/theme";
+import { radiiPx } from "@pedidos/design-tokens";
 
-export type SellerAccessBlockStylesParams = {
-  primaryButtonColor?: string;
-};
-
-export function useSellerAccessBlockStyles(params: SellerAccessBlockStylesParams = {}) {
-  const { primaryButtonColor = "#0284c7" } = params;
+export function useSellerAccessBlockStyles() {
+  const { colors } = useTheme();
 
   return useMemo(
     () =>
       StyleSheet.create({
-        wrap: { flex: 1, padding: 24, justifyContent: "center", backgroundColor: "#f8fafc", gap: 16 },
-        title: { fontSize: 22, fontWeight: "700", color: "#0f172a" },
-        body: { fontSize: 16, color: "#475569", lineHeight: 24 },
+        wrap: {
+          flex: 1,
+          padding: 24,
+          justifyContent: "center",
+          backgroundColor: colors.background,
+          gap: 16,
+        },
+        title: { fontSize: 22, fontWeight: "700", color: colors.text },
+        body: { fontSize: 16, color: colors.textSecondary, lineHeight: 24 },
         btn: {
           marginTop: 8,
-          backgroundColor: primaryButtonColor,
+          backgroundColor: colors.primary,
           paddingVertical: 14,
-          borderRadius: 10,
+          borderRadius: radiiPx.lg,
           alignItems: "center",
         },
-        btnText: { color: "#fff", fontWeight: "600", fontSize: 16 },
+        btnText: { color: colors.primaryForeground, fontWeight: "600", fontSize: 16 },
       }),
-    [primaryButtonColor],
+    [colors],
   );
 }

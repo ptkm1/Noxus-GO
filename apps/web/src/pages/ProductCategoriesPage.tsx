@@ -2,6 +2,9 @@ import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { CategorySchemaBuilder } from "../components/CategorySchemaBuilder";
+import { FormActions, FormField, FormGrid, FormSection } from "@/components/forms";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { apiFetch } from "../lib/api";
 import {
   buildSchemaFromDrafts,
@@ -124,62 +127,66 @@ export function ProductCategoriesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <Link to="/produtos" className="text-sm text-brand-600 hover:underline">
+        <Link to="/produtos" className="text-sm text-primary hover:underline">
           ← Voltar para produtos
         </Link>
         <h1 className="mt-2 text-2xl font-semibold">Categorias de produto</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Cada categoria tem um <strong className="font-medium text-slate-800">código</strong> estável e pode definir{" "}
-          <strong className="font-medium text-slate-800">campos extras</strong> para o cadastro de produtos: texto curto ou longo,
+        <p className="mt-1 text-sm text-muted-foreground">
+          Cada categoria tem um <strong className="font-medium text-foreground">código</strong> estável e pode definir{" "}
+          <strong className="font-medium text-foreground">campos extras</strong> para o cadastro de produtos: texto curto ou longo,
           número, sim/não ou lista de opções — montados em formulário, sem precisar editar JSON.
         </p>
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="mt-2 text-xs text-muted-foreground">
           Use grupos (como Identidade ou Embalagem) para organizar a ficha do produto; as chaves internas podem ficar em branco para
           serem geradas a partir do nome do campo.
         </p>
       </div>
 
-      {formHint ? <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{formHint}</p> : null}
+      {formHint ? <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-destructive">{formHint}</p> : null}
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <h2 className="font-medium text-slate-900">Nova categoria</h2>
-        <div className="mt-3 flex flex-wrap gap-3">
-          <input
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-            placeholder="Código (ex.: FOOD)"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-          />
-          <input
-            className="min-w-[200px] rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-            placeholder="Nome exibido"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <button
-            type="button"
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-            disabled={!code.trim() || !name.trim() || create.isPending}
-            onClick={() => submitCreate()}
-          >
-            Adicionar
-          </button>
-        </div>
-        <div className="mt-4 border-t border-slate-100 pt-4">
+      <FormSection title="Nova categoria">
+        <FormGrid cols={2} className="max-w-2xl">
+          <FormField label="Código" htmlFor="cat-code" required hint="Ex.: FOOD">
+            <Input
+              id="cat-code"
+              placeholder="FOOD"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Nome exibido" htmlFor="cat-name" required>
+            <Input
+              id="cat-name"
+              placeholder="Alimentos"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </FormField>
+        </FormGrid>
+        <div className="border-t border-border pt-4">
           <CategorySchemaBuilder
             drafts={newSchemaDrafts}
             onChange={setNewSchemaDrafts}
             disabled={create.isPending}
           />
         </div>
-      </div>
+        <FormActions>
+          <Button
+            type="button"
+            disabled={!code.trim() || !name.trim() || create.isPending}
+            onClick={() => submitCreate()}
+          >
+            Adicionar
+          </Button>
+        </FormActions>
+      </FormSection>
 
       {isLoading ? (
-        <p className="text-slate-500">Carregando…</p>
+        <p className="text-muted-foreground">Carregando…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-border bg-card">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-600">
+            <thead className="bg-background text-left text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Código</th>
                 <th className="px-4 py-3">Nome</th>
@@ -190,7 +197,7 @@ export function ProductCategoriesPage() {
               {categories.map((c) =>
                 editing?.id === c.id ? (
                   <Fragment key={c.id}>
-                    <tr className="border-t border-slate-100 bg-brand-50/40">
+                    <tr className="border-t border-border bg-primary/10/40">
                       <td className="px-4 py-3">
                         <input
                           className="w-full rounded border px-2 py-1 font-mono text-xs"
@@ -208,7 +215,7 @@ export function ProductCategoriesPage() {
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         <button
                           type="button"
-                          className="text-slate-600"
+                          className="text-muted-foreground"
                           onClick={() => {
                             setEditing(null);
                             setFormHint(null);
@@ -218,7 +225,7 @@ export function ProductCategoriesPage() {
                         </button>
                       </td>
                     </tr>
-                    <tr className="bg-brand-50/40">
+                    <tr className="bg-primary/10/40">
                       <td className="px-4 pb-4 pt-0" colSpan={3}>
                         <CategorySchemaBuilder
                           drafts={editSchemaDrafts}
@@ -227,7 +234,7 @@ export function ProductCategoriesPage() {
                         />
                         <button
                           type="button"
-                          className="mt-3 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                          className="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
                           disabled={!editName.trim() || !editCode.trim() || update.isPending}
                           onClick={() => submitEdit()}
                         >
@@ -237,16 +244,16 @@ export function ProductCategoriesPage() {
                     </tr>
                   </Fragment>
                 ) : (
-                  <tr key={c.id} className="border-t border-slate-100">
-                    <td className="px-4 py-3 font-mono text-xs text-slate-700">{c.code}</td>
+                  <tr key={c.id} className="border-t border-border">
+                    <td className="px-4 py-3 font-mono text-xs text-foreground">{c.code}</td>
                     <td className="px-4 py-3">{c.name}</td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <button type="button" className="text-brand-600 font-medium" onClick={() => startEdit(c)}>
+                      <button type="button" className="text-primary font-medium" onClick={() => startEdit(c)}>
                         Editar
                       </button>
                       <button
                         type="button"
-                        className="ml-3 text-red-600"
+                        className="ml-3 text-destructive"
                         onClick={() => {
                           if (confirm(`Excluir categoria “${c.name}”? Produtos ficarão sem categoria.`))
                             remove.mutate(c.id);

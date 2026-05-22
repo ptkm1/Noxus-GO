@@ -1,3 +1,9 @@
+import { Fragment } from "react";
+import { FormField, FormGrid } from "@/components/forms";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { fieldControlClass } from "@/lib/field-styles";
+
 export type AttributeFieldDef = {
   key: string;
   label: string;
@@ -29,56 +35,56 @@ export function DynamicCategoryAttributes({ defs, values, onChange }: Props) {
 
   let prevSectionMarker = "";
   return (
-    <div className="space-y-4 rounded-xl border border-dashed border-brand-200 bg-brand-50/40 p-4">
+    <div className="space-y-4 rounded-xl border border-dashed border-primary200 bg-primary/10/40 p-4">
       <div>
-        <h3 className="text-sm font-semibold text-slate-900">Campos da categoria</h3>
-        <p className="mt-0.5 text-xs text-slate-600">
+        <h3 className="text-sm font-semibold text-foreground">Campos da categoria</h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">
           Definidos pelo administrador para esta categoria (especificações por tipo de produto).
         </p>
       </div>
 
+      <FormGrid cols={2}>
       {defs.map((def) => {
         const showSection = Boolean(def.section && def.section !== prevSectionMarker);
         if (def.section) prevSectionMarker = def.section;
 
         const sectionHead = showSection ? (
-          <p className="border-t border-brand-100 pt-3 text-xs font-bold uppercase tracking-wide text-slate-500 first:border-0 first:pt-0">
+          <p
+            key={`section-${def.key}`}
+            className="border-t border-primary100 pt-3 text-xs font-bold uppercase tracking-wide text-muted-foreground first:border-0 first:pt-0 sm:col-span-2"
+          >
             {def.section}
           </p>
         ) : null;
 
-        const commonLabel = (
-          <label className="block text-sm font-medium text-slate-700">
-            {def.label}
-            {def.required ? <span className="text-red-500"> *</span> : null}
-          </label>
-        );
-
         const rawVal = values[def.key];
+        const fieldId = `attr-${def.key}`;
+        const spanClass =
+          def.type === "textarea" ? "sm:col-span-2" : def.type === "boolean" ? "" : "";
 
         const control =
           def.type === "text" ? (
-            <input
-              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+            <Input
+              id={fieldId}
               placeholder={def.placeholder}
               value={rawVal != null ? String(rawVal) : ""}
               onChange={(e) => patch(def.key, e.target.value)}
             />
           ) : def.type === "textarea" ? (
-            <textarea
+            <Textarea
+              id={fieldId}
               rows={3}
-              className="mt-1 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
               placeholder={def.placeholder}
               value={rawVal != null ? String(rawVal) : ""}
               onChange={(e) => patch(def.key, e.target.value)}
             />
           ) : def.type === "number" ? (
-            <input
+            <Input
+              id={fieldId}
               type="number"
               step={def.step ?? "any"}
               min={def.min}
               max={def.max}
-              className="mt-1 w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
               placeholder={def.placeholder}
               value={rawVal != null && rawVal !== "" ? String(rawVal) : ""}
               onChange={(e) => {
@@ -87,10 +93,10 @@ export function DynamicCategoryAttributes({ defs, values, onChange }: Props) {
               }}
             />
           ) : def.type === "boolean" ? (
-            <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
               <input
                 type="checkbox"
-                className="size-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                className="size-4 rounded border-border text-primary focus-visible:ring-ring"
                 checked={rawVal === true || rawVal === "true"}
                 onChange={(e) => patch(def.key, e.target.checked)}
               />
@@ -98,7 +104,8 @@ export function DynamicCategoryAttributes({ defs, values, onChange }: Props) {
             </label>
           ) : def.type === "select" ? (
             <select
-              className="mt-1 w-full max-w-md rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
+              id={fieldId}
+              className={fieldControlClass}
               value={rawVal != null ? String(rawVal) : ""}
               onChange={(e) => patch(def.key, e.target.value || undefined)}
             >
@@ -112,13 +119,20 @@ export function DynamicCategoryAttributes({ defs, values, onChange }: Props) {
           ) : null;
 
         return (
-          <div key={def.key} className="space-y-1">
+          <Fragment key={def.key}>
             {sectionHead}
-            {commonLabel}
-            {control}
-          </div>
+            <FormField
+              label={def.label}
+              htmlFor={def.type !== "boolean" ? fieldId : undefined}
+              required={def.required}
+              className={spanClass}
+            >
+              {control}
+            </FormField>
+          </Fragment>
         );
       })}
+      </FormGrid>
     </div>
   );
 }

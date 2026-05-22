@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
+import { Zap } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type Props = {
-  /** Destino ao clicar na marca (painel ou login). */
   to?: string;
   className?: string;
-  /** Texto claro para fundos escuros (login/cadastro). */
   inverted?: boolean;
 };
 
@@ -12,11 +12,24 @@ export function AppLogo({ to = "/", className = "", inverted = false }: Props) {
   return (
     <Link
       to={to}
-      className={`flex shrink-0 items-center gap-2 rounded-lg outline-none ring-brand-500 focus-visible:ring-2 ${className}`}
+      className={cn(
+        "flex shrink-0 items-center gap-2 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        className,
+      )}
     >
-      <img src="/favicon.svg" alt="" width={36} height={34} className="size-9 shrink-0" />
+      <div
+        className={cn(
+          "flex h-9 w-9 items-center justify-center rounded-lg",
+          inverted ? "bg-primary" : "bg-primary",
+        )}
+      >
+        <Zap className={cn("h-5 w-5", inverted ? "text-primary-foreground" : "text-primary-foreground")} />
+      </div>
       <span
-        className={`text-lg font-semibold tracking-tight ${inverted ? "text-white" : "text-brand-700"}`}
+        className={cn(
+          "text-lg font-bold tracking-tight",
+          inverted ? "text-foreground" : "gradient-text",
+        )}
       >
         Pedidos
       </span>

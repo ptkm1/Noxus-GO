@@ -1,25 +1,40 @@
 import type { Role } from "@pedidos/shared";
+import type { LucideIcon } from "lucide-react";
+import {
+  BarChart3,
+  LayoutDashboard,
+  MapPin,
+  Navigation,
+  Package,
+  ShoppingCart,
+  Table,
+  Target,
+  UserCircle,
+  Users,
+} from "lucide-react";
 
-export type NavItem = { to: string; label: string; end?: boolean };
+export type NavItem = { to: string; label: string; end?: boolean; icon: LucideIcon };
+
+const home: NavItem = { to: "/", label: "Início", end: true, icon: LayoutDashboard };
 
 export const DASHBOARD_NAV: NavItem[] = [
-  { to: "/", label: "Início", end: true },
-  { to: "/tabelas-preco", label: "Tabelas de preço" },
-  { to: "/produtos", label: "Produtos" },
-  { to: "/vendedores", label: "Vendedores" },
-  { to: "/comissao", label: "Comissões e metas" },
-  { to: "/clientes", label: "Clientes" },
-  { to: "/visitas", label: "Visitas em campo" },
-  { to: "/rastreio", label: "Rastreio ao vivo" },
-  { to: "/vendas", label: "Vendas" },
-  { to: "/relatorios", label: "Relatórios" },
+  home,
+  { to: "/tabelas-preco", label: "Tabelas de preço", icon: Table },
+  { to: "/produtos", label: "Produtos", icon: Package },
+  { to: "/vendedores", label: "Vendedores", icon: Users },
+  { to: "/comissao", label: "Comissões e metas", icon: Target },
+  { to: "/clientes", label: "Clientes", icon: UserCircle },
+  { to: "/visitas", label: "Visitas em campo", icon: MapPin },
+  { to: "/rastreio", label: "Rastreio ao vivo", icon: Navigation },
+  { to: "/vendas", label: "Vendas", icon: ShoppingCart },
+  { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
 ];
 
 export const MANAGER_NAV: NavItem[] = [
-  { to: "/", label: "Início", end: true },
-  { to: "/rastreio", label: "Rastreio ao vivo" },
-  { to: "/visitas", label: "Visitas em campo" },
-  { to: "/vendas", label: "Vendas" },
+  home,
+  { to: "/rastreio", label: "Rastreio ao vivo", icon: Navigation },
+  { to: "/visitas", label: "Visitas em campo", icon: MapPin },
+  { to: "/vendas", label: "Vendas", icon: ShoppingCart },
 ];
 
 export function navForRole(role: Role | undefined): NavItem[] {

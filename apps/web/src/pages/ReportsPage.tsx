@@ -102,15 +102,15 @@ export function ReportsPage() {
       <div>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Relatórios</h1>
-            <p className="mt-2 max-w-2xl text-slate-600">
+            <h1 className="text-2xl font-semibold text-foreground">Relatórios</h1>
+            <p className="mt-2 max-w-2xl text-muted-foreground">
               Visão pronta para o dia a dia: sem filtros obrigatórios. Use o botão para atualizar os números; embaixo,
               exporte PDF quando precisar de arquivo.
             </p>
           </div>
           <button
             type="button"
-            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-background disabled:opacity-50"
             disabled={insightsQ.isFetching}
             onClick={() => void insightsQ.refetch()}
           >
@@ -118,16 +118,16 @@ export function ReportsPage() {
           </button>
         </div>
         {ins ? (
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="mt-2 text-xs text-muted-foreground">
             Gerado em {new Date(ins.generatedAt).toLocaleString("pt-BR")}
           </p>
         ) : null}
       </div>
 
       {insightsQ.isLoading ? (
-        <p className="text-slate-500">Montando seu painel…</p>
+        <p className="text-muted-foreground">Montando seu painel…</p>
       ) : insightsQ.error ? (
-        <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-destructive">
           {(insightsQ.error as Error).message}
         </p>
       ) : ins ? (
@@ -144,12 +144,12 @@ export function ReportsPage() {
 
           {/* Quem vendeu menos hoje */}
           <section className="space-y-3">
-            <h2 className="text-lg font-semibold text-slate-900">Quem vendeu menos hoje?</h2>
-            <p className="text-sm text-slate-500">Pedidos confirmados — lista do menor para o maior faturamento.</p>
-            <p className="text-xs capitalize text-slate-400">{ins.today.label}</p>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+            <h2 className="text-lg font-semibold text-foreground">Quem vendeu menos hoje?</h2>
+            <p className="text-sm text-muted-foreground">Pedidos confirmados — lista do menor para o maior faturamento.</p>
+            <p className="text-xs capitalize text-muted-foreground">{ins.today.label}</p>
+            <div className="overflow-x-auto rounded-xl border border-border bg-card">
               <table className="w-full min-w-[520px] text-sm">
-                <thead className="bg-slate-50 text-left text-slate-600">
+                <thead className="bg-background text-left text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3">Vendedor</th>
                     <th className="px-4 py-3">Pedidos</th>
@@ -159,23 +159,23 @@ export function ReportsPage() {
                 <tbody>
                   {ins.today.sellers.length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="px-4 py-6 text-center text-slate-500">
+                      <td colSpan={3} className="px-4 py-6 text-center text-muted-foreground">
                         Nenhum vendedor ativo — cadastre vendedores primeiro.
                       </td>
                     </tr>
                   ) : (
                     ins.today.sellers.map((row) => (
-                      <tr key={row.sellerId} className="border-t border-slate-100">
-                        <td className="px-4 py-3 font-medium text-slate-800">
+                      <tr key={row.sellerId} className="border-t border-border">
+                        <td className="px-4 py-3 font-medium text-foreground">
                           {row.name}
                           {row.orderCount === 0 ? (
-                            <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
+                            <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-warning">
                               Zerado hoje
                             </span>
                           ) : null}
                         </td>
-                        <td className="px-4 py-3 text-slate-600">{row.orderCount}</td>
-                        <td className="px-4 py-3 font-medium tabular-nums text-slate-900">
+                        <td className="px-4 py-3 text-muted-foreground">{row.orderCount}</td>
+                        <td className="px-4 py-3 font-medium tabular-nums text-foreground">
                           R$ {fmtMoney(row.totalAmount)}
                         </td>
                       </tr>
@@ -188,7 +188,7 @@ export function ReportsPage() {
 
           {/* Sem carteira */}
           {ins.sellersWithoutCustomers.length > 0 ? (
-            <section className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-4">
+            <section className="rounded-xl border border-warning/30 bg-warning/10/60 px-4 py-4">
               <h2 className="text-lg font-semibold text-amber-950">Vendedores sem cliente na carteira</h2>
               <p className="mt-1 text-sm text-amber-950/80">
                 Ninguém vinculado — nem rota nem cadastro para acompanhar.
@@ -198,7 +198,7 @@ export function ReportsPage() {
                   <li key={s.sellerId}>
                     <Link
                       to="/clientes"
-                      className="inline-flex rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-950 hover:bg-amber-50"
+                      className="inline-flex rounded-lg border border-amber-300 bg-card px-3 py-1.5 text-sm font-medium text-amber-950 hover:bg-warning/10"
                     >
                       {s.name}
                     </Link>
@@ -210,8 +210,8 @@ export function ReportsPage() {
 
           {/* Carteira parada */}
           <section className="space-y-3">
-            <h2 className="text-lg font-semibold text-slate-900">Qual vendedor está “sem ir ao cliente”?</h2>
-            <p className="text-sm text-slate-500">
+            <h2 className="text-lg font-semibold text-foreground">Qual vendedor está “sem ir ao cliente”?</h2>
+            <p className="text-sm text-muted-foreground">
               Na prática: clientes na carteira dele sem pedido confirmado há mais de {ins.hints.visitProxyDays} dias.
             </p>
             {ins.sellersPortfolioAttention.length === 0 ? (
@@ -219,9 +219,9 @@ export function ReportsPage() {
                 Ninguém aparece aqui — carteiras com cliente parecem em dia pela última compra.
               </p>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+              <div className="overflow-x-auto rounded-xl border border-border bg-card">
                 <table className="w-full min-w-[640px] text-sm">
-                  <thead className="bg-slate-50 text-left text-slate-600">
+                  <thead className="bg-background text-left text-muted-foreground">
                     <tr>
                       <th className="px-4 py-3">Vendedor</th>
                       <th className="px-4 py-3">Clientes parados</th>
@@ -231,15 +231,15 @@ export function ReportsPage() {
                   </thead>
                   <tbody>
                     {ins.sellersPortfolioAttention.map((row) => (
-                      <tr key={row.sellerId} className="border-t border-slate-100">
-                        <td className="px-4 py-3 font-medium text-slate-800">{row.name}</td>
-                        <td className="px-4 py-3 tabular-nums text-slate-900">{row.staleCustomersCount}</td>
-                        <td className="px-4 py-3 tabular-nums text-slate-600">{row.assignedCustomersCount}</td>
-                        <td className="px-4 py-3 text-slate-600">
+                      <tr key={row.sellerId} className="border-t border-border">
+                        <td className="px-4 py-3 font-medium text-foreground">{row.name}</td>
+                        <td className="px-4 py-3 tabular-nums text-foreground">{row.staleCustomersCount}</td>
+                        <td className="px-4 py-3 tabular-nums text-muted-foreground">{row.assignedCustomersCount}</td>
+                        <td className="px-4 py-3 text-muted-foreground">
                           {row.worstCustomerName ? (
                             <>
-                              <span className="font-medium text-slate-800">{row.worstCustomerName}</span>
-                              <span className="text-slate-500">
+                              <span className="font-medium text-foreground">{row.worstCustomerName}</span>
+                              <span className="text-muted-foreground">
                                 {" "}
                                 ({fmtDays(row.worstCustomerDays, false)})
                               </span>
@@ -258,8 +258,8 @@ export function ReportsPage() {
 
           {/* Produtos parados */}
           <section className="space-y-3">
-            <h2 className="text-lg font-semibold text-slate-900">Qual produto está parado?</h2>
-            <p className="text-sm text-slate-500">
+            <h2 className="text-lg font-semibold text-foreground">Qual produto está parado?</h2>
+            <p className="text-sm text-muted-foreground">
               Produtos na sua base (catálogo liberado ou já vendidos) sem movimento há bastante tempo.
             </p>
             {ins.stagnantProducts.length === 0 ? (
@@ -267,9 +267,9 @@ export function ReportsPage() {
                 Nenhum produto encaixa neste critério agora.
               </p>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+              <div className="overflow-x-auto rounded-xl border border-border bg-card">
                 <table className="w-full min-w-[560px] text-sm">
-                  <thead className="bg-slate-50 text-left text-slate-600">
+                  <thead className="bg-background text-left text-muted-foreground">
                     <tr>
                       <th className="px-4 py-3">Produto</th>
                       <th className="px-4 py-3">SKU</th>
@@ -279,21 +279,21 @@ export function ReportsPage() {
                   </thead>
                   <tbody>
                     {ins.stagnantProducts.map((p) => (
-                      <tr key={p.productId} className="border-t border-slate-100">
-                        <td className="px-4 py-3 font-medium text-slate-800">{p.name}</td>
-                        <td className="px-4 py-3 text-slate-500">{p.sku ?? "—"}</td>
-                        <td className="px-4 py-3 text-slate-600">
+                      <tr key={p.productId} className="border-t border-border">
+                        <td className="px-4 py-3 font-medium text-foreground">{p.name}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{p.sku ?? "—"}</td>
+                        <td className="px-4 py-3 text-muted-foreground">
                           {p.neverSold ? (
-                            <span className="text-amber-800">Sem histórico de venda</span>
+                            <span className="text-warning">Sem histórico de venda</span>
                           ) : (
                             <>
                               há{" "}
-                              <span className="font-medium tabular-nums text-slate-900">
+                              <span className="font-medium tabular-nums text-foreground">
                                 {p.daysSinceLastSale ?? "—"}
                               </span>{" "}
                               dias
                               {p.lastSaleAt ? (
-                                <span className="block text-xs text-slate-400">
+                                <span className="block text-xs text-muted-foreground">
                                   última: {new Date(p.lastSaleAt).toLocaleDateString("pt-BR")}
                                 </span>
                               ) : null}
@@ -303,7 +303,7 @@ export function ReportsPage() {
                         <td className="px-4 py-3 text-right">
                           <Link
                             to={`/produtos/${p.productId}/editar`}
-                            className="text-brand-600 hover:underline"
+                            className="text-primary hover:underline"
                           >
                             Abrir
                           </Link>
@@ -318,8 +318,8 @@ export function ReportsPage() {
 
           {/* Clientes */}
           <section className="space-y-3">
-            <h2 className="text-lg font-semibold text-slate-900">Qual cliente não compra há 30 dias?</h2>
-            <p className="text-sm text-slate-500">
+            <h2 className="text-lg font-semibold text-foreground">Qual cliente não compra há 30 dias?</h2>
+            <p className="text-sm text-muted-foreground">
               Cadastro já antigo na empresa — última compra confirmada há tempo ou nunca comprou.
             </p>
             {ins.churnCustomers.length === 0 ? (
@@ -327,9 +327,9 @@ export function ReportsPage() {
                 Nenhum cliente aparece aqui no momento.
               </p>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+              <div className="overflow-x-auto rounded-xl border border-border bg-card">
                 <table className="w-full min-w-[620px] text-sm">
-                  <thead className="bg-slate-50 text-left text-slate-600">
+                  <thead className="bg-background text-left text-muted-foreground">
                     <tr>
                       <th className="px-4 py-3">Cliente</th>
                       <th className="px-4 py-3">Vendedor (carteira)</th>
@@ -340,17 +340,17 @@ export function ReportsPage() {
                   </thead>
                   <tbody>
                     {ins.churnCustomers.map((c) => (
-                      <tr key={c.customerId} className="border-t border-slate-100">
-                        <td className="px-4 py-3 font-medium text-slate-800">{c.name}</td>
-                        <td className="px-4 py-3 text-slate-600">{c.sellerName ?? "—"}</td>
-                        <td className="px-4 py-3 text-slate-600">
+                      <tr key={c.customerId} className="border-t border-border">
+                        <td className="px-4 py-3 font-medium text-foreground">{c.name}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{c.sellerName ?? "—"}</td>
+                        <td className="px-4 py-3 text-muted-foreground">
                           {c.lastPurchaseAt
                             ? new Date(c.lastPurchaseAt).toLocaleDateString("pt-BR")
                             : "—"}
                         </td>
-                        <td className="px-4 py-3 text-slate-800">{fmtDays(c.daysSinceLastPurchase, c.neverPurchased)}</td>
+                        <td className="px-4 py-3 text-foreground">{fmtDays(c.daysSinceLastPurchase, c.neverPurchased)}</td>
                         <td className="px-4 py-3 text-right">
-                          <Link to="/clientes" className="text-brand-600 hover:underline">
+                          <Link to="/clientes" className="text-primary hover:underline">
                             Clientes
                           </Link>
                         </td>
@@ -364,17 +364,17 @@ export function ReportsPage() {
         </>
       ) : null}
 
-      <section className="space-y-4 border-t border-slate-200 pt-10">
+      <section className="space-y-4 border-t border-border pt-10">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Exportar vendas em PDF</h2>
-          <p className="mt-1 text-sm text-slate-600">
+          <h2 className="text-lg font-semibold text-foreground">Exportar vendas em PDF</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             Opcional — escolha período e vendedor só quando precisar do arquivo.
           </p>
         </div>
 
-        <div className="max-w-xl space-y-4 rounded-xl border border-slate-200 bg-white p-6">
+        <div className="max-w-xl space-y-4 rounded-xl border border-border bg-card p-6">
           <div>
-            <label className="block text-sm font-medium text-slate-700">De</label>
+            <label className="block text-sm font-medium text-foreground">De</label>
             <input
               type="datetime-local"
               className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -383,7 +383,7 @@ export function ReportsPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700">Até</label>
+            <label className="block text-sm font-medium text-foreground">Até</label>
             <input
               type="datetime-local"
               className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -392,7 +392,7 @@ export function ReportsPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700">Vendedor</label>
+            <label className="block text-sm font-medium text-foreground">Vendedor</label>
             <select
               className="mt-1 w-full rounded border px-3 py-2 text-sm"
               value={sellerId}
@@ -406,10 +406,10 @@ export function ReportsPage() {
               ))}
             </select>
           </div>
-          {err && <p className="text-sm text-red-600">{err}</p>}
+          {err && <p className="text-sm text-destructive">{err}</p>}
           <button
             type="button"
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
             onClick={() => void exportPdf()}
             disabled={pending}
           >

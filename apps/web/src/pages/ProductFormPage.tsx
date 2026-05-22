@@ -7,6 +7,11 @@ import {
   type AttributeFieldDef,
 } from "../components/DynamicCategoryAttributes";
 import { ProductPromotionsPanel } from "../components/ProductPromotionsPanel";
+import { FormActions, FormField, FormGrid, FormSection } from "@/components/forms";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { fieldControlClass } from "@/lib/field-styles";
 import { apiFetch } from "../lib/api";
 
 type CategoryBrief = {
@@ -187,10 +192,10 @@ export function ProductFormPage() {
   if (isEdit && isLoading) {
     return (
       <div className="space-y-4">
-        <Link to="/produtos" className="text-sm text-brand-600 hover:underline">
+        <Link to="/produtos" className="text-sm text-primary hover:underline">
           ← Voltar para produtos
         </Link>
-        <p className="text-slate-600">Carregando produto…</p>
+        <p className="text-muted-foreground">Carregando produto…</p>
       </div>
     );
   }
@@ -200,163 +205,146 @@ export function ProductFormPage() {
       error instanceof Error ? error.message : "Produto não encontrado.";
     return (
       <div className="space-y-4">
-        <Link to="/produtos" className="text-sm text-brand-600 hover:underline">
+        <Link to="/produtos" className="text-sm text-primary hover:underline">
           ← Voltar para produtos
         </Link>
-        <p className="text-red-600">{msg}</p>
+        <p className="text-destructive">{msg}</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
+    <div className="mx-auto max-w-5xl space-y-8">
       <div>
-        <Link to="/produtos" className="text-sm text-brand-600 hover:underline">
+        <Link to="/produtos" className="text-sm text-primary hover:underline">
           ← Voltar para produtos
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-900">
+        <h1 className="mt-2 text-2xl font-semibold text-foreground">
           {isEdit ? "Editar produto" : "Novo produto"}
         </h1>
         {isEdit && product ? (
-          <p className="mt-1 text-sm text-slate-500">{product.name}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{product.name}</p>
         ) : null}
       </div>
 
-      <form
-        onSubmit={(e) => void handleSubmit(e)}
-        className="max-w-xl space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
-      >
-        <div className="space-y-1.5">
-          <label htmlFor="prod-name" className="block text-sm font-medium text-slate-700">
-            Nome <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="prod-name"
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-            placeholder="Ex.: Óleo 5W30"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoComplete="off"
-          />
-        </div>
+      <form onSubmit={(e) => void handleSubmit(e)}>
+        <FormSection title="Dados do produto" description="Informação principal e categoria.">
+          <FormGrid cols={2}>
+            <FormField label="Nome" htmlFor="prod-name" required className="sm:col-span-2">
+              <Input
+                id="prod-name"
+                placeholder="Ex.: Óleo 5W30"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoComplete="off"
+              />
+            </FormField>
 
-        <div className="space-y-1.5">
-          <label htmlFor="prod-category" className="block text-sm font-medium text-slate-700">
-            Categoria
-          </label>
-          <select
-            id="prod-category"
-            className="w-full max-w-md rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-            value={categoryId}
-            onChange={(e) => {
-              const nextId = e.target.value;
-              const defs = coerceDefs(
-                categories.find((c) => c.id === nextId)?.attributeSchema,
-              );
-              setCategoryId(nextId);
-              setAttrs((prev) => pruneAttrs(prev, defs));
-            }}
-          >
-            <option value="">Sem categoria</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} ({c.code})
-              </option>
-            ))}
-          </select>
-          <p className="text-xs text-slate-500">
-            O formulário abaixo se adapta ao schema da categoria. Configure em{" "}
-            <Link to="/produtos/categorias" className="text-brand-600 hover:underline">
-              categorias de produto
-            </Link>
-            .
-          </p>
-        </div>
+            <FormField
+              label="Categoria"
+              htmlFor="prod-category"
+              className="sm:col-span-2"
+              hint={
+                <>
+                  O formulário abaixo adapta-se ao schema da categoria. Configure em{" "}
+                  <Link to="/produtos/categorias" className="text-primary hover:underline">
+                    categorias de produto
+                  </Link>
+                  .
+                </>
+              }
+            >
+              <select
+                id="prod-category"
+                className={fieldControlClass}
+                value={categoryId}
+                onChange={(e) => {
+                  const nextId = e.target.value;
+                  const defs = coerceDefs(
+                    categories.find((c) => c.id === nextId)?.attributeSchema,
+                  );
+                  setCategoryId(nextId);
+                  setAttrs((prev) => pruneAttrs(prev, defs));
+                }}
+              >
+                <option value="">Sem categoria</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.code})
+                  </option>
+                ))}
+              </select>
+            </FormField>
 
-        <DynamicCategoryAttributes defs={selectedDefs} values={attrs} onChange={setAttrs} />
+            <FormField label="SKU" htmlFor="prod-sku">
+              <Input
+                id="prod-sku"
+                placeholder="Código opcional"
+                value={sku}
+                onChange={(e) => setSku(e.target.value)}
+                autoComplete="off"
+              />
+            </FormField>
 
-        <div className="space-y-1.5">
-          <label htmlFor="prod-sku" className="block text-sm font-medium text-slate-700">
-            SKU
-          </label>
-          <input
-            id="prod-sku"
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-            placeholder="Código opcional"
-            value={sku}
-            onChange={(e) => setSku(e.target.value)}
-            autoComplete="off"
-          />
-        </div>
+            <FormField
+              label="Preço base (R$)"
+              htmlFor="prod-price"
+              required
+              hint="Usado quando não há preço em tabela de preços."
+            >
+              <Input
+                id="prod-price"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0,00"
+                value={basePrice}
+                onChange={(e) => setBasePrice(e.target.value)}
+              />
+            </FormField>
 
-        <div className="space-y-1.5">
-          <label htmlFor="prod-desc" className="block text-sm font-medium text-slate-700">
-            Descrição
-          </label>
-          <textarea
-            id="prod-desc"
-            rows={4}
-            className="w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-            placeholder="Detalhes do produto (opcional)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </div>
+            <FormField label="Descrição" htmlFor="prod-desc" className="sm:col-span-2">
+              <Textarea
+                id="prod-desc"
+                rows={4}
+                placeholder="Detalhes do produto (opcional)"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </FormField>
 
-        <div className="space-y-1.5">
-          <label htmlFor="prod-image-url" className="block text-sm font-medium text-slate-700">
-            URL da foto (catálogo no app)
-          </label>
-          <input
-            id="prod-image-url"
-            type="url"
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-            placeholder="https://… (opcional)"
-            value={imageUrl}
-            onChange={(e) => setImageUrl(e.target.value)}
-            autoComplete="off"
-          />
-          <p className="text-xs text-slate-500">
-            Cole um link público direto para a imagem (HTTPS). O vendedor vê esta foto grande no catálogo.
-          </p>
-        </div>
+            <FormField
+              label="URL da foto (catálogo no app)"
+              htmlFor="prod-image-url"
+              className="sm:col-span-2"
+              hint="Link público HTTPS — o vendedor vê esta foto no catálogo."
+            >
+              <Input
+                id="prod-image-url"
+                type="url"
+                placeholder="https://… (opcional)"
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                autoComplete="off"
+              />
+            </FormField>
+          </FormGrid>
 
-        <div className="space-y-1.5">
-          <label htmlFor="prod-price" className="block text-sm font-medium text-slate-700">
-            Preço base (R$) <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="prod-price"
-            type="number"
-            step="0.01"
-            min="0"
-            className="w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
-            placeholder="0,00"
-            value={basePrice}
-            onChange={(e) => setBasePrice(e.target.value)}
-          />
-          <p className="text-xs text-slate-500">
-            Usado quando não há preço específico em tabela de preços.
-          </p>
-        </div>
+          <div className="border-t border-border/60 pt-4">
+            <DynamicCategoryAttributes defs={selectedDefs} values={attrs} onChange={setAttrs} />
+          </div>
 
-        {formError ? <p className="text-sm text-red-600">{formError}</p> : null}
+          {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
 
-        <div className="flex flex-wrap gap-3 pt-2">
-          <button
-            type="submit"
-            disabled={pending}
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {pending ? "Salvando…" : isEdit ? "Salvar alterações" : "Criar produto"}
-          </button>
-          <Link
-            to="/produtos"
-            className="inline-flex items-center rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Cancelar
-          </Link>
-        </div>
+          <FormActions>
+            <Button type="submit" disabled={pending}>
+              {pending ? "Salvando…" : isEdit ? "Salvar alterações" : "Criar produto"}
+            </Button>
+            <Button variant="outline" asChild>
+              <Link to="/produtos">Cancelar</Link>
+            </Button>
+          </FormActions>
+        </FormSection>
       </form>
 
       {isEdit && productId ? <ProductPromotionsPanel productId={productId} /> : null}

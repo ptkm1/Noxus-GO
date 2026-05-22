@@ -22,14 +22,15 @@ import { SellerProductsPage } from "./pages/SellerProductsPage";
 import { SellersPage } from "./pages/SellersPage";
 import { SellerTrackingPage } from "./pages/SellerTrackingPage";
 import { isWebStaff } from "./lib/staff";
+import { ThemeProvider } from "./lib/theme";
 
 const qc = new QueryClient();
 
 function SellerNotice() {
   const { logout } = useAuth();
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm">
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="sticky top-0 z-40 border-b border-border bg-card shadow-sm">
         <div className="mx-auto flex h-14 max-w-[1600px] items-center justify-between px-4 md:h-16 md:px-6">
           <AppLogo to="/login" />
           <button
@@ -38,14 +39,14 @@ function SellerNotice() {
               logout();
               window.location.href = "/login";
             }}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+            className="rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:bg-background"
           >
             Sair
           </button>
         </div>
       </header>
       <div className="flex flex-1 flex-col items-center justify-center p-6">
-        <p className="max-w-md text-center text-slate-700">
+        <p className="max-w-md text-center text-foreground">
           O painel web é para administradores e gestores. Vendedores devem usar o aplicativo mobile.
         </p>
       </div>
@@ -70,7 +71,7 @@ function StaffGate({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-slate-600">
+      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
         Carregando…
       </div>
     );
@@ -144,12 +145,14 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={qc}>
-      <BrowserRouter>
-        <AuthProvider>
-          <AppRoutes />
-        </AuthProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={qc}>
+        <BrowserRouter>
+          <AuthProvider>
+            <AppRoutes />
+          </AuthProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }

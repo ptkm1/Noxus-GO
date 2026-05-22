@@ -49,17 +49,17 @@ export function SellerProductsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link to="/vendedores" className="text-sm text-brand-600">
+        <Link to="/vendedores" className="text-sm text-primary">
           ← Vendedores
         </Link>
         <h1 className="text-2xl font-semibold">Produtos liberados</h1>
       </div>
 
       {isLoading ? (
-        <p className="text-slate-500">Carregando…</p>
+        <p className="text-muted-foreground">Carregando…</p>
       ) : (
         <>
-          <ul className="max-w-lg space-y-2 rounded-xl border border-slate-200 bg-white p-4">
+          <ul className="max-w-lg space-y-2 rounded-xl border border-border bg-card p-4">
             {products.map((p) => (
               <li key={p.id} className="flex items-center gap-3">
                 <input
@@ -73,13 +73,13 @@ export function SellerProductsPage() {
           </ul>
           <button
             type="button"
-            className="rounded bg-brand-600 px-4 py-2 text-sm text-white"
+            className="rounded bg-primary px-4 py-2 text-sm text-white"
             onClick={() => save.mutate()}
             disabled={save.isPending}
           >
             Salvar liberações
           </button>
-          <p className="text-xs text-slate-500">{selected.size} produto(s) selecionado(s).</p>
+          <p className="text-xs text-muted-foreground">{selected.size} produto(s) selecionado(s).</p>
         </>
       )}
     </div>

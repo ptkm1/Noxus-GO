@@ -48,8 +48,8 @@ export function OrdersPage() {
           onClick={() => setFilter(null)}
           className={`rounded-full px-4 py-2 text-sm font-medium transition ${
             !pendingCreditSelected
-              ? "bg-brand-600 text-white"
-              : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              ? "bg-primary text-white"
+              : "border border-border bg-card text-foreground hover:bg-background"
           }`}
         >
           Todas
@@ -60,7 +60,7 @@ export function OrdersPage() {
           className={`rounded-full px-4 py-2 text-sm font-medium transition ${
             pendingCreditSelected
               ? "bg-amber-600 text-white"
-              : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              : "border border-border bg-card text-foreground hover:bg-background"
           }`}
         >
           Aguardando crédito
@@ -68,11 +68,11 @@ export function OrdersPage() {
       </div>
 
       {isLoading ? (
-        <p className="text-slate-500">Carregando…</p>
+        <p className="text-muted-foreground">Carregando…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-border bg-card">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-600">
+            <thead className="bg-background text-left text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Data</th>
                 <th className="px-4 py-3">Status</th>
@@ -85,7 +85,7 @@ export function OrdersPage() {
             </thead>
             <tbody>
               {orders.map((o) => (
-                <tr key={o.id} className="border-t border-slate-100">
+                <tr key={o.id} className="border-t border-border">
                   <td className="px-4 py-3 whitespace-nowrap">
                     {new Date(o.createdAt).toLocaleString("pt-BR")}
                   </td>
@@ -97,8 +97,8 @@ export function OrdersPage() {
                           : o.status === "CANCELLED"
                             ? "bg-red-100 text-red-800"
                             : o.status === "PENDING_CREDIT_APPROVAL"
-                              ? "bg-amber-100 text-amber-900"
-                              : "bg-slate-100 text-slate-700"
+                              ? "bg-amber-100 text-warning"
+                              : "bg-muted text-foreground"
                       }`}
                     >
                       {o.status}
@@ -106,10 +106,10 @@ export function OrdersPage() {
                   </td>
                   <td className="px-4 py-3">{o.seller.user.name}</td>
                   <td className="px-4 py-3">{o.customer?.name ?? "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{o.items.length}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{o.items.length}</td>
                   <td className="px-4 py-3 font-medium">R$ {Number(o.totalAmount).toFixed(2)}</td>
                   <td className="px-4 py-3 text-right">
-                    <Link to={`/vendas/${o.id}`} className="text-brand-600 hover:underline">
+                    <Link to={`/vendas/${o.id}`} className="text-primary hover:underline">
                       Detalhe
                     </Link>
                   </td>

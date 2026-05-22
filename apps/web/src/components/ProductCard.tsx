@@ -1,0 +1,89 @@
+import { Link } from "react-router-dom";
+import { Package, Pencil, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+
+export type ProductCardItem = {
+  id: string;
+  name: string;
+  sku: string | null;
+  description: string | null;
+  imageUrl?: string | null;
+  basePrice: unknown;
+  category?: { id: string; code: string; name: string } | null;
+};
+
+type Props = {
+  product: ProductCardItem;
+  onDelete: () => void;
+  className?: string;
+};
+
+export function ProductCard({ product, onDelete, className }: Props) {
+  const price = Number(product.basePrice);
+  const imageUrl = product.imageUrl?.trim();
+
+  return (
+    <article
+      className={cn(
+        "surface-card group flex flex-col overflow-hidden transition-all hover:border-primary/35",
+        className,
+      )}
+    >
+      <div className="relative h-24 overflow-hidden bg-muted/80 sm:h-28">
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt=""
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+            loading="lazy"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-primary/5">
+            <Package className="h-7 w-7 text-primary/40" strokeWidth={1.5} />
+          </div>
+        )}
+        {product.category ? (
+          <Badge
+            variant="secondary"
+            className="absolute left-1.5 top-1.5 max-w-[85%] truncate border-0 bg-card/90 px-1.5 py-0 text-[10px] text-primary backdrop-blur-sm"
+          >
+            {product.category.name}
+          </Badge>
+        ) : null}
+      </div>
+
+      <div className="flex flex-1 flex-col gap-1 p-2">
+        <h3 className="line-clamp-2 text-xs font-semibold leading-tight text-foreground">
+          {product.name}
+        </h3>
+        {product.sku ? (
+          <p className="truncate text-[10px] text-muted-foreground">SKU {product.sku}</p>
+        ) : null}
+
+        <p className="text-sm font-bold text-success">
+          R$ {Number.isFinite(price) ? price.toFixed(2) : "—"}
+        </p>
+
+        <div className="mt-1 flex gap-1.5 border-t border-border/60 pt-2">
+          <Button variant="outline" size="xs" className="h-7 flex-1" asChild>
+            <Link to={`/produtos/${product.id}/editar`}>
+              <Pencil className="h-3 w-3" />
+              Editar
+            </Link>
+          </Button>
+          <Button
+            variant="outline"
+            size="xs"
+            className="h-7 w-8 shrink-0 px-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={onDelete}
+            aria-label="Excluir produto"
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
+    </article>
+  );
+}

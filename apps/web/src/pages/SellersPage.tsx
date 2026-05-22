@@ -2,6 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { FormActions, FormField, FormGrid, FormSection } from "@/components/forms";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { apiFetch } from "../lib/api";
 import { isWebAdmin } from "../lib/staff";
 
@@ -77,7 +80,7 @@ export function SellersPage() {
 
   if (!admin) {
     return (
-      <p className="text-slate-600">A gestão de vendedores é exclusiva de administradores.</p>
+      <p className="text-muted-foreground">A gestão de vendedores é exclusiva de administradores.</p>
     );
   }
 
@@ -85,54 +88,63 @@ export function SellersPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Vendedores</h1>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <h2 className="font-medium">Novo vendedor</h2>
-        <p className="mt-1 text-xs text-slate-500">O admin define email e senha inicial (sem cadastro público).</p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <input
-            className="rounded border px-3 py-2 text-sm"
-            placeholder="Nome"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <input
-            className="rounded border px-3 py-2 text-sm"
-            placeholder="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <input
-            className="rounded border px-3 py-2 text-sm"
-            placeholder="Senha (mín. 6)"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <input
-            className="rounded border px-3 py-2 text-sm"
-            placeholder="Comissão %"
-            type="number"
-            value={commission}
-            onChange={(e) => setCommission(e.target.value)}
-          />
-        </div>
-        <button
-          type="button"
-          className="mt-3 rounded bg-brand-600 px-4 py-2 text-sm text-white"
-          disabled={!email || !password || !name || create.isPending}
-          onClick={() => create.mutate()}
-        >
-          Criar vendedor
-        </button>
-      </div>
+      <FormSection
+        title="Novo vendedor"
+        description="O admin define email e senha inicial (sem cadastro público)."
+      >
+        <FormGrid cols={4}>
+          <FormField label="Nome" htmlFor="seller-name" required>
+            <Input
+              id="seller-name"
+              placeholder="Nome"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Email" htmlFor="seller-email" required>
+            <Input
+              id="seller-email"
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Senha" htmlFor="seller-password" required hint="Mínimo 6 caracteres">
+            <Input
+              id="seller-password"
+              type="password"
+              placeholder="Senha inicial"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Comissão %" htmlFor="seller-commission">
+            <Input
+              id="seller-commission"
+              type="number"
+              value={commission}
+              onChange={(e) => setCommission(e.target.value)}
+            />
+          </FormField>
+        </FormGrid>
+        <FormActions>
+          <Button
+            type="button"
+            disabled={!email || !password || !name || create.isPending}
+            onClick={() => create.mutate()}
+          >
+            Criar vendedor
+          </Button>
+        </FormActions>
+      </FormSection>
 
       {isLoading ? (
-        <p className="text-slate-500">Carregando…</p>
+        <p className="text-muted-foreground">Carregando…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-border bg-card">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-slate-600">
+            <thead className="bg-background text-left text-muted-foreground">
               <tr>
                 <th className="px-4 py-3">Nome</th>
                 <th className="px-4 py-3">Email</th>
@@ -144,7 +156,7 @@ export function SellersPage() {
             </thead>
             <tbody>
               {sellers.map((s) => (
-                <tr key={s.id} className="border-t border-slate-100">
+                <tr key={s.id} className="border-t border-border">
                   <td className="px-4 py-3">{s.user.name}</td>
                   <td className="px-4 py-3">{s.user.email}</td>
                   <td className="px-4 py-3">
@@ -191,7 +203,7 @@ export function SellersPage() {
                   <td className="px-4 py-3 text-right">
                     <Link
                       to={`/vendedores/${s.id}/produtos`}
-                      className="text-brand-600 hover:underline"
+                      className="text-primary hover:underline"
                     >
                       Liberar produtos
                     </Link>

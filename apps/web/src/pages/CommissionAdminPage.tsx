@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { FilterBar, FormActions, FormField, FormGrid, FormSection } from "@/components/forms";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { fieldControlClass } from "@/lib/field-styles";
 import { apiFetch } from "../lib/api";
 
 function num(v: unknown): number {
@@ -200,8 +204,8 @@ export function CommissionAdminPage() {
   return (
     <div className="space-y-12">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Comissões e metas</h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-600">
+        <h1 className="text-2xl font-semibold text-foreground">Comissões e metas</h1>
+        <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
           Configure faixas de comissão progressiva pelo faturamento confirmado no mês (MTD) — globais da
           organização ou específicas por vendedor — e metas mensais exibidas no app do vendedor.
         </p>
@@ -209,17 +213,17 @@ export function CommissionAdminPage() {
 
       {/* Faixas progressivas */}
       <section className="space-y-4">
-        <h2 className="text-lg font-medium text-slate-900">Faixas progressivas</h2>
-        <p className="text-xs text-slate-500">
+        <h2 className="text-lg font-medium text-foreground">Faixas progressivas</h2>
+        <p className="text-xs text-muted-foreground">
           Acima de cada valor de faturamento MTD (inclusive), aplica-se o percentual correspondente quando não há
           regra por produto/categoria mais específica. Prioridade maior resolve empates entre faixas.
         </p>
 
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
-          <label className="text-sm text-slate-600">
-            Filtrar escopo:
+        <FilterBar className="max-w-md px-4 py-3">
+          <FormField label="Filtrar escopo" htmlFor="tier-scope-filter">
             <select
-              className="ml-2 rounded border border-slate-200 px-2 py-1.5 text-sm"
+              id="tier-scope-filter"
+              className={fieldControlClass}
               value={tierScope}
               onChange={(e) => setTierScope(e.target.value)}
             >
@@ -231,28 +235,27 @@ export function CommissionAdminPage() {
                 </option>
               ))}
             </select>
-          </label>
-        </div>
+          </FormField>
+        </FilterBar>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="font-medium text-slate-800">Nova faixa</h3>
-          <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-6 lg:items-end">
-            <label className="flex flex-col gap-1 text-xs text-slate-600 lg:col-span-2">
-              Escopo
+        <FormSection title="Nova faixa">
+          <FormGrid cols={3}>
+            <FormField label="Escopo" htmlFor="nt-scope">
               <select
-                className="rounded border px-2 py-2 text-sm"
+                id="nt-scope"
+                className={fieldControlClass}
                 value={ntScope}
                 onChange={(e) => setNtScope(e.target.value as "org" | "seller")}
               >
                 <option value="org">Organização (todos)</option>
                 <option value="seller">Um vendedor</option>
               </select>
-            </label>
+            </FormField>
             {ntScope === "seller" ? (
-              <label className="flex flex-col gap-1 text-xs text-slate-600 lg:col-span-2">
-                Vendedor
+              <FormField label="Vendedor" htmlFor="nt-seller">
                 <select
-                  className="rounded border px-2 py-2 text-sm"
+                  id="nt-seller"
+                  className={fieldControlClass}
                   value={ntSellerId}
                   onChange={(e) => setNtSellerId(e.target.value)}
                 >
@@ -263,46 +266,46 @@ export function CommissionAdminPage() {
                     </option>
                   ))}
                 </select>
-              </label>
+              </FormField>
             ) : null}
-            <label className="flex flex-col gap-1 text-xs text-slate-600">
-              Limite MTD (R$)
-              <input
-                className="rounded border px-2 py-2 text-sm"
+            <FormField label="Limite MTD (R$)" htmlFor="nt-threshold" required>
+              <Input
+                id="nt-threshold"
                 placeholder="0"
                 value={ntThreshold}
                 onChange={(e) => setNtThreshold(e.target.value)}
               />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-600">
-              Comissão %
-              <input
-                className="rounded border px-2 py-2 text-sm"
+            </FormField>
+            <FormField label="Comissão %" htmlFor="nt-percent" required>
+              <Input
+                id="nt-percent"
                 placeholder="ex: 5"
                 value={ntPercent}
                 onChange={(e) => setNtPercent(e.target.value)}
               />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-600">
-              Prioridade
-              <input
-                className="rounded border px-2 py-2 text-sm"
+            </FormField>
+            <FormField label="Prioridade" htmlFor="nt-priority">
+              <Input
+                id="nt-priority"
                 value={ntPriority}
                 onChange={(e) => setNtPriority(e.target.value)}
               />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-600 lg:col-span-2">
-              Rótulo (opcional)
-              <input
-                className="rounded border px-2 py-2 text-sm"
+            </FormField>
+            <FormField label="Rótulo (opcional)" htmlFor="nt-label" className="sm:col-span-2">
+              <Input
+                id="nt-label"
                 placeholder="ex: Superação"
                 value={ntLabel}
                 onChange={(e) => setNtLabel(e.target.value)}
               />
-            </label>
-            <button
+            </FormField>
+          </FormGrid>
+          {createTier.error ? (
+            <p className="text-sm text-destructive">{(createTier.error as Error).message}</p>
+          ) : null}
+          <FormActions className="border-t-0 pt-2">
+            <Button
               type="button"
-              className="rounded bg-brand-600 px-4 py-2 text-sm text-white lg:col-span-2"
               disabled={
                 createTier.isPending ||
                 !ntThreshold ||
@@ -312,19 +315,16 @@ export function CommissionAdminPage() {
               onClick={() => createTier.mutate()}
             >
               Adicionar faixa
-            </button>
-          </div>
-          {createTier.error ? (
-            <p className="mt-2 text-sm text-red-600">{(createTier.error as Error).message}</p>
-          ) : null}
-        </div>
+            </Button>
+          </FormActions>
+        </FormSection>
 
         {loading ? (
-          <p className="text-slate-500">Carregando faixas…</p>
+          <p className="text-muted-foreground">Carregando faixas…</p>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <div className="overflow-x-auto rounded-xl border border-border bg-card">
             <table className="w-full min-w-[840px] text-sm">
-              <thead className="bg-slate-50 text-left text-slate-600">
+              <thead className="bg-background text-left text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3">Escopo</th>
                   <th className="px-4 py-3">Limite MTD (R$)</th>
@@ -338,13 +338,13 @@ export function CommissionAdminPage() {
               <tbody>
                 {tiers.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                       Nenhuma faixa neste filtro.
                     </td>
                   </tr>
                 ) : (
                   tiers.map((t) => (
-                    <tr key={t.id} className="border-t border-slate-100">
+                    <tr key={t.id} className="border-t border-border">
                       <td className="px-4 py-3 align-top">
                         <select
                           className="max-w-[200px] rounded border px-2 py-1 text-xs"
@@ -434,7 +434,7 @@ export function CommissionAdminPage() {
                       <td className="px-4 py-3 text-right">
                         <button
                           type="button"
-                          className="text-xs text-red-600 hover:underline"
+                          className="text-xs text-destructive hover:underline"
                           onClick={() => {
                             if (confirm("Remover esta faixa?")) deleteTier.mutate(t.id);
                           }}
@@ -453,27 +453,26 @@ export function CommissionAdminPage() {
 
       {/* Metas mensais */}
       <section className="space-y-4">
-        <h2 className="text-lg font-medium text-slate-900">Metas mensais por vendedor</h2>
-        <p className="text-xs text-slate-500">
+        <h2 className="text-lg font-medium text-foreground">Metas mensais por vendedor</h2>
+        <p className="text-xs text-muted-foreground">
           Uma meta por vendedor e mês civil. Salvar novamente atualiza valor e título (upsert).
         </p>
 
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
-          <label className="text-sm text-slate-600">
-            Ano
-            <input
+        <FilterBar className="px-4 py-3">
+          <FormField label="Ano" htmlFor="goal-year">
+            <Input
+              id="goal-year"
               type="number"
-              className="ml-2 w-24 rounded border px-2 py-1.5 text-sm"
               value={goalYear}
               min={2000}
               max={2100}
               onChange={(e) => setGoalYear(Number(e.target.value))}
             />
-          </label>
-          <label className="text-sm text-slate-600">
-            Mês
+          </FormField>
+          <FormField label="Mês" htmlFor="goal-month">
             <select
-              className="ml-2 rounded border px-2 py-1.5 text-sm capitalize"
+              id="goal-month"
+              className={`${fieldControlClass} capitalize`}
               value={goalMonth}
               onChange={(e) => setGoalMonth(Number(e.target.value))}
             >
@@ -483,11 +482,11 @@ export function CommissionAdminPage() {
                 </option>
               ))}
             </select>
-          </label>
-          <label className="text-sm text-slate-600">
-            Vendedor
+          </FormField>
+          <FormField label="Vendedor" htmlFor="goal-seller-filter" className="sm:col-span-2">
             <select
-              className="ml-2 rounded border px-2 py-1.5 text-sm"
+              id="goal-seller-filter"
+              className={fieldControlClass}
               value={goalSellerFilter}
               onChange={(e) => setGoalSellerFilter(e.target.value)}
             >
@@ -498,16 +497,15 @@ export function CommissionAdminPage() {
                 </option>
               ))}
             </select>
-          </label>
-        </div>
+          </FormField>
+        </FilterBar>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="font-medium text-slate-800">Definir ou atualizar meta</h3>
-          <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-6 lg:items-end">
-            <label className="flex flex-col gap-1 text-xs text-slate-600 lg:col-span-2">
-              Vendedor
+        <FormSection title="Definir ou atualizar meta">
+          <FormGrid cols={3}>
+            <FormField label="Vendedor" htmlFor="mg-seller" required className="sm:col-span-2">
               <select
-                className="rounded border px-2 py-2 text-sm"
+                id="mg-seller"
+                className={fieldControlClass}
                 value={mgSellerId}
                 onChange={(e) => setMgSellerId(e.target.value)}
               >
@@ -518,22 +516,21 @@ export function CommissionAdminPage() {
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-600">
-              Ano
-              <input
+            </FormField>
+            <FormField label="Ano" htmlFor="mg-year">
+              <Input
+                id="mg-year"
                 type="number"
-                className="rounded border px-2 py-2 text-sm"
                 value={mgYear}
                 min={2000}
                 max={2100}
                 onChange={(e) => setMgYear(Number(e.target.value))}
               />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-600">
-              Mês
+            </FormField>
+            <FormField label="Mês" htmlFor="mg-month">
               <select
-                className="rounded border px-2 py-2 text-sm capitalize"
+                id="mg-month"
+                className={`${fieldControlClass} capitalize`}
                 value={mgMonth}
                 onChange={(e) => setMgMonth(Number(e.target.value))}
               >
@@ -543,44 +540,39 @@ export function CommissionAdminPage() {
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-600 lg:col-span-2">
-              Título
-              <input
-                className="rounded border px-2 py-2 text-sm"
-                value={mgTitle}
-                onChange={(e) => setMgTitle(e.target.value)}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-600">
-              Meta (R$)
-              <input
-                className="rounded border px-2 py-2 text-sm"
+            </FormField>
+            <FormField label="Título" htmlFor="mg-title" className="sm:col-span-2">
+              <Input id="mg-title" value={mgTitle} onChange={(e) => setMgTitle(e.target.value)} />
+            </FormField>
+            <FormField label="Meta (R$)" htmlFor="mg-target" required>
+              <Input
+                id="mg-target"
                 placeholder="0"
                 value={mgTarget}
                 onChange={(e) => setMgTarget(e.target.value)}
               />
-            </label>
-            <button
+            </FormField>
+          </FormGrid>
+          {upsertGoal.error ? (
+            <p className="text-sm text-destructive">{(upsertGoal.error as Error).message}</p>
+          ) : null}
+          <FormActions className="border-t-0 pt-2">
+            <Button
               type="button"
-              className="rounded bg-brand-600 px-4 py-2 text-sm text-white"
               disabled={upsertGoal.isPending || !mgSellerId || !mgTarget}
               onClick={() => upsertGoal.mutate()}
             >
               Salvar meta
-            </button>
-          </div>
-          {upsertGoal.error ? (
-            <p className="mt-2 text-sm text-red-600">{(upsertGoal.error as Error).message}</p>
-          ) : null}
-        </div>
+            </Button>
+          </FormActions>
+        </FormSection>
 
         {goalsLoading ? (
-          <p className="text-slate-500">Carregando metas…</p>
+          <p className="text-muted-foreground">Carregando metas…</p>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <div className="overflow-x-auto rounded-xl border border-border bg-card">
             <table className="w-full min-w-[720px] text-sm">
-              <thead className="bg-slate-50 text-left text-slate-600">
+              <thead className="bg-background text-left text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3">Vendedor</th>
                   <th className="px-4 py-3">Período</th>
@@ -592,13 +584,13 @@ export function CommissionAdminPage() {
               <tbody>
                 {goals.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
                       Nenhuma meta para este filtro.
                     </td>
                   </tr>
                 ) : (
                   goals.map((g) => (
-                    <tr key={g.id} className="border-t border-slate-100">
+                    <tr key={g.id} className="border-t border-border">
                       <td className="px-4 py-3">{g.seller.user.name}</td>
                       <td className="px-4 py-3 capitalize">
                         {monthLabel(g.month)} {g.year}
@@ -633,7 +625,7 @@ export function CommissionAdminPage() {
                       <td className="px-4 py-3 text-right">
                         <button
                           type="button"
-                          className="text-xs text-red-600 hover:underline"
+                          className="text-xs text-destructive hover:underline"
                           onClick={() => {
                             if (confirm("Remover esta meta?")) deleteGoal.mutate(g.id);
                           }}
