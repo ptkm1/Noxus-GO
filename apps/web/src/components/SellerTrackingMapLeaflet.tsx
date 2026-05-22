@@ -7,6 +7,7 @@ import type { SellerTrackingMapProps } from "./SellerTrackingMap.types";
 const ONLINE_COLOR = "#16a34a";
 const OFFLINE_COLOR = "#64748b";
 const TRAIL_COLOR = "#0284c7";
+const LIVE_TRAIL_COLOR = "#7c3aed";
 
 function sellerIcon(isOnline: boolean, selected: boolean) {
   const color = isOnline ? ONLINE_COLOR : OFFLINE_COLOR;
@@ -33,11 +34,13 @@ export function SellerTrackingMapLeaflet({
   selectedSellerId,
   onSelectSeller,
   trail = [],
+  liveTrail = [],
 }: SellerTrackingMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
   const trailRef = useRef<L.Polyline | null>(null);
+  const liveTrailRef = useRef<L.Polyline | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -56,6 +59,7 @@ export function SellerTrackingMapLeaflet({
       mapRef.current = null;
       layerRef.current = null;
       trailRef.current = null;
+      liveTrailRef.current = null;
     };
   }, []);
 
@@ -70,8 +74,23 @@ export function SellerTrackingMapLeaflet({
       map.removeLayer(trailRef.current);
       trailRef.current = null;
     }
+    if (liveTrailRef.current) {
+      map.removeLayer(liveTrailRef.current);
+      liveTrailRef.current = null;
+    }
 
     const bounds = L.latLngBounds([]);
+
+    if (liveTrail.length >= 2) {
+      const latlngs = liveTrail.map((p) => L.latLng(p.lat, p.lng));
+      latlngs.forEach((ll) => bounds.extend(ll));
+      liveTrailRef.current = L.polyline(latlngs, {
+        color: LIVE_TRAIL_COLOR,
+        weight: 4,
+        opacity: 0.9,
+        dashArray: "10,10",
+      }).addTo(map);
+    }
 
     if (trail.length >= 2) {
       const latlngs = trail.map((p) => L.latLng(p.lat, p.lng));
@@ -116,7 +135,7 @@ export function SellerTrackingMapLeaflet({
         map.fitBounds(bounds, { padding: [48, 48], maxZoom: 14 });
       }
     }
-  }, [markers, selectedSellerId, onSelectSeller, trail]);
+  }, [markers, selectedSellerId, onSelectSeller, trail, liveTrail]);
 
   return (
     <div

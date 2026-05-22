@@ -3,9 +3,11 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { SellerTrackingMap, type SellerMapMarker } from "../components/SellerTrackingMap";
+import { useLiveSellerTrailFromWs } from "../hooks/useLiveSellerTrailFromWs";
 import { useSellerLocationsWs } from "../hooks/useSellerLocationsWs";
 import { apiFetch } from "../lib/api";
 import { isGoogleMapsConfigured } from "../lib/google-maps-config";
+import { isLiveTrackWsPolylineEnabled } from "../lib/maps-features";
 import { googleMapsSearchUrl } from "../lib/maps-links";
 
 type SellerLocationRow = {
@@ -26,8 +28,19 @@ type SellerLocationRow = {
   } | null;
 };
 
+type MapsFeatures = {
+  googleRoutesEnabled: boolean;
+  googleRoutesHasApiKey: boolean;
+  googleRoutesDailyMaxPerOrg: number;
+  googleRoutesDailyMaxGlobal: number;
+  googleRoutesRemaining: number;
+  googleRoutesQuotaAllowed: boolean;
+  googleRoutesQuotaReason: string | null;
+};
+
 type Payload = {
   onlineThresholdMinutes: number;
+  mapsFeatures?: MapsFeatures;
   sellers: SellerLocationRow[];
 };
 
@@ -40,6 +53,7 @@ type HistoryPayload = {
   distanceMeters: number;
   roadDistanceMeters: number | null;
   roadRoutingConfigured?: boolean;
+  mapsFeatures?: MapsFeatures;
 };
 
 function fmtWhen(iso: string | null): string {
@@ -62,15 +76,6 @@ export function SellerTrackingPage() {
   const [showTrail, setShowTrail] = useState(false);
   const [trailDate, setTrailDate] = useState(todayIso);
 
-  const { connected: wsConnected } = useSellerLocationsWs(true);
-
-  const q = useQuery({
-    queryKey: ["admin", "seller-locations"],
-    queryFn: () => apiFetch<Payload>("/admin/seller-locations"),
-    refetchInterval: wsConnected ? 60_000 : 15_000,
-    staleTime: 5_000,
-  });
-
   const historyQ = useQuery({
     queryKey: ["admin", "seller-location-history", selectedId, trailDate],
     queryFn: () =>
@@ -78,6 +83,21 @@ export function SellerTrackingPage() {
         `/admin/sellers/${selectedId}/location-history?date=${encodeURIComponent(trailDate)}`,
       ),
     enabled: Boolean(selectedId && showTrail),
+  });
+
+  const historySeedPoints = useMemo(() => {
+    if (!showTrail || !historyQ.data?.points?.length) return undefined;
+    return historyQ.data.points.map((p) => ({ lat: p.lat, lng: p.lng }));
+  }, [showTrail, historyQ.data]);
+
+  const { liveTrail, onSellerLocation } = useLiveSellerTrailFromWs(selectedId, historySeedPoints);
+  const { connected: wsConnected } = useSellerLocationsWs(true, { onSellerLocation });
+
+  const q = useQuery({
+    queryKey: ["admin", "seller-locations"],
+    queryFn: () => apiFetch<Payload>("/admin/seller-locations"),
+    refetchInterval: wsConnected ? 60_000 : 15_000,
+    staleTime: 5_000,
   });
 
   const sellers = q.data?.sellers ?? [];
@@ -109,6 +129,8 @@ export function SellerTrackingPage() {
 
   const selected = sellers.find((s) => s.sellerId === selectedId) ?? null;
   const isManager = user?.role === "MANAGER";
+  const mapsFeatures = historyQ.data?.mapsFeatures ?? q.data?.mapsFeatures;
+  const liveTrailOn = isLiveTrackWsPolylineEnabled();
 
   return (
     <div className="space-y-6">
@@ -199,6 +221,7 @@ export function SellerTrackingPage() {
             selectedSellerId={selectedId}
             onSelectSeller={setSelectedId}
             trail={trail}
+            liveTrail={liveTrailOn ? liveTrail : []}
           />
 
           {selected ? (
@@ -251,8 +274,10 @@ export function SellerTrackingPage() {
                     <>
                       Linha reta entre pontos ~
                       {formatDistance(historyQ.data.distanceMeters)}
-                      {historyQ.data.roadRoutingConfigured === false
-                        ? " (falta GOOGLE_MAPS_SERVER_API_KEY na API)"
+                      {historyQ.data.trailSource === "gps_line" &&
+                      historyQ.data.mapsFeatures &&
+                      !historyQ.data.mapsFeatures.googleRoutesQuotaAllowed
+                        ? ` (${historyQ.data.mapsFeatures.googleRoutesQuotaReason ?? "Google Routes desativado"})`
                         : ""}
                     </>
                   )}
@@ -269,6 +294,23 @@ export function SellerTrackingPage() {
               ) : null}
               {showTrail && historyQ.data && historyQ.data.points.length === 0 ? (
                 <p className="mt-2 text-xs text-amber-800">Sem pontos de trajeto nesta data.</p>
+              ) : null}
+
+              {showTrail && mapsFeatures ? (
+                <p className="mt-2 text-xs text-slate-500">
+                  Google Routes:{" "}
+                  {mapsFeatures.googleRoutesEnabled
+                    ? mapsFeatures.googleRoutesQuotaAllowed
+                      ? `${mapsFeatures.googleRoutesRemaining} pedido(s) restante(s) hoje (limite ${mapsFeatures.googleRoutesDailyMaxPerOrg}/org)`
+                      : mapsFeatures.googleRoutesQuotaReason ?? "sem cota"
+                    : "desligado (GOOGLE_ROUTES_ENABLED=false)"}
+                </p>
+              ) : null}
+
+              {liveTrailOn && selected ? (
+                <p className="mt-2 text-xs text-violet-800">
+                  Trajeto ao vivo (GPS): {liveTrail.length >= 2 ? `${liveTrail.length} pontos` : "aguardando pings…"}
+                </p>
               ) : null}
 
               {selected.activeVisit ? (
@@ -313,8 +355,17 @@ export function SellerTrackingPage() {
               <span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-400" /> Offline / sem sinal recente
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-6 rounded bg-sky-600" /> Trajeto
+              <span className="inline-block h-3 w-6 rounded bg-sky-600" /> Trajeto do dia
             </span>
+            {liveTrailOn ? (
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="inline-block h-0.5 w-6 border-t-2 border-dashed border-violet-600"
+                  aria-hidden
+                />
+                Trajeto ao vivo (GPS)
+              </span>
+            ) : null}
           </div>
         </div>
       </div>

@@ -599,6 +599,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     }));
 
     const result = await buildRouteDirections(
+      auth.organizationId,
       body.data.originLat,
       body.data.originLng,
       customers,

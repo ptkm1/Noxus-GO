@@ -3,6 +3,7 @@ import { decToNum } from "../util/money.js";
 import type { AccessPayload } from "../auth/jwt.js";
 import { sellerScopeWhere } from "../auth/org-roles.js";
 import { isSellerLocationOnline, SELLER_ONLINE_MAX_AGE_MS } from "./seller-live-location.js";
+import { buildMapsFeaturesPayload } from "./google-routes-rate-limit.js";
 
 export type AdminSellerLocationRow = {
   sellerId: string;
@@ -24,6 +25,7 @@ export type AdminSellerLocationRow = {
 
 export async function listAdminSellerLocations(auth: AccessPayload): Promise<{
   onlineThresholdMinutes: number;
+  mapsFeatures: ReturnType<typeof buildMapsFeaturesPayload>;
   sellers: AdminSellerLocationRow[];
 }> {
   const now = new Date();
@@ -78,6 +80,7 @@ export async function listAdminSellerLocations(auth: AccessPayload): Promise<{
 
   return {
     onlineThresholdMinutes: Math.round(SELLER_ONLINE_MAX_AGE_MS / 60_000),
+    mapsFeatures: buildMapsFeaturesPayload(auth.organizationId),
     sellers: rows,
   };
 }

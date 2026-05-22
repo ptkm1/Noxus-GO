@@ -63,6 +63,7 @@ function chunkTrailPoints(points: LatLng[]): LatLng[][] {
  * Trajeto cronológico do vendedor desenhado pelas vias (Google Routes), com fallback em linha GPS.
  */
 export async function buildTrailRoadPolyline(
+  organizationId: string,
   points: Array<{ lat: number; lng: number }>,
 ): Promise<TrailPolylineResult> {
   const stops: LatLng[] = points.map((p) => ({ lat: p.lat, lng: p.lng }));
@@ -75,7 +76,7 @@ export async function buildTrailRoadPolyline(
     };
   }
 
-  if (!isGoogleRoutesConfigured()) {
+  if (!isGoogleRoutesConfigured(organizationId)) {
     let d = 0;
     for (let i = 1; i < stops.length; i++) {
       d += haversineMeters(stops[i - 1]!.lat, stops[i - 1]!.lng, stops[i]!.lat, stops[i]!.lng);
@@ -96,7 +97,7 @@ export async function buildTrailRoadPolyline(
     if (chunk.length < 2) continue;
     const origin = chunk[0]!;
     const rest = chunk.slice(1);
-    const google = await computeGoogleDrivingRoute(origin, rest);
+    const google = await computeGoogleDrivingRoute(organizationId, origin, rest);
     if (google && google.routePolyline.length >= 2) {
       anyGoogle = true;
       segmentPolylines.push(google.routePolyline);

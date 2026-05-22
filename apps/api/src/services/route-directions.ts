@@ -57,6 +57,7 @@ function estimateLegMinutes(legKm: number): number {
 }
 
 export async function buildRouteDirections(
+  organizationId: string,
   originLat: number,
   originLng: number,
   rows: RouteCustomerRow[],
@@ -75,8 +76,9 @@ export async function buildRouteDirections(
   });
 
   const orderedStops = orderedCustomers.map((c) => ({ lat: c.latitude, lng: c.longitude }));
-  const roadRoutingConfigured = isGoogleRoutesConfigured();
+  const roadRoutingConfigured = isGoogleRoutesConfigured(organizationId);
   const google = await computeGoogleDrivingRoute(
+    organizationId,
     { lat: originLat, lng: originLng },
     orderedStops,
   );
