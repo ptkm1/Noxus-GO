@@ -1,5 +1,6 @@
 import { LogOut } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { MobileHeader, MobileScreen } from "@/components/layout";
 import { ThemePreferencePicker } from "../components/molecules/ThemePreferencePicker";
 import { useThemedStyles } from "../hooks/useThemedStyles";
 import { useSettingsScreen } from "../hooks/screens/useSettingsScreen";
@@ -12,7 +13,9 @@ export default function SettingsScreen() {
   const { apiUrl, logoutAndGoLogin } = useSettingsScreen();
 
   return (
-    <View style={styles.container}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <MobileHeader title="Configurações" showBack />
+      <MobileScreen scroll noBottomInset contentContainerStyle={styles.container}>
       <Text style={styles.section}>Aparência</Text>
       <Text style={styles.hint}>Escolha o tema do app ou siga o do sistema.</Text>
       <ThemePreferencePicker />
@@ -30,13 +33,14 @@ export default function SettingsScreen() {
           <Text style={styles.dangerText}>Sair</Text>
         </View>
       </Pressable>
+      </MobileScreen>
     </View>
   );
 }
 
 function createSettingsStyles(c: AppColors) {
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: c.background, padding: 20 },
+    container: { padding: 0, gap: 8 },
     section: {
       marginTop: 16,
       fontSize: 13,

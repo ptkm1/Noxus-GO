@@ -11,16 +11,16 @@ import {
 } from "lucide-react-native";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { TabBarIcon } from "@/components/layout";
 import { useTheme } from "../../lib/theme";
 
-/** Altura aproximada da barra de tabs + margem para o FAB ficar acima dela. */
-const FAB_ABOVE_TAB_BAR = Platform.select({ ios: 52, android: 56 }) ?? 56;
+const TAB_BAR_HEIGHT = Platform.select({ ios: 84, android: 64 }) ?? 64;
 
 function QuickSaleFab() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const bottom = Math.max(insets.bottom, 10) + FAB_ABOVE_TAB_BAR + 12;
+  const bottom = Math.max(insets.bottom, 8) + TAB_BAR_HEIGHT - 8;
 
   return (
     <Pressable
@@ -37,26 +37,42 @@ function QuickSaleFab() {
   );
 }
 
+function tabIcon(Icon: typeof ShoppingBag) {
+  return ({
+    color,
+    focused,
+  }: {
+    color: string;
+    focused: boolean;
+    size: number;
+  }) => <TabBarIcon Icon={Icon} color={color} focused={focused} />;
+}
+
 export default function TabsLayout() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const tabHeight = TAB_BAR_HEIGHT + Math.max(insets.bottom - (Platform.OS === "ios" ? 20 : 0), 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Tabs
         screenOptions={{
-          headerShown: true,
+          headerShown: false,
           tabBarActiveTintColor: colors.primary,
           tabBarInactiveTintColor: colors.iconMuted,
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: "600",
+            marginTop: 2,
+          },
           tabBarStyle: {
             backgroundColor: colors.tabBar,
             borderTopColor: colors.tabBarBorder,
             borderTopWidth: 1,
-            height: Platform.select({ ios: 88, android: 64 }),
-            paddingTop: 6,
+            height: tabHeight,
+            paddingTop: 8,
+            paddingBottom: Math.max(insets.bottom, Platform.OS === "ios" ? 20 : 8),
           },
-          headerStyle: { backgroundColor: colors.headerBackground },
-          headerTintColor: colors.primary,
-          headerTitleStyle: { color: colors.headerTitle, fontWeight: "600" },
           sceneStyle: { backgroundColor: colors.background },
         }}
       >
@@ -65,8 +81,7 @@ export default function TabsLayout() {
           options={{
             title: "Vendas",
             tabBarLabel: "Vendas",
-            tabBarIcon: ({ color, size }) => <ShoppingBag color={color} size={size} />,
-            headerShown: false,
+            tabBarIcon: tabIcon(ShoppingBag),
           }}
         />
         <Tabs.Screen
@@ -74,7 +89,7 @@ export default function TabsLayout() {
           options={{
             title: "Comissão",
             tabBarLabel: "Comissão",
-            tabBarIcon: ({ color, size }) => <TrendingUp color={color} size={size} />,
+            tabBarIcon: tabIcon(TrendingUp),
           }}
         />
         <Tabs.Screen
@@ -82,7 +97,7 @@ export default function TabsLayout() {
           options={{
             title: "Clientes",
             tabBarLabel: "Clientes",
-            tabBarIcon: ({ color, size }) => <Users color={color} size={size} />,
+            tabBarIcon: tabIcon(Users),
           }}
         />
         <Tabs.Screen
@@ -90,7 +105,7 @@ export default function TabsLayout() {
           options={{
             title: "Rota",
             tabBarLabel: "Rota",
-            tabBarIcon: ({ color, size }) => <MapPin color={color} size={size} />,
+            tabBarIcon: tabIcon(MapPin),
           }}
         />
         <Tabs.Screen
@@ -98,7 +113,7 @@ export default function TabsLayout() {
           options={{
             title: "Catálogo",
             tabBarLabel: "Catálogo",
-            tabBarIcon: ({ color, size }) => <Package color={color} size={size} />,
+            tabBarIcon: tabIcon(Package),
           }}
         />
         <Tabs.Screen
@@ -106,7 +121,7 @@ export default function TabsLayout() {
           options={{
             title: "Notificações",
             tabBarLabel: "Avisos",
-            tabBarIcon: ({ color, size }) => <Bell color={color} size={size} />,
+            tabBarIcon: tabIcon(Bell),
           }}
         />
         <Tabs.Screen
@@ -114,7 +129,7 @@ export default function TabsLayout() {
           options={{
             title: "Perfil",
             tabBarLabel: "Perfil",
-            tabBarIcon: ({ color, size }) => <UserRound color={color} size={size} />,
+            tabBarIcon: tabIcon(UserRound),
           }}
         />
       </Tabs>
@@ -136,5 +151,6 @@ const fabStyles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.28,
     shadowRadius: 6,
+    zIndex: 50,
   },
 });

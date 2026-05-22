@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { MobileHeader } from "@/components/layout";
 import { ClipboardCheck, Minus, Plus, ScanBarcode, Search } from "lucide-react-native";
 import {
   CategoryFilterBar,
@@ -216,10 +217,12 @@ export default function QuickSaleScreen() {
   );
 
   return (
+    <View style={[styles.flex, { backgroundColor: colors.background }]}>
+      <MobileHeader title="Venda rápida" subtitle="Montar pedido e carrinho" showBack />
     <KeyboardAvoidingView
       style={styles.flex}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={s.insets.top + 52}
+      keyboardVerticalOffset={64}
     >
       <FlatList
         numColumns={2}
@@ -273,6 +276,7 @@ export default function QuickSaleScreen() {
         onBarcode={s.onBarcode}
       />
     </KeyboardAvoidingView>
+    </View>
   );
 }
 

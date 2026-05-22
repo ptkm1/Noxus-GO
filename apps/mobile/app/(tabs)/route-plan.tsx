@@ -1,7 +1,10 @@
 import * as Location from "expo-location";
 import { Link } from "expo-router";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, View } from "react-native";
-import { Clock, Navigation } from "lucide-react-native";
+import { Clock, MapPin, Navigation, Users } from "lucide-react-native";
+import { MobileHeader } from "@/components/layout";
+import { MOBILE_TAB_SCROLL_BOTTOM } from "@/components/layout/MobileScreen";
+import { StatCard } from "@/components/molecules/StatCard";
 import { RoutePlanMap } from "../../components/RoutePlanMap";
 import { RouteCustomerListItem } from "../../components/molecules/RouteCustomerListItem";
 import { VisitNotesModal } from "../../components/molecules/VisitNotesModal";
@@ -17,11 +20,33 @@ export default function RoutePlanScreen() {
 
   return (
     <View style={styles.root}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <MobileHeader title="Rota" subtitle={`Raio ${s.radiusKm} km · clientes no mapa`} />
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { paddingBottom: MOBILE_TAB_SCROLL_BOTTOM }]}
+      >
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <View style={{ flex: 1 }}>
+            <StatCard title="Próximos" value={s.filteredCustomers.length} icon={Users} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <StatCard
+              title="Raio"
+              value={`${s.radiusKm} km`}
+              icon={MapPin}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <StatCard
+              title="Visita"
+              value={s.hasOpenVisit ? "Ativa" : "—"}
+              icon={Clock}
+            />
+          </View>
+        </View>
+
         <Text style={styles.lead}>
           Clientes com GPS cadastrado pelo escritório aparecem no mapa. Toque{" "}
-          <Text style={styles.leadStrong}>Rota por estrada</Text> para traçar pelas vias (Google Routes). Sem isso, só
-          há linha reta entre pontos.
+          <Text style={styles.leadStrong}>Rota por estrada</Text> para traçar pelas vias (Google Routes).
         </Text>
 
         {s.nearbyQuery.data?.roadRoutingConfigured === false ? (

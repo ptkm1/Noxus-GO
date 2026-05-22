@@ -1,18 +1,20 @@
-import { Search } from "lucide-react-native";
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
-import { ThemedTextInput } from "../../components/atoms/ThemedTextInput";
+import { useRouter } from "expo-router";
+import { Barcode, Search } from "lucide-react-native";
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from "react-native";
+import { ThemedText } from "@/components/atoms/ThemedText";
+import { ThemedTextInput } from "@/components/atoms/ThemedTextInput";
 import {
   CategoryFilterBar,
   HorizontalProductRail,
   ProductCatalogTile,
-} from "../../components/ProductCatalogViews";
-import { useThemedStyles } from "../../hooks/useThemedStyles";
-import { useProductsScreen } from "../../hooks/screens/useProductsScreen";
-import { useTheme } from "../../lib/theme";
-import type { AppColors } from "../../lib/theme/types";
+} from "@/components/ProductCatalogViews";
+import { MobileHeader } from "@/components/layout";
+import { MOBILE_TAB_SCROLL_BOTTOM } from "@/components/layout/MobileScreen";
+import { useProductsScreen } from "@/hooks/screens/useProductsScreen";
+import { useTheme } from "@/lib/theme";
 
 export default function ProductsScreen() {
-  const styles = useThemedStyles(createProductsStyles);
+  const router = useRouter();
   const { colors } = useTheme();
   const {
     layout,
@@ -25,12 +27,8 @@ export default function ProductsScreen() {
 
   const header = (
     <View style={styles.header}>
-      <Text style={styles.lead}>
-        Veja fotos e preços de referência. Para montar o pedido com cliente e carrinho, use{" "}
-        <Text style={styles.leadBold}>Venda rápida</Text>.
-      </Text>
-      <View style={styles.searchRow}>
-        <Search size={18} color={colors.iconMuted} style={styles.searchIcon} />
+      <View style={[styles.searchRow, { backgroundColor: colors.searchBackground, borderColor: colors.inputBorder }]}>
+        <Search size={20} color={colors.iconMuted} style={styles.searchIcon} />
         <ThemedTextInput
           style={styles.searchInput}
           placeholder="Buscar nome, SKU ou categoria…"
@@ -38,6 +36,13 @@ export default function ProductsScreen() {
           onChangeText={catalog.setProductQuery}
           autoCorrect={false}
         />
+        <Pressable
+          accessibilityLabel="Leitor de código de barras"
+          style={[styles.barcodeBtn, { backgroundColor: colors.surfaceMuted }]}
+          onPress={() => router.push("/quick-sale")}
+        >
+          <Barcode color={colors.primary} size={22} />
+        </Pressable>
       </View>
 
       <CategoryFilterBar
@@ -64,12 +69,18 @@ export default function ProductsScreen() {
         onProductPress={onFavoriteRailPress}
       />
 
-      <Text style={styles.subSection}>Todos ({catalog.filteredProducts.length})</Text>
+      <ThemedText variant="titleSm" style={{ marginTop: 8 }}>
+        Catálogo ({catalog.filteredProducts.length})
+      </ThemedText>
     </View>
   );
 
   return (
-    <View style={styles.container}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <MobileHeader
+        title="Catálogo"
+        subtitle="Fotos e preços · use Venda rápida para pedido"
+      />
       {catalog.isLoading ? (
         <ActivityIndicator style={{ marginTop: 24 }} color={colors.primary} />
       ) : (
@@ -80,7 +91,7 @@ export default function ProductsScreen() {
           refreshing={catalog.isFetching}
           onRefresh={() => void catalog.refetch()}
           ListHeaderComponent={header}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: MOBILE_TAB_SCROLL_BOTTOM }]}
           columnWrapperStyle={{ gap: layout.catalogGap, marginBottom: layout.catalogGap }}
           renderItem={({ item }) => (
             <ProductCatalogTile
@@ -92,39 +103,42 @@ export default function ProductsScreen() {
               onAddPress={() => onGridProductPress(item.name)}
             />
           )}
-          ListEmptyComponent={<Text style={styles.empty}>{emptyMessage}</Text>}
+          ListEmptyComponent={
+            <ThemedText variant="bodySm" muted style={styles.empty}>
+              {emptyMessage}
+            </ThemedText>
+          }
         />
       )}
     </View>
   );
 }
 
-function createProductsStyles(c: AppColors) {
-  return StyleSheet.create({
-    container: { flex: 1, backgroundColor: c.background },
-    list: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 32 },
-    header: { paddingBottom: 8 },
-    lead: { fontSize: 13, color: c.textSecondary, marginBottom: 12, lineHeight: 18 },
-    leadBold: { fontWeight: "700", color: c.primary },
-    searchRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      backgroundColor: c.searchBackground,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: c.inputBorder,
-      paddingLeft: 10,
-      marginBottom: 4,
-      overflow: "hidden",
-    },
-    searchIcon: { marginRight: 4 },
-    searchInput: {
-      flex: 1,
-      borderWidth: 0,
-      backgroundColor: "transparent",
-      paddingVertical: 12,
-    },
-    subSection: { marginTop: 14, marginBottom: 8, fontSize: 13, fontWeight: "600", color: c.textSecondary },
-    empty: { textAlign: "center", marginTop: 48, color: c.textMuted, paddingHorizontal: 24 },
-  });
-}
+const styles = StyleSheet.create({
+  list: { paddingHorizontal: 16, paddingTop: 12 },
+  header: { paddingBottom: 8, gap: 12 },
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingLeft: 12,
+    minHeight: 52,
+  },
+  searchIcon: { marginRight: 4 },
+  searchInput: {
+    flex: 1,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    paddingVertical: 14,
+  },
+  barcodeBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 6,
+  },
+  empty: { textAlign: "center", marginTop: 48, paddingHorizontal: 24 },
+});
