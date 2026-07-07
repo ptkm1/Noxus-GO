@@ -1,3 +1,13 @@
+import {
+  FormActions,
+  FormField,
+  FormGrid,
+  FormSection,
+} from "@/components/forms";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { fieldControlClass } from "@/lib/field-styles";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -7,11 +17,6 @@ import {
   type AttributeFieldDef,
 } from "../components/DynamicCategoryAttributes";
 import { ProductPromotionsPanel } from "../components/ProductPromotionsPanel";
-import { FormActions, FormField, FormGrid, FormSection } from "@/components/forms";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { fieldControlClass } from "@/lib/field-styles";
 import { apiFetch } from "../lib/api";
 
 type CategoryBrief = {
@@ -28,6 +33,7 @@ type Product = {
   description: string | null;
   imageUrl?: string | null;
   basePrice: unknown;
+  commissionPercent?: unknown | null;
   categoryId?: string | null;
   attributes?: Record<string, unknown>;
   category?: CategoryBrief | null;
@@ -66,6 +72,7 @@ export function ProductFormPage() {
   const [description, setDescription] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [basePrice, setBasePrice] = useState("");
+  const [commissionPercent, setCommissionPercent] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [attrs, setAttrs] = useState<Record<string, unknown>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -98,6 +105,11 @@ export function ProductFormPage() {
       setDescription(product.description ?? "");
       setImageUrl(product.imageUrl ?? "");
       setBasePrice(String(Number(product.basePrice)));
+      setCommissionPercent(
+        product.commissionPercent != null
+          ? String(Number(product.commissionPercent))
+          : "",
+      );
       setCategoryId(product.categoryId ?? "");
       setAttrs(normalizeAttrsJson(product.attributes));
     }
@@ -111,6 +123,7 @@ export function ProductFormPage() {
       imageUrl?: string | null;
       basePrice: number;
       categoryId?: string | null;
+      commissionPercent?: number | null;
       attributes?: Record<string, unknown>;
     }) =>
       apiFetch<Product>("/admin/products", {
@@ -132,6 +145,7 @@ export function ProductFormPage() {
       imageUrl?: string | null;
       basePrice: number;
       categoryId?: string | null;
+      commissionPercent?: number | null;
       attributes?: Record<string, unknown>;
     }) =>
       apiFetch<Product>(`/admin/products/${productId}`, {
@@ -163,6 +177,15 @@ export function ProductFormPage() {
 
     const cid = categoryId.trim() ? categoryId : null;
     const img = imageUrl.trim();
+    const commissionRaw = commissionPercent.trim();
+    const commissionNum = commissionRaw === "" ? null : Number(commissionRaw);
+    if (
+      commissionNum !== null &&
+      (Number.isNaN(commissionNum) || commissionNum < 0 || commissionNum > 100)
+    ) {
+      setFormError("Informe uma comissão entre 0 e 100 %, ou deixe em branco.");
+      return;
+    }
 
     if (isEdit) {
       update.mutate({
@@ -172,6 +195,7 @@ export function ProductFormPage() {
         imageUrl: img.length ? img : null,
         basePrice: priceNum,
         categoryId: cid,
+        commissionPercent: commissionNum,
         attributes: attrs,
       });
     } else {
@@ -182,6 +206,7 @@ export function ProductFormPage() {
         ...(img.length ? { imageUrl: img } : {}),
         basePrice: priceNum,
         categoryId: cid ?? undefined,
+        ...(commissionNum !== null ? { commissionPercent: commissionNum } : {}),
         attributes: attrs,
       });
     }
@@ -228,9 +253,17 @@ export function ProductFormPage() {
       </div>
 
       <form onSubmit={(e) => void handleSubmit(e)}>
-        <FormSection title="Dados do produto" description="Informação principal e categoria.">
+        <FormSection
+          title="Dados do produto"
+          description="Informação principal e categoria."
+        >
           <FormGrid cols={2}>
-            <FormField label="Nome" htmlFor="prod-name" required className="sm:col-span-2">
+            <FormField
+              label="Nome"
+              htmlFor="prod-name"
+              required
+              className="sm:col-span-2"
+            >
               <Input
                 id="prod-name"
                 placeholder="Ex.: Óleo 5W30"
@@ -246,8 +279,12 @@ export function ProductFormPage() {
               className="sm:col-span-2"
               hint={
                 <>
-                  O formulário abaixo adapta-se ao schema da categoria. Configure em{" "}
-                  <Link to="/produtos/categorias" className="text-primary hover:underline">
+                  O formulário abaixo adapta-se ao schema da categoria.
+                  Configure em{" "}
+                  <Link
+                    to="/produtos/categorias"
+                    className="text-primary hover:underline"
+                  >
                     categorias de produto
                   </Link>
                   .
@@ -303,7 +340,28 @@ export function ProductFormPage() {
               />
             </FormField>
 
-            <FormField label="Descrição" htmlFor="prod-desc" className="sm:col-span-2">
+            <FormField
+              label="Comissão do vendedor (%)"
+              htmlFor="prod-commission"
+              hint="Usado quando o vendedor é comissionado por produto. Deixe em branco se não aplicável."
+            >
+              <Input
+                id="prod-commission"
+                type="number"
+                step="0.01"
+                min="0"
+                max="100"
+                placeholder="Ex.: 8"
+                value={commissionPercent}
+                onChange={(e) => setCommissionPercent(e.target.value)}
+              />
+            </FormField>
+
+            <FormField
+              label="Descrição"
+              htmlFor="prod-desc"
+              className="sm:col-span-2"
+            >
               <Textarea
                 id="prod-desc"
                 rows={4}
@@ -331,14 +389,24 @@ export function ProductFormPage() {
           </FormGrid>
 
           <div className="border-t border-border/60 pt-4">
-            <DynamicCategoryAttributes defs={selectedDefs} values={attrs} onChange={setAttrs} />
+            <DynamicCategoryAttributes
+              defs={selectedDefs}
+              values={attrs}
+              onChange={setAttrs}
+            />
           </div>
 
-          {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+          {formError ? (
+            <p className="text-sm text-destructive">{formError}</p>
+          ) : null}
 
           <FormActions>
             <Button type="submit" disabled={pending}>
-              {pending ? "Salvando…" : isEdit ? "Salvar alterações" : "Criar produto"}
+              {pending
+                ? "Salvando…"
+                : isEdit
+                  ? "Salvar alterações"
+                  : "Criar produto"}
             </Button>
             <Button variant="outline" asChild>
               <Link to="/produtos">Cancelar</Link>
@@ -347,7 +415,9 @@ export function ProductFormPage() {
         </FormSection>
       </form>
 
-      {isEdit && productId ? <ProductPromotionsPanel productId={productId} /> : null}
+      {isEdit && productId ? (
+        <ProductPromotionsPanel productId={productId} />
+      ) : null}
     </div>
   );
 }

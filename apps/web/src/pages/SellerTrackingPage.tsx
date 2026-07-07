@@ -2,7 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
-import { SellerTrackingMap, type SellerMapMarker } from "../components/SellerTrackingMap";
+import {
+  SellerTrackingMap,
+  type SellerMapMarker,
+} from "../components/SellerTrackingMap";
 import { useLiveSellerTrailFromWs } from "../hooks/useLiveSellerTrailFromWs";
 import { useSellerLocationsWs } from "../hooks/useSellerLocationsWs";
 import { apiFetch } from "../lib/api";
@@ -58,7 +61,10 @@ type HistoryPayload = {
 
 function fmtWhen(iso: string | null): string {
   if (!iso) return "Sem posição";
-  return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  return new Date(iso).toLocaleString("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
 }
 
 function todayIso(): string {
@@ -90,8 +96,13 @@ export function SellerTrackingPage() {
     return historyQ.data.points.map((p) => ({ lat: p.lat, lng: p.lng }));
   }, [showTrail, historyQ.data]);
 
-  const { liveTrail, onSellerLocation } = useLiveSellerTrailFromWs(selectedId, historySeedPoints);
-  const { connected: wsConnected } = useSellerLocationsWs(true, { onSellerLocation });
+  const { liveTrail, onSellerLocation } = useLiveSellerTrailFromWs(
+    selectedId,
+    historySeedPoints,
+  );
+  const { connected: wsConnected } = useSellerLocationsWs(true, {
+    onSellerLocation,
+  });
 
   const q = useQuery({
     queryKey: ["admin", "seller-locations"],
@@ -102,7 +113,9 @@ export function SellerTrackingPage() {
 
   const sellers = q.data?.sellers ?? [];
   const onlineCount = sellers.filter((s) => s.isOnline).length;
-  const withGps = sellers.filter((s) => s.latitude != null && s.longitude != null);
+  const withGps = sellers.filter(
+    (s) => s.latitude != null && s.longitude != null,
+  );
 
   const mapMarkers: SellerMapMarker[] = useMemo(
     () =>
@@ -135,15 +148,25 @@ export function SellerTrackingPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">Rastreio em tempo real</h1>
+        <h1 className="text-2xl font-semibold text-foreground">
+          Rastreio em tempo real
+        </h1>
         <p className="mt-2 max-w-3xl text-muted-foreground">
-          Posição enviada pelo app do vendedor (primeiro plano e, com permissão, em segundo plano).
-          Mapa: {isGoogleMapsConfigured() ? "Google Maps" : "OpenStreetMap (configure a chave Google)"}.
-          Online = GPS nos últimos {q.data?.onlineThresholdMinutes ?? 5} minutos.
+          Posição enviada pelo app do vendedor (primeiro plano e, com permissão,
+          em segundo plano). Mapa:{" "}
+          {isGoogleMapsConfigured()
+            ? "Google Maps"
+            : "OpenStreetMap (configure a chave Google)"}
+          . Online = GPS nos últimos {q.data?.onlineThresholdMinutes ?? 5}{" "}
+          minutos.
           {wsConnected ? (
-            <span className="ml-1 font-medium text-success">· Ao vivo (WebSocket)</span>
+            <span className="ml-1 font-medium text-success">
+              · Ao vivo (WebSocket)
+            </span>
           ) : (
-            <span className="ml-1 text-muted-foreground">· Atualização periódica (reconectando…)</span>
+            <span className="ml-1 text-muted-foreground">
+              · Atualização periódica (reconectando…)
+            </span>
           )}
         </p>
       </div>
@@ -157,22 +180,27 @@ export function SellerTrackingPage() {
           Online: <strong className="text-success">{onlineCount}</strong>
         </span>
         <span>
-          Com GPS no mapa: <strong className="text-foreground">{withGps.length}</strong>
+          Com GPS no mapa:{" "}
+          <strong className="text-foreground">{withGps.length}</strong>
         </span>
         <span className="text-muted-foreground">
-          {q.isFetching ? "Atualizando…" : `Última leitura: ${new Date().toLocaleTimeString("pt-BR")}`}
+          {q.isFetching
+            ? "Atualizando…"
+            : `Última leitura: ${new Date().toLocaleTimeString("pt-BR")}`}
         </span>
       </div>
 
       {isManager && sellers.length === 0 && !q.isLoading ? (
         <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
-          Nenhum vendedor na sua equipe. Peça ao administrador para associar vendedores ao seu perfil de
-          gestor.
+          Nenhum vendedor na sua equipe. Peça ao administrador para associar
+          vendedores ao seu perfil de gestor.
         </div>
       ) : null}
 
       {q.isError ? (
-        <p className="text-sm text-destructive">Não foi possível carregar as posições dos vendedores.</p>
+        <p className="text-sm text-destructive">
+          Não foi possível carregar as posições dos vendedores.
+        </p>
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(260px,320px)_1fr]">
@@ -180,7 +208,9 @@ export function SellerTrackingPage() {
           <ul className="divide-y divide-border">
             {sellers.length === 0 && !q.isLoading ? (
               <li className="px-4 py-8 text-center text-sm text-muted-foreground">
-                {isManager ? "Nenhum vendedor na equipe." : "Nenhum vendedor ativo."}
+                {isManager
+                  ? "Nenhum vendedor na equipe."
+                  : "Nenhum vendedor ativo."}
               </li>
             ) : null}
             {sellers.map((s) => (
@@ -194,8 +224,12 @@ export function SellerTrackingPage() {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="font-semibold text-foreground">{s.sellerName}</p>
-                      <p className="text-xs text-muted-foreground">{fmtWhen(s.recordedAt)}</p>
+                      <p className="font-semibold text-foreground">
+                        {s.sellerName}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {fmtWhen(s.recordedAt)}
+                      </p>
                       {s.activeVisit ? (
                         <p className="mt-1 text-xs font-medium text-warning">
                           Em visita: {s.activeVisit.customerName}
@@ -226,11 +260,19 @@ export function SellerTrackingPage() {
 
           {selected ? (
             <div className="rounded-xl border border-border bg-card p-4 text-sm text-foreground">
-              <p className="font-semibold text-foreground">{selected.sellerName}</p>
-              <p className="mt-1 text-muted-foreground">{selected.sellerEmail}</p>
+              <p className="font-semibold text-foreground">
+                {selected.sellerName}
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                {selected.sellerEmail}
+              </p>
               <p className="mt-2">
                 Estado:{" "}
-                <strong className={selected.isOnline ? "text-success" : "text-muted-foreground"}>
+                <strong
+                  className={
+                    selected.isOnline ? "text-success" : "text-muted-foreground"
+                  }
+                >
                   {selected.isOnline ? "Online" : "Offline"}
                 </strong>
                 {" · "}
@@ -258,7 +300,9 @@ export function SellerTrackingPage() {
               </div>
 
               {showTrail && historyQ.isLoading ? (
-                <p className="mt-2 text-xs text-muted-foreground">Carregando trajeto…</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Carregando trajeto…
+                </p>
               ) : null}
               {showTrail && historyQ.data && historyQ.data.points.length > 0 ? (
                 <p className="mt-2 text-xs text-muted-foreground">
@@ -268,7 +312,10 @@ export function SellerTrackingPage() {
                   {historyQ.data.trailSource === "google_routes" ? (
                     <>
                       Trajeto por estrada ~
-                      {formatDistance(historyQ.data.roadDistanceMeters ?? historyQ.data.distanceMeters)}
+                      {formatDistance(
+                        historyQ.data.roadDistanceMeters ??
+                          historyQ.data.distanceMeters,
+                      )}
                     </>
                   ) : (
                     <>
@@ -282,18 +329,28 @@ export function SellerTrackingPage() {
                     </>
                   )}
                   {" · "}
-                  {new Date(historyQ.data.points[0]!.recordedAt).toLocaleTimeString("pt-BR", {
+                  {new Date(
+                    historyQ.data.points[0]!.recordedAt,
+                  ).toLocaleTimeString("pt-BR", {
                     hour: "2-digit",
                     minute: "2-digit",
                   })}{" "}
                   →{" "}
                   {new Date(
-                    historyQ.data.points[historyQ.data.points.length - 1]!.recordedAt,
-                  ).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                    historyQ.data.points[historyQ.data.points.length - 1]!
+                      .recordedAt,
+                  ).toLocaleTimeString("pt-BR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </p>
               ) : null}
-              {showTrail && historyQ.data && historyQ.data.points.length === 0 ? (
-                <p className="mt-2 text-xs text-warning">Sem pontos de trajeto nesta data.</p>
+              {showTrail &&
+              historyQ.data &&
+              historyQ.data.points.length === 0 ? (
+                <p className="mt-2 text-xs text-warning">
+                  Sem pontos de trajeto nesta data.
+                </p>
               ) : null}
 
               {showTrail && mapsFeatures ? (
@@ -302,21 +359,27 @@ export function SellerTrackingPage() {
                   {mapsFeatures.googleRoutesEnabled
                     ? mapsFeatures.googleRoutesQuotaAllowed
                       ? `${mapsFeatures.googleRoutesRemaining} pedido(s) restante(s) hoje (limite ${mapsFeatures.googleRoutesDailyMaxPerOrg}/org)`
-                      : mapsFeatures.googleRoutesQuotaReason ?? "sem cota"
-                    : "desligado (GOOGLE_ROUTES_ENABLED=false)"}
+                      : (mapsFeatures.googleRoutesQuotaReason ?? "sem cota")
+                    : "desligado (GOOGLE_ROUTES_ENABLED=true)"}
                 </p>
               ) : null}
 
               {liveTrailOn && selected ? (
                 <p className="mt-2 text-xs text-violet-800">
-                  Trajeto ao vivo (GPS): {liveTrail.length >= 2 ? `${liveTrail.length} pontos` : "aguardando pings…"}
+                  Trajeto ao vivo (GPS):{" "}
+                  {liveTrail.length >= 2
+                    ? `${liveTrail.length} pontos`
+                    : "aguardando pings…"}
                 </p>
               ) : null}
 
               {selected.activeVisit ? (
                 <p className="mt-2">
-                  Visita em curso em <strong>{selected.activeVisit.customerName}</strong> desde{" "}
-                  {new Date(selected.activeVisit.checkedInAt).toLocaleString("pt-BR")}
+                  Visita em curso em{" "}
+                  <strong>{selected.activeVisit.customerName}</strong> desde{" "}
+                  {new Date(selected.activeVisit.checkedInAt).toLocaleString(
+                    "pt-BR",
+                  )}
                 </p>
               ) : null}
               {selected.latitude != null && selected.longitude != null ? (
@@ -336,11 +399,15 @@ export function SellerTrackingPage() {
                 </p>
               ) : (
                 <p className="mt-2 text-warning">
-                  Ainda sem GPS — o vendedor precisa abrir o app mobile com localização permitida.
+                  Ainda sem GPS — o vendedor precisa abrir o app mobile com
+                  localização permitida.
                 </p>
               )}
               <p className="mt-3">
-                <Link to="/visitas" className="font-medium text-sky-700 hover:underline">
+                <Link
+                  to="/visitas"
+                  className="font-medium text-sky-700 hover:underline"
+                >
                   Ver histórico de visitas →
                 </Link>
               </p>
@@ -349,13 +416,16 @@ export function SellerTrackingPage() {
 
           <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 rounded-full bg-success" /> Online
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-success" />{" "}
+              Online
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 rounded-full bg-muted-foreground" /> Offline / sem sinal recente
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-muted-foreground" />{" "}
+              Offline / sem sinal recente
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-3 w-6 rounded bg-sky-600" /> Trajeto do dia
+              <span className="inline-block h-3 w-6 rounded bg-sky-600" />{" "}
+              Trajeto do dia
             </span>
             {liveTrailOn ? (
               <span className="flex items-center gap-1.5">

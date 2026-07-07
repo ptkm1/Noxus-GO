@@ -52,6 +52,14 @@ enum ProductComboDiscountKind {
   PERCENT_OF_SET_SUBTOTAL
 }
 
+/// Como o vendedor é comissionado (define de onde vem o % na venda).
+enum SellerCommissionType {
+  FIXED
+  BY_PRODUCT
+  BY_CATEGORY
+  BY_SUPPLIER
+}
+
 model Organization {
   id               String             @id @default(cuid())
   name             String
@@ -110,6 +118,7 @@ model Seller {
   organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   managerUserId     String?
   manager           User?              @relation("SellerManager", fields: [managerUserId], references: [id], onDelete: SetNull)
+  commissionType    SellerCommissionType @default(FIXED)
   commissionPercent Decimal            @db.Decimal(5, 2)
   active            Boolean            @default(true)
   sellerProducts    SellerProduct[]
@@ -204,6 +213,8 @@ model ProductCategory {
   name             String
   /// JSON: lista de definições de campos dinâmicos (tipo PIM por categoria).
   attributeSchema  Json?
+  /// % de comissão quando vendedores usam modo BY_CATEGORY.
+  commissionPercent Decimal?          @db.Decimal(5, 2)
   products         Product[]
   commissionRules  SellerCommissionRule[]
   createdAt        DateTime     @default(now())
@@ -225,6 +236,8 @@ model Product {
   maxSellerDiscountPercent Decimal?    @db.Decimal(5, 2)
   /// Piso por unidade após promoções e desconto do vendedor (null = sem piso específico).
   minSaleUnitPrice Decimal?           @db.Decimal(12, 2)
+  /// % de comissão quando vendedores usam modo BY_PRODUCT.
+  commissionPercent Decimal?           @db.Decimal(5, 2)
   /// JSON: valores dos campos definidos em `category.attributeSchema`.
   attributes       Json               @default("{}")
   organizationId   String

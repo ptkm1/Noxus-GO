@@ -6,7 +6,10 @@ export type CommissionResolveContext = {
   mtdConfirmedRevenue: number;
 };
 
-async function loadApplicableProgressiveTiers(organizationId: string, sellerId: string) {
+async function loadApplicableProgressiveTiers(
+  organizationId: string,
+  sellerId: string,
+) {
   const specific = await prisma.commissionProgressiveTier.findMany({
     where: { organizationId, sellerId, active: true },
     orderBy: [{ thresholdAmount: "asc" }, { priority: "desc" }],
@@ -33,32 +36,81 @@ export async function resolveProgressiveCommissionPercent(
   return picked ? decToNum(picked.commissionPercent) : null;
 }
 
-/** Linha base exibida ao vendedor: regra geral > progressiva MTD > % cadastro. */
+function percentFromRules(
+  rules: Array<{
+    productId: string | null;
+    categoryId: string | null;
+    commissionPercent: { toString(): string };
+  }>,
+  productId: string,
+  categoryId: string | null,
+): number | null {
+  for (const r of rules) {
+    if (r.productId && r.productId === productId)
+      return decToNum(r.commissionPercent);
+  }
+  for (const r of rules) {
+    if (
+      !r.productId &&
+      r.categoryId &&
+      categoryId &&
+      r.categoryId === categoryId
+    ) {
+      return decToNum(r.commissionPercent);
+    }
+  }
+  for (const r of rules) {
+    if (!r.productId && !r.categoryId) return decToNum(r.commissionPercent);
+  }
+  return null;
+}
+
+/** Linha base exibida ao vendedor: regra geral > progressiva MTD > % cadastro / tipo. */
 export async function resolveCommissionBaselinePercent(
   organizationId: string,
   sellerId: string,
   mtdRevenue: number,
 ): Promise<number> {
+  const seller = await prisma.seller.findFirst({
+    where: { id: sellerId, organizationId },
+    select: { commissionType: true, commissionPercent: true },
+  });
+  if (!seller) throw new Error("Vendedor não encontrado");
+
   const rules = await prisma.sellerCommissionRule.findMany({
-    where: { organizationId, sellerId, active: true, productId: null, categoryId: null },
+    where: {
+      organizationId,
+      sellerId,
+      active: true,
+      productId: null,
+      categoryId: null,
+    },
     orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
   });
   if (rules.length) return decToNum(rules[0].commissionPercent);
 
-  const prog = await resolveProgressiveCommissionPercent(organizationId, sellerId, mtdRevenue);
-  if (prog != null) return prog;
+  if (seller.commissionType === "FIXED") {
+    const prog = await resolveProgressiveCommissionPercent(
+      organizationId,
+      sellerId,
+      mtdRevenue,
+    );
+    if (prog != null) return prog;
+  }
 
-  const seller = await prisma.seller.findFirst({
-    where: { id: sellerId, organizationId },
-    select: { commissionPercent: true },
-  });
-  if (!seller) throw new Error("Vendedor não encontrado");
+  if (
+    seller.commissionType === "BY_PRODUCT" ||
+    seller.commissionType === "BY_CATEGORY"
+  ) {
+    return decToNum(seller.commissionPercent);
+  }
+
   return decToNum(seller.commissionPercent);
 }
 
 /**
  * Comissão efetiva por linha:
- * regra por produto > por categoria > regra geral > faixa progressiva (MTD) > % cadastro do vendedor.
+ * regra por produto > por categoria > regra geral > tipo do vendedor > faixa progressiva (FIXED) > % cadastro.
  */
 export async function resolveCommissionPercent(
   organizationId: string,
@@ -67,38 +119,58 @@ export async function resolveCommissionPercent(
   categoryId: string | null,
   ctx?: CommissionResolveContext,
 ): Promise<number> {
+  const seller = await prisma.seller.findFirst({
+    where: { id: sellerId, organizationId },
+    select: { commissionType: true, commissionPercent: true },
+  });
+  if (!seller) throw new Error("Vendedor não encontrado");
+
   const rules = await prisma.sellerCommissionRule.findMany({
     where: { organizationId, sellerId, active: true },
     orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
   });
 
-  for (const r of rules) {
-    if (r.productId && r.productId === productId) return decToNum(r.commissionPercent);
-  }
-  for (const r of rules) {
-    if (!r.productId && r.categoryId && categoryId && r.categoryId === categoryId) {
-      return decToNum(r.commissionPercent);
+  const fromRules = percentFromRules(rules, productId, categoryId);
+  if (fromRules != null) return fromRules;
+
+  const mtd = ctx?.mtdConfirmedRevenue;
+
+  switch (seller.commissionType) {
+    case "BY_PRODUCT": {
+      const product = await prisma.product.findFirst({
+        where: { id: productId, organizationId },
+        select: { commissionPercent: true },
+      });
+      if (product?.commissionPercent != null)
+        return decToNum(product.commissionPercent);
+      return decToNum(seller.commissionPercent);
+    }
+    case "BY_CATEGORY": {
+      if (categoryId) {
+        const category = await prisma.productCategory.findFirst({
+          where: { id: categoryId, organizationId },
+          select: { commissionPercent: true },
+        });
+        if (category?.commissionPercent != null)
+          return decToNum(category.commissionPercent);
+      }
+      return decToNum(seller.commissionPercent);
+    }
+    case "BY_SUPPLIER":
+      return decToNum(seller.commissionPercent);
+    case "FIXED":
+    default: {
+      if (mtd != null && mtd >= 0) {
+        const prog = await resolveProgressiveCommissionPercent(
+          organizationId,
+          sellerId,
+          mtd,
+        );
+        if (prog != null) return prog;
+      }
+      return decToNum(seller.commissionPercent);
     }
   }
-  for (const r of rules) {
-    if (!r.productId && !r.categoryId) return decToNum(r.commissionPercent);
-  }
-
-  if (ctx && ctx.mtdConfirmedRevenue >= 0) {
-    const prog = await resolveProgressiveCommissionPercent(
-      organizationId,
-      sellerId,
-      ctx.mtdConfirmedRevenue,
-    );
-    if (prog != null) return prog;
-  }
-
-  const seller = await prisma.seller.findFirst({
-    where: { id: sellerId, organizationId },
-    select: { commissionPercent: true },
-  });
-  if (!seller) throw new Error("Vendedor não encontrado");
-  return decToNum(seller.commissionPercent);
 }
 
 export async function getProgressiveTierRowsForSeller(

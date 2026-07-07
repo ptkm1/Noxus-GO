@@ -3,7 +3,11 @@ export const API_PREFIX = "/api/v1";
 
 export type Role = "ADMIN" | "SELLER" | "SUPERVISOR" | "MANAGER";
 
-export type OrderStatus = "DRAFT" | "CONFIRMED" | "CANCELLED" | "PENDING_CREDIT_APPROVAL";
+export type OrderStatus =
+  | "DRAFT"
+  | "CONFIRMED"
+  | "CANCELLED"
+  | "PENDING_CREDIT_APPROVAL";
 
 export const ORDER_STATUSES: OrderStatus[] = [
   "DRAFT",
@@ -12,7 +16,6 @@ export const ORDER_STATUSES: OrderStatus[] = [
   "PENDING_CREDIT_APPROVAL",
 ];
 
-export type { CnpjCompanyData } from "./cnpj.js";
 export {
   cnpjDigitsOnly,
   formatBrazilPhoneDigits,
@@ -20,3 +23,9 @@ export {
   isCnpjComplete,
   suggestedTradeName,
 } from "./cnpj.js";
+export type { CnpjCompanyData } from "./cnpj.js";
+export {
+  SELLER_COMMISSION_TYPES,
+  sellerCommissionTypeLabel,
+} from "./commission.js";
+export type { SellerCommissionType } from "./commission.js";

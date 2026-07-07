@@ -82,6 +82,16 @@ export async function apiFetch<T>(path: string, opts: Opt = {}): Promise<T> {
 }
 
 export async function downloadPdf(pathWithQuery: string, filename: string) {
+  const blob = await fetchPdfBlob(pathWithQuery);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function fetchPdfBlob(pathWithQuery: string): Promise<Blob> {
   const h = new Headers();
   const t = getAccessToken();
   if (t) h.set("Authorization", `Bearer ${t}`);
@@ -89,11 +99,28 @@ export async function downloadPdf(pathWithQuery: string, filename: string) {
   applyTunnelHeaders(h, pdfUrl);
   const res = await fetch(pdfUrl, { headers: h });
   if (!res.ok) throw new Error("Falha ao gerar PDF");
-  const blob = await res.blob();
+  return res.blob();
+}
+
+/** Abre o diálogo de impressão do navegador com o PDF do pedido. */
+export async function printPdf(pathWithQuery: string) {
+  const blob = await fetchPdfBlob(pathWithQuery);
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  iframe.src = url;
+  document.body.appendChild(iframe);
+  iframe.onload = () => {
+    iframe.contentWindow?.focus();
+    iframe.contentWindow?.print();
+    window.setTimeout(() => {
+      document.body.removeChild(iframe);
+      URL.revokeObjectURL(url);
+    }, 1000);
+  };
 }

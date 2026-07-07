@@ -1,4 +1,4 @@
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ThemedButton } from "@/components/atoms/ThemedButton";
 import { ThemedCard } from "@/components/atoms/ThemedCard";
 import { ThemedText } from "@/components/atoms/ThemedText";
 import { MobileHeader, MobileScreen } from "@/components/layout";
@@ -7,10 +7,12 @@ import { useSaleDetailScreen } from "@/hooks/screens/useSaleDetailScreen";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
 import { orderStatusDetailLabel } from "@/lib/utils/order-status";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 export default function SaleDetailScreen() {
   const { colors } = useTheme();
-  const { order, isLoading } = useSaleDetailScreen();
+  const { order, isLoading, pdfPending, pdfErr, shareOrderPdf } =
+    useSaleDetailScreen();
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -25,7 +27,9 @@ export default function SaleDetailScreen() {
             {new Date(order.createdAt).toLocaleString("pt-BR")} ·{" "}
             {orderStatusDetailLabel(order.status)}
           </ThemedText>
-          <ThemedText variant="title">{order.customer?.name ?? "Sem cliente"}</ThemedText>
+          <ThemedText variant="title">
+            {order.customer?.name ?? "Sem cliente"}
+          </ThemedText>
           {order.creditHoldReasons != null ? (
             <ThemedCard
               style={{
@@ -63,6 +67,23 @@ export default function SaleDetailScreen() {
             <ThemedText variant="titleSm">Total</ThemedText>
             <MoneyLabel amount={Number(order.totalAmount)} />
           </View>
+
+          {pdfErr ? (
+            <ThemedText
+              variant="bodySm"
+              style={{ color: colors.danger, marginTop: 12 }}
+            >
+              {pdfErr}
+            </ThemedText>
+          ) : null}
+          <ThemedButton
+            variant="outline"
+            disabled={pdfPending}
+            style={{ marginTop: 16 }}
+            onPress={() => void shareOrderPdf()}
+          >
+            {pdfPending ? "Gerando PDF…" : "Imprimir / compartilhar PDF"}
+          </ThemedButton>
         </MobileScreen>
       )}
     </View>
