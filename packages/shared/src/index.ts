@@ -19,8 +19,11 @@ export const ORDER_STATUSES: OrderStatus[] = [
 export {
   cnpjDigitsOnly,
   formatBrazilPhoneDigits,
+  formatCnpjAddress,
   formatCnpjMask,
   isCnpjComplete,
+  isCnpjSituacaoAtiva,
+  isValidCnpj,
   suggestedTradeName,
 } from "./cnpj.js";
 export type { CnpjCompanyData } from "./cnpj.js";

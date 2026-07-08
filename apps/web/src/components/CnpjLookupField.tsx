@@ -3,6 +3,8 @@ import {
   cnpjDigitsOnly,
   formatCnpjMask,
   isCnpjComplete,
+  isCnpjSituacaoAtiva,
+  isValidCnpj,
   suggestedTradeName,
 } from "@pedidos/shared";
 import { useCallback, useState } from "react";
@@ -26,13 +28,19 @@ export function CnpjLookupField({
   const [loading, setLoading] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const [lastOk, setLastOk] = useState<string | null>(null);
+  const [situacaoWarning, setSituacaoWarning] = useState<string | null>(null);
 
   const lookup = useCallback(async () => {
     const d = cnpjDigitsOnly(digits);
     setHint(null);
     setLastOk(null);
+    setSituacaoWarning(null);
     if (d.length !== 14) {
       setHint("Informe os 14 dígitos do CNPJ.");
+      return;
+    }
+    if (!isValidCnpj(d)) {
+      setHint("CNPJ inválido (dígitos verificadores incorretos).");
       return;
     }
     setLoading(true);
@@ -45,6 +53,11 @@ export function CnpjLookupField({
       setLastOk(
         `${trade}${data.situacaoCadastral ? ` · ${data.situacaoCadastral}` : ""}`,
       );
+      if (!isCnpjSituacaoAtiva(data.situacaoCadastral)) {
+        setSituacaoWarning(
+          `Atenção: situação cadastral «${data.situacaoCadastral}» — confira na Receita Federal antes de prosseguir.`,
+        );
+      }
     } catch (e) {
       setHint(e instanceof Error ? e.message : "Não foi possível consultar o CNPJ.");
     } finally {
@@ -93,13 +106,16 @@ export function CnpjLookupField({
           type="button"
           variant="outline"
           className="shrink-0"
-          disabled={disabled || loading || !isCnpjComplete(digits)}
+          disabled={
+            disabled || loading || !isCnpjComplete(digits) || !isValidCnpj(digits)
+          }
           onClick={() => void lookup()}
         >
           {loading ? "A consultar…" : buttonLabel}
         </Button>
       </div>
       {hint ? <p className="text-sm text-destructive">{hint}</p> : null}
+      {situacaoWarning ? <p className="text-sm text-amber-700">{situacaoWarning}</p> : null}
       {lastOk ? <p className="text-sm text-success">{lastOk}</p> : null}
     </FormField>
   );

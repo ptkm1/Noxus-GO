@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "NODE_ENV=development ../../node_modules/tsx/dist/cli.mjs watch src/index.ts",
+    "dev": "node ../../scripts/run-dev-api.mjs",
+    "dev:win": "cmd /c scripts\\dev.cmd",
+    "dev:mac": "sh scripts/dev.sh",
     "build": "tsc",
     "typecheck:prisma": "tsc -p tsconfig.prisma.json",
     "start": "node dist/index.js",
@@ -15,6 +17,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
+    "@fastify/rate-limit": "^10.3.0",
     "@fastify/websocket": "^11.2.0",
     "@pedidos/shared": "workspace:*",
     "@prisma/adapter-pg": "^7.8.0",

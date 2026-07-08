@@ -1,4 +1,4 @@
-import { formatCnpjMask, isCnpjComplete } from "@pedidos/shared";
+import { formatCnpjMask, isCnpjComplete, isValidCnpj } from "@pedidos/shared";
 import { Search, UserPlus } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import {
@@ -38,11 +38,14 @@ export default function CustomersScreen() {
     setEmail,
     phone,
     setPhone,
+    addressNote,
+    setAddressNote,
     cnpjDigits,
     onCnpjChange,
     cnpjLoading,
     cnpjErr,
     cnpjOk,
+    cnpjWarning,
     lookupCnpj,
     create,
     openCustomer,
@@ -104,7 +107,11 @@ export default function CustomersScreen() {
             <ThemedButton
               variant="outline"
               size="sm"
-              disabled={!isCnpjComplete(cnpjDigits) || cnpjLoading}
+              disabled={
+                !isCnpjComplete(cnpjDigits) ||
+                !isValidCnpj(cnpjDigits) ||
+                cnpjLoading
+              }
               onPress={() => void lookupCnpj()}
             >
               {cnpjLoading ? "…" : "Buscar"}
@@ -113,6 +120,11 @@ export default function CustomersScreen() {
           {cnpjErr ? (
             <ThemedText variant="caption" style={{ color: colors.danger }}>
               {cnpjErr}
+            </ThemedText>
+          ) : null}
+          {cnpjWarning ? (
+            <ThemedText variant="caption" style={{ color: colors.warning, fontWeight: "600" }}>
+              {cnpjWarning}
             </ThemedText>
           ) : null}
           {cnpjOk ? (
@@ -129,6 +141,11 @@ export default function CustomersScreen() {
             onChangeText={setEmail}
           />
           <ThemedTextInput placeholder="Telefone" value={phone} onChangeText={setPhone} />
+          <ThemedTextInput
+            placeholder="Endereço / nota (opcional)"
+            value={addressNote}
+            onChangeText={setAddressNote}
+          />
           <ThemedButton
             disabled={!canSubmit}
             onPress={() => {

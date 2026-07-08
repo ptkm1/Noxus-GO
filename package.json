@@ -3,6 +3,10 @@
   "private": true,
   "scripts": {
     "dev:api": "pnpm --filter @pedidos/api dev",
+    "dev:api:win": "pnpm --filter @pedidos/api dev:win",
+    "dev:api:mac": "pnpm --filter @pedidos/api dev:mac",
+    "build:shared": "node scripts/build-package.mjs packages/shared",
+    "build:design-tokens": "node scripts/build-package.mjs packages/design-tokens",
     "dev:web": "pnpm --filter @pedidos/web dev",
     "dev:mobile": "pnpm --filter @pedidos/mobile start",
     "dev:mobile:client": "pnpm --filter @pedidos/mobile start:dev",

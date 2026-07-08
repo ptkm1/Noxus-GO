@@ -432,6 +432,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         name: z.string().min(1),
         email: z.string().email().optional(),
         phone: z.string().optional(),
+        addressNote: z.string().max(500).optional(),
       })
       .safeParse(req.body);
     if (!body.success)
@@ -442,6 +443,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         name: body.data.name,
         email: body.data.email,
         phone: body.data.phone,
+        addressNote: body.data.addressNote,
         organizationId: auth.organizationId,
         sellerId: auth.sellerId,
       },
