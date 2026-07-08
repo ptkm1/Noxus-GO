@@ -93,6 +93,8 @@ model Organization {
   sellerCustomerVisits SellerCustomerVisit[]
   sellerLiveLocations  SellerLiveLocation[]
   sellerLocationHistory SellerLocationHistory[]
+  salesTeams         SalesTeam[]
+  suppliers          Supplier[]
 }
 
 model User {
@@ -132,10 +134,28 @@ model Seller {
   sellerCustomerVisits SellerCustomerVisit[]
   liveLocation         SellerLiveLocation?
   locationHistory      SellerLocationHistory[]
+  teamId               String?
+  team                 SalesTeam?         @relation("TeamMembers", fields: [teamId], references: [id], onDelete: SetNull)
+  ledTeam              SalesTeam?         @relation("TeamLeader")
   createdAt         DateTime           @default(now())
   updatedAt         DateTime         @updatedAt
 
   @@index([organizationId, managerUserId])
+  @@index([organizationId, teamId])
+}
+
+model SalesTeam {
+  id             String       @id @default(cuid())
+  name           String
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leaderSellerId String       @unique
+  leaderSeller   Seller       @relation("TeamLeader", fields: [leaderSellerId], references: [id], onDelete: Restrict)
+  members        Seller[]     @relation("TeamMembers")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
 }
 
 /// Última posição reportada pelo app do vendedor (foreground).
@@ -224,10 +244,30 @@ model ProductCategory {
   @@map("product_categories")
 }
 
+model Supplier {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code           String
+  legalName      String
+  cnpj           String
+  tradeName      String
+  active         Boolean      @default(true)
+  products       Product[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, code])
+  @@unique([organizationId, cnpj])
+  @@index([organizationId])
+}
+
 model Product {
   id               String             @id @default(cuid())
   name             String
   sku              String?
+  /// Código de barras / EAN para leitura na venda rápida.
+  barcode          String?
   description      String?
   /// URL pública da foto (CDN, bucket, etc.) para catálogo no app do vendedor.
   imageUrl         String?
@@ -240,10 +280,16 @@ model Product {
   commissionPercent Decimal?           @db.Decimal(5, 2)
   /// JSON: valores dos campos definidos em `category.attributeSchema`.
   attributes       Json               @default("{}")
+  /// Quantidade em estoque (unidades vendáveis).
+  stockQty         Int                @default(0)
+  /// Se ativo, impede venda quando `stockQty` é insuficiente.
+  blockSaleWhenOutOfStock Boolean       @default(false)
   organizationId   String
   organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   categoryId       String?
   category         ProductCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  supplierId       String?
+  supplier         Supplier?          @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   priceTableItems  PriceTableItem[]
   sellerProducts   SellerProduct[]
   promotions       ProductPromotion[]
@@ -252,6 +298,9 @@ model Product {
   orderItems       OrderItem[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
+
+  @@unique([organizationId, barcode])
+  @@index([organizationId, supplierId])
 }
 
 model ProductPromotion {

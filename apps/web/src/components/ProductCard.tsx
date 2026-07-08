@@ -1,17 +1,27 @@
-import { Link } from "react-router-dom";
-import { Package, Pencil, Trash2 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import {
+  formatProductStockLabel,
+  formatProductUnitLabel,
+  isProductSaleBlockedByStock,
+} from "@pedidos/shared";
+import { Package, Pencil, Trash2 } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export type ProductCardItem = {
   id: string;
   name: string;
   sku: string | null;
+  barcode?: string | null;
   description: string | null;
   imageUrl?: string | null;
   basePrice: unknown;
+  stockQty?: number;
+  blockSaleWhenOutOfStock?: boolean;
+  attributes?: Record<string, unknown>;
   category?: { id: string; code: string; name: string } | null;
+  supplier?: { id: string; code: string; tradeName: string } | null;
 };
 
 type Props = {
@@ -23,6 +33,12 @@ type Props = {
 export function ProductCard({ product, onDelete, className }: Props) {
   const price = Number(product.basePrice);
   const imageUrl = product.imageUrl?.trim();
+  const stockQty = product.stockQty ?? 0;
+  const unitLabel = formatProductUnitLabel(product.attributes);
+  const outOfStock = isProductSaleBlockedByStock(
+    stockQty,
+    product.blockSaleWhenOutOfStock ?? false,
+  );
 
   return (
     <article
@@ -52,6 +68,14 @@ export function ProductCard({ product, onDelete, className }: Props) {
             {product.category.name}
           </Badge>
         ) : null}
+        {product.supplier ? (
+          <Badge
+            variant="outline"
+            className="absolute right-1.5 top-1.5 max-w-[85%] truncate border-0 bg-card/90 px-1.5 py-0 text-[10px] text-muted-foreground backdrop-blur-sm"
+          >
+            {product.supplier.tradeName}
+          </Badge>
+        ) : null}
       </div>
 
       <div className="flex flex-1 flex-col gap-1 p-2">
@@ -59,11 +83,29 @@ export function ProductCard({ product, onDelete, className }: Props) {
           {product.name}
         </h3>
         {product.sku ? (
-          <p className="truncate text-[10px] text-muted-foreground">SKU {product.sku}</p>
+          <p className="truncate text-[10px] text-muted-foreground">
+            SKU {product.sku}
+          </p>
+        ) : null}
+        {product.barcode ? (
+          <p className="truncate text-[10px] text-muted-foreground">
+            EAN {product.barcode}
+          </p>
         ) : null}
 
         <p className="text-sm font-bold text-success">
           R$ {Number.isFinite(price) ? price.toFixed(2) : "—"}
+        </p>
+        {unitLabel ? (
+          <p className="text-[10px] text-muted-foreground">{unitLabel}</p>
+        ) : null}
+        <p
+          className={cn(
+            "text-[10px] font-medium",
+            outOfStock ? "text-destructive" : "text-muted-foreground",
+          )}
+        >
+          {formatProductStockLabel(stockQty)}
         </p>
 
         <div className="mt-1 flex gap-1.5 border-t border-border/60 pt-2">

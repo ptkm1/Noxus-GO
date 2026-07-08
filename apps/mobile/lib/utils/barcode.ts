@@ -4,6 +4,25 @@ export function normalizeBarcode(raw: string): string {
   return raw.replace(/\D/g, "");
 }
 
+function codesMatch(
+  stored: string,
+  scanned: string,
+  scannedDigits: string,
+): boolean {
+  const trimmed = stored.trim();
+  if (!trimmed) return false;
+  if (trimmed === scanned) return true;
+  const storedDigits = normalizeBarcode(trimmed);
+  if (
+    scannedDigits.length >= 6 &&
+    storedDigits.length >= 6 &&
+    storedDigits === scannedDigits
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function findProductByBarcode<T extends ProductSearchable>(
   products: T[],
   raw: string,
@@ -11,11 +30,7 @@ export function findProductByBarcode<T extends ProductSearchable>(
   const trimmed = raw.trim();
   const digits = normalizeBarcode(raw);
   return products.find((p) => {
-    const sku = (p.sku ?? "").trim();
-    if (!sku) return false;
-    if (sku === trimmed) return true;
-    const skuDigits = normalizeBarcode(sku);
-    if (digits.length >= 6 && skuDigits.length >= 6 && skuDigits === digits) return true;
-    return false;
+    if (codesMatch(p.barcode ?? "", trimmed, digits)) return true;
+    return codesMatch(p.sku ?? "", trimmed, digits);
   });
 }

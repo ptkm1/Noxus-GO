@@ -3,8 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Crypto from "expo-crypto";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert } from "react-native";
-import { useWindowDimensions } from "react-native";
+import { Alert, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fmtMoney } from "../../components/atoms/formatMoney";
 import { apiFetch } from "../../lib/api";
@@ -18,17 +17,27 @@ import {
   PRODUCT_DOUBLE_TAP_MS,
   syncCartLinesWithProducts,
 } from "../../lib/sale/cart";
-import type { CartLine, CreditOverview, SaleCustomer, SaleProduct } from "../../lib/sale/types";
-import { computeCatalogTileWidths } from "../../lib/utils/catalog-layout";
+import { getProductStockBlockMessage } from "../../lib/sale/stock";
+import type {
+  CartLine,
+  CreditOverview,
+  SaleCustomer,
+  SaleProduct,
+} from "../../lib/sale/types";
 import { findProductByBarcode } from "../../lib/utils/barcode";
+import { computeCatalogTileWidths } from "../../lib/utils/catalog-layout";
 import { filterCustomersByName } from "../../lib/utils/product-search";
 import { useSellerProductCatalog } from "../useSellerProductCatalog";
 
-type SubmitSaleResult = { mode: "online"; status?: string } | { mode: "offlineQueued" };
+type SubmitSaleResult =
+  | { mode: "online"; status?: string }
+  | { mode: "offlineQueued" };
 
 export function useQuickSaleScreen() {
   const router = useRouter();
-  const { customerId: customerIdParam } = useLocalSearchParams<{ customerId?: string }>();
+  const { customerId: customerIdParam } = useLocalSearchParams<{
+    customerId?: string;
+  }>();
   const qc = useQueryClient();
   const insets = useSafeAreaInsets();
   const layout = computeCatalogTileWidths(useWindowDimensions().width);
@@ -40,7 +49,9 @@ export function useQuickSaleScreen() {
   const [scanMsg, setScanMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [lastCustomerId, setLastCustomerId] = useState<string | null>(null);
-  const productTapTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const productTapTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
 
   const catalog = useSellerProductCatalog({ customerId });
   const { products } = catalog;
@@ -106,7 +117,10 @@ export function useQuickSaleScreen() {
   }, [cart]);
 
   const cartLines = useMemo(() => Object.values(cart), [cart]);
-  const cartTotal = useMemo(() => cartLines.reduce((s, l) => s + cartLineTotal(l), 0), [cartLines]);
+  const cartTotal = useMemo(
+    () => cartLines.reduce((s, l) => s + cartLineTotal(l), 0),
+    [cartLines],
+  );
 
   const { data: creditInfo, isFetching: creditLoading } = useQuery({
     queryKey: ["seller", "customer-credit", customerId ?? "", cartTotal],
@@ -117,10 +131,20 @@ export function useQuickSaleScreen() {
     enabled: !!customerId,
   });
 
-  const creditBlockedCheckout = !!customerId && creditInfo?.effectiveAction === "BLOCK";
+  const creditBlockedCheckout =
+    !!customerId && creditInfo?.effectiveAction === "BLOCK";
 
   const bumpQty = useCallback((p: SaleProduct, delta: number) => {
-    setCart((prev) => bumpCartQty(prev, p, delta));
+    setCart((prev) => {
+      const currentQty = prev[p.id]?.qty ?? 0;
+      const blockMsg = getProductStockBlockMessage(p, currentQty, delta);
+      if (blockMsg) {
+        setErr(blockMsg);
+        return prev;
+      }
+      setErr(null);
+      return bumpCartQty(prev, p, delta);
+    });
   }, []);
 
   const scheduleProductTap = useCallback(
@@ -186,20 +210,27 @@ export function useQuickSaleScreen() {
         items: lines.map((l) => ({
           productId: l.productId,
           quantity: l.qty,
-          ...(l.discountPercent > 0 ? { discountPercent: l.discountPercent } : {}),
+          ...(l.discountPercent > 0
+            ? { discountPercent: l.discountPercent }
+            : {}),
         })),
         clientMutationId,
       };
 
       const result = await postSellerSale(payload);
-      if (result.kind === "success") return { mode: "online", status: result.status };
+      if (result.kind === "success")
+        return { mode: "online", status: result.status };
       if (result.kind === "dead") throw new Error(result.reason);
       if (result.kind === "auth") throw new Error(result.reason);
 
-      const customerLabel = customerId ? customers.find((c) => c.id === customerId)?.name : undefined;
+      const customerLabel = customerId
+        ? customers.find((c) => c.id === customerId)?.name
+        : undefined;
       const snapshot = {
         customerLabel,
-        lineSummaries: lines.map((l) => `${l.name} × ${l.qty} · R$ ${fmtMoney(cartLineTotal(l))}`),
+        lineSummaries: lines.map(
+          (l) => `${l.name} × ${l.qty} · R$ ${fmtMoney(cartLineTotal(l))}`,
+        ),
         cartTotalApprox: cartTotal,
       };
 
@@ -213,7 +244,10 @@ export function useQuickSaleScreen() {
     },
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ["seller", "sales"] });
-      void qc.invalidateQueries({ queryKey: ["seller", "commission-dashboard"] });
+      void qc.invalidateQueries({ queryKey: ["seller", "products"] });
+      void qc.invalidateQueries({
+        queryKey: ["seller", "commission-dashboard"],
+      });
       void qc.invalidateQueries({ queryKey: ["seller", "customer-credit"] });
       if (data.mode === "offlineQueued") {
         Alert.alert(

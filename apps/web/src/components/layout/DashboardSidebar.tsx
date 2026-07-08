@@ -1,7 +1,8 @@
-import { NavLink } from "react-router-dom";
-import { Zap } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/AuthContext";
+import { isWebTeamLeader } from "@/lib/staff";
+import { cn } from "@/lib/utils";
+import { Zap } from "lucide-react";
+import { NavLink } from "react-router-dom";
 import { navForRole } from "./navConfig";
 
 type Props = {
@@ -11,7 +12,7 @@ type Props = {
 
 export function DashboardSidebar({ onNavigate, className }: Props) {
   const { user } = useAuth();
-  const navItems = navForRole(user?.role);
+  const navItems = navForRole(user);
 
   return (
     <aside
@@ -24,10 +25,15 @@ export function DashboardSidebar({ onNavigate, className }: Props) {
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
           <Zap className="h-5 w-5 text-primary-foreground" />
         </div>
-        <span className="text-lg font-bold text-sidebar-foreground">Pedidos</span>
+        <span className="text-lg font-bold text-sidebar-foreground">
+          Pedidos
+        </span>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="Principal">
+      <nav
+        className="flex-1 space-y-1 overflow-y-auto px-3 py-4"
+        aria-label="Principal"
+      >
         {navItems.map((item) => {
           const Icon = item.icon;
           return (
@@ -53,9 +59,15 @@ export function DashboardSidebar({ onNavigate, className }: Props) {
       </nav>
 
       <div className="border-t border-sidebar-border p-4">
-        <p className="truncate text-xs text-sidebar-foreground/60">{user?.email}</p>
+        <p className="truncate text-xs text-sidebar-foreground/60">
+          {user?.email}
+        </p>
         <p className="mt-0.5 truncate text-sm font-medium text-sidebar-foreground">
-          {user?.role === "MANAGER" ? "Gestor" : "Administrador"}
+          {user?.role === "MANAGER"
+            ? "Gestor"
+            : isWebTeamLeader(user)
+              ? "Líder de equipe"
+              : "Administrador"}
         </p>
       </div>
     </aside>

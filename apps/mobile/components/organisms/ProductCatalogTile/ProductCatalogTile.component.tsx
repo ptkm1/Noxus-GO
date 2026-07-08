@@ -1,3 +1,10 @@
+import { useTheme } from "@/lib/theme";
+import {
+  formatProductPriceWithUnit,
+  formatProductStockLabel,
+  formatProductUnitLabel,
+  isProductSaleBlockedByStock,
+} from "@pedidos/shared";
 import { Heart, Package } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { Image, Pressable, Text, View } from "react-native";
@@ -6,7 +13,7 @@ import type { CatalogTileProduct } from "./catalog-tile.types";
 import { useProductCatalogTileStyles } from "./ProductCatalogTile.styles";
 
 export function ProductCatalogTile(props: {
-  variant: "rail" | "grid";
+  variant: "rail" | "grid" | "list";
   tileWidth: number;
   product: CatalogTileProduct;
   favorite: boolean;
@@ -14,6 +21,7 @@ export function ProductCatalogTile(props: {
   onAddPress: () => void;
   qtyInCart?: number;
   badgeBackgroundColor?: string;
+  disabled?: boolean;
 }) {
   const {
     variant,
@@ -24,15 +32,39 @@ export function ProductCatalogTile(props: {
     onAddPress,
     qtyInCart,
     badgeBackgroundColor,
+    disabled: disabledProp,
   } = props;
 
-  const imgHeight = variant === "rail" ? 104 : 128;
-  const styles = useProductCatalogTileStyles({ tileWidth, imgHeight, badgeBackgroundColor });
+  const stockQty = product.stockQty ?? 0;
+  const blocked = isProductSaleBlockedByStock(
+    stockQty,
+    product.blockSaleWhenOutOfStock ?? false,
+  );
+  const disabled = disabledProp ?? blocked;
+
+  const imgHeight = variant === "rail" ? 104 : variant === "list" ? 88 : 128;
+  const styles = useProductCatalogTileStyles({
+    variant,
+    tileWidth,
+    imgHeight,
+    badgeBackgroundColor,
+    disabled,
+  });
+  const { colors } = useTheme();
   const uri = product.imageUrl?.trim();
+  const unitLabel = formatProductUnitLabel(product.attributes);
+  const stockLabel = formatProductStockLabel(stockQty);
 
   let priceNode: ReactNode;
   if (typeof product.effectiveUnitPrice === "number") {
-    priceNode = <Text style={styles.price}>R$ {fmtMoney(product.effectiveUnitPrice)}</Text>;
+    const priceText =
+      unitLabel != null
+        ? formatProductPriceWithUnit(
+            product.effectiveUnitPrice,
+            product.attributes,
+          )
+        : `R$ ${fmtMoney(product.effectiveUnitPrice)}`;
+    priceNode = <Text style={styles.price}>{priceText}</Text>;
   } else {
     priceNode = <Text style={styles.noPrice}>Sem preço</Text>;
   }
@@ -43,7 +75,9 @@ export function ProductCatalogTile(props: {
         hitSlop={6}
         style={styles.favBtn}
         onPress={onToggleFavorite}
-        accessibilityLabel={favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+        accessibilityLabel={
+          favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"
+        }
       >
         <Heart
           size={22}
@@ -52,13 +86,26 @@ export function ProductCatalogTile(props: {
           strokeWidth={2.2}
         />
       </Pressable>
-      <Pressable style={styles.mainTap} onPress={onAddPress}>
+      <Pressable
+        style={styles.mainTap}
+        onPress={onAddPress}
+        disabled={disabled}
+      >
         <View style={styles.imgBox}>
           {uri ? (
-            <Image source={{ uri }} style={styles.img} resizeMode="cover" accessibilityIgnoresInvertColors />
+            <Image
+              source={{ uri }}
+              style={styles.img}
+              resizeMode="cover"
+              accessibilityIgnoresInvertColors
+            />
           ) : (
             <View style={styles.imgPh}>
-              <Package size={36} color="#94a3b8" strokeWidth={2} />
+              <Package
+                size={variant === "list" ? 28 : 36}
+                color="#94a3b8"
+                strokeWidth={2}
+              />
             </View>
           )}
           {qtyInCart != null && qtyInCart > 0 ? (
@@ -67,15 +114,31 @@ export function ProductCatalogTile(props: {
             </View>
           ) : null}
         </View>
-        <Text style={styles.name} numberOfLines={2}>
-          {product.name}
-        </Text>
-        {product.category ? (
-          <Text style={styles.catLine} numberOfLines={1}>
-            {product.category.name}
+        <View style={styles.body}>
+          <Text style={styles.name} numberOfLines={variant === "list" ? 2 : 2}>
+            {product.name}
           </Text>
-        ) : null}
-        {priceNode}
+          {product.category ? (
+            <Text style={styles.catLine} numberOfLines={1}>
+              {product.category.name}
+            </Text>
+          ) : null}
+          {unitLabel && variant !== "list" ? (
+            <Text style={styles.metaLine} numberOfLines={1}>
+              {unitLabel}
+            </Text>
+          ) : null}
+          <Text
+            style={[
+              styles.stockLine,
+              { color: blocked ? colors.danger : colors.textMuted },
+            ]}
+            numberOfLines={1}
+          >
+            {stockLabel}
+          </Text>
+          {priceNode}
+        </View>
       </Pressable>
     </View>
   );

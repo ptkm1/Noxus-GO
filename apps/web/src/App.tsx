@@ -1,11 +1,20 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import {
+  BrowserRouter,
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { AppLogo } from "./components/layout/AppLogo";
 import { PublicAuthLayout } from "./components/layout/PublicAuthLayout";
+import { isWebAdmin, isWebStaff, isWebTeamLeader } from "./lib/staff";
+import { ThemeProvider } from "./lib/theme";
+import { CommissionAdminPage } from "./pages/CommissionAdminPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { CustomerVisitsPage } from "./pages/CustomerVisitsPage";
-import { CommissionAdminPage } from "./pages/CommissionAdminPage";
 import { DashboardHome } from "./pages/DashboardHome";
 import { DashboardLayout } from "./pages/DashboardLayout";
 import { LoginPage } from "./pages/LoginPage";
@@ -21,8 +30,8 @@ import { ReportsPage } from "./pages/ReportsPage";
 import { SellerProductsPage } from "./pages/SellerProductsPage";
 import { SellersPage } from "./pages/SellersPage";
 import { SellerTrackingPage } from "./pages/SellerTrackingPage";
-import { isWebStaff } from "./lib/staff";
-import { ThemeProvider } from "./lib/theme";
+import { SuppliersPage } from "./pages/SuppliersPage";
+import { TeamsPage } from "./pages/TeamsPage";
 
 const qc = new QueryClient();
 
@@ -47,7 +56,8 @@ function SellerNotice() {
       </header>
       <div className="flex flex-1 flex-col items-center justify-center p-6">
         <p className="max-w-md text-center text-foreground">
-          O painel web é para administradores e gestores. Vendedores devem usar o aplicativo mobile.
+          O painel web é para administradores, gestores e líderes de equipe.
+          Vendedores devem usar o aplicativo mobile.
         </p>
       </div>
     </div>
@@ -55,6 +65,14 @@ function SellerNotice() {
 }
 
 const MANAGER_ROUTE_PREFIXES = ["/", "/rastreio", "/visitas", "/vendas"];
+
+const TEAM_LEADER_ROUTE_PREFIXES = [
+  "/",
+  "/rastreio",
+  "/visitas",
+  "/vendas",
+  "/relatorios",
+];
 
 function ManagerRouteGuard() {
   const { user } = useAuth();
@@ -64,6 +82,23 @@ function ManagerRouteGuard() {
     (p) => pathname === p || (p !== "/" && pathname.startsWith(`${p}/`)),
   );
   if (!allowed) return <Navigate to="/" replace />;
+  return <Outlet />;
+}
+
+function TeamLeaderRouteGuard() {
+  const { user } = useAuth();
+  const { pathname } = useLocation();
+  if (!isWebTeamLeader(user)) return <Outlet />;
+  const allowed = TEAM_LEADER_ROUTE_PREFIXES.some(
+    (p) => pathname === p || (p !== "/" && pathname.startsWith(`${p}/`)),
+  );
+  if (!allowed) return <Navigate to="/" replace />;
+  return <Outlet />;
+}
+
+function AdminOnlyRoute() {
+  const { user } = useAuth();
+  if (!isWebAdmin(user?.role)) return <Navigate to="/" replace />;
   return <Outlet />;
 }
 
@@ -77,7 +112,7 @@ function StaffGate({ children }: { children: React.ReactNode }) {
     );
   }
   if (!user) return <Navigate to="/login" replace />;
-  if (!isWebStaff(user.role)) {
+  if (!isWebStaff(user)) {
     return <SellerNotice />;
   }
   return <>{children}</>;
@@ -90,7 +125,7 @@ function AppRoutes() {
       <Route
         path="/login"
         element={
-          !loading && isWebStaff(user?.role) ? (
+          !loading && isWebStaff(user) ? (
             <Navigate to="/" replace />
           ) : (
             <PublicAuthLayout variant="login">
@@ -120,22 +155,37 @@ function AppRoutes() {
         }
       >
         <Route element={<ManagerRouteGuard />}>
-        <Route index element={<DashboardHome />} />
-        <Route path="tabelas-preco" element={<PriceTablesPage />} />
-        <Route path="produtos/categorias" element={<ProductCategoriesPage />} />
-        <Route path="produtos/novo" element={<ProductFormPage />} />
-        <Route path="produtos/:productId/editar" element={<ProductFormPage />} />
-        <Route path="produtos" element={<ProductsPage />} />
-        <Route path="comissao" element={<CommissionAdminPage />} />
-        <Route path="vendedores" element={<SellersPage />} />
-        <Route path="vendedores/:sellerId/produtos" element={<SellerProductsPage />} />
-        <Route path="clientes" element={<CustomersPage />} />
-        <Route path="visitas" element={<CustomerVisitsPage />} />
-        <Route path="rastreio" element={<SellerTrackingPage />} />
-        <Route path="vendas" element={<OrdersPage />} />
-        <Route path="vendas/:orderId" element={<OrderDetailPage />} />
-        <Route path="notificacoes" element={<NotificationsPage />} />
-        <Route path="relatorios" element={<ReportsPage />} />
+          <Route element={<TeamLeaderRouteGuard />}>
+            <Route index element={<DashboardHome />} />
+            <Route element={<AdminOnlyRoute />}>
+              <Route path="tabelas-preco" element={<PriceTablesPage />} />
+              <Route
+                path="produtos/categorias"
+                element={<ProductCategoriesPage />}
+              />
+              <Route path="produtos/novo" element={<ProductFormPage />} />
+              <Route
+                path="produtos/:productId/editar"
+                element={<ProductFormPage />}
+              />
+              <Route path="produtos" element={<ProductsPage />} />
+              <Route path="fornecedores" element={<SuppliersPage />} />
+              <Route path="comissao" element={<CommissionAdminPage />} />
+              <Route path="vendedores" element={<SellersPage />} />
+              <Route
+                path="vendedores/:sellerId/produtos"
+                element={<SellerProductsPage />}
+              />
+              <Route path="equipes" element={<TeamsPage />} />
+              <Route path="clientes" element={<CustomersPage />} />
+              <Route path="notificacoes" element={<NotificationsPage />} />
+            </Route>
+            <Route path="visitas" element={<CustomerVisitsPage />} />
+            <Route path="rastreio" element={<SellerTrackingPage />} />
+            <Route path="vendas" element={<OrdersPage />} />
+            <Route path="vendas/:orderId" element={<OrderDetailPage />} />
+            <Route path="relatorios" element={<ReportsPage />} />
+          </Route>
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

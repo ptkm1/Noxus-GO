@@ -1,9 +1,30 @@
+import { useAuth } from "@/auth/AuthContext";
+import { isWebTeamLeader } from "@/lib/staff";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, downloadPdf } from "../lib/api";
 
 type Seller = { id: string; user: { name: string } };
+
+type TeamSalesSummary = {
+  generatedAt: string;
+  teamName: string | null;
+  period: { from: string | null; to: string | null };
+  totals: { orderCount: number; totalAmount: number };
+  bySeller: Array<{
+    sellerId: string;
+    name: string;
+    orderCount: number;
+    totalAmount: number;
+  }>;
+  topProducts: Array<{
+    productId: string;
+    productName: string;
+    quantity: number;
+    totalAmount: number;
+  }>;
+};
 
 type DistributorInsights = {
   generatedAt: string;
@@ -62,19 +83,37 @@ function fmtDays(d: number | null, neverPurchased: boolean): string {
 }
 
 export function ReportsPage() {
+  const { user } = useAuth();
+  const teamLeader = isWebTeamLeader(user);
+
   const { data: sellers = [] } = useQuery({
     queryKey: ["admin", "sellers"],
     queryFn: () => apiFetch<Seller[]>("/admin/sellers"),
+    enabled: !teamLeader,
+  });
+
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+
+  const teamSummaryQ = useQuery({
+    queryKey: ["admin", "team-summary", from, to],
+    queryFn: () => {
+      const q = new URLSearchParams();
+      if (from) q.set("from", new Date(from).toISOString());
+      if (to) q.set("to", new Date(to).toISOString());
+      const suffix = q.toString() ? `?${q.toString()}` : "";
+      return apiFetch<TeamSalesSummary>(`/admin/reports/team-summary${suffix}`);
+    },
+    enabled: teamLeader,
+    staleTime: 45_000,
   });
 
   const insightsQ = useQuery({
     queryKey: ["admin", "reports-insights"],
     queryFn: () => apiFetch<DistributorInsights>("/admin/reports/insights"),
     staleTime: 45_000,
+    enabled: !teamLeader,
   });
-
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
   const [sellerId, setSellerId] = useState("");
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -87,7 +126,10 @@ export function ReportsPage() {
       if (from) q.set("from", new Date(from).toISOString());
       if (to) q.set("to", new Date(to).toISOString());
       if (sellerId) q.set("sellerId", sellerId);
-      await downloadPdf(`/admin/reports/sales.pdf?${q.toString()}`, "relatorio-vendas.pdf");
+      await downloadPdf(
+        `/admin/reports/sales.pdf?${q.toString()}`,
+        "relatorio-vendas.pdf",
+      );
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Erro ao exportar");
     } finally {
@@ -96,16 +138,169 @@ export function ReportsPage() {
   }
 
   const ins = insightsQ.data;
+  const teamSummary = teamSummaryQ.data;
+
+  if (teamLeader) {
+    return (
+      <div className="space-y-10">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">
+            Relatórios da equipe
+          </h1>
+          <p className="mt-2 max-w-2xl text-muted-foreground">
+            Resumo de vendas confirmadas da sua equipe
+            {user?.teamName ? ` (${user.teamName})` : ""}.
+          </p>
+        </div>
+
+        <div className="max-w-xl space-y-4 rounded-xl border border-border bg-card p-6">
+          <div>
+            <label className="block text-sm font-medium text-foreground">
+              De
+            </label>
+            <input
+              type="datetime-local"
+              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground">
+              Até
+            </label>
+            <input
+              type="datetime-local"
+              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-background disabled:opacity-50"
+            disabled={teamSummaryQ.isFetching}
+            onClick={() => void teamSummaryQ.refetch()}
+          >
+            {teamSummaryQ.isFetching ? "Atualizando…" : "Atualizar resumo"}
+          </button>
+        </div>
+
+        {teamSummaryQ.isLoading ? (
+          <p className="text-muted-foreground">Montando resumo…</p>
+        ) : teamSummaryQ.error ? (
+          <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-destructive">
+            {(teamSummaryQ.error as Error).message}
+          </p>
+        ) : teamSummary ? (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="rounded-xl border border-border bg-card p-4">
+                <p className="text-sm text-muted-foreground">
+                  Pedidos confirmados
+                </p>
+                <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+                  {teamSummary.totals.orderCount}
+                </p>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-4">
+                <p className="text-sm text-muted-foreground">Faturamento</p>
+                <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+                  R$ {fmtMoney(teamSummary.totals.totalAmount)}
+                </p>
+              </div>
+            </div>
+
+            <section className="space-y-3">
+              <h2 className="text-lg font-semibold text-foreground">
+                Por vendedor
+              </h2>
+              <div className="overflow-x-auto rounded-xl border border-border bg-card">
+                <table className="w-full min-w-[480px] text-sm">
+                  <thead className="bg-background text-left text-muted-foreground">
+                    <tr>
+                      <th className="px-4 py-3">Vendedor</th>
+                      <th className="px-4 py-3">Pedidos</th>
+                      <th className="px-4 py-3">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teamSummary.bySeller.map((row) => (
+                      <tr key={row.sellerId} className="border-t border-border">
+                        <td className="px-4 py-3 font-medium text-foreground">
+                          {row.name}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {row.orderCount}
+                        </td>
+                        <td className="px-4 py-3 font-medium tabular-nums text-foreground">
+                          R$ {fmtMoney(row.totalAmount)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <h2 className="text-lg font-semibold text-foreground">
+                Produtos mais vendidos
+              </h2>
+              {teamSummary.topProducts.length === 0 ? (
+                <p className="rounded-xl border border-border bg-card px-4 py-4 text-sm text-muted-foreground">
+                  Nenhum produto vendido no período.
+                </p>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-border bg-card">
+                  <table className="w-full min-w-[520px] text-sm">
+                    <thead className="bg-background text-left text-muted-foreground">
+                      <tr>
+                        <th className="px-4 py-3">Produto</th>
+                        <th className="px-4 py-3">Qtd</th>
+                        <th className="px-4 py-3">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {teamSummary.topProducts.map((p) => (
+                        <tr
+                          key={p.productId}
+                          className="border-t border-border"
+                        >
+                          <td className="px-4 py-3 font-medium text-foreground">
+                            {p.productName}
+                          </td>
+                          <td className="px-4 py-3 tabular-nums text-muted-foreground">
+                            {p.quantity}
+                          </td>
+                          <td className="px-4 py-3 font-medium tabular-nums text-foreground">
+                            R$ {fmtMoney(p.totalAmount)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-10">
       <div>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">Relatórios</h1>
+            <h1 className="text-2xl font-semibold text-foreground">
+              Relatórios
+            </h1>
             <p className="mt-2 max-w-2xl text-muted-foreground">
-              Visão pronta para o dia a dia: sem filtros obrigatórios. Use o botão para atualizar os números; embaixo,
-              exporte PDF quando precisar de arquivo.
+              Visão pronta para o dia a dia: sem filtros obrigatórios. Use o
+              botão para atualizar os números; embaixo, exporte PDF quando
+              precisar de arquivo.
             </p>
           </div>
           <button
@@ -136,17 +331,32 @@ export function ReportsPage() {
             <p className="font-medium text-sky-900">Como lemos os dados</p>
             <p className="mt-1 text-sky-900/85">{ins.hints.note}</p>
             <ul className="mt-2 list-inside list-disc text-xs text-sky-900/75">
-              <li>Carteira “parada”: sem compra há mais de {ins.hints.visitProxyDays} dias neste vendedor.</li>
-              <li>Produto parado: sem venda há {ins.hints.stagnantProductDays}+ dias (cadastro antigo).</li>
-              <li>Cliente sumido: sem compra há {ins.hints.churnCustomerDays}+ dias (clientes já cadastrados há tempo).</li>
+              <li>
+                Carteira “parada”: sem compra há mais de{" "}
+                {ins.hints.visitProxyDays} dias neste vendedor.
+              </li>
+              <li>
+                Produto parado: sem venda há {ins.hints.stagnantProductDays}+
+                dias (cadastro antigo).
+              </li>
+              <li>
+                Cliente sumido: sem compra há {ins.hints.churnCustomerDays}+
+                dias (clientes já cadastrados há tempo).
+              </li>
             </ul>
           </div>
 
           {/* Quem vendeu menos hoje */}
           <section className="space-y-3">
-            <h2 className="text-lg font-semibold text-foreground">Quem vendeu menos hoje?</h2>
-            <p className="text-sm text-muted-foreground">Pedidos confirmados — lista do menor para o maior faturamento.</p>
-            <p className="text-xs capitalize text-muted-foreground">{ins.today.label}</p>
+            <h2 className="text-lg font-semibold text-foreground">
+              Quem vendeu menos hoje?
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Pedidos confirmados — lista do menor para o maior faturamento.
+            </p>
+            <p className="text-xs capitalize text-muted-foreground">
+              {ins.today.label}
+            </p>
             <div className="overflow-x-auto rounded-xl border border-border bg-card">
               <table className="w-full min-w-[520px] text-sm">
                 <thead className="bg-background text-left text-muted-foreground">
@@ -159,7 +369,10 @@ export function ReportsPage() {
                 <tbody>
                   {ins.today.sellers.length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="px-4 py-6 text-center text-muted-foreground">
+                      <td
+                        colSpan={3}
+                        className="px-4 py-6 text-center text-muted-foreground"
+                      >
                         Nenhum vendedor ativo — cadastre vendedores primeiro.
                       </td>
                     </tr>
@@ -174,7 +387,9 @@ export function ReportsPage() {
                             </span>
                           ) : null}
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground">{row.orderCount}</td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {row.orderCount}
+                        </td>
                         <td className="px-4 py-3 font-medium tabular-nums text-foreground">
                           R$ {fmtMoney(row.totalAmount)}
                         </td>
@@ -189,7 +404,9 @@ export function ReportsPage() {
           {/* Sem carteira */}
           {ins.sellersWithoutCustomers.length > 0 ? (
             <section className="rounded-xl border border-warning/30 bg-warning/10/60 px-4 py-4">
-              <h2 className="text-lg font-semibold text-amber-950">Vendedores sem cliente na carteira</h2>
+              <h2 className="text-lg font-semibold text-amber-950">
+                Vendedores sem cliente na carteira
+              </h2>
               <p className="mt-1 text-sm text-amber-950/80">
                 Ninguém vinculado — nem rota nem cadastro para acompanhar.
               </p>
@@ -210,13 +427,17 @@ export function ReportsPage() {
 
           {/* Carteira parada */}
           <section className="space-y-3">
-            <h2 className="text-lg font-semibold text-foreground">Qual vendedor está “sem ir ao cliente”?</h2>
+            <h2 className="text-lg font-semibold text-foreground">
+              Qual vendedor está “sem ir ao cliente”?
+            </h2>
             <p className="text-sm text-muted-foreground">
-              Na prática: clientes na carteira dele sem pedido confirmado há mais de {ins.hints.visitProxyDays} dias.
+              Na prática: clientes na carteira dele sem pedido confirmado há
+              mais de {ins.hints.visitProxyDays} dias.
             </p>
             {ins.sellersPortfolioAttention.length === 0 ? (
               <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
-                Ninguém aparece aqui — carteiras com cliente parecem em dia pela última compra.
+                Ninguém aparece aqui — carteiras com cliente parecem em dia pela
+                última compra.
               </p>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-border bg-card">
@@ -232,13 +453,21 @@ export function ReportsPage() {
                   <tbody>
                     {ins.sellersPortfolioAttention.map((row) => (
                       <tr key={row.sellerId} className="border-t border-border">
-                        <td className="px-4 py-3 font-medium text-foreground">{row.name}</td>
-                        <td className="px-4 py-3 tabular-nums text-foreground">{row.staleCustomersCount}</td>
-                        <td className="px-4 py-3 tabular-nums text-muted-foreground">{row.assignedCustomersCount}</td>
+                        <td className="px-4 py-3 font-medium text-foreground">
+                          {row.name}
+                        </td>
+                        <td className="px-4 py-3 tabular-nums text-foreground">
+                          {row.staleCustomersCount}
+                        </td>
+                        <td className="px-4 py-3 tabular-nums text-muted-foreground">
+                          {row.assignedCustomersCount}
+                        </td>
                         <td className="px-4 py-3 text-muted-foreground">
                           {row.worstCustomerName ? (
                             <>
-                              <span className="font-medium text-foreground">{row.worstCustomerName}</span>
+                              <span className="font-medium text-foreground">
+                                {row.worstCustomerName}
+                              </span>
                               <span className="text-muted-foreground">
                                 {" "}
                                 ({fmtDays(row.worstCustomerDays, false)})
@@ -258,9 +487,12 @@ export function ReportsPage() {
 
           {/* Produtos parados */}
           <section className="space-y-3">
-            <h2 className="text-lg font-semibold text-foreground">Qual produto está parado?</h2>
+            <h2 className="text-lg font-semibold text-foreground">
+              Qual produto está parado?
+            </h2>
             <p className="text-sm text-muted-foreground">
-              Produtos na sua base (catálogo liberado ou já vendidos) sem movimento há bastante tempo.
+              Produtos na sua base (catálogo liberado ou já vendidos) sem
+              movimento há bastante tempo.
             </p>
             {ins.stagnantProducts.length === 0 ? (
               <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
@@ -280,11 +512,17 @@ export function ReportsPage() {
                   <tbody>
                     {ins.stagnantProducts.map((p) => (
                       <tr key={p.productId} className="border-t border-border">
-                        <td className="px-4 py-3 font-medium text-foreground">{p.name}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{p.sku ?? "—"}</td>
+                        <td className="px-4 py-3 font-medium text-foreground">
+                          {p.name}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {p.sku ?? "—"}
+                        </td>
                         <td className="px-4 py-3 text-muted-foreground">
                           {p.neverSold ? (
-                            <span className="text-warning">Sem histórico de venda</span>
+                            <span className="text-warning">
+                              Sem histórico de venda
+                            </span>
                           ) : (
                             <>
                               há{" "}
@@ -294,7 +532,10 @@ export function ReportsPage() {
                               dias
                               {p.lastSaleAt ? (
                                 <span className="block text-xs text-muted-foreground">
-                                  última: {new Date(p.lastSaleAt).toLocaleDateString("pt-BR")}
+                                  última:{" "}
+                                  {new Date(p.lastSaleAt).toLocaleDateString(
+                                    "pt-BR",
+                                  )}
                                 </span>
                               ) : null}
                             </>
@@ -318,9 +559,12 @@ export function ReportsPage() {
 
           {/* Clientes */}
           <section className="space-y-3">
-            <h2 className="text-lg font-semibold text-foreground">Qual cliente não compra há 30 dias?</h2>
+            <h2 className="text-lg font-semibold text-foreground">
+              Qual cliente não compra há 30 dias?
+            </h2>
             <p className="text-sm text-muted-foreground">
-              Cadastro já antigo na empresa — última compra confirmada há tempo ou nunca comprou.
+              Cadastro já antigo na empresa — última compra confirmada há tempo
+              ou nunca comprou.
             </p>
             {ins.churnCustomers.length === 0 ? (
               <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
@@ -341,16 +585,27 @@ export function ReportsPage() {
                   <tbody>
                     {ins.churnCustomers.map((c) => (
                       <tr key={c.customerId} className="border-t border-border">
-                        <td className="px-4 py-3 font-medium text-foreground">{c.name}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{c.sellerName ?? "—"}</td>
+                        <td className="px-4 py-3 font-medium text-foreground">
+                          {c.name}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {c.sellerName ?? "—"}
+                        </td>
                         <td className="px-4 py-3 text-muted-foreground">
                           {c.lastPurchaseAt
-                            ? new Date(c.lastPurchaseAt).toLocaleDateString("pt-BR")
+                            ? new Date(c.lastPurchaseAt).toLocaleDateString(
+                                "pt-BR",
+                              )
                             : "—"}
                         </td>
-                        <td className="px-4 py-3 text-foreground">{fmtDays(c.daysSinceLastPurchase, c.neverPurchased)}</td>
+                        <td className="px-4 py-3 text-foreground">
+                          {fmtDays(c.daysSinceLastPurchase, c.neverPurchased)}
+                        </td>
                         <td className="px-4 py-3 text-right">
-                          <Link to="/clientes" className="text-primary hover:underline">
+                          <Link
+                            to="/clientes"
+                            className="text-primary hover:underline"
+                          >
                             Clientes
                           </Link>
                         </td>
@@ -366,7 +621,9 @@ export function ReportsPage() {
 
       <section className="space-y-4 border-t border-border pt-10">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">Exportar vendas em PDF</h2>
+          <h2 className="text-lg font-semibold text-foreground">
+            Exportar vendas em PDF
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Opcional — escolha período e vendedor só quando precisar do arquivo.
           </p>
@@ -374,7 +631,9 @@ export function ReportsPage() {
 
         <div className="max-w-xl space-y-4 rounded-xl border border-border bg-card p-6">
           <div>
-            <label className="block text-sm font-medium text-foreground">De</label>
+            <label className="block text-sm font-medium text-foreground">
+              De
+            </label>
             <input
               type="datetime-local"
               className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -383,7 +642,9 @@ export function ReportsPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-foreground">Até</label>
+            <label className="block text-sm font-medium text-foreground">
+              Até
+            </label>
             <input
               type="datetime-local"
               className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -392,7 +653,9 @@ export function ReportsPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-foreground">Vendedor</label>
+            <label className="block text-sm font-medium text-foreground">
+              Vendedor
+            </label>
             <select
               className="mt-1 w-full rounded border px-3 py-2 text-sm"
               value={sellerId}

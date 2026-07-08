@@ -20,6 +20,11 @@ import {
   OrderPricingError,
 } from "../services/order-pricing.js";
 import { resolveEffectiveUnitPrice } from "../services/price-resolve.js";
+import {
+  applyStockOnStatusChange,
+  assertSufficientStock,
+  StockError,
+} from "../services/product-stock.js";
 import { buildRouteDirections } from "../services/route-directions.js";
 import { greedyNearestRoute, haversineKm } from "../services/route-plan.js";
 import { recordSellerLocation } from "../services/seller-location-write.js";
@@ -250,6 +255,16 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         }
       }
 
+      if (orderStatus === "CONFIRMED") {
+        await assertSufficientStock(
+          auth.organizationId,
+          sale.lines.map((l) => ({
+            productId: l.productId,
+            quantity: l.quantity,
+          })),
+        );
+      }
+
       const order = await prisma.order.create({
         data: {
           organizationId: auth.organizationId,
@@ -288,9 +303,15 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         });
       }
 
+      if (order.status === "CONFIRMED") {
+        await applyStockOnStatusChange(order.id, "DRAFT", "CONFIRMED");
+      }
+
       return order;
     } catch (e) {
       if (e instanceof OrderPricingError)
+        return reply.status(400).send({ error: e.message });
+      if (e instanceof StockError)
         return reply.status(400).send({ error: e.message });
       throw e;
     }
@@ -309,6 +330,15 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         product: {
           include: {
             category: { select: { id: true, code: true, name: true } },
+            supplier: {
+              select: {
+                id: true,
+                code: true,
+                tradeName: true,
+                legalName: true,
+                cnpj: true,
+              },
+            },
           },
         },
       },

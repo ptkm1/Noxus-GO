@@ -173,9 +173,9 @@ export function ProductCategoriesPage() {
         <Link to="/produtos" className="text-sm text-primary hover:underline">
           ← Voltar para produtos
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold">Categorias de produto</h1>
+        <h1 className="mt-2 text-2xl font-semibold">Grupos de produtos</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Cada categoria tem um{" "}
+          Cada grupo tem um{" "}
           <strong className="font-medium text-foreground">código</strong>{" "}
           estável e pode definir{" "}
           <strong className="font-medium text-foreground">campos extras</strong>{" "}
@@ -195,7 +195,7 @@ export function ProductCategoriesPage() {
         </p>
       ) : null}
 
-      <FormSection title="Nova categoria">
+      <FormSection title="Novo grupo">
         <FormGrid cols={2} className="max-w-2xl">
           <FormField
             label="Código"
@@ -327,7 +327,7 @@ export function ProductCategoriesPage() {
                           }
                           onClick={() => submitEdit()}
                         >
-                          Salvar categoria e schema
+                          Salvar grupo e schema
                         </button>
                       </td>
                     </tr>
@@ -357,7 +357,7 @@ export function ProductCategoriesPage() {
                         onClick={() => {
                           if (
                             confirm(
-                              `Excluir categoria “${c.name}”? Produtos ficarão sem categoria.`,
+                              `Excluir grupo “${c.name}”? Produtos ficarão sem grupo.`,
                             )
                           )
                             remove.mutate(c.id);

@@ -1,3 +1,4 @@
+import type { Role } from "@pedidos/shared";
 import {
   createContext,
   useCallback,
@@ -7,7 +8,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Role } from "@pedidos/shared";
 import { apiFetch, clearTokens, getAccessToken, setTokens } from "../lib/api";
 
 export type User = {
@@ -17,6 +17,9 @@ export type User = {
   role: Role;
   organizationId: string;
   sellerId: string | null;
+  isTeamLeader?: boolean;
+  teamId?: string | null;
+  teamName?: string | null;
 };
 
 export type RegisterInput = {
@@ -62,7 +65,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadMe]);
 
   const login = useCallback(async (email: string, password: string) => {
-    const res = await apiFetch<{ accessToken: string; refreshToken: string; user: User }>("/auth/login", {
+    const res = await apiFetch<{
+      accessToken: string;
+      refreshToken: string;
+      user: User;
+    }>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
       skipAuth: true,
@@ -72,7 +79,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(async (input: RegisterInput) => {
-    const res = await apiFetch<{ accessToken: string; refreshToken: string; user: User }>("/auth/register", {
+    const res = await apiFetch<{
+      accessToken: string;
+      refreshToken: string;
+      user: User;
+    }>("/auth/register", {
       method: "POST",
       body: JSON.stringify(input),
       skipAuth: true,

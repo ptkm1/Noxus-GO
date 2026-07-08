@@ -29,3 +29,9 @@ export {
   sellerCommissionTypeLabel,
 } from "./commission.js";
 export type { SellerCommissionType } from "./commission.js";
+export {
+  formatProductPriceWithUnit,
+  formatProductStockLabel,
+  formatProductUnitLabel,
+  isProductSaleBlockedByStock,
+} from "./product-display.js";

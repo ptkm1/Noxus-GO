@@ -30,6 +30,7 @@ type Seller = {
   managerUserId: string | null;
   user: { id: string; email: string; name: string };
   manager: Manager | null;
+  team: { id: string; name: string } | null;
 };
 
 export function SellersPage() {
@@ -264,6 +265,7 @@ export function SellersPage() {
                 <th className="px-4 py-3">Nome</th>
                 <th className="px-4 py-3">Email</th>
                 <th className="px-4 py-3">Gestor</th>
+                <th className="px-4 py-3">Equipe</th>
                 <th className="px-4 py-3">Tipo comissão</th>
                 <th className="px-4 py-3">Comissão %</th>
                 <th className="px-4 py-3">Ativo</th>
@@ -296,6 +298,9 @@ export function SellersPage() {
                           </option>
                         ))}
                       </select>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {s.team?.name ?? "—"}
                     </td>
                     <td className="px-4 py-3">
                       <select

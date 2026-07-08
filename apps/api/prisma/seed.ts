@@ -1,8 +1,8 @@
 import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/db.js";
-import { upsertRouteDemoCustomer } from "./seed-route-customer.js";
 import { CATEGORY_SCHEMA_BY_CODE } from "./category-schemas.js";
+import { upsertRouteDemoCustomer } from "./seed-route-customer.js";
 
 /** Senhas conhecidas — sempre re-hasheadas para recuperar login após DB “estranho”. */
 const DEMO_ADMIN_EMAIL = "admin@demo.com";
@@ -15,7 +15,11 @@ const DEMO_MANAGER_PASSWORD = "manager123";
 async function upsertDemoCategories(organizationId: string) {
   const entries = [
     { code: "GENERAL", name: "Geral", schema: CATEGORY_SCHEMA_BY_CODE.GENERAL },
-    { code: "CONSUMABLE", name: "Consumíveis", schema: CATEGORY_SCHEMA_BY_CODE.CONSUMABLE },
+    {
+      code: "CONSUMABLE",
+      name: "Consumíveis",
+      schema: CATEGORY_SCHEMA_BY_CODE.CONSUMABLE,
+    },
     { code: "FOOD", name: "Alimentos", schema: CATEGORY_SCHEMA_BY_CODE.FOOD },
     {
       code: "ALIMENTICIOS",
@@ -23,11 +27,20 @@ async function upsertDemoCategories(organizationId: string) {
       schema: CATEGORY_SCHEMA_BY_CODE.ALIMENTICIOS,
     },
     {
+      code: "SNACK",
+      name: "Snack / Salgadinhos",
+      schema: CATEGORY_SCHEMA_BY_CODE.FOOD,
+    },
+    {
       code: "HYGIENE",
       name: "Produtos de higiene",
       schema: CATEGORY_SCHEMA_BY_CODE.HYGIENE,
     },
-    { code: "AUTOMOTIVE", name: "Automotivo", schema: CATEGORY_SCHEMA_BY_CODE.AUTOMOTIVE },
+    {
+      code: "AUTOMOTIVE",
+      name: "Automotivo",
+      schema: CATEGORY_SCHEMA_BY_CODE.AUTOMOTIVE,
+    },
   ] as const;
 
   for (const e of entries) {
@@ -49,6 +62,26 @@ async function upsertDemoCategories(organizationId: string) {
   }
 }
 
+async function upsertDemoSupplier(organizationId: string) {
+  return prisma.supplier.upsert({
+    where: {
+      organizationId_code: { organizationId, code: "BISC-CROC" },
+    },
+    create: {
+      organizationId,
+      code: "BISC-CROC",
+      legalName: "Indústria e Comércio de Biscoitos Crocante",
+      cnpj: "49932607000107",
+      tradeName: "BISCOITOS CROCANTE",
+    },
+    update: {
+      legalName: "Indústria e Comércio de Biscoitos Crocante",
+      cnpj: "49932607000107",
+      tradeName: "BISCOITOS CROCANTE",
+    },
+  });
+}
+
 async function main() {
   const org = await prisma.organization.upsert({
     where: { id: "seed-org" },
@@ -61,6 +94,7 @@ async function main() {
   });
 
   await upsertDemoCategories(org.id);
+  const demoSupplier = await upsertDemoSupplier(org.id);
 
   const adminPass = await bcrypt.hash(DEMO_ADMIN_PASSWORD, 10);
   const sellerPass = await bcrypt.hash(DEMO_SELLER_PASSWORD, 10);
@@ -134,10 +168,33 @@ async function main() {
     },
   });
 
+  const demoTeam = await prisma.salesTeam.upsert({
+    where: { leaderSellerId: seller.id },
+    create: {
+      name: "Equipe Centro",
+      organizationId: org.id,
+      leaderSellerId: seller.id,
+    },
+    update: {
+      name: "Equipe Centro",
+      organizationId: org.id,
+    },
+  });
+  await prisma.seller.update({
+    where: { id: seller.id },
+    data: { teamId: demoTeam.id },
+  });
+
   console.log("Contas demo (senhas atualizadas):");
   console.log(`  Admin:    ${DEMO_ADMIN_EMAIL} / ${DEMO_ADMIN_PASSWORD}`);
   console.log(`  Gestor:   ${DEMO_MANAGER_EMAIL} / ${DEMO_MANAGER_PASSWORD}`);
   console.log(`  Vendedor: ${DEMO_SELLER_EMAIL} / ${DEMO_SELLER_PASSWORD}`);
+  console.log(
+    "  Equipe demo: Equipe Centro (líder: vendedor@demo.com — acesso web limitado)",
+  );
+  console.log(
+    "  Fornecedor demo: BISCOITOS CROCANTE (BISC-CROC) — CNPJ 49.932.607/0001-07",
+  );
 
   try {
     await upsertRouteDemoCustomer();
@@ -148,9 +205,17 @@ async function main() {
     );
   }
 
-  const productCount = await prisma.product.count({ where: { organizationId: org.id } });
+  const productCount = await prisma.product.count({
+    where: { organizationId: org.id },
+  });
   if (productCount > 0) {
-    console.log("Dados de exemplo (produtos) já existem — categorias demo garantidas.");
+    await prisma.product.updateMany({
+      where: { organizationId: org.id, supplierId: null },
+      data: { supplierId: demoSupplier.id },
+    });
+    console.log(
+      "Dados de exemplo (produtos) já existem — categorias e fornecedor demo garantidos.",
+    );
     return;
   }
 
@@ -165,6 +230,12 @@ async function main() {
     },
   });
 
+  const catSnack = await prisma.productCategory.findUniqueOrThrow({
+    where: {
+      organizationId_code: { organizationId: org.id, code: "SNACK" },
+    },
+  });
+
   const pt = await prisma.priceTable.create({
     data: {
       name: "Tabela Padrão",
@@ -176,10 +247,16 @@ async function main() {
     data: {
       name: "Produto A",
       sku: "PA-001",
+      barcode: "7891234567890",
       basePrice: 100,
+      stockQty: 24,
+      blockSaleWhenOutOfStock: true,
       organizationId: org.id,
-      categoryId: catGeneral.id,
+      categoryId: catSnack.id,
+      supplierId: demoSupplier.id,
       attributes: {
+        sale_unit: "UN",
+        net_content: "1 un",
         brand: "Marca Demo",
         gtin: "7891234567890",
         ncm: "12345678",
@@ -191,9 +268,13 @@ async function main() {
     data: {
       name: "Produto B",
       sku: "PB-002",
+      barcode: "7899876543210",
       basePrice: 250.5,
+      stockQty: 12,
+      blockSaleWhenOutOfStock: true,
       organizationId: org.id,
       categoryId: catConsumable.id,
+      supplierId: demoSupplier.id,
       attributes: {
         sale_unit: "UN",
         net_content: "500 ml",
