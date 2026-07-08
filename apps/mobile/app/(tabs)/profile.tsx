@@ -7,9 +7,9 @@ import { MobileHeader, MobileScreen } from "@/components/layout";
 import { DevToolsVersionTap } from "@/components/molecules/DevToolsVersionTap";
 import { ProgressStat } from "@/components/molecules/StatCard";
 import { SyncStatusBanner } from "@/components/molecules/SyncStatusBanner";
-import { useAuth } from "@/context/AuthContext";
 import type { CommissionDashboard } from "@/hooks/screens/useCommissionScreen";
 import { useProfileScreen } from "@/hooks/screens/useProfileScreen";
+import { useLogout } from "@/hooks/useLogout";
 import { apiFetch } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
@@ -23,6 +23,7 @@ import {
   HelpCircle,
   LogOut,
   Package,
+  Server,
   Settings,
   Shield,
   ShoppingBag,
@@ -64,7 +65,7 @@ const menuStyles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     paddingVertical: 14,
-    paddingHorizontal: 4,
+    paddingHorizontal: 12,
     borderBottomWidth: 1,
   },
 });
@@ -72,7 +73,7 @@ const menuStyles = StyleSheet.create({
 export default function ProfileScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { logout } = useAuth();
+  const logout = useLogout();
   const { me, name, setName, saveName, goSettings } = useProfileScreen();
 
   const { data: commission } = useQuery({
@@ -227,6 +228,13 @@ export default function ProfileScreen() {
           <MenuRow icon={Smartphone} label="Dispositivo" onPress={goSettings} />
           <MenuRow icon={Database} label="Dados locais" onPress={goSettings} />
           <MenuRow icon={HelpCircle} label="Ajuda" onPress={goSettings} />
+          {__DEV__ ? (
+            <MenuRow
+              icon={Server}
+              label="Servidor da API"
+              onPress={() => router.push("/devtools")}
+            />
+          ) : null}
           <View style={{ borderBottomWidth: 0 }}>
             <MenuRow
               icon={Settings}

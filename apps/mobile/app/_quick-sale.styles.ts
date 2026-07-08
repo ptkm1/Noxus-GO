@@ -7,8 +7,19 @@ export function createQuickSaleStyles(c: AppColors) {
     listContent: { paddingHorizontal: 16, paddingTop: 12 },
     headerBlock: { paddingBottom: 8 },
     sectionTitle: { fontSize: 17, fontWeight: "700", color: c.text },
-    subSection: { marginTop: 14, marginBottom: 8, fontSize: 13, fontWeight: "600", color: c.textSecondary },
-    hint: { marginTop: 4, marginBottom: 10, fontSize: 12, color: c.textSecondary },
+    subSection: {
+      marginTop: 14,
+      marginBottom: 8,
+      fontSize: 13,
+      fontWeight: "600",
+      color: c.textSecondary,
+    },
+    hint: {
+      marginTop: 4,
+      marginBottom: 10,
+      fontSize: 12,
+      color: c.textSecondary,
+    },
     hScroll: { marginBottom: 4 },
     pill: {
       paddingHorizontal: 14,
@@ -57,7 +68,13 @@ export function createQuickSaleStyles(c: AppColors) {
       alignItems: "center",
       justifyContent: "center",
     },
-    qtyTxt: { fontSize: 16, fontWeight: "700", color: c.text, minWidth: 22, textAlign: "center" },
+    qtyTxt: {
+      fontSize: 16,
+      fontWeight: "700",
+      color: c.text,
+      minWidth: 22,
+      textAlign: "center",
+    },
     discBtn: {
       paddingHorizontal: 10,
       paddingVertical: 6,
@@ -67,7 +84,13 @@ export function createQuickSaleStyles(c: AppColors) {
       borderColor: c.warning,
     },
     discBtnTxt: { fontSize: 12, fontWeight: "700", color: c.warning },
-    cartTotal: { marginTop: 4, fontSize: 17, fontWeight: "800", color: c.success, textAlign: "right" },
+    cartTotal: {
+      marginTop: 4,
+      fontSize: 17,
+      fontWeight: "800",
+      color: c.success,
+      textAlign: "right",
+    },
     searchRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -84,7 +107,7 @@ export function createQuickSaleStyles(c: AppColors) {
       flex: 1,
       borderWidth: 0,
       backgroundColor: "transparent",
-      paddingVertical: 12,
+      // paddingVertical: 12,
     },
     scanBtn: {
       backgroundColor: c.primary,
@@ -94,7 +117,12 @@ export function createQuickSaleStyles(c: AppColors) {
       alignItems: "center",
     },
     scanWarn: { color: c.warning, marginTop: 8, fontSize: 13 },
-    microHint: { marginTop: 8, fontSize: 11, color: c.textSecondary, lineHeight: 15 },
+    microHint: {
+      marginTop: 8,
+      fontSize: 11,
+      color: c.textSecondary,
+      lineHeight: 15,
+    },
     warn: { paddingVertical: 24, color: c.warning, textAlign: "center" },
     footer: {
       position: "absolute",
@@ -107,7 +135,12 @@ export function createQuickSaleStyles(c: AppColors) {
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: c.border,
     },
-    errFoot: { color: c.danger, marginBottom: 8, textAlign: "center", fontSize: 13 },
+    errFoot: {
+      color: c.danger,
+      marginBottom: 8,
+      textAlign: "center",
+      fontSize: 13,
+    },
     creditLinkBtn: {
       alignSelf: "flex-start",
       marginTop: 6,
@@ -115,7 +148,12 @@ export function createQuickSaleStyles(c: AppColors) {
       paddingVertical: 6,
       paddingHorizontal: 2,
     },
-    creditLinkTxt: { fontSize: 13, fontWeight: "700", color: c.link, textDecorationLine: "underline" },
+    creditLinkTxt: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: c.link,
+      textDecorationLine: "underline",
+    },
     creditBanner: {
       marginTop: 6,
       padding: 12,
@@ -123,11 +161,27 @@ export function createQuickSaleStyles(c: AppColors) {
       borderWidth: 1,
       marginBottom: 8,
     },
-    creditBannerWarn: { backgroundColor: c.warningSurface, borderColor: c.warning },
-    creditBannerDanger: { backgroundColor: c.dangerSurface, borderColor: c.danger },
-    creditBannerTitle: { fontSize: 14, fontWeight: "800", color: c.text, marginBottom: 6 },
+    creditBannerWarn: {
+      backgroundColor: c.warningSurface,
+      borderColor: c.warning,
+    },
+    creditBannerDanger: {
+      backgroundColor: c.dangerSurface,
+      borderColor: c.danger,
+    },
+    creditBannerTitle: {
+      fontSize: 14,
+      fontWeight: "800",
+      color: c.text,
+      marginBottom: 6,
+    },
     creditBannerTxt: { fontSize: 12, color: c.textSecondary, marginBottom: 4 },
-    creditBannerBold: { marginTop: 8, fontSize: 13, fontWeight: "800", color: c.danger },
+    creditBannerBold: {
+      marginTop: 8,
+      fontSize: 13,
+      fontWeight: "800",
+      color: c.danger,
+    },
     finalBtn: {
       backgroundColor: c.primary,
       paddingVertical: 15,

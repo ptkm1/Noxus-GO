@@ -52,6 +52,9 @@ export default function ProductsScreen() {
           value={catalog.productQuery}
           onChangeText={catalog.setProductQuery}
           autoCorrect={false}
+          autoCapitalize="none"
+          numberOfLines={1}
+          multiline={false}
         />
         <Pressable
           accessibilityLabel="Leitor de código de barras"

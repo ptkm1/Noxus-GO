@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { ThemedTextInput } from "../components/atoms/ThemedTextInput";
+import { DevToolsEntry } from "../components/molecules/DevToolsEntry";
 import { DevToolsVersionTap } from "../components/molecules/DevToolsVersionTap";
 import { useLoginScreen } from "../hooks/screens/useLoginScreen";
 import { useThemedStyles } from "../hooks/useThemedStyles";
@@ -72,6 +73,7 @@ export default function LoginScreen() {
             )}
           </Pressable>
         </View>
+        <DevToolsEntry variant="login" />
         <DevToolsVersionTap variant="onDark" />
       </View>
     </KeyboardAvoidingView>

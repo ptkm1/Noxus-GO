@@ -38,7 +38,7 @@ function RootStack() {
         <Stack.Screen name="settings" options={{ headerShown: false }} />
         <Stack.Screen name="quick-sale" options={{ headerShown: false }} />
         <Stack.Screen name="customer" options={{ headerShown: false }} />
-        <Stack.Screen name="devtools" options={{ title: "DevTools" }} />
+        <Stack.Screen name="devtools" options={{ headerShown: false }} />
       </Stack>
     </>
   );

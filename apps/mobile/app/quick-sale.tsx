@@ -233,6 +233,9 @@ export default function QuickSaleScreen() {
           value={catalog.productQuery}
           onChangeText={catalog.setProductQuery}
           autoCorrect={false}
+          autoCapitalize="none"
+          numberOfLines={1}
+          multiline={false}
         />
         <Pressable
           style={styles.scanBtn}

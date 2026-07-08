@@ -1,5 +1,6 @@
 import { TabBarIcon } from "@/components/layout";
-import { Tabs, useRouter } from "expo-router";
+import { useAuth } from "@/context/AuthContext";
+import { Redirect, Tabs, useRouter } from "expo-router";
 import {
   ClipboardCheck,
   LayoutDashboard,
@@ -7,7 +8,13 @@ import {
   ShoppingBag,
   Users,
 } from "lucide-react-native";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../../lib/theme";
 
@@ -53,8 +60,29 @@ function tabIcon(Icon: typeof ShoppingBag) {
 const HIDDEN_TAB = { href: null } as const;
 
 export default function TabsLayout() {
+  const { user, loading } = useAuth();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+
+  if (loading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: colors.background,
+        }}
+      >
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (!user) {
+    return <Redirect href="/login" />;
+  }
+
   const tabHeight =
     TAB_BAR_HEIGHT +
     Math.max(insets.bottom - (Platform.OS === "ios" ? 20 : 0), 0);
