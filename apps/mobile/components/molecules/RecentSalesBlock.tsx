@@ -1,13 +1,13 @@
-import { fmtMoney } from "@/components/atoms/formatMoney";
 import { ThemedText } from "@/components/atoms/ThemedText";
+import {
+  RecentSaleDivider,
+  RecentSaleRow,
+} from "@/components/molecules/RecentSaleRow";
 import type { SellerOrderListItem } from "@/hooks/screens/useSalesListScreen";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
 import { radiiPx } from "@pedidos/design-tokens";
-import { formatRelativeSaleDate, formatSaleItemCount } from "@pedidos/shared";
-import { Link } from "expo-router";
-import { ChevronRight, ShoppingCart } from "lucide-react-native";
-import { useState } from "react";
+import { useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
 type Props = {
@@ -17,82 +17,15 @@ type Props = {
   limit?: number;
 };
 
-type RowProps = {
-  order: SellerOrderListItem;
-};
-
-function RecentSaleRow({ order }: RowProps) {
-  const { colors } = useTheme();
-  const confirmed = order.status === "CONFIRMED";
-  const amountColor = confirmed ? colors.success : colors.text;
-
-  return (
-    <Link href={`/(tabs)/sales/${order.id}`} asChild>
-      <Pressable
-        style={({ pressed }) => [
-          styles.pressable,
-          { opacity: pressed ? 0.9 : 1 },
-        ]}
-      >
-        <View style={styles.itemRow}>
-          <View
-            style={[
-              styles.iconCell,
-              {
-                backgroundColor: colorWithAlpha(colors.primary, 0.12),
-                borderColor: colorWithAlpha(colors.primary, 0.2),
-              },
-            ]}
-          >
-            <ShoppingCart color={colors.primary} size={18} />
-          </View>
-
-          <View style={styles.infoCell}>
-            <View style={styles.infoLine}>
-              <ThemedText
-                variant="body"
-                numberOfLines={1}
-                style={styles.customer}
-              >
-                {order.customer?.name ?? "Sem cliente"}
-              </ThemedText>
-              <ThemedText
-                variant="bodySm"
-                numberOfLines={1}
-                style={[styles.amount, { color: amountColor }]}
-              >
-                R$ {fmtMoney(Number(order.totalAmount))}
-              </ThemedText>
-            </View>
-
-            <View style={styles.infoLine}>
-              <ThemedText
-                variant="bodySm"
-                muted
-                numberOfLines={1}
-                style={styles.meta}
-              >
-                {formatSaleItemCount(order.items.length)} ·{" "}
-                {formatRelativeSaleDate(order.createdAt)}
-              </ThemedText>
-              <ChevronRight color={colors.textMuted} size={16} />
-            </View>
-          </View>
-        </View>
-      </Pressable>
-    </Link>
-  );
-}
-
 export function RecentSalesBlock({
   orders,
   isLoading = false,
   isRefetching = false,
-  limit = 8,
+  limit = 5,
 }: Props) {
+  const router = useRouter();
   const { colors } = useTheme();
-  const [showAll, setShowAll] = useState(false);
-  const visible = orders.slice(0, showAll ? orders.length : limit);
+  const visible = orders.slice(0, limit);
 
   return (
     <View
@@ -110,7 +43,7 @@ export function RecentSalesBlock({
         </View>
         {orders.length > limit ? (
           <Pressable
-            onPress={() => setShowAll((v) => !v)}
+            onPress={() => router.push("/(tabs)/vendas")}
             style={({ pressed }) => [
               styles.viewAllPill,
               {
@@ -121,7 +54,7 @@ export function RecentSalesBlock({
             ]}
           >
             <ThemedText variant="caption" style={{ fontWeight: "600" }}>
-              {showAll ? "Ver menos" : "Ver todas"}
+              Ver todas
             </ThemedText>
           </Pressable>
         ) : null}
@@ -144,11 +77,7 @@ export function RecentSalesBlock({
         <View style={[styles.list, { borderTopColor: colors.border }]}>
           {visible.map((order, index) => (
             <View key={order.id}>
-              {index > 0 ? (
-                <View
-                  style={[styles.divider, { backgroundColor: colors.border }]}
-                />
-              ) : null}
+              {index > 0 ? <RecentSaleDivider color={colors.border} /> : null}
               <RecentSaleRow order={order} />
             </View>
           ))}
@@ -167,8 +96,6 @@ export function RecentSalesBlock({
     </View>
   );
 }
-
-const ICON_SIZE = 44;
 
 const styles = StyleSheet.create({
   card: {
@@ -198,61 +125,11 @@ const styles = StyleSheet.create({
   list: {
     borderTopWidth: 1,
     position: "relative",
-    gap: 8,
     paddingVertical: 8,
   },
   listOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    width: "100%",
-    alignSelf: "stretch",
-  },
-  pressable: {
-    width: "100%",
-  },
-  itemRow: {
-    width: "100%",
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  iconCell: {
-    width: ICON_SIZE,
-    height: ICON_SIZE,
-    borderRadius: radiiPx.md,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-    marginRight: 12,
-  },
-  infoCell: {
-    flex: 1,
-    minWidth: 0,
-    gap: 4,
-  },
-  infoLine: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  customer: {
-    flex: 1,
-    minWidth: 0,
-    fontWeight: "600",
-  },
-  amount: {
-    flexShrink: 0,
-    fontWeight: "700",
-    fontVariant: ["tabular-nums"],
-  },
-  meta: {
-    flex: 1,
-    minWidth: 0,
   },
 });

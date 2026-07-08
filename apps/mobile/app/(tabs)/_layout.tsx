@@ -1,17 +1,14 @@
+import { TabBarIcon } from "@/components/layout";
 import { Tabs, useRouter } from "expo-router";
 import {
-  Bell,
   ClipboardCheck,
+  LayoutDashboard,
   MapPin,
-  Package,
   ShoppingBag,
-  TrendingUp,
-  UserRound,
   Users,
 } from "lucide-react-native";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { TabBarIcon } from "@/components/layout";
 import { useTheme } from "../../lib/theme";
 
 const TAB_BAR_HEIGHT = Platform.select({ ios: 84, android: 64 }) ?? 64;
@@ -32,7 +29,11 @@ function QuickSaleFab() {
       ]}
       onPress={() => router.push("/quick-sale")}
     >
-      <ClipboardCheck color={colors.primaryForeground} size={26} strokeWidth={2.5} />
+      <ClipboardCheck
+        color={colors.primaryForeground}
+        size={26}
+        strokeWidth={2.5}
+      />
     </Pressable>
   );
 }
@@ -48,10 +49,15 @@ function tabIcon(Icon: typeof ShoppingBag) {
   }) => <TabBarIcon Icon={Icon} color={color} focused={focused} />;
 }
 
+/** Rotas fora da tab bar — acessíveis pela home, header ou perfil. */
+const HIDDEN_TAB = { href: null } as const;
+
 export default function TabsLayout() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const tabHeight = TAB_BAR_HEIGHT + Math.max(insets.bottom - (Platform.OS === "ios" ? 20 : 0), 0);
+  const tabHeight =
+    TAB_BAR_HEIGHT +
+    Math.max(insets.bottom - (Platform.OS === "ios" ? 20 : 0), 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -71,25 +77,28 @@ export default function TabsLayout() {
             borderTopWidth: 1,
             height: tabHeight,
             paddingTop: 8,
-            paddingBottom: Math.max(insets.bottom, Platform.OS === "ios" ? 20 : 8),
+            paddingBottom: Math.max(
+              insets.bottom,
+              Platform.OS === "ios" ? 20 : 8,
+            ),
           },
           sceneStyle: { backgroundColor: colors.background },
         }}
       >
         <Tabs.Screen
-          name="sales"
+          name="index"
+          options={{
+            title: "Início",
+            tabBarLabel: "Início",
+            tabBarIcon: tabIcon(LayoutDashboard),
+          }}
+        />
+        <Tabs.Screen
+          name="vendas"
           options={{
             title: "Vendas",
             tabBarLabel: "Vendas",
             tabBarIcon: tabIcon(ShoppingBag),
-          }}
-        />
-        <Tabs.Screen
-          name="commission"
-          options={{
-            title: "Comissão",
-            tabBarLabel: "Comissão",
-            tabBarIcon: tabIcon(TrendingUp),
           }}
         />
         <Tabs.Screen
@@ -108,30 +117,12 @@ export default function TabsLayout() {
             tabBarIcon: tabIcon(MapPin),
           }}
         />
-        <Tabs.Screen
-          name="products"
-          options={{
-            title: "Catálogo",
-            tabBarLabel: "Catálogo",
-            tabBarIcon: tabIcon(Package),
-          }}
-        />
-        <Tabs.Screen
-          name="notifications"
-          options={{
-            title: "Notificações",
-            tabBarLabel: "Avisos",
-            tabBarIcon: tabIcon(Bell),
-          }}
-        />
-        <Tabs.Screen
-          name="profile"
-          options={{
-            title: "Perfil",
-            tabBarLabel: "Perfil",
-            tabBarIcon: tabIcon(UserRound),
-          }}
-        />
+
+        <Tabs.Screen name="_route-plan.styles" options={HIDDEN_TAB} />
+        <Tabs.Screen name="commission" options={HIDDEN_TAB} />
+        <Tabs.Screen name="products" options={HIDDEN_TAB} />
+        <Tabs.Screen name="notifications" options={HIDDEN_TAB} />
+        <Tabs.Screen name="profile" options={HIDDEN_TAB} />
       </Tabs>
       <QuickSaleFab />
     </View>

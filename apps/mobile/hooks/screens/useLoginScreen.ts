@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { useRouter } from "expo-router";
+import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 
 export function useLoginScreen() {
@@ -17,7 +17,7 @@ export function useLoginScreen() {
     setPending(true);
     try {
       await login(email.trim(), password);
-      router.replace("/(tabs)/sales");
+      router.replace("/(tabs)");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Erro ao entrar");
     } finally {

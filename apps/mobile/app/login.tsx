@@ -1,3 +1,5 @@
+import { Redirect } from "expo-router";
+import { ShoppingBag } from "lucide-react-native";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -7,23 +9,29 @@ import {
   Text,
   View,
 } from "react-native";
-import { ShoppingBag } from "lucide-react-native";
-import { Redirect } from "expo-router";
 import { ThemedTextInput } from "../components/atoms/ThemedTextInput";
 import { DevToolsVersionTap } from "../components/molecules/DevToolsVersionTap";
-import { useThemedStyles } from "../hooks/useThemedStyles";
 import { useLoginScreen } from "../hooks/screens/useLoginScreen";
+import { useThemedStyles } from "../hooks/useThemedStyles";
 import { useTheme } from "../lib/theme";
 import type { AppColors } from "../lib/theme/types";
 
 export default function LoginScreen() {
   const styles = useThemedStyles(createLoginStyles);
   const { colors } = useTheme();
-  const { email, setEmail, password, setPassword, err, pending, shouldRedirectSeller, onSubmit } =
-    useLoginScreen();
+  const {
+    email,
+    setEmail,
+    password,
+    setPassword,
+    err,
+    pending,
+    shouldRedirectSeller,
+    onSubmit,
+  } = useLoginScreen();
 
   if (shouldRedirectSeller) {
-    return <Redirect href="/(tabs)/sales" />;
+    return <Redirect href="/(tabs)" />;
   }
 
   return (

@@ -1,6 +1,6 @@
 import { Stack } from "expo-router";
 
-export default function SalesStack() {
+export default function VendasStack() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />

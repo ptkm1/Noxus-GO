@@ -1,18 +1,29 @@
-import { CheckCheck } from "lucide-react-native";
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from "react-native";
-import { ThemedText } from "@/components/atoms/ThemedText";
 import { ThemedCard } from "@/components/atoms/ThemedCard";
+import { ThemedText } from "@/components/atoms/ThemedText";
 import { MobileHeader } from "@/components/layout";
 import { MOBILE_TAB_SCROLL_BOTTOM } from "@/components/layout/MobileScreen";
 import { useNotificationsScreen } from "@/hooks/screens/useNotificationsScreen";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
-import { radiiPx } from "@pedidos/design-tokens";
+import { CheckCheck } from "lucide-react-native";
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
 
 export default function NotificationsScreen() {
   const { colors } = useTheme();
-  const { notifications, isLoading, isRefetching, refetch, markRead, markAllRead } =
-    useNotificationsScreen();
+  const {
+    notifications,
+    isLoading,
+    isRefetching,
+    refetch,
+    markRead,
+    markAllRead,
+  } = useNotificationsScreen();
 
   const unread = notifications.filter((n) => !n.read).length;
 
@@ -21,6 +32,7 @@ export default function NotificationsScreen() {
       <MobileHeader
         title="Notificações"
         subtitle={unread > 0 ? `${unread} não lida(s)` : "Tudo em dia"}
+        showBack
         rightAction={
           <Pressable onPress={markAllRead} style={styles.markAll}>
             <CheckCheck color={colors.primary} size={20} />
@@ -41,7 +53,11 @@ export default function NotificationsScreen() {
             gap: 10,
           }}
           ListEmptyComponent={
-            <ThemedText variant="bodySm" muted style={{ textAlign: "center", marginTop: 48 }}>
+            <ThemedText
+              variant="bodySm"
+              muted
+              style={{ textAlign: "center", marginTop: 48 }}
+            >
               Sem notificações.
             </ThemedText>
           }

@@ -42,7 +42,7 @@ export function useProductCatalogTileStyles(
           zIndex: 2,
           padding: 6,
           borderRadius: 20,
-          backgroundColor: colors.surfaceOverlay,
+          backgroundColor: colors.background,
         },
         mainTap: {
           flexDirection: variant === "list" ? "row" : "column",
@@ -53,8 +53,8 @@ export function useProductCatalogTileStyles(
           gap: variant === "list" ? 12 : 0,
         },
         imgBox: {
-          width: variant === "list" ? 88 : "100%",
-          height: variant === "list" ? 88 : imgHeight,
+          width: variant === "list" ? 56 : "100%",
+          height: variant === "list" ? 56 : imgHeight,
           borderRadius: 10,
           overflow: "hidden",
           backgroundColor: colors.surfaceMuted,
@@ -83,7 +83,7 @@ export function useProductCatalogTileStyles(
           paddingRight: variant === "list" ? 36 : 0,
         },
         name: {
-          fontSize: variant === "list" ? 15 : 14,
+          fontSize: variant === "list" ? 14 : 12,
           fontWeight: "700",
           color: colors.text,
           lineHeight: variant === "list" ? 20 : 18,
@@ -104,7 +104,8 @@ export function useProductCatalogTileStyles(
         stockLine: { marginTop: 2, fontSize: 11, fontWeight: "700" },
         price: {
           marginTop: 6,
-          fontSize: 15,
+          ...(variant === "list" && { top: 15 }),
+          fontSize: variant === "list" ? 14 : 12,
           fontWeight: "800",
           color: colors.success,
         },

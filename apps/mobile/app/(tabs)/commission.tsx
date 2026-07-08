@@ -1,5 +1,3 @@
-import { ActivityIndicator, StyleSheet, View } from "react-native";
-import { Target, TrendingUp, Trophy } from "lucide-react-native";
 import { fmtMoney } from "@/components/atoms/formatMoney";
 import { ThemedCard } from "@/components/atoms/ThemedCard";
 import { ThemedText } from "@/components/atoms/ThemedText";
@@ -9,14 +7,17 @@ import { useCommissionScreen } from "@/hooks/screens/useCommissionScreen";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
 import { radiiPx } from "@pedidos/design-tokens";
+import { Target, TrendingUp, Trophy } from "lucide-react-native";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 export default function CommissionScreen() {
   const { colors } = useTheme();
-  const { data, isLoading, isFetching, isError, onRefresh } = useCommissionScreen();
+  const { data, isLoading, isFetching, isError, onRefresh } =
+    useCommissionScreen();
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <MobileHeader title="Comissão" subtitle={data?.period.label} />
+      <MobileHeader title="Comissão" subtitle={data?.period.label} showBack />
       <MobileScreen refreshing={isFetching} onRefresh={onRefresh}>
         {isLoading && !data ? (
           <ActivityIndicator color={colors.primary} />
@@ -27,7 +28,10 @@ export default function CommissionScreen() {
             <ThemedText variant="caption" muted>
               Faturamento confirmado no mês
             </ThemedText>
-            <ThemedText variant="display" style={{ color: colors.primary, fontSize: 32 }}>
+            <ThemedText
+              variant="display"
+              style={{ color: colors.primary, fontSize: 32 }}
+            >
               R$ {fmtMoney(data.mtd.confirmedRevenue)}
             </ThemedText>
 
@@ -51,7 +55,8 @@ export default function CommissionScreen() {
             <ThemedCard>
               <ThemedText variant="bodySm" style={{ fontWeight: "600" }}>
                 Regras: SKU {data.rulesSummary.productRulesCount} · Cat.{" "}
-                {data.rulesSummary.categoryRulesCount} · Geral {data.rulesSummary.generalRulesCount}
+                {data.rulesSummary.categoryRulesCount} · Geral{" "}
+                {data.rulesSummary.generalRulesCount}
               </ThemedText>
               <ThemedText variant="caption" muted style={{ marginTop: 4 }}>
                 Faixas progressivas: {data.rulesSummary.progressiveTierCount}
@@ -73,18 +78,25 @@ export default function CommissionScreen() {
                     key={step.id}
                     style={[
                       styles.tierRow,
-                      step.achieved && { backgroundColor: colorWithAlpha(colors.success, 0.08) },
+                      step.achieved && {
+                        backgroundColor: colorWithAlpha(colors.success, 0.08),
+                      },
                     ]}
                   >
                     <View
                       style={[
                         styles.dot,
-                        { backgroundColor: step.achieved ? colors.success : colors.border },
+                        {
+                          backgroundColor: step.achieved
+                            ? colors.success
+                            : colors.border,
+                        },
                       ]}
                     />
                     <View style={{ flex: 1 }}>
                       <ThemedText variant="body" style={{ fontWeight: "600" }}>
-                        {step.label ?? `A partir de R$ ${fmtMoney(step.thresholdAmount)}`}
+                        {step.label ??
+                          `A partir de R$ ${fmtMoney(step.thresholdAmount)}`}
                       </ThemedText>
                       <ThemedText variant="caption" muted>
                         {step.commissionPercent.toFixed(1)}% ·{" "}
@@ -92,7 +104,11 @@ export default function CommissionScreen() {
                       </ThemedText>
                     </View>
                     {step.achieved ? (
-                      <ThemedText style={{ color: colors.success, fontWeight: "700" }}>✓</ThemedText>
+                      <ThemedText
+                        style={{ color: colors.success, fontWeight: "700" }}
+                      >
+                        ✓
+                      </ThemedText>
                     ) : null}
                   </View>
                 ))
@@ -119,7 +135,10 @@ export default function CommissionScreen() {
                 <Trophy color={colors.text} size={20} />
                 <ThemedText variant="titleSm">Ranking do mês</ThemedText>
               </View>
-              <ThemedText variant="body" style={{ fontWeight: "600", marginBottom: 10 }}>
+              <ThemedText
+                variant="body"
+                style={{ fontWeight: "600", marginBottom: 10 }}
+              >
                 {data.ranking.position != null
                   ? `${data.ranking.position}º de ${data.ranking.totalSellers}`
                   : `Sem posição (${data.ranking.totalSellers} vendedores)`}
@@ -129,10 +148,16 @@ export default function CommissionScreen() {
                   key={`${row.rank}-${row.name}`}
                   style={[
                     styles.rankRow,
-                    row.isMe && { backgroundColor: colorWithAlpha(colors.primary, 0.1) },
+                    row.isMe && {
+                      backgroundColor: colorWithAlpha(colors.primary, 0.1),
+                    },
                   ]}
                 >
-                  <ThemedText variant="bodySm" muted style={{ width: 28, fontWeight: "700" }}>
+                  <ThemedText
+                    variant="bodySm"
+                    muted
+                    style={{ width: 28, fontWeight: "700" }}
+                  >
                     {row.rank}º
                   </ThemedText>
                   <ThemedText
@@ -143,7 +168,10 @@ export default function CommissionScreen() {
                     {row.name}
                     {row.isMe ? " (tu)" : ""}
                   </ThemedText>
-                  <ThemedText variant="bodySm" style={{ color: colors.success, fontWeight: "600" }}>
+                  <ThemedText
+                    variant="bodySm"
+                    style={{ color: colors.success, fontWeight: "600" }}
+                  >
                     R$ {fmtMoney(row.totalAmount)}
                   </ThemedText>
                 </View>
@@ -163,7 +191,12 @@ export default function CommissionScreen() {
 const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: 12 },
   half: { flex: 1, minWidth: 0 },
-  sectionHead: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+  sectionHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
   tierRow: {
     flexDirection: "row",
     alignItems: "center",

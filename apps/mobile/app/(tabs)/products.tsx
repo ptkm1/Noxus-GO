@@ -97,6 +97,7 @@ export default function ProductsScreen() {
       <MobileHeader
         title="Catálogo"
         subtitle="Fotos e preços · use Venda rápida para pedido"
+        showBack
         rightAction={
           <CatalogViewModeToggle
             viewMode={viewMode}
@@ -146,7 +147,7 @@ export default function ProductsScreen() {
 }
 
 const styles = StyleSheet.create({
-  list: { paddingHorizontal: 16, paddingTop: 12 },
+  list: { paddingHorizontal: 16, paddingTop: 12, gap: 12 },
   header: { paddingBottom: 8, gap: 12 },
   searchRow: {
     flexDirection: "row",

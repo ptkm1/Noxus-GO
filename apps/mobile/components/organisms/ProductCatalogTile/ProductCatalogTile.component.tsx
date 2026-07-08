@@ -80,10 +80,10 @@ export function ProductCatalogTile(props: {
         }
       >
         <Heart
-          size={22}
+          size={16}
           color={favorite ? "#ef4444" : "#94a3b8"}
           fill={favorite ? "#fecaca" : "transparent"}
-          strokeWidth={2.2}
+          strokeWidth={2}
         />
       </Pressable>
       <Pressable
@@ -137,8 +137,8 @@ export function ProductCatalogTile(props: {
           >
             {stockLabel}
           </Text>
-          {priceNode}
         </View>
+        {priceNode}
       </Pressable>
     </View>
   );

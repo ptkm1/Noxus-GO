@@ -252,7 +252,7 @@ export function useQuickSaleScreen() {
       if (data.mode === "offlineQueued") {
         Alert.alert(
           "Pedido na fila offline",
-          "Assim que houver internet, enviamos automaticamente. Veja em Vendas → Fila offline.",
+          "Assim que houver internet, enviamos automaticamente. Veja em Início → Fila offline.",
           [{ text: "OK", onPress: () => router.back() }],
         );
         setCart({});

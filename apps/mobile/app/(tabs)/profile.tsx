@@ -1,32 +1,35 @@
+import { fmtMoney } from "@/components/atoms/formatMoney";
+import { ThemedButton } from "@/components/atoms/ThemedButton";
+import { ThemedCard } from "@/components/atoms/ThemedCard";
+import { ThemedText } from "@/components/atoms/ThemedText";
+import { ThemedTextInput } from "@/components/atoms/ThemedTextInput";
+import { MobileHeader, MobileScreen } from "@/components/layout";
+import { DevToolsVersionTap } from "@/components/molecules/DevToolsVersionTap";
+import { ProgressStat } from "@/components/molecules/StatCard";
+import { SyncStatusBanner } from "@/components/molecules/SyncStatusBanner";
+import { useAuth } from "@/context/AuthContext";
+import type { CommissionDashboard } from "@/hooks/screens/useCommissionScreen";
+import { useProfileScreen } from "@/hooks/screens/useProfileScreen";
+import { apiFetch } from "@/lib/api";
+import { useTheme } from "@/lib/theme";
+import { colorWithAlpha } from "@/lib/theme/colorAlpha";
+import { radiiPx } from "@pedidos/design-tokens";
+import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
 import {
   Bell,
   ChevronRight,
   Database,
   HelpCircle,
   LogOut,
+  Package,
   Settings,
   Shield,
+  ShoppingBag,
   Smartphone,
+  TrendingUp,
 } from "lucide-react-native";
-import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
-import { ThemedButton } from "@/components/atoms/ThemedButton";
-import { ThemedText } from "@/components/atoms/ThemedText";
-import { ThemedTextInput } from "@/components/atoms/ThemedTextInput";
-import { ThemedCard } from "@/components/atoms/ThemedCard";
-import { MobileHeader, MobileScreen } from "@/components/layout";
-import { ProgressStat } from "@/components/molecules/StatCard";
-import { SyncStatusBanner } from "@/components/molecules/SyncStatusBanner";
-import { DevToolsVersionTap } from "@/components/molecules/DevToolsVersionTap";
-import { fmtMoney } from "@/components/atoms/formatMoney";
-import { useAuth } from "@/context/AuthContext";
-import { useProfileScreen } from "@/hooks/screens/useProfileScreen";
-import { useQuery } from "@tanstack/react-query";
-import type { CommissionDashboard } from "@/hooks/screens/useCommissionScreen";
-import { apiFetch } from "@/lib/api";
-import { useTheme } from "@/lib/theme";
-import { colorWithAlpha } from "@/lib/theme/colorAlpha";
-import { radiiPx } from "@pedidos/design-tokens";
 
 function MenuRow({
   icon: Icon,
@@ -74,7 +77,8 @@ export default function ProfileScreen() {
 
   const { data: commission } = useQuery({
     queryKey: ["seller", "commission-dashboard"],
-    queryFn: () => apiFetch<CommissionDashboard>("/seller/commission-dashboard"),
+    queryFn: () =>
+      apiFetch<CommissionDashboard>("/seller/commission-dashboard"),
   });
 
   const initials =
@@ -92,12 +96,20 @@ export default function ProfileScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <MobileHeader title="Perfil" subtitle="Configurações da conta" />
+      <MobileHeader title="Perfil" subtitle="Configurações da conta" showBack />
       <MobileScreen scroll contentContainerStyle={{ gap: 20 }}>
         <ThemedCard>
           <View style={styles.userRow}>
-            <View style={[styles.avatar, { backgroundColor: colorWithAlpha(colors.primary, 0.2) }]}>
-              <ThemedText variant="title" style={{ color: colors.primary, fontWeight: "700" }}>
+            <View
+              style={[
+                styles.avatar,
+                { backgroundColor: colorWithAlpha(colors.primary, 0.2) },
+              ]}
+            >
+              <ThemedText
+                variant="title"
+                style={{ color: colors.primary, fontWeight: "700" }}
+              >
                 {initials}
               </ThemedText>
             </View>
@@ -114,7 +126,10 @@ export default function ProfileScreen() {
             </View>
             <Pressable
               onPress={goSettings}
-              style={[styles.settingsIcon, { backgroundColor: colors.surfaceMuted }]}
+              style={[
+                styles.settingsIcon,
+                { backgroundColor: colors.surfaceMuted },
+              ]}
             >
               <Settings color={colors.text} size={20} />
             </Pressable>
@@ -131,7 +146,12 @@ export default function ProfileScreen() {
         ) : null}
 
         <View style={styles.perfGrid}>
-          <View style={[styles.perfCell, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View
+            style={[
+              styles.perfCell,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
             <ThemedText variant="caption" muted>
               Ranking
             </ThemedText>
@@ -142,7 +162,12 @@ export default function ProfileScreen() {
               de {totalSellers}
             </ThemedText>
           </View>
-          <View style={[styles.perfCell, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View
+            style={[
+              styles.perfCell,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
             <ThemedText variant="caption" muted>
               Faturamento
             </ThemedText>
@@ -150,7 +175,12 @@ export default function ProfileScreen() {
               R$ {fmtMoney(mtd)}
             </ThemedText>
           </View>
-          <View style={[styles.perfCell, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View
+            style={[
+              styles.perfCell,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
             <ThemedText variant="caption" muted>
               Comissão
             </ThemedText>
@@ -174,6 +204,21 @@ export default function ProfileScreen() {
 
         <ThemedCard padded={false}>
           <MenuRow
+            icon={ShoppingBag}
+            label="Todas as vendas"
+            onPress={() => router.push("/(tabs)/vendas")}
+          />
+          <MenuRow
+            icon={Package}
+            label="Catálogo"
+            onPress={() => router.push("/(tabs)/products")}
+          />
+          <MenuRow
+            icon={TrendingUp}
+            label="Comissão"
+            onPress={() => router.push("/(tabs)/commission")}
+          />
+          <MenuRow
             icon={Bell}
             label="Notificações"
             onPress={() => router.push("/(tabs)/notifications")}
@@ -183,14 +228,20 @@ export default function ProfileScreen() {
           <MenuRow icon={Database} label="Dados locais" onPress={goSettings} />
           <MenuRow icon={HelpCircle} label="Ajuda" onPress={goSettings} />
           <View style={{ borderBottomWidth: 0 }}>
-            <MenuRow icon={Settings} label="Configurações" onPress={goSettings} />
+            <MenuRow
+              icon={Settings}
+              label="Configurações"
+              onPress={goSettings}
+            />
           </View>
         </ThemedCard>
 
         <ThemedButton variant="outline" onPress={() => void logout()}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <LogOut color={colors.danger} size={18} />
-            <ThemedText style={{ color: colors.danger, fontWeight: "600" }}>Sair da conta</ThemedText>
+            <ThemedText style={{ color: colors.danger, fontWeight: "600" }}>
+              Sair da conta
+            </ThemedText>
           </View>
         </ThemedButton>
 

@@ -3,29 +3,32 @@ import { ThemedText } from "@/components/atoms/ThemedText";
 import { MobileHeader, MobileScreen } from "@/components/layout";
 import { HeaderIconButton } from "@/components/molecules/HeaderIconButton";
 import { QuickAction } from "@/components/molecules/QuickAction";
+import { RecentSalesBlock } from "@/components/molecules/RecentSalesBlock";
 import { ProgressStat, StatCard } from "@/components/molecules/StatCard";
 import { SyncStatusBanner } from "@/components/molecules/SyncStatusBanner";
 import { TopSuppliersBlock } from "@/components/molecules/TopSuppliersBlock";
-import { RecentSalesBlock } from "@/components/molecules/RecentSalesBlock";
 import { useAuth } from "@/context/AuthContext";
 import type { CommissionDashboard } from "@/hooks/screens/useCommissionScreen";
 import { useSalesListScreen } from "@/hooks/screens/useSalesListScreen";
 import { apiFetch } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
+import { colorWithAlpha } from "@/lib/theme/colorAlpha";
+import { radiiPx } from "@pedidos/design-tokens";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import {
   Bell,
   ClipboardList,
   DollarSign,
+  Package,
   Plus,
   ShoppingCart,
   TrendingUp,
   Users,
 } from "lucide-react-native";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 
-export default function SalesListScreen() {
+export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { colors } = useTheme();
@@ -54,6 +57,13 @@ export default function SalesListScreen() {
 
   const unread = notifications.filter((n) => !n.read).length;
   const firstName = user?.name?.split(" ")[0] ?? "Vendedor";
+  const initials =
+    user?.name
+      ?.split(" ")
+      .map((n) => n[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() ?? "?";
   const today = new Date().toLocaleDateString("pt-BR", {
     weekday: "long",
     day: "numeric",
@@ -77,6 +87,24 @@ export default function SalesListScreen() {
       <MobileHeader
         title={`Olá, ${firstName}`}
         subtitle={today}
+        leftAction={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Meu perfil"
+            onPress={() => router.push("/(tabs)/profile")}
+            style={[
+              styles.avatarBtn,
+              { backgroundColor: colorWithAlpha(colors.primary, 0.15) },
+            ]}
+          >
+            <ThemedText
+              variant="caption"
+              style={{ color: colors.primary, fontWeight: "700" }}
+            >
+              {initials}
+            </ThemedText>
+          </Pressable>
+        }
         rightAction={
           <HeaderIconButton
             badge={unread}
@@ -127,6 +155,7 @@ export default function SalesListScreen() {
               title="Pedidos"
               value={orders.length}
               icon={ShoppingCart}
+              onPress={() => router.push("/(tabs)/vendas")}
             />
           </View>
           <View style={styles.statCell}>
@@ -149,6 +178,18 @@ export default function SalesListScreen() {
             description="Montar pedido com cliente e carrinho"
             variant="primary"
             onPress={goQuickSale}
+          />
+          <QuickAction
+            icon={Package}
+            label="Catálogo"
+            description="Consultar produtos e preços"
+            onPress={() => router.push("/(tabs)/products")}
+          />
+          <QuickAction
+            icon={TrendingUp}
+            label="Comissão"
+            description="Meta, ranking e extrato do mês"
+            onPress={() => router.push("/(tabs)/commission")}
           />
           {(pending > 0 || dead > 0) && (
             <QuickAction
@@ -173,6 +214,13 @@ export default function SalesListScreen() {
 }
 
 const styles = StyleSheet.create({
+  avatarBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: radiiPx.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   statGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
