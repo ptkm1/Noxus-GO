@@ -39,6 +39,55 @@ export function isCnpjComplete(digitsOrRaw: string): boolean {
   return cnpjDigitsOnly(digitsOrRaw).length === 14;
 }
 
+const CNPJ_WEIGHTS_DV1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] as const;
+const CNPJ_WEIGHTS_DV2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] as const;
+
+function cnpjCheckDigit(digits: string, weights: readonly number[]): number {
+  let sum = 0;
+  for (let i = 0; i < weights.length; i++) {
+    sum += Number(digits[i]) * weights[i]!;
+  }
+  const remainder = sum % 11;
+  return remainder < 2 ? 0 : 11 - remainder;
+}
+
+/** Valida CNPJ com dígitos verificadores (módulo 11). */
+export function isValidCnpj(digitsOrRaw: string): boolean {
+  const d = cnpjDigitsOnly(digitsOrRaw);
+  if (d.length !== 14) return false;
+  if (/^(\d)\1{13}$/.test(d)) return false;
+
+  const dv1 = cnpjCheckDigit(d, CNPJ_WEIGHTS_DV1);
+  if (dv1 !== Number(d[12])) return false;
+
+  const dv2 = cnpjCheckDigit(d, CNPJ_WEIGHTS_DV2);
+  return dv2 === Number(d[13]);
+}
+
+/** Endereço em uma linha para nota de endereço / prefill. */
+export function formatCnpjAddress(
+  data: Pick<
+    CnpjCompanyData,
+    "logradouro" | "numero" | "complemento" | "bairro" | "municipio" | "uf" | "cep"
+  >,
+): string | null {
+  const parts: string[] = [];
+  const street = [data.logradouro?.trim(), data.numero?.trim()].filter(Boolean).join(", ");
+  if (street) parts.push(street);
+  if (data.complemento?.trim()) parts.push(data.complemento.trim());
+  if (data.bairro?.trim()) parts.push(data.bairro.trim());
+  const city = [data.municipio?.trim(), data.uf?.trim()].filter(Boolean).join("/");
+  if (city) parts.push(city);
+  if (data.cep?.trim()) parts.push(`CEP ${data.cep.trim()}`);
+  return parts.length > 0 ? parts.join(" — ") : null;
+}
+
+/** Situação cadastral considerada regular para operação comercial. */
+export function isCnpjSituacaoAtiva(situacao: string | null | undefined): boolean {
+  if (!situacao?.trim()) return true;
+  return situacao.trim().toUpperCase() === "ATIVA";
+}
+
 /** Nome amigável para exibir/ficha: fantasia se existir, senão razão social. */
 export function suggestedTradeName(data: Pick<CnpjCompanyData, "razaoSocial" | "nomeFantasia">): string {
   const nf = data.nomeFantasia?.trim();

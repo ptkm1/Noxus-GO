@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "../../node_modules/vite/bin/vite.js",
-    "build": "../../node_modules/typescript/bin/tsc -b && ../../node_modules/vite/bin/vite.js build",
-    "lint": "../../node_modules/eslint/bin/eslint.js .",
-    "preview": "../../node_modules/vite/bin/vite.js preview"
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@pedidos/design-tokens": "workspace:*",

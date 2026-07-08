@@ -16,7 +16,7 @@
     }
   },
   "scripts": {
-    "build": "../../node_modules/typescript/bin/tsc -p tsconfig.json"
+    "build": "node ../../scripts/build-package.mjs packages/design-tokens"
   },
   "devDependencies": {
     "typescript": "~5.9.3"

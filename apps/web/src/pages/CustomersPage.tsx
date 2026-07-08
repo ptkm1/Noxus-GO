@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { CnpjCompanyData } from "@pedidos/shared";
-import { suggestedTradeName } from "@pedidos/shared";
+import { formatCnpjAddress, suggestedTradeName } from "@pedidos/shared";
 import { FormActions, FormField, FormGrid, FormSection } from "@/components/forms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -240,6 +240,8 @@ export function CustomersPage() {
               setName(suggestedTradeName(d));
               setEmail(d.email ?? "");
               setPhone(d.telefone ?? "");
+              const address = formatCnpjAddress(d);
+              if (address) setGeoNoteStr(address);
             }}
           />
         ) : null}
