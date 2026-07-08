@@ -2,7 +2,7 @@ import { Redirect, useRouter } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 import { useAuth } from "../../context/AuthContext";
 import { sellerMobileBlockedScreenCopy } from "../../lib/seller-login-messages";
-import { useSellerAccessBlockStyles } from "./seller-access-block.styles";
+import { useSellerAccessBlockStyles } from "./_seller-access-block.styles";
 
 export default function SellerAccessBlockScreen() {
   const router = useRouter();

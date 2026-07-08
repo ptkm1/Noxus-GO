@@ -30,7 +30,7 @@ import { useCatalogViewMode } from "../hooks/useCatalogViewMode";
 import { useThemedStyles } from "../hooks/useThemedStyles";
 import type { SaleProduct } from "../lib/sale/types";
 import { useTheme } from "../lib/theme";
-import { createQuickSaleStyles } from "./quick-sale.styles";
+import { createQuickSaleStyles } from "./_quick-sale.styles";
 
 export default function QuickSaleScreen() {
   const styles = useThemedStyles(createQuickSaleStyles);

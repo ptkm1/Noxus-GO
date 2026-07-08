@@ -4,8 +4,8 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
-    "start": "cd ../.. && pnpm build:shared && expo start",
-    "start:dev": "cd ../.. && pnpm build:shared && expo start --dev-client",
+    "start": "pnpm --dir ../.. build:shared && expo start",
+    "start:dev": "pnpm --dir ../.. build:shared && expo start --dev-client",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",

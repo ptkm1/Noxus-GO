@@ -18,7 +18,7 @@ import { VisitNotesModal } from "../../components/molecules/VisitNotesModal";
 import { useRoutePlanScreen } from "../../hooks/screens/useRoutePlanScreen";
 import { useThemedStyles } from "../../hooks/useThemedStyles";
 import { useTheme } from "../../lib/theme";
-import { createRoutePlanStyles } from "./route-plan.styles";
+import { createRoutePlanStyles } from "./_route-plan.styles";
 
 export default function RoutePlanScreen() {
   const styles = useThemedStyles(createRoutePlanStyles);

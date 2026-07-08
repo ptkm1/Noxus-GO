@@ -6,7 +6,7 @@ import { colorWithAlpha } from "@/lib/theme/colorAlpha";
 import { radiiPx } from "@pedidos/design-tokens";
 import { formatRelativeSaleDate, formatSaleItemCount } from "@pedidos/shared";
 import { Link } from "expo-router";
-import { MoreVertical, ShoppingCart } from "lucide-react-native";
+import { ChevronRight, ShoppingCart } from "lucide-react-native";
 import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
@@ -16,6 +16,73 @@ type Props = {
   isRefetching?: boolean;
   limit?: number;
 };
+
+type RowProps = {
+  order: SellerOrderListItem;
+};
+
+function RecentSaleRow({ order }: RowProps) {
+  const { colors } = useTheme();
+  const confirmed = order.status === "CONFIRMED";
+  const amountColor = confirmed ? colors.success : colors.text;
+
+  return (
+    <Link href={`/(tabs)/sales/${order.id}`} asChild>
+      <Pressable
+        style={({ pressed }) => [
+          styles.pressable,
+          { opacity: pressed ? 0.9 : 1 },
+        ]}
+      >
+        <View style={styles.itemRow}>
+          <View
+            style={[
+              styles.iconCell,
+              {
+                backgroundColor: colorWithAlpha(colors.primary, 0.12),
+                borderColor: colorWithAlpha(colors.primary, 0.2),
+              },
+            ]}
+          >
+            <ShoppingCart color={colors.primary} size={18} />
+          </View>
+
+          <View style={styles.infoCell}>
+            <View style={styles.infoLine}>
+              <ThemedText
+                variant="body"
+                numberOfLines={1}
+                style={styles.customer}
+              >
+                {order.customer?.name ?? "Sem cliente"}
+              </ThemedText>
+              <ThemedText
+                variant="bodySm"
+                numberOfLines={1}
+                style={[styles.amount, { color: amountColor }]}
+              >
+                R$ {fmtMoney(Number(order.totalAmount))}
+              </ThemedText>
+            </View>
+
+            <View style={styles.infoLine}>
+              <ThemedText
+                variant="bodySm"
+                muted
+                numberOfLines={1}
+                style={styles.meta}
+              >
+                {formatSaleItemCount(order.items.length)} ·{" "}
+                {formatRelativeSaleDate(order.createdAt)}
+              </ThemedText>
+              <ChevronRight color={colors.textMuted} size={16} />
+            </View>
+          </View>
+        </View>
+      </Pressable>
+    </Link>
+  );
+}
 
 export function RecentSalesBlock({
   orders,
@@ -75,79 +142,16 @@ export function RecentSalesBlock({
         </ThemedText>
       ) : (
         <View style={[styles.list, { borderTopColor: colors.border }]}>
-          {visible.map((order, index) => {
-            const confirmed = order.status === "CONFIRMED";
-            const amountColor = confirmed ? colors.success : colors.text;
-            return (
-              <View key={order.id}>
-                {index > 0 ? (
-                  <View
-                    style={[styles.divider, { backgroundColor: colors.border }]}
-                  />
-                ) : null}
-                <Link href={`/(tabs)/sales/${order.id}`} asChild>
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.row,
-                      { opacity: pressed ? 0.88 : 1 },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.iconBox,
-                        {
-                          backgroundColor: colorWithAlpha(colors.primary, 0.12),
-                          borderColor: colorWithAlpha(colors.primary, 0.2),
-                        },
-                      ]}
-                    >
-                      <ShoppingCart color={colors.primary} size={18} />
-                    </View>
-
-                    <View style={styles.main}>
-                      <ThemedText
-                        variant="body"
-                        numberOfLines={1}
-                        style={{ fontWeight: "600" }}
-                      >
-                        {order.customer?.name ?? "Sem cliente"}
-                      </ThemedText>
-                      <ThemedText variant="bodySm" muted numberOfLines={1}>
-                        {formatSaleItemCount(order.items.length)}
-                      </ThemedText>
-                    </View>
-
-                    <ThemedText
-                      variant="caption"
-                      muted
-                      style={styles.date}
-                      numberOfLines={1}
-                    >
-                      {formatRelativeSaleDate(order.createdAt)}
-                    </ThemedText>
-
-                    <ThemedText
-                      variant="bodySm"
-                      style={{
-                        fontWeight: "700",
-                        color: amountColor,
-                        minWidth: 72,
-                        textAlign: "right",
-                      }}
-                    >
-                      R$ {fmtMoney(Number(order.totalAmount))}
-                    </ThemedText>
-
-                    <MoreVertical
-                      color={colors.textMuted}
-                      size={18}
-                      style={styles.more}
-                    />
-                  </Pressable>
-                </Link>
-              </View>
-            );
-          })}
+          {visible.map((order, index) => (
+            <View key={order.id}>
+              {index > 0 ? (
+                <View
+                  style={[styles.divider, { backgroundColor: colors.border }]}
+                />
+              ) : null}
+              <RecentSaleRow order={order} />
+            </View>
+          ))}
           {isRefetching ? (
             <View
               style={[
@@ -163,6 +167,8 @@ export function RecentSalesBlock({
     </View>
   );
 }
+
+const ICON_SIZE = 44;
 
 const styles = StyleSheet.create({
   card: {
@@ -188,13 +194,12 @@ const styles = StyleSheet.create({
     borderRadius: 9999,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
   },
   list: {
     borderTopWidth: 1,
     position: "relative",
+    gap: 8,
+    paddingVertical: 8,
   },
   listOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -203,33 +208,51 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginHorizontal: 14,
+    width: "100%",
+    alignSelf: "stretch",
   },
-  row: {
+  pressable: {
+    width: "100%",
+  },
+  itemRow: {
+    width: "100%",
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  iconBox: {
-    width: 40,
-    height: 40,
+  iconCell: {
+    width: ICON_SIZE,
+    height: ICON_SIZE,
     borderRadius: radiiPx.md,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
+    marginRight: 12,
   },
-  main: {
+  infoCell: {
     flex: 1,
     minWidth: 0,
-    gap: 2,
+    gap: 4,
   },
-  date: {
-    maxWidth: 72,
-    textAlign: "right",
+  infoLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
-  more: {
-    marginLeft: 2,
+  customer: {
+    flex: 1,
+    minWidth: 0,
+    fontWeight: "600",
+  },
+  amount: {
+    flexShrink: 0,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
+  meta: {
+    flex: 1,
+    minWidth: 0,
   },
 });
