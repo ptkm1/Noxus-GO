@@ -1,5 +1,3 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { ActivityIndicator, Pressable, View } from "react-native";
 import { fmtMoney } from "@/components/atoms/formatMoney";
 import { ThemedButton } from "@/components/atoms/ThemedButton";
 import { ThemedCard } from "@/components/atoms/ThemedCard";
@@ -9,13 +7,21 @@ import { MoneyLabel } from "@/components/molecules/MoneyLabel";
 import { useCustomerCreditScreen } from "@/hooks/screens/useCustomerCreditScreen";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { ActivityIndicator, View } from "react-native";
 
 export default function CustomerCreditScreen() {
   const router = useRouter();
   const { id: customerId } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
-  const { snap, isLoading, isFetching, refetch, policyLabel, effectiveActionLabel } =
-    useCustomerCreditScreen();
+  const {
+    snap,
+    isLoading,
+    isFetching,
+    refetch,
+    policyLabel,
+    effectiveActionLabel,
+  } = useCustomerCreditScreen();
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -44,18 +50,26 @@ export default function CustomerCreditScreen() {
             >
               <ThemedText variant="titleSm">Status de crédito</ThemedText>
               <ThemedText variant="body" style={{ marginTop: 8 }}>
-                {snap.creditBlocked ? "Bloqueado para novas vendas" : "Não bloqueado"}
+                {snap.creditBlocked
+                  ? "Bloqueado para novas vendas"
+                  : "Não bloqueado"}
               </ThemedText>
               <ThemedText variant="bodySm" muted style={{ marginTop: 4 }}>
                 Limite:{" "}
-                {snap.creditLimit != null ? `R$ ${fmtMoney(snap.creditLimit)}` : "Sem limite"}
+                {snap.creditLimit != null
+                  ? `R$ ${fmtMoney(snap.creditLimit)}`
+                  : "Sem limite"}
               </ThemedText>
               <ThemedText variant="bodySm" muted>
                 Saldo em aberto: R$ {fmtMoney(snap.openBalance)}
               </ThemedText>
               {snap.overdueCount > 0 ? (
-                <ThemedText variant="bodySm" style={{ color: colors.warning, marginTop: 6 }}>
-                  {snap.overdueCount} título(s) vencido(s) · R$ {fmtMoney(snap.overdueAmount)}
+                <ThemedText
+                  variant="bodySm"
+                  style={{ color: colors.warning, marginTop: 6 }}
+                >
+                  {snap.overdueCount} título(s) vencido(s) · R${" "}
+                  {fmtMoney(snap.overdueAmount)}
                 </ThemedText>
               ) : null}
             </ThemedCard>
@@ -64,7 +78,11 @@ export default function CustomerCreditScreen() {
               <ThemedCard>
                 <ThemedText variant="titleSm">Alertas</ThemedText>
                 {snap.violations.map((v, i) => (
-                  <ThemedText key={`${v.code}-${i}`} variant="bodySm" style={{ marginTop: 6 }}>
+                  <ThemedText
+                    key={`${v.code}-${i}`}
+                    variant="bodySm"
+                    style={{ marginTop: 6 }}
+                  >
                     • {v.message}
                   </ThemedText>
                 ))}
@@ -94,7 +112,8 @@ export default function CustomerCreditScreen() {
                   }
                 >
                   <ThemedText variant="body" style={{ fontWeight: "600" }}>
-                    {t.reference ?? "Título"} · venc. {new Date(t.dueDate).toLocaleDateString("pt-BR")}
+                    {t.reference ?? "Título"} · venc.{" "}
+                    {new Date(t.dueDate).toLocaleDateString("pt-BR")}
                     {t.overdue ? " · VENCIDO" : ""}
                   </ThemedText>
                   <MoneyLabel amount={t.remaining} />

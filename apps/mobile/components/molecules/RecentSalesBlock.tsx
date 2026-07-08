@@ -4,19 +4,11 @@ import type { SellerOrderListItem } from "@/hooks/screens/useSalesListScreen";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
 import { radiiPx } from "@pedidos/design-tokens";
-import {
-  formatRelativeSaleDate,
-  formatSaleItemCount,
-} from "@pedidos/shared";
+import { formatRelativeSaleDate, formatSaleItemCount } from "@pedidos/shared";
 import { Link } from "expo-router";
 import { MoreVertical, ShoppingCart } from "lucide-react-native";
 import { useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
 type Props = {
   orders: SellerOrderListItem[];
@@ -90,10 +82,7 @@ export function RecentSalesBlock({
               <View key={order.id}>
                 {index > 0 ? (
                   <View
-                    style={[
-                      styles.divider,
-                      { backgroundColor: colors.border },
-                    ]}
+                    style={[styles.divider, { backgroundColor: colors.border }]}
                   />
                 ) : null}
                 <Link href={`/(tabs)/sales/${order.id}`} asChild>
@@ -199,6 +188,9 @@ const styles = StyleSheet.create({
     borderRadius: 9999,
     paddingHorizontal: 12,
     paddingVertical: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
   },
   list: {
     borderTopWidth: 1,

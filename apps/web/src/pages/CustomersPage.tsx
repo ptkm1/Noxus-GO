@@ -1,7 +1,3 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import type { CnpjCompanyData } from "@pedidos/shared";
-import { formatCnpjAddress, suggestedTradeName } from "@pedidos/shared";
 import {
   FormField,
   FormGrid,
@@ -20,27 +16,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { apiFetch } from "../lib/api";
-import { CnpjLookupField } from "../components/CnpjLookupField";
+import type { CustomerFormValues, CustomerRecord } from "@pedidos/shared";
+import {
+  customerToForm,
+  emptyCustomerForm,
+  formToCustomerPayload,
+  formatCnpjMask,
+  formatCpfMask,
+  validateCustomerForm,
+} from "@pedidos/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { CustomerFormFields } from "../components/CustomerFormFields";
 import { CustomerTitlesPanel } from "../components/CustomerTitlesPanel";
-
-type Customer = {
-  id: string;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  sellerId: string | null;
-  seller?: { user: { name: string } } | null;
-  creditLimit?: unknown;
-  creditBlocked?: boolean;
-  latitude?: unknown;
-  longitude?: unknown;
-  addressNote?: string | null;
-};
+import { apiFetch } from "../lib/api";
 
 type Seller = { id: string; user: { name: string } };
 
-function customerHasMapCoords(c: Customer): boolean {
+function customerHasMapCoords(c: CustomerRecord): boolean {
   return (
     c.latitude != null &&
     c.longitude != null &&
@@ -49,11 +42,23 @@ function customerHasMapCoords(c: Customer): boolean {
   );
 }
 
+function formatDocument(c: CustomerRecord): string {
+  if (c.cnpj) return formatCnpjMask(c.cnpj);
+  if (c.cpf) return formatCpfMask(c.cpf);
+  return "—";
+}
+
+function formatCityUf(c: CustomerRecord): string {
+  if (c.city && c.state) return `${c.city}/${c.state}`;
+  if (c.state) return c.state;
+  return "—";
+}
+
 export function CustomersPage() {
   const qc = useQueryClient();
   const { data: customers = [], isLoading } = useQuery({
     queryKey: ["admin", "customers"],
-    queryFn: () => apiFetch<Customer[]>("/admin/customers"),
+    queryFn: () => apiFetch<CustomerRecord[]>("/admin/customers"),
   });
   const { data: sellers = [] } = useQuery({
     queryKey: ["admin", "sellers"],
@@ -63,9 +68,10 @@ export function CustomersPage() {
   const { data: pricingSettings } = useQuery({
     queryKey: ["admin", "pricing-settings"],
     queryFn: () =>
-      apiFetch<{ defaultMaxSellerDiscountPercent: number; creditPolicy: string }>(
-        "/admin/pricing-settings",
-      ),
+      apiFetch<{
+        defaultMaxSellerDiscountPercent: number;
+        creditPolicy: string;
+      }>("/admin/pricing-settings"),
   });
 
   const patchPricing = useMutation({
@@ -74,32 +80,33 @@ export function CustomersPage() {
         method: "PATCH",
         body: JSON.stringify({ creditPolicy }),
       }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "pricing-settings"] }),
+    onSuccess: () =>
+      void qc.invalidateQueries({ queryKey: ["admin", "pricing-settings"] }),
   });
 
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  const [form, setForm] = useState<CustomerFormValues>(emptyCustomerForm());
+  const [showValidation, setShowValidation] = useState(false);
+  const [editing, setEditing] = useState<CustomerRecord | null>(null);
   const [sellerId, setSellerId] = useState("");
-  const [editing, setEditing] = useState<Customer | null>(null);
   const [creditLimitStr, setCreditLimitStr] = useState("");
   const [creditBlockedEdit, setCreditBlockedEdit] = useState(false);
   const [geoLatStr, setGeoLatStr] = useState("");
   const [geoLngStr, setGeoLngStr] = useState("");
-  const [geoNoteStr, setGeoNoteStr] = useState("");
+
+  function patchForm(patch: Partial<CustomerFormValues>) {
+    setForm((prev) => ({ ...prev, ...patch }));
+  }
 
   function resetForm() {
     setEditing(null);
-    setName("");
-    setEmail("");
-    setPhone("");
+    setForm(emptyCustomerForm());
+    setShowValidation(false);
     setSellerId("");
     setCreditLimitStr("");
     setCreditBlockedEdit(false);
     setGeoLatStr("");
     setGeoLngStr("");
-    setGeoNoteStr("");
   }
 
   function openCreate() {
@@ -107,11 +114,9 @@ export function CustomersPage() {
     setSheetOpen(true);
   }
 
-  function openEdit(c: Customer) {
+  function openEdit(c: CustomerRecord) {
     setEditing(c);
-    setName(c.name);
-    setEmail(c.email ?? "");
-    setPhone(c.phone ?? "");
+    setForm(customerToForm(c));
     setSellerId(c.sellerId ?? "");
     setCreditBlockedEdit(Boolean(c.creditBlocked));
     setCreditLimitStr(
@@ -120,12 +125,15 @@ export function CustomersPage() {
         : "",
     );
     setGeoLatStr(
-      c.latitude != null && c.latitude !== "" ? String(Number(c.latitude as string)) : "",
+      c.latitude != null && c.latitude !== ""
+        ? String(Number(c.latitude as string))
+        : "",
     );
     setGeoLngStr(
-      c.longitude != null && c.longitude !== "" ? String(Number(c.longitude as string)) : "",
+      c.longitude != null && c.longitude !== ""
+        ? String(Number(c.longitude as string))
+        : "",
     );
-    setGeoNoteStr(c.addressNote ?? "");
     setSheetOpen(true);
   }
 
@@ -134,31 +142,32 @@ export function CustomersPage() {
     resetForm();
   }
 
+  function parseGeo(): { latitude?: number | null; longitude?: number | null } {
+    const lt = geoLatStr.trim();
+    const lg = geoLngStr.trim();
+    if (!lt && !lg) return { latitude: null, longitude: null };
+    if (!lt || !lg)
+      throw new Error("Informe latitude e longitude, ou deixe os dois vazios.");
+    const latitude = Number(lt.replace(",", "."));
+    const longitude = Number(lg.replace(",", "."));
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90)
+      throw new Error("Latitude inválida.");
+    if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180)
+      throw new Error("Longitude inválida.");
+    return { latitude, longitude };
+  }
+
   const create = useMutation({
     mutationFn: () => {
-      let latitude: number | undefined;
-      let longitude: number | undefined;
-      const lt = geoLatStr.trim();
-      const lg = geoLngStr.trim();
-      if (lt || lg) {
-        if (!lt || !lg) throw new Error("Informe latitude e longitude, ou deixe os dois vazios.");
-        latitude = Number(lt.replace(",", "."));
-        longitude = Number(lg.replace(",", "."));
-        if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) throw new Error("Latitude inválida.");
-        if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180)
-          throw new Error("Longitude inválida.");
-      }
-      const note = geoNoteStr.trim();
+      const geo = parseGeo();
       return apiFetch("/admin/customers", {
         method: "POST",
-        body: JSON.stringify({
-          name,
-          email: email || undefined,
-          phone: phone || undefined,
-          sellerId: sellerId || undefined,
-          ...(latitude !== undefined && longitude !== undefined ? { latitude, longitude } : {}),
-          ...(note ? { addressNote: note } : {}),
-        }),
+        body: JSON.stringify(
+          formToCustomerPayload(form, {
+            sellerId: sellerId || null,
+            ...geo,
+          }),
+        ),
       });
     },
     onSuccess: () => {
@@ -170,38 +179,19 @@ export function CustomersPage() {
 
   const update = useMutation({
     mutationFn: () => {
-      let latitude: number | null | undefined = undefined;
-      let longitude: number | null | undefined = undefined;
-      const lt = geoLatStr.trim();
-      const lg = geoLngStr.trim();
-      if (!lt && !lg) {
-        latitude = null;
-        longitude = null;
-      } else {
-        if (!lt || !lg) throw new Error("Latitude e longitude devem ficar ambas preenchidas, ou ambas vazias para limpar.");
-        const la = Number(lt.replace(",", "."));
-        const lo = Number(lg.replace(",", "."));
-        if (!Number.isFinite(la) || la < -90 || la > 90) throw new Error("Latitude inválida.");
-        if (!Number.isFinite(lo) || lo < -180 || lo > 180) throw new Error("Longitude inválida.");
-        latitude = la;
-        longitude = lo;
-      }
-      const noteTrim = geoNoteStr.trim();
+      const geo = parseGeo();
       return apiFetch(`/admin/customers/${editing!.id}`, {
         method: "PATCH",
         body: JSON.stringify({
-          name,
-          email: email || null,
-          phone: phone || null,
-          sellerId: sellerId || null,
-          creditLimit:
-            creditLimitStr.trim() === ""
-              ? null
-              : Number(creditLimitStr.replace(",", ".")),
-          creditBlocked: creditBlockedEdit,
-          latitude,
-          longitude,
-          addressNote: noteTrim === "" ? null : noteTrim,
+          ...formToCustomerPayload(form, {
+            sellerId: sellerId || null,
+            creditLimit:
+              creditLimitStr.trim() === ""
+                ? null
+                : Number(creditLimitStr.replace(",", ".")),
+            creditBlocked: creditBlockedEdit,
+            ...geo,
+          }),
         }),
       });
     },
@@ -213,9 +203,26 @@ export function CustomersPage() {
   });
 
   const remove = useMutation({
-    mutationFn: (id: string) => apiFetch(`/admin/customers/${id}`, { method: "DELETE" }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "customers"] }),
+    mutationFn: (id: string) =>
+      apiFetch(`/admin/customers/${id}`, { method: "DELETE" }),
+    onSuccess: () =>
+      void qc.invalidateQueries({ queryKey: ["admin", "customers"] }),
   });
+
+  const formErrors = useMemo(
+    () => (showValidation ? validateCustomerForm(form) : {}),
+    [form, showValidation],
+  );
+
+  function trySubmit() {
+    const errors = validateCustomerForm(form);
+    if (Object.keys(errors).length > 0) {
+      setShowValidation(true);
+      return;
+    }
+    if (editing) update.mutate();
+    else create.mutate();
+  }
 
   const savePending = editing ? update.isPending : create.isPending;
 
@@ -234,7 +241,11 @@ export function CustomersPage() {
         className="border-sky-100 bg-sky-50/70 dark:border-sky-900/40 dark:bg-sky-950/30"
       >
         <FormGrid cols={2}>
-          <FormField label="Política da empresa" htmlFor="credit-policy" className="sm:col-span-2 max-w-md">
+          <FormField
+            label="Política da empresa"
+            htmlFor="credit-policy"
+            className="sm:col-span-2 max-w-md"
+          >
             <AppSelect
               id="credit-policy"
               value={pricingSettings?.creditPolicy ?? "WARN_ONLY"}
@@ -242,7 +253,10 @@ export function CustomersPage() {
               options={[
                 { value: "WARN_ONLY", label: "Só avisar (não bloqueia)" },
                 { value: "BLOCK_ORDER", label: "Bloquear pedido" },
-                { value: "REQUIRE_APPROVAL", label: "Pedir aprovação no escritório" },
+                {
+                  value: "REQUIRE_APPROVAL",
+                  label: "Pedir aprovação no escritório",
+                },
               ]}
               onValueChange={(v) => patchPricing.mutate(v)}
             />
@@ -256,60 +270,30 @@ export function CustomersPage() {
           if (!open) closeSheet();
           else setSheetOpen(true);
         }}
-        title={editing ? "Editar cliente" : "Novo cliente"}
-        description="Dados cadastrais, localização no mapa e, na edição, crédito."
+        title={editing ? "Editar cliente" : "Pré-cadastro de cliente"}
+        description="Dados cadastrais completos, localização no mapa e, na edição, crédito."
         footer={
           <FormSheetActions
             onCancel={closeSheet}
-            onSubmit={() => {
-              if (editing) update.mutate();
-              else create.mutate();
-            }}
+            onSubmit={trySubmit}
             submitLabel={editing ? "Salvar alterações" : "Cadastrar"}
             pending={savePending}
-            disabled={!name}
           />
         }
       >
-        {!editing ? (
-          <CnpjLookupField
-            buttonLabel="Buscar empresa (CNPJ)"
-            onApply={(d: CnpjCompanyData) => {
-              setName(suggestedTradeName(d));
-              setEmail(d.email ?? "");
-              setPhone(d.telefone ?? "");
-              const address = formatCnpjAddress(d);
-              if (address) setGeoNoteStr(address);
-            }}
-          />
-        ) : null}
-        <FormGrid cols={2} className="mt-4">
-          <FormField label="Nome" htmlFor="cust-name" required className="sm:col-span-2">
-            <Input
-              id="cust-name"
-              placeholder="Nome"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </FormField>
-          <FormField label="Email" htmlFor="cust-email">
-            <Input
-              id="cust-email"
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </FormField>
-          <FormField label="Telefone" htmlFor="cust-phone">
-            <Input
-              id="cust-phone"
-              placeholder="Telefone"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-            />
-          </FormField>
-          <FormField label="Vendedor" htmlFor="cust-seller" className="sm:col-span-2">
+        <CustomerFormFields
+          values={form}
+          onChange={patchForm}
+          errors={formErrors}
+          showCnpjLookup={!editing || form.documentType === "CNPJ"}
+        />
+
+        <FormGrid cols={2} className="mt-6">
+          <FormField
+            label="Vendedor"
+            htmlFor="cust-seller"
+            className="sm:col-span-2"
+          >
             <AppSelect
               id="cust-seller"
               value={sellerId}
@@ -325,9 +309,12 @@ export function CustomersPage() {
         </FormGrid>
 
         <div className="mt-4 rounded-lg border border-dashed border-border bg-background/90 p-4">
-          <p className="text-xs font-semibold text-foreground">Localização no mapa (app do vendedor)</p>
+          <p className="text-xs font-semibold text-foreground">
+            Localização no mapa (app do vendedor)
+          </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Latitude/longitude em graus decimais (ex.: −23.5505, −46.6333). Opcional; necessário para rota e «próximos».
+            Latitude/longitude em graus decimais. Opcional; necessário para rota
+            e «próximos».
           </p>
           <FormGrid cols={2} className="mt-3">
             <FormField label="Latitude" htmlFor="cust-lat">
@@ -348,31 +335,18 @@ export function CustomersPage() {
                 autoComplete="off"
               />
             </FormField>
-            <FormField
-              label="Nota de endereço"
-              htmlFor="cust-geo-note"
-              className="sm:col-span-2"
-              hint="Como chegar (opcional)"
-            >
-              <Input
-                id="cust-geo-note"
-                placeholder="Referência ou instruções"
-                value={geoNoteStr}
-                onChange={(e) => setGeoNoteStr(e.target.value)}
-                autoComplete="off"
-              />
-            </FormField>
           </FormGrid>
-          {editing ? (
-            <p className="mt-2 text-xs text-muted-foreground">
-              Para remover coordenadas, limpe latitude e longitude e guarde.
-            </p>
-          ) : null}
         </div>
 
         {editing ? (
-          <FormGrid cols={2} className="mt-4 rounded-lg border border-border bg-background/80 p-4">
-            <FormField label="Crédito" className="flex flex-row items-center gap-2 sm:col-span-2">
+          <FormGrid
+            cols={2}
+            className="mt-4 rounded-lg border border-border bg-background/80 p-4"
+          >
+            <FormField
+              label="Crédito"
+              className="flex flex-row items-center gap-2 sm:col-span-2"
+            >
               <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
                 <input
                   type="checkbox"
@@ -383,7 +357,11 @@ export function CustomersPage() {
                 Cliente bloqueado para vendas
               </label>
             </FormField>
-            <FormField label="Limite de crédito (R$)" htmlFor="cust-credit-limit" hint="Vazio = sem limite">
+            <FormField
+              label="Limite de crédito (R$)"
+              htmlFor="cust-credit-limit"
+              hint="Vazio = sem limite"
+            >
               <Input
                 id="cust-credit-limit"
                 placeholder="Sem limite"
@@ -405,7 +383,8 @@ export function CustomersPage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="px-4">Nome</TableHead>
-                <TableHead className="px-4">Email</TableHead>
+                <TableHead className="px-4">Documento</TableHead>
+                <TableHead className="px-4">Cidade/UF</TableHead>
                 <TableHead className="px-4">Telefone</TableHead>
                 <TableHead className="px-4">Vendedor</TableHead>
                 <TableHead className="px-4">Mapa</TableHead>
@@ -417,12 +396,21 @@ export function CustomersPage() {
               {customers.map((c) => (
                 <TableRow key={c.id}>
                   <TableCell className="px-4 py-3">{c.name}</TableCell>
-                  <TableCell className="px-4 py-3">{c.email ?? "—"}</TableCell>
+                  <TableCell className="px-4 py-3 font-mono text-xs">
+                    {formatDocument(c)}
+                  </TableCell>
+                  <TableCell className="px-4 py-3">{formatCityUf(c)}</TableCell>
                   <TableCell className="px-4 py-3">{c.phone ?? "—"}</TableCell>
-                  <TableCell className="px-4 py-3">{c.seller?.user.name ?? "—"}</TableCell>
+                  <TableCell className="px-4 py-3">
+                    {(
+                      c as CustomerRecord & {
+                        seller?: { user: { name: string } };
+                      }
+                    ).seller?.user.name ?? "—"}
+                  </TableCell>
                   <TableCell className="px-4 py-3">
                     {customerHasMapCoords(c) ? (
-                      <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary900">
+                      <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                         Sim
                       </span>
                     ) : (
@@ -439,7 +427,11 @@ export function CustomersPage() {
                     )}
                   </TableCell>
                   <TableCell className="px-4 py-3 text-right">
-                    <button type="button" className="text-primary" onClick={() => openEdit(c)}>
+                    <button
+                      type="button"
+                      className="text-primary"
+                      onClick={() => openEdit(c)}
+                    >
                       Editar
                     </button>
                     <button

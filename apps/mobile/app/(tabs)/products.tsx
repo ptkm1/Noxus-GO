@@ -161,11 +161,10 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 0,
     backgroundColor: "transparent",
-    paddingVertical: 14,
   },
   barcodeBtn: {
-    width: 44,
-    height: 44,
+    width: 36,
+    height: 36,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",

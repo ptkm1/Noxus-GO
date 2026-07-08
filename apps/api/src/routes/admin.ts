@@ -22,6 +22,12 @@ import {
 } from "../auth/org-roles.js";
 import { hashPassword } from "../auth/password.js";
 import { prisma } from "../db.js";
+import {
+  customerBodySchema,
+  customerPatchSchema,
+  toCustomerPrismaData,
+  type CustomerBodyInput,
+} from "../services/customer-validation.js";
 import { buildDistributorInsights } from "../services/distributor-insights.js";
 import { sendOrderPdfReply } from "../services/order-pdf-load.js";
 import {
@@ -1732,20 +1738,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.post("/customers", async (req, reply) => {
     const auth = req.auth!;
-    const body = z
-      .object({
-        name: z.string().min(1),
-        email: z.string().email().optional(),
-        phone: z.string().optional(),
-        sellerId: z.string().optional(),
-        regionId: z.string().nullable().optional(),
-        latitude: z.number().gte(-90).lte(90).nullable().optional(),
-        longitude: z.number().gte(-180).lte(180).nullable().optional(),
-        addressNote: z.string().max(500).nullable().optional(),
-      })
-      .safeParse(req.body);
+    const body = customerBodySchema.safeParse(req.body);
     if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
 
     if (body.data.sellerId) {
       const s = await prisma.seller.findFirst({
@@ -1761,56 +1758,34 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       if (!r) return reply.status(400).send({ error: "Região inválida" });
     }
 
-    return prisma.customer.create({
-      data: {
-        name: body.data.name,
-        email: body.data.email,
-        phone: body.data.phone,
-        organizationId: auth.organizationId,
-        sellerId: body.data.sellerId,
-        regionId:
-          body.data.regionId === undefined ? undefined : body.data.regionId,
-        latitude:
-          body.data.latitude === undefined
-            ? undefined
-            : body.data.latitude === null
-              ? null
-              : body.data.latitude,
-        longitude:
-          body.data.longitude === undefined
-            ? undefined
-            : body.data.longitude === null
-              ? null
-              : body.data.longitude,
-        addressNote:
-          body.data.addressNote === undefined
-            ? undefined
-            : body.data.addressNote === null
-              ? null
-              : body.data.addressNote,
-      },
-    });
+    try {
+      return await prisma.customer.create({
+        data: {
+          organizationId: auth.organizationId,
+          ...toCustomerPrismaData(body.data, { includeCredit: true }),
+        } as Prisma.CustomerUncheckedCreateInput,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "CNPJ ou CPF já cadastrado nesta organização." });
+      }
+      throw e;
+    }
   });
 
   app.patch("/customers/:id", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
-    const body = z
-      .object({
-        name: z.string().min(1).optional(),
-        email: z.string().email().nullable().optional(),
-        phone: z.string().nullable().optional(),
-        sellerId: z.string().nullable().optional(),
-        regionId: z.string().nullable().optional(),
-        creditLimit: z.number().positive().nullable().optional(),
-        creditBlocked: z.boolean().optional(),
-        latitude: z.number().gte(-90).lte(90).nullable().optional(),
-        longitude: z.number().gte(-180).lte(180).nullable().optional(),
-        addressNote: z.string().max(500).nullable().optional(),
-      })
-      .safeParse(req.body);
+    const body = customerPatchSchema.safeParse(req.body);
     if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
 
     const existing = await prisma.customer.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -1824,46 +1799,102 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       if (!r) return reply.status(400).send({ error: "Região inválida" });
     }
 
-    return prisma.customer.update({
-      where: { id },
-      data: {
-        name: body.data.name,
-        email: body.data.email === undefined ? undefined : body.data.email,
-        phone: body.data.phone === undefined ? undefined : body.data.phone,
-        sellerId:
-          body.data.sellerId === undefined ? undefined : body.data.sellerId,
-        regionId:
-          body.data.regionId === undefined ? undefined : body.data.regionId,
-        creditLimit:
-          body.data.creditLimit === undefined
-            ? undefined
-            : body.data.creditLimit === null
-              ? null
-              : body.data.creditLimit,
-        creditBlocked:
-          body.data.creditBlocked === undefined
-            ? undefined
-            : body.data.creditBlocked,
-        latitude:
-          body.data.latitude === undefined
-            ? undefined
-            : body.data.latitude === null
-              ? null
-              : body.data.latitude,
-        longitude:
-          body.data.longitude === undefined
-            ? undefined
-            : body.data.longitude === null
-              ? null
-              : body.data.longitude,
-        addressNote:
-          body.data.addressNote === undefined
-            ? undefined
-            : body.data.addressNote === null
-              ? null
-              : body.data.addressNote,
-      },
-    });
+    const merged: CustomerBodyInput = {
+      name: body.data.name ?? existing.name,
+      email: body.data.email !== undefined ? body.data.email : existing.email,
+      phone: body.data.phone !== undefined ? body.data.phone : existing.phone,
+      sellerId:
+        body.data.sellerId !== undefined
+          ? body.data.sellerId
+          : existing.sellerId,
+      regionId:
+        body.data.regionId !== undefined
+          ? body.data.regionId
+          : existing.regionId,
+      latitude:
+        body.data.latitude !== undefined
+          ? body.data.latitude
+          : existing.latitude != null
+            ? decToNum(existing.latitude)
+            : null,
+      longitude:
+        body.data.longitude !== undefined
+          ? body.data.longitude
+          : existing.longitude != null
+            ? decToNum(existing.longitude)
+            : null,
+      addressNote:
+        body.data.addressNote !== undefined
+          ? body.data.addressNote
+          : existing.addressNote,
+      documentType:
+        body.data.documentType !== undefined
+          ? body.data.documentType
+          : (existing.documentType as CustomerBodyInput["documentType"]),
+      cnpj: body.data.cnpj !== undefined ? body.data.cnpj : existing.cnpj,
+      cpf: body.data.cpf !== undefined ? body.data.cpf : existing.cpf,
+      legalName:
+        body.data.legalName !== undefined
+          ? body.data.legalName
+          : existing.legalName,
+      tradeName:
+        body.data.tradeName !== undefined
+          ? body.data.tradeName
+          : existing.tradeName,
+      cep: body.data.cep !== undefined ? body.data.cep : existing.cep,
+      street:
+        body.data.street !== undefined ? body.data.street : existing.street,
+      number:
+        body.data.number !== undefined ? body.data.number : existing.number,
+      neighborhood:
+        body.data.neighborhood !== undefined
+          ? body.data.neighborhood
+          : existing.neighborhood,
+      state: body.data.state !== undefined ? body.data.state : existing.state,
+      city: body.data.city !== undefined ? body.data.city : existing.city,
+      cityIbgeCode:
+        body.data.cityIbgeCode !== undefined
+          ? body.data.cityIbgeCode
+          : existing.cityIbgeCode,
+      stateRegistration:
+        body.data.stateRegistration !== undefined
+          ? body.data.stateRegistration
+          : existing.stateRegistration,
+      buyerName:
+        body.data.buyerName !== undefined
+          ? body.data.buyerName
+          : existing.buyerName,
+      notes: body.data.notes !== undefined ? body.data.notes : existing.notes,
+      creditLimit:
+        body.data.creditLimit !== undefined
+          ? body.data.creditLimit
+          : existing.creditLimit != null
+            ? decToNum(existing.creditLimit)
+            : null,
+      creditBlocked:
+        body.data.creditBlocked !== undefined
+          ? body.data.creditBlocked
+          : existing.creditBlocked,
+    };
+
+    try {
+      return await prisma.customer.update({
+        where: { id },
+        data: toCustomerPrismaData(merged, {
+          includeCredit: true,
+        }) as Prisma.CustomerUncheckedUpdateInput,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "CNPJ ou CPF já cadastrado nesta organização." });
+      }
+      throw e;
+    }
   });
 
   app.delete("/customers/:id", async (req, reply) => {

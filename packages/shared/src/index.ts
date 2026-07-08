@@ -28,6 +28,18 @@ export function orderStatusLabel(status: string): string {
 }
 
 export {
+  cepDigitsOnly,
+  formatCepMask,
+  formatStructuredAddress,
+  isCepComplete,
+} from "./address.js";
+export type {
+  CepAddressData,
+  CustomerAddressFields,
+  IbgeMunicipio,
+  IbgeUf,
+} from "./address.js";
+export {
   cnpjDigitsOnly,
   formatBrazilPhoneDigits,
   formatCnpjAddress,
@@ -44,12 +56,33 @@ export {
 } from "./commission.js";
 export type { SellerCommissionType } from "./commission.js";
 export {
+  cpfDigitsOnly,
+  formatCpfMask,
+  isCpfComplete,
+  isValidCpf,
+} from "./cpf.js";
+export {
+  customerFormErrorStep,
+  customerToForm,
+  emptyCustomerForm,
+  formToCustomerPayload,
+  isCustomerFormValid,
+  validateCustomerForm,
+  validateCustomerFormStep,
+} from "./customer-form.js";
+export type {
+  CustomerDocumentType,
+  CustomerFormErrors,
+  CustomerFormValues,
+  CustomerRecord,
+} from "./customer-form.js";
+export {
+  formatRelativeSaleDate,
+  formatSaleItemCount,
+} from "./format-sale-date.js";
+export {
   formatProductPriceWithUnit,
   formatProductStockLabel,
   formatProductUnitLabel,
   isProductSaleBlockedByStock,
 } from "./product-display.js";
-export {
-  formatRelativeSaleDate,
-  formatSaleItemCount,
-} from "./format-sale-date.js";

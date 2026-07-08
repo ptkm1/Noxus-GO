@@ -10,6 +10,12 @@ import {
   evaluateOrderCredit,
   violationsToJson,
 } from "../services/credit.js";
+import {
+  customerBodySchema,
+  customerPatchSchema,
+  toCustomerPrismaData,
+  type CustomerBodyInput,
+} from "../services/customer-validation.js";
 import { isGoogleRoutesConfigured } from "../services/google-routes.js";
 import {
   loadOrderForPdf,
@@ -454,6 +460,20 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
+  app.get("/customers/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const customer = await prisma.customer.findFirst({
+      where: {
+        id,
+        organizationId: auth.organizationId,
+        OR: [{ sellerId: auth.sellerId }, { sellerId: null }],
+      },
+    });
+    if (!customer) return reply.status(404).send({ error: "Não encontrado" });
+    return customer;
+  });
+
   app.get("/customers/:id/credit", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
@@ -477,41 +497,41 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
   app.post("/customers", async (req, reply) => {
     const auth = req.auth!;
-    const body = z
-      .object({
-        name: z.string().min(1),
-        email: z.string().email().optional(),
-        phone: z.string().optional(),
-        addressNote: z.string().max(500).optional(),
-      })
-      .safeParse(req.body);
+    const body = customerBodySchema.safeParse(req.body);
     if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
 
-    return prisma.customer.create({
-      data: {
-        name: body.data.name,
-        email: body.data.email,
-        phone: body.data.phone,
-        addressNote: body.data.addressNote,
-        organizationId: auth.organizationId,
-        sellerId: auth.sellerId,
-      },
-    });
+    try {
+      return await prisma.customer.create({
+        data: {
+          organizationId: auth.organizationId,
+          sellerId: auth.sellerId,
+          ...toCustomerPrismaData(body.data),
+        } as Prisma.CustomerUncheckedCreateInput,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "CNPJ ou CPF já cadastrado nesta organização." });
+      }
+      throw e;
+    }
   });
 
   app.patch("/customers/:id", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
-    const body = z
-      .object({
-        name: z.string().min(1).optional(),
-        email: z.string().email().nullable().optional(),
-        phone: z.string().nullable().optional(),
-      })
-      .safeParse(req.body);
+    const body = customerPatchSchema.safeParse(req.body);
     if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
 
     const existing = await prisma.customer.findFirst({
       where: {
@@ -522,14 +542,72 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
 
-    return prisma.customer.update({
-      where: { id },
-      data: {
-        name: body.data.name,
-        email: body.data.email === undefined ? undefined : body.data.email,
-        phone: body.data.phone === undefined ? undefined : body.data.phone,
-      },
-    });
+    const merged: CustomerBodyInput = {
+      name: body.data.name ?? existing.name,
+      email: body.data.email !== undefined ? body.data.email : existing.email,
+      phone: body.data.phone !== undefined ? body.data.phone : existing.phone,
+      addressNote:
+        body.data.addressNote !== undefined
+          ? body.data.addressNote
+          : existing.addressNote,
+      documentType:
+        body.data.documentType !== undefined
+          ? body.data.documentType
+          : (existing.documentType as CustomerBodyInput["documentType"]),
+      cnpj: body.data.cnpj !== undefined ? body.data.cnpj : existing.cnpj,
+      cpf: body.data.cpf !== undefined ? body.data.cpf : existing.cpf,
+      legalName:
+        body.data.legalName !== undefined
+          ? body.data.legalName
+          : existing.legalName,
+      tradeName:
+        body.data.tradeName !== undefined
+          ? body.data.tradeName
+          : existing.tradeName,
+      cep: body.data.cep !== undefined ? body.data.cep : existing.cep,
+      street:
+        body.data.street !== undefined ? body.data.street : existing.street,
+      number:
+        body.data.number !== undefined ? body.data.number : existing.number,
+      neighborhood:
+        body.data.neighborhood !== undefined
+          ? body.data.neighborhood
+          : existing.neighborhood,
+      state: body.data.state !== undefined ? body.data.state : existing.state,
+      city: body.data.city !== undefined ? body.data.city : existing.city,
+      cityIbgeCode:
+        body.data.cityIbgeCode !== undefined
+          ? body.data.cityIbgeCode
+          : existing.cityIbgeCode,
+      stateRegistration:
+        body.data.stateRegistration !== undefined
+          ? body.data.stateRegistration
+          : existing.stateRegistration,
+      buyerName:
+        body.data.buyerName !== undefined
+          ? body.data.buyerName
+          : existing.buyerName,
+      notes: body.data.notes !== undefined ? body.data.notes : existing.notes,
+    };
+
+    try {
+      return await prisma.customer.update({
+        where: { id },
+        data: toCustomerPrismaData(
+          merged,
+        ) as Prisma.CustomerUncheckedUpdateInput,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "CNPJ ou CPF já cadastrado nesta organização." });
+      }
+      throw e;
+    }
   });
 
   type SellerVisitPayload = Prisma.SellerCustomerVisitGetPayload<{

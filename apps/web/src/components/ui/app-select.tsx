@@ -25,6 +25,7 @@ type AppSelectProps = {
   /** Placeholder como opção selecionável (mapeada para `""`). */
   emptyLabel?: string;
   disabled?: boolean;
+  invalid?: boolean;
   className?: string;
   triggerClassName?: string;
 };
@@ -37,6 +38,7 @@ export function AppSelect({
   placeholder = "Selecione…",
   emptyLabel,
   disabled,
+  invalid,
   className,
   triggerClassName,
 }: AppSelectProps) {
@@ -52,6 +54,7 @@ export function AppSelect({
     >
       <SelectTrigger
         id={id}
+        aria-invalid={invalid || undefined}
         className={cn("w-full", className, triggerClassName)}
       >
         <SelectValue placeholder={placeholder} />

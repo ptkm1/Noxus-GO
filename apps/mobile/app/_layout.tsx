@@ -26,12 +26,18 @@ function RootStack() {
         }}
       >
         <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="login" options={{ title: "Entrar", headerShown: false }} />
-        <Stack.Screen name="seller-access-block" options={{ title: "Acesso", headerShown: false }} />
+        <Stack.Screen
+          name="login"
+          options={{ title: "Entrar", headerShown: false }}
+        />
+        <Stack.Screen
+          name="seller-access-block"
+          options={{ title: "Acesso", headerShown: false }}
+        />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="settings" options={{ headerShown: false }} />
         <Stack.Screen name="quick-sale" options={{ headerShown: false }} />
-        <Stack.Screen name="customer/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="customer" options={{ headerShown: false }} />
         <Stack.Screen name="devtools" options={{ title: "DevTools" }} />
       </Stack>
     </>

@@ -60,6 +60,11 @@ enum SellerCommissionType {
   BY_SUPPLIER
 }
 
+enum CustomerDocumentType {
+  CNPJ
+  CPF
+}
+
 model Organization {
   id               String             @id @default(cuid())
   name             String
@@ -464,8 +469,27 @@ model Customer {
   latitude       Decimal?           @db.Decimal(10, 8)
   longitude      Decimal?           @db.Decimal(11, 8)
   addressNote    String?
+  documentType   CustomerDocumentType?
+  cnpj           String?
+  cpf            String?
+  legalName      String?
+  tradeName      String?
+  cep            String?
+  street         String?
+  number         String?
+  neighborhood   String?
+  state          String?
+  city           String?
+  cityIbgeCode   String?
+  stateRegistration String?
+  buyerName      String?
+  notes          String?
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
+
+  @@unique([organizationId, cnpj])
+  @@unique([organizationId, cpf])
+  @@index([organizationId, state, city])
 }
 
 model CustomerCreditTitle {
