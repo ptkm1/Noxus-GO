@@ -1,19 +1,19 @@
-/** Raio base sutil (~4px). */
-export const radiusBase = "0.25rem";
+/** Raio do tema (~10px / 0.625rem). */
+export const radiusBase = "0.625rem";
 
 export const radii = {
-  sm: "0.25rem",
-  md: "0.25rem",
-  lg: "0.25rem",
-  xl: "0.25rem",
-  "2xl": "0.375rem",
+  sm: "calc(0.625rem - 4px)",
+  md: "calc(0.625rem - 2px)",
+  lg: "0.625rem",
+  xl: "calc(0.625rem + 4px)",
+  "2xl": "calc(0.625rem + 8px)",
 } as const;
 
 /** React Native (px). */
 export const radiiPx = {
-  sm: 4,
-  md: 4,
-  lg: 4,
-  xl: 4,
-  "2xl": 6,
+  sm: 6,
+  md: 8,
+  lg: 10,
+  xl: 14,
+  "2xl": 18,
 } as const;

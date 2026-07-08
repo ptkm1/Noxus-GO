@@ -16,6 +16,17 @@ export const ORDER_STATUSES: OrderStatus[] = [
   "PENDING_CREDIT_APPROVAL",
 ];
 
+const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  DRAFT: "Rascunho",
+  CONFIRMED: "Confirmado",
+  CANCELLED: "Cancelado",
+  PENDING_CREDIT_APPROVAL: "Aguardando crédito",
+};
+
+export function orderStatusLabel(status: string): string {
+  return ORDER_STATUS_LABELS[status as OrderStatus] ?? status;
+}
+
 export {
   cnpjDigitsOnly,
   formatBrazilPhoneDigits,
@@ -38,3 +49,7 @@ export {
   formatProductUnitLabel,
   isProductSaleBlockedByStock,
 } from "./product-display.js";
+export {
+  formatRelativeSaleDate,
+  formatSaleItemCount,
+} from "./format-sale-date.js";

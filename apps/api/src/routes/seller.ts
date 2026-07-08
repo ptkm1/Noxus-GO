@@ -27,6 +27,7 @@ import {
 } from "../services/product-stock.js";
 import { buildRouteDirections } from "../services/route-directions.js";
 import { greedyNearestRoute, haversineKm } from "../services/route-plan.js";
+import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
 import { recordSellerLocation } from "../services/seller-location-write.js";
 import { decToNum } from "../util/money.js";
 
@@ -114,6 +115,25 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       auth.sellerId!,
       ref,
     );
+  });
+
+  app.get("/reports/sales-by-supplier", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(20).optional(),
+      })
+      .safeParse(req.query);
+
+    return buildSalesBySupplier({
+      organizationId: auth.organizationId,
+      sellerIds: [auth.sellerId!],
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      limit: q.success ? q.data.limit : undefined,
+    });
   });
 
   app.get("/sales", async (req) => {

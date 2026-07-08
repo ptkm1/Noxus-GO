@@ -6,6 +6,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { orderStatusLabel } from "@pedidos/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../lib/api";
@@ -17,7 +18,12 @@ type Order = {
   createdAt: string;
   seller: { user: { name: string } };
   customer: { name: string } | null;
-  items: { id: string; productName: string; quantity: number; unitPrice: unknown }[];
+  items: {
+    id: string;
+    productName: string;
+    quantity: number;
+    unitPrice: unknown;
+  }[];
 };
 
 export function OrdersPage() {
@@ -109,15 +115,26 @@ export function OrdersPage() {
                               : "bg-muted text-foreground"
                       }`}
                     >
-                      {o.status}
+                      {orderStatusLabel(o.status)}
                     </span>
                   </TableCell>
-                  <TableCell className="px-4 py-3">{o.seller.user.name}</TableCell>
-                  <TableCell className="px-4 py-3">{o.customer?.name ?? "—"}</TableCell>
-                  <TableCell className="px-4 py-3 text-muted-foreground">{o.items.length}</TableCell>
-                  <TableCell className="px-4 py-3 font-medium">R$ {Number(o.totalAmount).toFixed(2)}</TableCell>
+                  <TableCell className="px-4 py-3">
+                    {o.seller.user.name}
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
+                    {o.customer?.name ?? "—"}
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground">
+                    {o.items.length}
+                  </TableCell>
+                  <TableCell className="px-4 py-3 font-medium">
+                    R$ {Number(o.totalAmount).toFixed(2)}
+                  </TableCell>
                   <TableCell className="px-4 py-3 text-right">
-                    <Link to={`/vendas/${o.id}`} className="text-primary hover:underline">
+                    <Link
+                      to={`/vendas/${o.id}`}
+                      className="text-primary hover:underline"
+                    >
                       Detalhe
                     </Link>
                   </TableCell>

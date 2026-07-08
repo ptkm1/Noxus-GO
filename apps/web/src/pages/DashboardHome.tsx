@@ -1,4 +1,7 @@
 import { useAuth } from "@/auth/AuthContext";
+import { RecentSalesList } from "@/components/RecentSalesList";
+import { TopSuppliersChart } from "@/components/TopSuppliersChart";
+import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch } from "@/lib/api";
 import { isWebAdmin, isWebTeamLeader } from "@/lib/staff";
 import { cn } from "@/lib/utils";
@@ -17,6 +20,7 @@ import {
   UserCircle,
   Users,
   UsersRound,
+  Loader2,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -154,7 +158,11 @@ export function DashboardHome() {
       ? teamLeaderCards
       : managerCards;
 
-  const { data: teamSellers = [] } = useQuery({
+  const {
+    data: teamSellers = [],
+    isLoading: teamSellersLoading,
+    isFetching: teamSellersFetching,
+  } = useQuery({
     queryKey: ["admin", "sellers"],
     queryFn: () => apiFetch<{ id: string }[]>("/admin/sellers"),
     enabled: teamLeader,
@@ -167,6 +175,27 @@ export function DashboardHome() {
     staleTime: 15_000,
     refetchInterval: 20_000,
     enabled: admin,
+  });
+
+  const {
+    data: recentOrders = [],
+    isLoading: recentOrdersLoading,
+    isFetching: recentOrdersFetching,
+  } = useQuery({
+    queryKey: ["admin", "orders", "recent"],
+    queryFn: () =>
+      apiFetch<
+        {
+          id: string;
+          status: string;
+          totalAmount: unknown;
+          createdAt: string;
+          seller: { user: { name: string } };
+          customer: { name: string } | null;
+          items: { id: string }[];
+        }[]
+      >("/admin/orders"),
+    staleTime: 30_000,
   });
 
   const pendingCount = pendingCredit?.count ?? 0;
@@ -210,7 +239,11 @@ export function DashboardHome() {
       {teamLeader ? (
         <div className="surface-card mt-6 border-primary/25 bg-primary/5 px-4 py-3 text-sm text-foreground">
           Sua equipe:{" "}
-          <strong className="text-primary">{teamSellers.length}</strong>{" "}
+          {teamSellersLoading ? (
+            <Skeleton className="inline-block h-4 w-6 align-middle" />
+          ) : (
+            <strong className="text-primary">{teamSellers.length}</strong>
+          )}{" "}
           vendedor(es)
           {user?.teamName ? (
             <>
@@ -219,8 +252,19 @@ export function DashboardHome() {
             </>
           ) : null}
           .
+          {teamSellersFetching && !teamSellersLoading ? (
+            <Loader2 className="ml-2 inline h-3.5 w-3.5 animate-spin text-primary align-text-bottom" />
+          ) : null}
         </div>
       ) : null}
+
+      <TopSuppliersChart />
+
+      <RecentSalesList
+        orders={recentOrders}
+        isLoading={recentOrdersLoading}
+        isFetching={recentOrdersFetching}
+      />
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((c) => {

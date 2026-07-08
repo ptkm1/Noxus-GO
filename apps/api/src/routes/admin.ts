@@ -38,6 +38,7 @@ import {
   assertSufficientStock,
   StockError,
 } from "../services/product-stock.js";
+import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
 import {
   createSalesTeam,
   deleteSalesTeam,
@@ -2994,6 +2995,34 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       teamName,
       from: q.success ? q.data.from : undefined,
       to: q.success ? q.data.to : undefined,
+    });
+  });
+
+  app.get("/reports/sales-by-supplier", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(20).optional(),
+      })
+      .safeParse(req.query);
+
+    let sellerIds: string[] | undefined;
+    if (auth.role === "MANAGER" || isTeamLeaderAuth(auth)) {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+
+    return buildSalesBySupplier({
+      organizationId: auth.organizationId,
+      sellerIds,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      limit: q.success ? q.data.limit : undefined,
     });
   });
 

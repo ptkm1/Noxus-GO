@@ -1,6 +1,3 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
 import { AppSelect } from "@/components/ui/app-select";
 import {
   Table,
@@ -10,6 +7,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ORDER_STATUSES, orderStatusLabel } from "@pedidos/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import { apiFetch, downloadPdf, printPdf } from "../lib/api";
 
 type Order = {
@@ -132,12 +133,10 @@ export function OrderDetailPage() {
                 value={order.status}
                 disabled={patchStatus.isPending}
                 triggerClassName="w-auto min-w-[10rem]"
-                options={[
-                  { value: "DRAFT", label: "DRAFT" },
-                  { value: "CONFIRMED", label: "CONFIRMED" },
-                  { value: "PENDING_CREDIT_APPROVAL", label: "Aguardando crédito" },
-                  { value: "CANCELLED", label: "CANCELLED" },
-                ]}
+                options={ORDER_STATUSES.map((s) => ({
+                  value: s,
+                  label: orderStatusLabel(s),
+                }))}
                 onValueChange={(v) => patchStatus.mutate(v)}
               />
             </div>
@@ -190,7 +189,9 @@ export function OrderDetailPage() {
                   <TableCell className="py-2">{it.productName}</TableCell>
                   <TableCell>{it.quantity}</TableCell>
                   <TableCell>R$ {Number(it.unitPrice).toFixed(2)}</TableCell>
-                  <TableCell>R$ {(Number(it.unitPrice) * it.quantity).toFixed(2)}</TableCell>
+                  <TableCell>
+                    R$ {(Number(it.unitPrice) * it.quantity).toFixed(2)}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

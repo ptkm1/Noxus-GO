@@ -17,6 +17,7 @@ const MANAGER_GET_ALLOW = [
   /^\/orders$/,
   /^\/orders\/[^/]+$/,
   /^\/orders\/[^/]+\/pdf$/,
+  /^\/reports\/sales-by-supplier$/,
 ] as const;
 
 /** GET paths allowed for team leader (seller with led team). */
@@ -31,6 +32,7 @@ const TEAM_LEADER_GET_ALLOW = [
   /^\/orders\/[^/]+$/,
   /^\/orders\/[^/]+\/pdf$/,
   /^\/reports\/team-summary$/,
+  /^\/reports\/sales-by-supplier$/,
 ] as const;
 
 export function isOrgStaff(role: Role): boolean {
@@ -90,12 +92,9 @@ export function requireOrgStaff(
     return false;
   }
   if (!canAccessAdminPanel(auth)) {
-    void reply
-      .status(403)
-      .send({
-        error:
-          "Acesso restrito a administradores, gestores e líderes de equipe",
-      });
+    void reply.status(403).send({
+      error: "Acesso restrito a administradores, gestores e líderes de equipe",
+    });
     return false;
   }
   return true;
