@@ -1,8 +1,8 @@
 import { Fragment } from "react";
 import { FormField, FormGrid } from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { fieldControlClass } from "@/lib/field-styles";
 
 export type AttributeFieldDef = {
   key: string;
@@ -103,19 +103,17 @@ export function DynamicCategoryAttributes({ defs, values, onChange }: Props) {
               Sim
             </label>
           ) : def.type === "select" ? (
-            <select
+            <AppSelect
               id={fieldId}
-              className={fieldControlClass}
               value={rawVal != null ? String(rawVal) : ""}
-              onChange={(e) => patch(def.key, e.target.value || undefined)}
-            >
-              <option value="">{def.required ? "Selecione…" : "(opcional)"}</option>
-              {(def.options ?? []).map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              emptyLabel={def.required ? "Selecione…" : "(opcional)"}
+              placeholder={def.required ? "Selecione…" : "(opcional)"}
+              options={(def.options ?? []).map((o) => ({
+                value: o.value,
+                label: o.label,
+              }))}
+              onValueChange={(v) => patch(def.key, v || undefined)}
+            />
           ) : null;
 
         return (

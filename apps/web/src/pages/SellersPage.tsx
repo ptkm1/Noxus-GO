@@ -4,9 +4,9 @@ import {
   FormGrid,
   FormSection,
 } from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fieldControlClass } from "@/lib/field-styles";
 import { cn } from "@/lib/utils";
 import {
   SELLER_COMMISSION_TYPES,
@@ -280,52 +280,49 @@ export function SellersPage() {
                     <td className="px-4 py-3">{s.user.name}</td>
                     <td className="px-4 py-3">{s.user.email}</td>
                     <td className="px-4 py-3">
-                      <select
-                        className="max-w-[180px] rounded border px-2 py-1 text-sm"
+                      <AppSelect
                         value={s.managerUserId ?? ""}
-                        onChange={(e) => {
-                          const v = e.target.value;
+                        emptyLabel="— Sem gestor —"
+                        placeholder="— Sem gestor —"
+                        triggerClassName="max-w-[180px]"
+                        options={managers.map((m) => ({
+                          value: m.id,
+                          label: m.name,
+                        }))}
+                        onValueChange={(v) => {
                           patch.mutate({
                             id: s.id,
                             managerUserId: v === "" ? null : v,
                           });
                         }}
-                      >
-                        <option value="">— Sem gestor —</option>
-                        {managers.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {s.team?.name ?? "—"}
                     </td>
                     <td className="px-4 py-3">
-                      <select
-                        className={cn(
-                          fieldControlClass,
-                          "max-w-[200px] text-xs",
-                        )}
+                      <AppSelect
                         value={type}
-                        onChange={(e) => {
-                          const next = e.target.value as SellerCommissionType;
+                        triggerClassName="max-w-[200px] text-xs"
+                        options={[
+                          ...SELLER_COMMISSION_TYPES.filter((t) => !t.comingSoon).map(
+                            (t) => ({
+                              value: t.value,
+                              label: t.label,
+                            }),
+                          ),
+                          {
+                            value: "BY_SUPPLIER",
+                            label: `${sellerCommissionTypeLabel("BY_SUPPLIER")} (em breve)`,
+                            disabled: true,
+                          },
+                        ]}
+                        onValueChange={(v) => {
+                          const next = v as SellerCommissionType;
                           if (next === "BY_SUPPLIER") return;
                           patch.mutate({ id: s.id, commissionType: next });
                         }}
-                      >
-                        {SELLER_COMMISSION_TYPES.filter(
-                          (t) => !t.comingSoon,
-                        ).map((t) => (
-                          <option key={t.value} value={t.value}>
-                            {t.label}
-                          </option>
-                        ))}
-                        <option value="BY_SUPPLIER" disabled>
-                          {sellerCommissionTypeLabel("BY_SUPPLIER")} (em breve)
-                        </option>
-                      </select>
+                      />
                     </td>
                     <td className="px-4 py-3">
                       {type === "FIXED" ? (

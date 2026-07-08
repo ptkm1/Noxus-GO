@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { FormActions, FormField, FormGrid, FormSection } from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fieldControlClass } from "@/lib/field-styles";
 import { apiFetch } from "../lib/api";
 
 type Product = { id: string; name: string; basePrice: unknown };
@@ -126,19 +126,17 @@ export function PriceTablesPage() {
                 <h2 className="font-medium">{selected.name}</h2>
                 <FormGrid cols={3} className="mt-4 max-w-2xl">
                   <FormField label="Produto" htmlFor="pt-product" className="sm:col-span-2">
-                    <select
+                    <AppSelect
                       id="pt-product"
-                      className={fieldControlClass}
                       value={productId}
-                      onChange={(e) => setProductId(e.target.value)}
-                    >
-                      <option value="">Selecione…</option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
+                      emptyLabel="Selecione…"
+                      placeholder="Selecione…"
+                      options={products.map((p) => ({
+                        value: p.id,
+                        label: p.name,
+                      }))}
+                      onValueChange={setProductId}
+                    />
                   </FormField>
                   <FormField label="Preço (R$)" htmlFor="pt-price">
                     <Input

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { AppSelect } from "@/components/ui/app-select";
 import { apiFetch, downloadPdf, printPdf } from "../lib/api";
 
 type Order = {
@@ -119,19 +120,18 @@ export function OrderDetailPage() {
                 Baixar PDF
               </button>
               <span className="text-sm text-muted-foreground">Status:</span>
-              <select
-                className="rounded border px-2 py-1 text-sm"
+              <AppSelect
                 value={order.status}
-                onChange={(e) => patchStatus.mutate(e.target.value)}
                 disabled={patchStatus.isPending}
-              >
-                <option value="DRAFT">DRAFT</option>
-                <option value="CONFIRMED">CONFIRMED</option>
-                <option value="PENDING_CREDIT_APPROVAL">
-                  Aguardando crédito
-                </option>
-                <option value="CANCELLED">CANCELLED</option>
-              </select>
+                triggerClassName="w-auto min-w-[10rem]"
+                options={[
+                  { value: "DRAFT", label: "DRAFT" },
+                  { value: "CONFIRMED", label: "CONFIRMED" },
+                  { value: "PENDING_CREDIT_APPROVAL", label: "Aguardando crédito" },
+                  { value: "CANCELLED", label: "CANCELLED" },
+                ]}
+                onValueChange={(v) => patchStatus.mutate(v)}
+              />
             </div>
           </div>
 

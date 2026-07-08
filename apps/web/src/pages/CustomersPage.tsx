@@ -3,9 +3,9 @@ import { useState } from "react";
 import type { CnpjCompanyData } from "@pedidos/shared";
 import { formatCnpjAddress, suggestedTradeName } from "@pedidos/shared";
 import { FormActions, FormField, FormGrid, FormSection } from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fieldControlClass } from "@/lib/field-styles";
 import { apiFetch } from "../lib/api";
 import { CnpjLookupField } from "../components/CnpjLookupField";
 import { CustomerTitlesPanel } from "../components/CustomerTitlesPanel";
@@ -217,17 +217,17 @@ export function CustomersPage() {
       >
         <FormGrid cols={2}>
           <FormField label="Política da empresa" htmlFor="credit-policy" className="sm:col-span-2 max-w-md">
-            <select
+            <AppSelect
               id="credit-policy"
-              className={fieldControlClass}
               value={pricingSettings?.creditPolicy ?? "WARN_ONLY"}
               disabled={patchPricing.isPending || pricingSettings === undefined}
-              onChange={(e) => patchPricing.mutate(e.target.value)}
-            >
-              <option value="WARN_ONLY">Só avisar (não bloqueia)</option>
-              <option value="BLOCK_ORDER">Bloquear pedido</option>
-              <option value="REQUIRE_APPROVAL">Pedir aprovação no escritório</option>
-            </select>
+              options={[
+                { value: "WARN_ONLY", label: "Só avisar (não bloqueia)" },
+                { value: "BLOCK_ORDER", label: "Bloquear pedido" },
+                { value: "REQUIRE_APPROVAL", label: "Pedir aprovação no escritório" },
+              ]}
+              onValueChange={(v) => patchPricing.mutate(v)}
+            />
           </FormField>
         </FormGrid>
       </FormSection>
@@ -272,19 +272,17 @@ export function CustomersPage() {
             />
           </FormField>
           <FormField label="Vendedor" htmlFor="cust-seller">
-            <select
+            <AppSelect
               id="cust-seller"
-              className={fieldControlClass}
               value={sellerId}
-              onChange={(e) => setSellerId(e.target.value)}
-            >
-              <option value="">Opcional</option>
-              {sellers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.user.name}
-                </option>
-              ))}
-            </select>
+              emptyLabel="Opcional"
+              placeholder="Opcional"
+              options={sellers.map((s) => ({
+                value: s.id,
+                label: s.user.name,
+              }))}
+              onValueChange={setSellerId}
+            />
           </FormField>
         </FormGrid>
 

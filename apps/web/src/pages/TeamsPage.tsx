@@ -4,9 +4,9 @@ import {
   FormGrid,
   FormSection,
 } from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fieldControlClass } from "@/lib/field-styles";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
@@ -156,24 +156,21 @@ export function TeamsPage() {
           </FormField>
 
           <FormField label="Líder" htmlFor="team-leader" required>
-            <select
+            <AppSelect
               id="team-leader"
-              className={fieldControlClass}
               value={leaderSellerId}
-              onChange={(e) => {
-                const id = e.target.value;
+              emptyLabel="Selecione…"
+              placeholder="Selecione…"
+              options={availableSellers.map((s) => ({
+                value: s.id,
+                label: `${s.user.name} (${s.user.email})`,
+              }))}
+              onValueChange={(id) => {
                 setLeaderSellerId(id);
                 if (id)
                   setMemberSellerIds((prev) => ensureLeaderInMembers(id, prev));
               }}
-            >
-              <option value="">Selecione…</option>
-              {availableSellers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.user.name} ({s.user.email})
-                </option>
-              ))}
-            </select>
+            />
           </FormField>
 
           <FormField label="Membros" className="sm:col-span-2">

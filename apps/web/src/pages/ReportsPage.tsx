@@ -1,4 +1,5 @@
 import { useAuth } from "@/auth/AuthContext";
+import { AppSelect } from "@/components/ui/app-select";
 import { isWebTeamLeader } from "@/lib/staff";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -656,18 +657,17 @@ export function ReportsPage() {
             <label className="block text-sm font-medium text-foreground">
               Vendedor
             </label>
-            <select
-              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+            <AppSelect
+              className="mt-1"
               value={sellerId}
-              onChange={(e) => setSellerId(e.target.value)}
-            >
-              <option value="">Todos</option>
-              {sellers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.user.name}
-                </option>
-              ))}
-            </select>
+              emptyLabel="Todos"
+              placeholder="Todos"
+              options={sellers.map((s) => ({
+                value: s.id,
+                label: s.user.name,
+              }))}
+              onValueChange={setSellerId}
+            />
           </div>
           {err && <p className="text-sm text-destructive">{err}</p>}
           <button

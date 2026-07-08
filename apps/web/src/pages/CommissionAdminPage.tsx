@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { FilterBar, FormActions, FormField, FormGrid, FormSection } from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fieldControlClass } from "@/lib/field-styles";
 import { apiFetch } from "../lib/api";
 
 function num(v: unknown): number {
@@ -221,51 +221,48 @@ export function CommissionAdminPage() {
 
         <FilterBar className="max-w-md px-4 py-3">
           <FormField label="Filtrar escopo" htmlFor="tier-scope-filter">
-            <select
+            <AppSelect
               id="tier-scope-filter"
-              className={fieldControlClass}
               value={tierScope}
-              onChange={(e) => setTierScope(e.target.value)}
-            >
-              <option value="all">Todos</option>
-              <option value="global">Somente organização</option>
-              {activeSellers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.user.name}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "all", label: "Todos" },
+                { value: "global", label: "Somente organização" },
+                ...activeSellers.map((s) => ({
+                  value: s.id,
+                  label: s.user.name,
+                })),
+              ]}
+              onValueChange={setTierScope}
+            />
           </FormField>
         </FilterBar>
 
         <FormSection title="Nova faixa">
           <FormGrid cols={3}>
             <FormField label="Escopo" htmlFor="nt-scope">
-              <select
+              <AppSelect
                 id="nt-scope"
-                className={fieldControlClass}
                 value={ntScope}
-                onChange={(e) => setNtScope(e.target.value as "org" | "seller")}
-              >
-                <option value="org">Organização (todos)</option>
-                <option value="seller">Um vendedor</option>
-              </select>
+                options={[
+                  { value: "org", label: "Organização (todos)" },
+                  { value: "seller", label: "Um vendedor" },
+                ]}
+                onValueChange={(v) => setNtScope(v as "org" | "seller")}
+              />
             </FormField>
             {ntScope === "seller" ? (
               <FormField label="Vendedor" htmlFor="nt-seller">
-                <select
+                <AppSelect
                   id="nt-seller"
-                  className={fieldControlClass}
                   value={ntSellerId}
-                  onChange={(e) => setNtSellerId(e.target.value)}
-                >
-                  <option value="">Selecione…</option>
-                  {activeSellers.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.user.name}
-                    </option>
-                  ))}
-                </select>
+                  emptyLabel="Selecione…"
+                  placeholder="Selecione…"
+                  options={activeSellers.map((s) => ({
+                    value: s.id,
+                    label: s.user.name,
+                  }))}
+                  onValueChange={setNtSellerId}
+                />
               </FormField>
             ) : null}
             <FormField label="Limite MTD (R$)" htmlFor="nt-threshold" required>
@@ -346,22 +343,20 @@ export function CommissionAdminPage() {
                   tiers.map((t) => (
                     <tr key={t.id} className="border-t border-border">
                       <td className="px-4 py-3 align-top">
-                        <select
-                          className="max-w-[200px] rounded border px-2 py-1 text-xs"
-                          defaultValue={t.sellerId ?? ""}
+                        <AppSelect
                           key={`${t.id}-${t.sellerId ?? "org"}`}
-                          onChange={(e) => {
-                            const v = e.target.value;
+                          value={t.sellerId ?? ""}
+                          emptyLabel="Organização"
+                          placeholder="Organização"
+                          triggerClassName="max-w-[200px] text-xs"
+                          options={activeSellers.map((s) => ({
+                            value: s.id,
+                            label: s.user.name,
+                          }))}
+                          onValueChange={(v) => {
                             patchTier.mutate({ id: t.id, sellerId: v === "" ? null : v });
                           }}
-                        >
-                          <option value="">Organização</option>
-                          {activeSellers.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.user.name}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </td>
                       <td className="px-4 py-3">
                         <input
@@ -470,52 +465,46 @@ export function CommissionAdminPage() {
             />
           </FormField>
           <FormField label="Mês" htmlFor="goal-month">
-            <select
+            <AppSelect
               id="goal-month"
-              className={`${fieldControlClass} capitalize`}
-              value={goalMonth}
-              onChange={(e) => setGoalMonth(Number(e.target.value))}
-            >
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                <option key={m} value={m}>
-                  {monthLabel(m)}
-                </option>
-              ))}
-            </select>
+              value={String(goalMonth)}
+              triggerClassName="capitalize"
+              options={Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
+                value: String(m),
+                label: monthLabel(m),
+              }))}
+              onValueChange={(v) => setGoalMonth(Number(v))}
+            />
           </FormField>
           <FormField label="Vendedor" htmlFor="goal-seller-filter" className="sm:col-span-2">
-            <select
+            <AppSelect
               id="goal-seller-filter"
-              className={fieldControlClass}
               value={goalSellerFilter}
-              onChange={(e) => setGoalSellerFilter(e.target.value)}
-            >
-              <option value="">Todos neste mês</option>
-              {activeSellers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.user.name}
-                </option>
-              ))}
-            </select>
+              emptyLabel="Todos neste mês"
+              placeholder="Todos neste mês"
+              options={activeSellers.map((s) => ({
+                value: s.id,
+                label: s.user.name,
+              }))}
+              onValueChange={setGoalSellerFilter}
+            />
           </FormField>
         </FilterBar>
 
         <FormSection title="Definir ou atualizar meta">
           <FormGrid cols={3}>
             <FormField label="Vendedor" htmlFor="mg-seller" required className="sm:col-span-2">
-              <select
+              <AppSelect
                 id="mg-seller"
-                className={fieldControlClass}
                 value={mgSellerId}
-                onChange={(e) => setMgSellerId(e.target.value)}
-              >
-                <option value="">Selecione…</option>
-                {activeSellers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.user.name}
-                  </option>
-                ))}
-              </select>
+                emptyLabel="Selecione…"
+                placeholder="Selecione…"
+                options={activeSellers.map((s) => ({
+                  value: s.id,
+                  label: s.user.name,
+                }))}
+                onValueChange={setMgSellerId}
+              />
             </FormField>
             <FormField label="Ano" htmlFor="mg-year">
               <Input
@@ -528,18 +517,16 @@ export function CommissionAdminPage() {
               />
             </FormField>
             <FormField label="Mês" htmlFor="mg-month">
-              <select
+              <AppSelect
                 id="mg-month"
-                className={`${fieldControlClass} capitalize`}
-                value={mgMonth}
-                onChange={(e) => setMgMonth(Number(e.target.value))}
-              >
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                  <option key={m} value={m}>
-                    {monthLabel(m)}
-                  </option>
-                ))}
-              </select>
+                value={String(mgMonth)}
+                triggerClassName="capitalize"
+                options={Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
+                  value: String(m),
+                  label: monthLabel(m),
+                }))}
+                onValueChange={(v) => setMgMonth(Number(v))}
+              />
             </FormField>
             <FormField label="Título" htmlFor="mg-title" className="sm:col-span-2">
               <Input id="mg-title" value={mgTitle} onChange={(e) => setMgTitle(e.target.value)} />

@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { FilterBar, FormField } from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fieldControlClass } from "@/lib/field-styles";
 import { apiFetch } from "../lib/api";
 import { fmtCoord, googleMapsSearchUrl } from "../lib/maps-links";
 
@@ -185,19 +185,17 @@ export function CustomerVisitsPage() {
           <Input id="visits-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </FormField>
         <FormField label="Vendedor" htmlFor="visits-seller">
-          <select
+          <AppSelect
             id="visits-seller"
-            className={fieldControlClass}
             value={sellerId}
-            onChange={(e) => setSellerId(e.target.value)}
-          >
-            <option value="">Todos</option>
-            {sellers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.user.name}
-              </option>
-            ))}
-          </select>
+            emptyLabel="Todos"
+            placeholder="Todos"
+            options={sellers.map((s) => ({
+              value: s.id,
+              label: s.user.name,
+            }))}
+            onValueChange={setSellerId}
+          />
         </FormField>
         <div className="flex items-end">
           <Button

@@ -4,10 +4,10 @@ import {
   FormGrid,
   FormSection,
 } from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { fieldControlClass } from "@/lib/field-styles";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
@@ -412,26 +412,23 @@ export function ProductFormPage() {
                   </>
                 }
               >
-                <select
+                <AppSelect
                   id="prod-category"
-                  className={fieldControlClass}
                   value={categoryId}
-                  onChange={(e) => {
-                    const nextId = e.target.value;
+                  emptyLabel="Selecione um grupo…"
+                  placeholder="Selecione um grupo…"
+                  options={categories.map((c) => ({
+                    value: c.id,
+                    label: `${c.name} (${c.code})`,
+                  }))}
+                  onValueChange={(nextId) => {
                     const defs = coerceDefs(
                       categories.find((c) => c.id === nextId)?.attributeSchema,
                     );
                     setCategoryId(nextId);
                     setAttrs((prev) => pruneAttrs(prev, defs));
                   }}
-                >
-                  <option value="">Selecione um grupo…</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.code})
-                    </option>
-                  ))}
-                </select>
+                />
               </FormField>
 
               <FormField label="SKU" htmlFor="prod-sku">
