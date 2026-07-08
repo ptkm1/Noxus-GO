@@ -1,9 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { FilterBar, FormActions, FormField, FormGrid, FormSection } from "@/components/forms";
+import {
+  FilterBar,
+  FormField,
+  FormGrid,
+  FormSheet,
+  FormSheetActions,
+} from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { apiFetch } from "../lib/api";
 
 function num(v: unknown): number {
@@ -100,12 +114,32 @@ export function CommissionAdminPage() {
   );
 
   /* --- Nova faixa progressiva --- */
+  const [tierSheetOpen, setTierSheetOpen] = useState(false);
   const [ntScope, setNtScope] = useState<"org" | "seller">("org");
   const [ntSellerId, setNtSellerId] = useState("");
   const [ntThreshold, setNtThreshold] = useState("");
   const [ntPercent, setNtPercent] = useState("");
   const [ntLabel, setNtLabel] = useState("");
   const [ntPriority, setNtPriority] = useState("0");
+
+  function resetTierForm() {
+    setNtThreshold("");
+    setNtPercent("");
+    setNtLabel("");
+    setNtPriority("0");
+    setNtSellerId("");
+    setNtScope("org");
+  }
+
+  function openTierCreate() {
+    resetTierForm();
+    setTierSheetOpen(true);
+  }
+
+  function closeTierSheet() {
+    setTierSheetOpen(false);
+    resetTierForm();
+  }
 
   const createTier = useMutation({
     mutationFn: () =>
@@ -122,12 +156,7 @@ export function CommissionAdminPage() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin", "commission-progressive-tiers"] });
-      setNtThreshold("");
-      setNtPercent("");
-      setNtLabel("");
-      setNtPriority("0");
-      setNtSellerId("");
-      setNtScope("org");
+      closeTierSheet();
     },
   });
 
@@ -157,11 +186,30 @@ export function CommissionAdminPage() {
   });
 
   /* --- Metas mensais --- */
+  const [goalSheetOpen, setGoalSheetOpen] = useState(false);
   const [mgSellerId, setMgSellerId] = useState("");
   const [mgYear, setMgYear] = useState(today.getFullYear());
   const [mgMonth, setMgMonth] = useState(today.getMonth() + 1);
   const [mgTitle, setMgTitle] = useState("Meta do mês");
   const [mgTarget, setMgTarget] = useState("");
+
+  function resetGoalForm() {
+    setMgSellerId("");
+    setMgYear(today.getFullYear());
+    setMgMonth(today.getMonth() + 1);
+    setMgTitle("Meta do mês");
+    setMgTarget("");
+  }
+
+  function openGoalCreate() {
+    resetGoalForm();
+    setGoalSheetOpen(true);
+  }
+
+  function closeGoalSheet() {
+    setGoalSheetOpen(false);
+    resetGoalForm();
+  }
 
   const upsertGoal = useMutation({
     mutationFn: () =>
@@ -177,8 +225,7 @@ export function CommissionAdminPage() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin", "seller-monthly-goals"] });
-      setMgTarget("");
-      setMgTitle("Meta do mês");
+      closeGoalSheet();
     },
   });
 
@@ -201,6 +248,11 @@ export function CommissionAdminPage() {
 
   const loading = sellersLoading || tiersLoading;
 
+  const canSaveTier =
+    Boolean(ntThreshold && ntPercent) && !(ntScope === "seller" && !ntSellerId);
+
+  const canSaveGoal = Boolean(mgSellerId && mgTarget);
+
   return (
     <div className="space-y-12">
       <div>
@@ -213,11 +265,18 @@ export function CommissionAdminPage() {
 
       {/* Faixas progressivas */}
       <section className="space-y-4">
-        <h2 className="text-lg font-medium text-foreground">Faixas progressivas</h2>
-        <p className="text-xs text-muted-foreground">
-          Acima de cada valor de faturamento MTD (inclusive), aplica-se o percentual correspondente quando não há
-          regra por produto/categoria mais específica. Prioridade maior resolve empates entre faixas.
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-medium text-foreground">Faixas progressivas</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Acima de cada valor de faturamento MTD (inclusive), aplica-se o percentual correspondente quando não há
+              regra por produto/categoria mais específica. Prioridade maior resolve empates entre faixas.
+            </p>
+          </div>
+          <Button type="button" className="shrink-0" onClick={openTierCreate}>
+            Nova faixa
+          </Button>
+        </div>
 
         <FilterBar className="max-w-md px-4 py-3">
           <FormField label="Filtrar escopo" htmlFor="tier-scope-filter">
@@ -237,8 +296,25 @@ export function CommissionAdminPage() {
           </FormField>
         </FilterBar>
 
-        <FormSection title="Nova faixa">
-          <FormGrid cols={3}>
+        <FormSheet
+          open={tierSheetOpen}
+          onOpenChange={(open) => {
+            if (!open) closeTierSheet();
+            else setTierSheetOpen(true);
+          }}
+          title="Nova faixa"
+          description="Comissão progressiva por faturamento MTD."
+          footer={
+            <FormSheetActions
+              onCancel={closeTierSheet}
+              onSubmit={() => createTier.mutate()}
+              submitLabel="Adicionar faixa"
+              pending={createTier.isPending}
+              disabled={!canSaveTier}
+            />
+          }
+        >
+          <FormGrid cols={2}>
             <FormField label="Escopo" htmlFor="nt-scope">
               <AppSelect
                 id="nt-scope"
@@ -298,51 +374,37 @@ export function CommissionAdminPage() {
             </FormField>
           </FormGrid>
           {createTier.error ? (
-            <p className="text-sm text-destructive">{(createTier.error as Error).message}</p>
+            <p className="mt-3 text-sm text-destructive">{(createTier.error as Error).message}</p>
           ) : null}
-          <FormActions className="border-t-0 pt-2">
-            <Button
-              type="button"
-              disabled={
-                createTier.isPending ||
-                !ntThreshold ||
-                !ntPercent ||
-                (ntScope === "seller" && !ntSellerId)
-              }
-              onClick={() => createTier.mutate()}
-            >
-              Adicionar faixa
-            </Button>
-          </FormActions>
-        </FormSection>
+        </FormSheet>
 
         {loading ? (
           <p className="text-muted-foreground">Carregando faixas…</p>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-border bg-card">
-            <table className="w-full min-w-[840px] text-sm">
-              <thead className="bg-background text-left text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3">Escopo</th>
-                  <th className="px-4 py-3">Limite MTD (R$)</th>
-                  <th className="px-4 py-3">%</th>
-                  <th className="px-4 py-3">Prioridade</th>
-                  <th className="px-4 py-3">Rótulo</th>
-                  <th className="px-4 py-3">Ativa</th>
-                  <th className="px-4 py-3 w-28" />
-                </tr>
-              </thead>
-              <tbody>
+          <div className="rounded-xl border border-border bg-card">
+            <Table className="min-w-[840px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="px-4">Escopo</TableHead>
+                  <TableHead className="px-4">Limite MTD (R$)</TableHead>
+                  <TableHead className="px-4">%</TableHead>
+                  <TableHead className="px-4">Prioridade</TableHead>
+                  <TableHead className="px-4">Rótulo</TableHead>
+                  <TableHead className="px-4">Ativa</TableHead>
+                  <TableHead className="px-4 w-28" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {tiers.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+                  <TableRow>
+                    <TableCell colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                       Nenhuma faixa neste filtro.
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ) : (
                   tiers.map((t) => (
-                    <tr key={t.id} className="border-t border-border">
-                      <td className="px-4 py-3 align-top">
+                    <TableRow key={t.id}>
+                      <TableCell className="px-4 py-3 align-top">
                         <AppSelect
                           key={`${t.id}-${t.sellerId ?? "org"}`}
                           value={t.sellerId ?? ""}
@@ -357,8 +419,8 @@ export function CommissionAdminPage() {
                             patchTier.mutate({ id: t.id, sellerId: v === "" ? null : v });
                           }}
                         />
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
                         <input
                           type="number"
                           step="0.01"
@@ -373,8 +435,8 @@ export function CommissionAdminPage() {
                             }
                           }}
                         />
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
                         <input
                           type="number"
                           step="0.01"
@@ -390,8 +452,8 @@ export function CommissionAdminPage() {
                             }
                           }}
                         />
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
                         <input
                           type="number"
                           className="w-16 rounded border px-2 py-1"
@@ -404,8 +466,8 @@ export function CommissionAdminPage() {
                             }
                           }}
                         />
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
                         <input
                           className="w-full max-w-[160px] rounded border px-2 py-1 text-xs"
                           defaultValue={t.label ?? ""}
@@ -417,16 +479,16 @@ export function CommissionAdminPage() {
                             if (next !== prev) patchTier.mutate({ id: t.id, label: next });
                           }}
                         />
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
                         <input
                           type="checkbox"
                           defaultChecked={t.active}
                           key={`${t.id}-act-${t.active}`}
                           onChange={(e) => patchTier.mutate({ id: t.id, active: e.target.checked })}
                         />
-                      </td>
-                      <td className="px-4 py-3 text-right">
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-right">
                         <button
                           type="button"
                           className="text-xs text-destructive hover:underline"
@@ -436,22 +498,29 @@ export function CommissionAdminPage() {
                         >
                           Excluir
                         </button>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </section>
 
       {/* Metas mensais */}
       <section className="space-y-4">
-        <h2 className="text-lg font-medium text-foreground">Metas mensais por vendedor</h2>
-        <p className="text-xs text-muted-foreground">
-          Uma meta por vendedor e mês civil. Salvar novamente atualiza valor e título (upsert).
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-medium text-foreground">Metas mensais por vendedor</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Uma meta por vendedor e mês civil. Salvar novamente atualiza valor e título (upsert).
+            </p>
+          </div>
+          <Button type="button" className="shrink-0" onClick={openGoalCreate}>
+            Definir meta
+          </Button>
+        </div>
 
         <FilterBar className="px-4 py-3">
           <FormField label="Ano" htmlFor="goal-year">
@@ -491,8 +560,25 @@ export function CommissionAdminPage() {
           </FormField>
         </FilterBar>
 
-        <FormSection title="Definir ou atualizar meta">
-          <FormGrid cols={3}>
+        <FormSheet
+          open={goalSheetOpen}
+          onOpenChange={(open) => {
+            if (!open) closeGoalSheet();
+            else setGoalSheetOpen(true);
+          }}
+          title="Definir ou atualizar meta"
+          description="Uma meta por vendedor e mês civil (upsert)."
+          footer={
+            <FormSheetActions
+              onCancel={closeGoalSheet}
+              onSubmit={() => upsertGoal.mutate()}
+              submitLabel="Salvar meta"
+              pending={upsertGoal.isPending}
+              disabled={!canSaveGoal}
+            />
+          }
+        >
+          <FormGrid cols={2}>
             <FormField label="Vendedor" htmlFor="mg-seller" required className="sm:col-span-2">
               <AppSelect
                 id="mg-seller"
@@ -531,7 +617,7 @@ export function CommissionAdminPage() {
             <FormField label="Título" htmlFor="mg-title" className="sm:col-span-2">
               <Input id="mg-title" value={mgTitle} onChange={(e) => setMgTitle(e.target.value)} />
             </FormField>
-            <FormField label="Meta (R$)" htmlFor="mg-target" required>
+            <FormField label="Meta (R$)" htmlFor="mg-target" required className="sm:col-span-2">
               <Input
                 id="mg-target"
                 placeholder="0"
@@ -541,48 +627,39 @@ export function CommissionAdminPage() {
             </FormField>
           </FormGrid>
           {upsertGoal.error ? (
-            <p className="text-sm text-destructive">{(upsertGoal.error as Error).message}</p>
+            <p className="mt-3 text-sm text-destructive">{(upsertGoal.error as Error).message}</p>
           ) : null}
-          <FormActions className="border-t-0 pt-2">
-            <Button
-              type="button"
-              disabled={upsertGoal.isPending || !mgSellerId || !mgTarget}
-              onClick={() => upsertGoal.mutate()}
-            >
-              Salvar meta
-            </Button>
-          </FormActions>
-        </FormSection>
+        </FormSheet>
 
         {goalsLoading ? (
           <p className="text-muted-foreground">Carregando metas…</p>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-border bg-card">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead className="bg-background text-left text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3">Vendedor</th>
-                  <th className="px-4 py-3">Período</th>
-                  <th className="px-4 py-3">Título</th>
-                  <th className="px-4 py-3">Meta (R$)</th>
-                  <th className="px-4 py-3 w-24" />
-                </tr>
-              </thead>
-              <tbody>
+          <div className="rounded-xl border border-border bg-card">
+            <Table className="min-w-[720px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="px-4">Vendedor</TableHead>
+                  <TableHead className="px-4">Período</TableHead>
+                  <TableHead className="px-4">Título</TableHead>
+                  <TableHead className="px-4">Meta (R$)</TableHead>
+                  <TableHead className="px-4 w-24" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {goals.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                  <TableRow>
+                    <TableCell colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
                       Nenhuma meta para este filtro.
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ) : (
                   goals.map((g) => (
-                    <tr key={g.id} className="border-t border-border">
-                      <td className="px-4 py-3">{g.seller.user.name}</td>
-                      <td className="px-4 py-3 capitalize">
+                    <TableRow key={g.id}>
+                      <TableCell className="px-4 py-3">{g.seller.user.name}</TableCell>
+                      <TableCell className="px-4 py-3 capitalize">
                         {monthLabel(g.month)} {g.year}
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
                         <input
                           className="w-full max-w-[220px] rounded border px-2 py-1 text-xs"
                           defaultValue={g.title}
@@ -592,8 +669,8 @@ export function CommissionAdminPage() {
                             if (v && v !== g.title) patchGoal.mutate({ id: g.id, title: v });
                           }}
                         />
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
                         <input
                           type="number"
                           step="0.01"
@@ -608,8 +685,8 @@ export function CommissionAdminPage() {
                             }
                           }}
                         />
-                      </td>
-                      <td className="px-4 py-3 text-right">
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-right">
                         <button
                           type="button"
                           className="text-xs text-destructive hover:underline"
@@ -619,12 +696,12 @@ export function CommissionAdminPage() {
                         >
                           Excluir
                         </button>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </section>

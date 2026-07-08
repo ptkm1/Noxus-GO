@@ -1,5 +1,13 @@
 import { useAuth } from "@/auth/AuthContext";
 import { AppSelect } from "@/components/ui/app-select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { isWebTeamLeader } from "@/lib/staff";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -216,31 +224,31 @@ export function ReportsPage() {
               <h2 className="text-lg font-semibold text-foreground">
                 Por vendedor
               </h2>
-              <div className="overflow-x-auto rounded-xl border border-border bg-card">
-                <table className="w-full min-w-[480px] text-sm">
-                  <thead className="bg-background text-left text-muted-foreground">
-                    <tr>
-                      <th className="px-4 py-3">Vendedor</th>
-                      <th className="px-4 py-3">Pedidos</th>
-                      <th className="px-4 py-3">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="rounded-xl border border-border bg-card">
+                <Table className="min-w-[480px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="px-4">Vendedor</TableHead>
+                      <TableHead className="px-4">Pedidos</TableHead>
+                      <TableHead className="px-4">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {teamSummary.bySeller.map((row) => (
-                      <tr key={row.sellerId} className="border-t border-border">
-                        <td className="px-4 py-3 font-medium text-foreground">
+                      <TableRow key={row.sellerId}>
+                        <TableCell className="px-4 py-3 font-medium text-foreground">
                           {row.name}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-muted-foreground">
                           {row.orderCount}
-                        </td>
-                        <td className="px-4 py-3 font-medium tabular-nums text-foreground">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 font-medium tabular-nums text-foreground">
                           R$ {fmtMoney(row.totalAmount)}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </section>
 
@@ -253,34 +261,31 @@ export function ReportsPage() {
                   Nenhum produto vendido no período.
                 </p>
               ) : (
-                <div className="overflow-x-auto rounded-xl border border-border bg-card">
-                  <table className="w-full min-w-[520px] text-sm">
-                    <thead className="bg-background text-left text-muted-foreground">
-                      <tr>
-                        <th className="px-4 py-3">Produto</th>
-                        <th className="px-4 py-3">Qtd</th>
-                        <th className="px-4 py-3">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                <div className="rounded-xl border border-border bg-card">
+                  <Table className="min-w-[520px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="px-4">Produto</TableHead>
+                        <TableHead className="px-4">Qtd</TableHead>
+                        <TableHead className="px-4">Total</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {teamSummary.topProducts.map((p) => (
-                        <tr
-                          key={p.productId}
-                          className="border-t border-border"
-                        >
-                          <td className="px-4 py-3 font-medium text-foreground">
+                        <TableRow key={p.productId}>
+                          <TableCell className="px-4 py-3 font-medium text-foreground">
                             {p.productName}
-                          </td>
-                          <td className="px-4 py-3 tabular-nums text-muted-foreground">
+                          </TableCell>
+                          <TableCell className="px-4 py-3 tabular-nums text-muted-foreground">
                             {p.quantity}
-                          </td>
-                          <td className="px-4 py-3 font-medium tabular-nums text-foreground">
+                          </TableCell>
+                          <TableCell className="px-4 py-3 font-medium tabular-nums text-foreground">
                             R$ {fmtMoney(p.totalAmount)}
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </section>
@@ -358,47 +363,47 @@ export function ReportsPage() {
             <p className="text-xs capitalize text-muted-foreground">
               {ins.today.label}
             </p>
-            <div className="overflow-x-auto rounded-xl border border-border bg-card">
-              <table className="w-full min-w-[520px] text-sm">
-                <thead className="bg-background text-left text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3">Vendedor</th>
-                    <th className="px-4 py-3">Pedidos</th>
-                    <th className="px-4 py-3">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
+            <div className="rounded-xl border border-border bg-card">
+              <Table className="min-w-[520px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="px-4">Vendedor</TableHead>
+                    <TableHead className="px-4">Pedidos</TableHead>
+                    <TableHead className="px-4">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {ins.today.sellers.length === 0 ? (
-                    <tr>
-                      <td
+                    <TableRow>
+                      <TableCell
                         colSpan={3}
                         className="px-4 py-6 text-center text-muted-foreground"
                       >
                         Nenhum vendedor ativo — cadastre vendedores primeiro.
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ) : (
                     ins.today.sellers.map((row) => (
-                      <tr key={row.sellerId} className="border-t border-border">
-                        <td className="px-4 py-3 font-medium text-foreground">
+                      <TableRow key={row.sellerId}>
+                        <TableCell className="px-4 py-3 font-medium text-foreground">
                           {row.name}
                           {row.orderCount === 0 ? (
                             <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-warning">
                               Zerado hoje
                             </span>
                           ) : null}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-muted-foreground">
                           {row.orderCount}
-                        </td>
-                        <td className="px-4 py-3 font-medium tabular-nums text-foreground">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 font-medium tabular-nums text-foreground">
                           R$ {fmtMoney(row.totalAmount)}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </section>
 
@@ -441,29 +446,29 @@ export function ReportsPage() {
                 última compra.
               </p>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-border bg-card">
-                <table className="w-full min-w-[640px] text-sm">
-                  <thead className="bg-background text-left text-muted-foreground">
-                    <tr>
-                      <th className="px-4 py-3">Vendedor</th>
-                      <th className="px-4 py-3">Clientes parados</th>
-                      <th className="px-4 py-3">Na carteira</th>
-                      <th className="px-4 py-3">Pior caso</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="rounded-xl border border-border bg-card">
+                <Table className="min-w-[640px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="px-4">Vendedor</TableHead>
+                      <TableHead className="px-4">Clientes parados</TableHead>
+                      <TableHead className="px-4">Na carteira</TableHead>
+                      <TableHead className="px-4">Pior caso</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {ins.sellersPortfolioAttention.map((row) => (
-                      <tr key={row.sellerId} className="border-t border-border">
-                        <td className="px-4 py-3 font-medium text-foreground">
+                      <TableRow key={row.sellerId}>
+                        <TableCell className="px-4 py-3 font-medium text-foreground">
                           {row.name}
-                        </td>
-                        <td className="px-4 py-3 tabular-nums text-foreground">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 tabular-nums text-foreground">
                           {row.staleCustomersCount}
-                        </td>
-                        <td className="px-4 py-3 tabular-nums text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 tabular-nums text-muted-foreground">
                           {row.assignedCustomersCount}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-muted-foreground">
                           {row.worstCustomerName ? (
                             <>
                               <span className="font-medium text-foreground">
@@ -477,11 +482,11 @@ export function ReportsPage() {
                           ) : (
                             "—"
                           )}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
           </section>
@@ -500,26 +505,26 @@ export function ReportsPage() {
                 Nenhum produto encaixa neste critério agora.
               </p>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-border bg-card">
-                <table className="w-full min-w-[560px] text-sm">
-                  <thead className="bg-background text-left text-muted-foreground">
-                    <tr>
-                      <th className="px-4 py-3">Produto</th>
-                      <th className="px-4 py-3">SKU</th>
-                      <th className="px-4 py-3">Situação</th>
-                      <th className="px-4 py-3 w-28" />
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="rounded-xl border border-border bg-card">
+                <Table className="min-w-[560px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="px-4">Produto</TableHead>
+                      <TableHead className="px-4">SKU</TableHead>
+                      <TableHead className="px-4">Situação</TableHead>
+                      <TableHead className="px-4 w-28" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {ins.stagnantProducts.map((p) => (
-                      <tr key={p.productId} className="border-t border-border">
-                        <td className="px-4 py-3 font-medium text-foreground">
+                      <TableRow key={p.productId}>
+                        <TableCell className="px-4 py-3 font-medium text-foreground">
                           {p.name}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-muted-foreground">
                           {p.sku ?? "—"}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-muted-foreground">
                           {p.neverSold ? (
                             <span className="text-warning">
                               Sem histórico de venda
@@ -541,19 +546,19 @@ export function ReportsPage() {
                               ) : null}
                             </>
                           )}
-                        </td>
-                        <td className="px-4 py-3 text-right">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-right">
                           <Link
                             to={`/produtos/${p.productId}/editar`}
                             className="text-primary hover:underline"
                           >
                             Abrir
                           </Link>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
           </section>
@@ -572,48 +577,48 @@ export function ReportsPage() {
                 Nenhum cliente aparece aqui no momento.
               </p>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-border bg-card">
-                <table className="w-full min-w-[620px] text-sm">
-                  <thead className="bg-background text-left text-muted-foreground">
-                    <tr>
-                      <th className="px-4 py-3">Cliente</th>
-                      <th className="px-4 py-3">Vendedor (carteira)</th>
-                      <th className="px-4 py-3">Última compra</th>
-                      <th className="px-4 py-3">Há quanto tempo</th>
-                      <th className="px-4 py-3 w-24" />
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="rounded-xl border border-border bg-card">
+                <Table className="min-w-[620px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="px-4">Cliente</TableHead>
+                      <TableHead className="px-4">Vendedor (carteira)</TableHead>
+                      <TableHead className="px-4">Última compra</TableHead>
+                      <TableHead className="px-4">Há quanto tempo</TableHead>
+                      <TableHead className="px-4 w-24" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {ins.churnCustomers.map((c) => (
-                      <tr key={c.customerId} className="border-t border-border">
-                        <td className="px-4 py-3 font-medium text-foreground">
+                      <TableRow key={c.customerId}>
+                        <TableCell className="px-4 py-3 font-medium text-foreground">
                           {c.name}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-muted-foreground">
                           {c.sellerName ?? "—"}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-muted-foreground">
                           {c.lastPurchaseAt
                             ? new Date(c.lastPurchaseAt).toLocaleDateString(
                                 "pt-BR",
                               )
                             : "—"}
-                        </td>
-                        <td className="px-4 py-3 text-foreground">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-foreground">
                           {fmtDays(c.daysSinceLastPurchase, c.neverPurchased)}
-                        </td>
-                        <td className="px-4 py-3 text-right">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-right">
                           <Link
                             to="/clientes"
                             className="text-primary hover:underline"
                           >
                             Clientes
                           </Link>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
           </section>

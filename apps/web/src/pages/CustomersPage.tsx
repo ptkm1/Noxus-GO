@@ -2,10 +2,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { CnpjCompanyData } from "@pedidos/shared";
 import { formatCnpjAddress, suggestedTradeName } from "@pedidos/shared";
-import { FormActions, FormField, FormGrid, FormSection } from "@/components/forms";
+import {
+  FormField,
+  FormGrid,
+  FormSection,
+  FormSheet,
+  FormSheetActions,
+} from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { apiFetch } from "../lib/api";
 import { CnpjLookupField } from "../components/CnpjLookupField";
 import { CustomerTitlesPanel } from "../components/CustomerTitlesPanel";
@@ -63,6 +77,7 @@ export function CustomersPage() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "pricing-settings"] }),
   });
 
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -73,6 +88,51 @@ export function CustomersPage() {
   const [geoLatStr, setGeoLatStr] = useState("");
   const [geoLngStr, setGeoLngStr] = useState("");
   const [geoNoteStr, setGeoNoteStr] = useState("");
+
+  function resetForm() {
+    setEditing(null);
+    setName("");
+    setEmail("");
+    setPhone("");
+    setSellerId("");
+    setCreditLimitStr("");
+    setCreditBlockedEdit(false);
+    setGeoLatStr("");
+    setGeoLngStr("");
+    setGeoNoteStr("");
+  }
+
+  function openCreate() {
+    resetForm();
+    setSheetOpen(true);
+  }
+
+  function openEdit(c: Customer) {
+    setEditing(c);
+    setName(c.name);
+    setEmail(c.email ?? "");
+    setPhone(c.phone ?? "");
+    setSellerId(c.sellerId ?? "");
+    setCreditBlockedEdit(Boolean(c.creditBlocked));
+    setCreditLimitStr(
+      c.creditLimit != null && c.creditLimit !== ""
+        ? String(Number(c.creditLimit as string))
+        : "",
+    );
+    setGeoLatStr(
+      c.latitude != null && c.latitude !== "" ? String(Number(c.latitude as string)) : "",
+    );
+    setGeoLngStr(
+      c.longitude != null && c.longitude !== "" ? String(Number(c.longitude as string)) : "",
+    );
+    setGeoNoteStr(c.addressNote ?? "");
+    setSheetOpen(true);
+  }
+
+  function closeSheet() {
+    setSheetOpen(false);
+    resetForm();
+  }
 
   const create = useMutation({
     mutationFn: () => {
@@ -103,13 +163,7 @@ export function CustomersPage() {
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin", "customers"] });
-      setName("");
-      setEmail("");
-      setPhone("");
-      setSellerId("");
-      setGeoLatStr("");
-      setGeoLngStr("");
-      setGeoNoteStr("");
+      closeSheet();
     },
     onError: (e: Error) => window.alert(e.message),
   });
@@ -153,16 +207,7 @@ export function CustomersPage() {
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin", "customers"] });
-      setEditing(null);
-      setName("");
-      setEmail("");
-      setPhone("");
-      setSellerId("");
-      setCreditLimitStr("");
-      setCreditBlockedEdit(false);
-      setGeoLatStr("");
-      setGeoLngStr("");
-      setGeoNoteStr("");
+      closeSheet();
     },
     onError: (e: Error) => window.alert(e.message),
   });
@@ -172,43 +217,16 @@ export function CustomersPage() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "customers"] }),
   });
 
-  function startEdit(c: Customer) {
-    setEditing(c);
-    setName(c.name);
-    setEmail(c.email ?? "");
-    setPhone(c.phone ?? "");
-    setSellerId(c.sellerId ?? "");
-    setCreditBlockedEdit(Boolean(c.creditBlocked));
-    setCreditLimitStr(
-      c.creditLimit != null && c.creditLimit !== ""
-        ? String(Number(c.creditLimit as string))
-        : "",
-    );
-    setGeoLatStr(
-      c.latitude != null && c.latitude !== "" ? String(Number(c.latitude as string)) : "",
-    );
-    setGeoLngStr(
-      c.longitude != null && c.longitude !== "" ? String(Number(c.longitude as string)) : "",
-    );
-    setGeoNoteStr(c.addressNote ?? "");
-  }
-
-  function cancelEdit() {
-    setEditing(null);
-    setName("");
-    setEmail("");
-    setPhone("");
-    setSellerId("");
-    setCreditLimitStr("");
-    setCreditBlockedEdit(false);
-    setGeoLatStr("");
-    setGeoLngStr("");
-    setGeoNoteStr("");
-  }
+  const savePending = editing ? update.isPending : create.isPending;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Clientes</h1>
+      <div className="flex items-start justify-between gap-4">
+        <h1 className="text-2xl font-semibold">Clientes</h1>
+        <Button type="button" onClick={openCreate}>
+          Novo cliente
+        </Button>
+      </div>
 
       <FormSection
         title="Quando o cliente está “ruim” no crédito"
@@ -232,7 +250,27 @@ export function CustomersPage() {
         </FormGrid>
       </FormSection>
 
-      <FormSection title={editing ? "Editar cliente" : "Novo cliente"}>
+      <FormSheet
+        open={sheetOpen}
+        onOpenChange={(open) => {
+          if (!open) closeSheet();
+          else setSheetOpen(true);
+        }}
+        title={editing ? "Editar cliente" : "Novo cliente"}
+        description="Dados cadastrais, localização no mapa e, na edição, crédito."
+        footer={
+          <FormSheetActions
+            onCancel={closeSheet}
+            onSubmit={() => {
+              if (editing) update.mutate();
+              else create.mutate();
+            }}
+            submitLabel={editing ? "Salvar alterações" : "Cadastrar"}
+            pending={savePending}
+            disabled={!name}
+          />
+        }
+      >
         {!editing ? (
           <CnpjLookupField
             buttonLabel="Buscar empresa (CNPJ)"
@@ -245,7 +283,7 @@ export function CustomersPage() {
             }}
           />
         ) : null}
-        <FormGrid cols={4} className="mt-4">
+        <FormGrid cols={2} className="mt-4">
           <FormField label="Nome" htmlFor="cust-name" required className="sm:col-span-2">
             <Input
               id="cust-name"
@@ -271,7 +309,7 @@ export function CustomersPage() {
               onChange={(e) => setPhone(e.target.value)}
             />
           </FormField>
-          <FormField label="Vendedor" htmlFor="cust-seller">
+          <FormField label="Vendedor" htmlFor="cust-seller" className="sm:col-span-2">
             <AppSelect
               id="cust-seller"
               value={sellerId}
@@ -291,7 +329,7 @@ export function CustomersPage() {
           <p className="mt-1 text-xs text-muted-foreground">
             Latitude/longitude em graus decimais (ex.: −23.5505, −46.6333). Opcional; necessário para rota e «próximos».
           </p>
-          <FormGrid cols={3} className="mt-3">
+          <FormGrid cols={2} className="mt-3">
             <FormField label="Latitude" htmlFor="cust-lat">
               <Input
                 id="cust-lat"
@@ -313,7 +351,7 @@ export function CustomersPage() {
             <FormField
               label="Nota de endereço"
               htmlFor="cust-geo-note"
-              className="sm:col-span-2 lg:col-span-3"
+              className="sm:col-span-2"
               hint="Como chegar (opcional)"
             >
               <Input
@@ -356,53 +394,33 @@ export function CustomersPage() {
           </FormGrid>
         ) : null}
 
-        <FormActions>
-          {editing ? (
-            <>
-              <Button type="button" disabled={!name || update.isPending} onClick={() => update.mutate()}>
-                Salvar
-              </Button>
-              <Button type="button" variant="ghost" onClick={cancelEdit}>
-                Cancelar
-              </Button>
-            </>
-          ) : (
-            <Button
-              type="button"
-              disabled={!name || create.isPending}
-              onClick={() => create.mutate()}
-            >
-              Adicionar
-            </Button>
-          )}
-        </FormActions>
         {editing ? <CustomerTitlesPanel customerId={editing.id} /> : null}
-      </FormSection>
+      </FormSheet>
 
       {isLoading ? (
         <p className="text-muted-foreground">Carregando…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <table className="w-full text-sm">
-            <thead className="bg-background text-left text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3">Nome</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Telefone</th>
-                <th className="px-4 py-3">Vendedor</th>
-                <th className="px-4 py-3">Mapa</th>
-                <th className="px-4 py-3">Crédito</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody>
+        <div className="rounded-xl border border-border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="px-4">Nome</TableHead>
+                <TableHead className="px-4">Email</TableHead>
+                <TableHead className="px-4">Telefone</TableHead>
+                <TableHead className="px-4">Vendedor</TableHead>
+                <TableHead className="px-4">Mapa</TableHead>
+                <TableHead className="px-4">Crédito</TableHead>
+                <TableHead className="px-4" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {customers.map((c) => (
-                <tr key={c.id} className="border-t border-border">
-                  <td className="px-4 py-3">{c.name}</td>
-                  <td className="px-4 py-3">{c.email ?? "—"}</td>
-                  <td className="px-4 py-3">{c.phone ?? "—"}</td>
-                  <td className="px-4 py-3">{c.seller?.user.name ?? "—"}</td>
-                  <td className="px-4 py-3">
+                <TableRow key={c.id}>
+                  <TableCell className="px-4 py-3">{c.name}</TableCell>
+                  <TableCell className="px-4 py-3">{c.email ?? "—"}</TableCell>
+                  <TableCell className="px-4 py-3">{c.phone ?? "—"}</TableCell>
+                  <TableCell className="px-4 py-3">{c.seller?.user.name ?? "—"}</TableCell>
+                  <TableCell className="px-4 py-3">
                     {customerHasMapCoords(c) ? (
                       <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary900">
                         Sim
@@ -410,8 +428,8 @@ export function CustomersPage() {
                     ) : (
                       <span className="text-muted-foreground">Não</span>
                     )}
-                  </td>
-                  <td className="px-4 py-3">
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
                     {c.creditBlocked ? (
                       <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-900">
                         Bloqueado
@@ -419,9 +437,9 @@ export function CustomersPage() {
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button type="button" className="text-primary" onClick={() => startEdit(c)}>
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-right">
+                    <button type="button" className="text-primary" onClick={() => openEdit(c)}>
                       Editar
                     </button>
                     <button
@@ -433,11 +451,11 @@ export function CustomersPage() {
                     >
                       Excluir
                     </button>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>

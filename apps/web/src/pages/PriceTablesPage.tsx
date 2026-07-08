@@ -1,9 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { FormActions, FormField, FormGrid, FormSection } from "@/components/forms";
+import {
+  FormField,
+  FormGrid,
+  FormSheet,
+  FormSheetActions,
+} from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { apiFetch } from "../lib/api";
 
 type Product = { id: string; name: string; basePrice: unknown };
@@ -21,16 +34,35 @@ export function PriceTablesPage() {
     queryFn: () => apiFetch<Product[]>("/admin/products"),
   });
 
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [name, setName] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [productId, setProductId] = useState("");
   const [itemPrice, setItemPrice] = useState("");
 
+  function resetForm() {
+    setName("");
+  }
+
+  function openCreate() {
+    resetForm();
+    setSheetOpen(true);
+  }
+
+  function closeSheet() {
+    setSheetOpen(false);
+    resetForm();
+  }
+
   const createTable = useMutation({
-    mutationFn: () => apiFetch<PriceTable>("/admin/price-tables", { method: "POST", body: JSON.stringify({ name }) }),
+    mutationFn: () =>
+      apiFetch<PriceTable>("/admin/price-tables", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin", "price-tables"] });
-      setName("");
+      closeSheet();
     },
   });
 
@@ -64,29 +96,42 @@ export function PriceTablesPage() {
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-semibold">Tabelas de preço</h1>
+      <div className="flex items-start justify-between gap-4">
+        <h1 className="text-2xl font-semibold">Tabelas de preço</h1>
+        <Button type="button" onClick={openCreate}>
+          Nova tabela
+        </Button>
+      </div>
 
-      <FormSection title="Nova tabela">
-        <FormGrid cols={2} className="max-w-xl">
-          <FormField label="Nome" htmlFor="pt-name" required className="sm:col-span-2">
-            <Input
-              id="pt-name"
-              placeholder="Nome da nova tabela"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </FormField>
-        </FormGrid>
-        <FormActions>
-          <Button
-            type="button"
-            onClick={() => name && createTable.mutate()}
-            disabled={!name || createTable.isPending}
-          >
-            Criar tabela
-          </Button>
-        </FormActions>
-      </FormSection>
+      <FormSheet
+        open={sheetOpen}
+        onOpenChange={(open) => {
+          if (!open) closeSheet();
+          else setSheetOpen(true);
+        }}
+        title="Nova tabela"
+        description="Crie uma tabela de preço para depois adicionar produtos."
+        footer={
+          <FormSheetActions
+            onCancel={closeSheet}
+            onSubmit={() => {
+              if (name) createTable.mutate();
+            }}
+            submitLabel="Criar tabela"
+            pending={createTable.isPending}
+            disabled={!name}
+          />
+        }
+      >
+        <FormField label="Nome" htmlFor="pt-name" required>
+          <Input
+            id="pt-name"
+            placeholder="Nome da nova tabela"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </FormField>
+      </FormSheet>
 
       {isLoading ? (
         <p className="text-muted-foreground">Carregando…</p>
@@ -160,20 +205,20 @@ export function PriceTablesPage() {
                     Adicionar
                   </Button>
                 </div>
-                <table className="mt-4 w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-muted-foreground">
-                      <th className="pb-2">Produto</th>
-                      <th className="pb-2">Preço</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table className="mt-4">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="pb-2">Produto</TableHead>
+                      <TableHead className="pb-2">Preço</TableHead>
+                      <TableHead />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {selected.items.map((it) => (
-                      <tr key={it.id} className="border-t border-border">
-                        <td className="py-2">{it.product.name}</td>
-                        <td>R$ {Number(it.price).toFixed(2)}</td>
-                        <td className="text-right">
+                      <TableRow key={it.id}>
+                        <TableCell className="py-2">{it.product.name}</TableCell>
+                        <TableCell>R$ {Number(it.price).toFixed(2)}</TableCell>
+                        <TableCell className="text-right">
                           <button
                             type="button"
                             className="text-destructive"
@@ -181,11 +226,11 @@ export function PriceTablesPage() {
                           >
                             Remover
                           </button>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </>
             )}
           </div>

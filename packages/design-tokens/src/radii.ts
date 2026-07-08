@@ -1,18 +1,19 @@
-export const radiusBase = "0.75rem";
+/** Raio base sutil (~4px). */
+export const radiusBase = "0.25rem";
 
 export const radii = {
-  sm: "calc(0.75rem - 4px)",
-  md: "calc(0.75rem - 2px)",
-  lg: "0.75rem",
-  xl: "calc(0.75rem + 4px)",
-  "2xl": "calc(0.75rem + 8px)",
+  sm: "0.25rem",
+  md: "0.25rem",
+  lg: "0.25rem",
+  xl: "0.25rem",
+  "2xl": "0.375rem",
 } as const;
 
 /** React Native (px). */
 export const radiiPx = {
-  sm: 8,
-  md: 10,
-  lg: 12,
-  xl: 16,
-  "2xl": 20,
+  sm: 4,
+  md: 4,
+  lg: 4,
+  xl: 4,
+  "2xl": 6,
 } as const;

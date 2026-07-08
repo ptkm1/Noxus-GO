@@ -1,14 +1,22 @@
 import {
-  FormActions,
   FormField,
   FormGrid,
-  FormSection,
+  FormSheet,
+  FormSheetActions,
 } from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 
 type SellerOption = {
@@ -46,21 +54,12 @@ export function TeamsPage() {
     queryFn: () => apiFetch<SellerOption[]>("/admin/sellers"),
   });
 
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [leaderSellerId, setLeaderSellerId] = useState("");
   const [memberSellerIds, setMemberSellerIds] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
-
-  const editingTeam = teams.find((t) => t.id === editingId);
-
-  useEffect(() => {
-    if (editingTeam) {
-      setName(editingTeam.name);
-      setLeaderSellerId(editingTeam.leaderSellerId);
-      setMemberSellerIds(editingTeam.members.map((m) => m.id));
-    }
-  }, [editingTeam]);
 
   const availableSellers = useMemo(() => {
     return sellers.filter((s) => !s.team || s.team.id === editingId);
@@ -72,6 +71,25 @@ export function TeamsPage() {
     setLeaderSellerId("");
     setMemberSellerIds([]);
     setFormError(null);
+  }
+
+  function openCreate() {
+    resetForm();
+    setSheetOpen(true);
+  }
+
+  function openEdit(team: SalesTeam) {
+    setEditingId(team.id);
+    setName(team.name);
+    setLeaderSellerId(team.leaderSellerId);
+    setMemberSellerIds(team.members.map((m) => m.id));
+    setFormError(null);
+    setSheetOpen(true);
+  }
+
+  function closeSheet() {
+    setSheetOpen(false);
+    resetForm();
   }
 
   function toggleMember(id: string) {
@@ -107,7 +125,7 @@ export function TeamsPage() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin", "teams"] });
       void qc.invalidateQueries({ queryKey: ["admin", "sellers"] });
-      resetForm();
+      closeSheet();
     },
     onError: (e: Error) => setFormError(e.message),
   });
@@ -129,18 +147,43 @@ export function TeamsPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">
-          Equipes de vendas
-        </h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          Crie equipes nomeadas, defina um vendedor líder e escolha os membros.
-          O líder ganha acesso ao painel web limitado à equipe.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">
+            Equipes de vendas
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+            Crie equipes nomeadas, defina um vendedor líder e escolha os membros.
+            O líder ganha acesso ao painel web limitado à equipe.
+          </p>
+        </div>
+        <Button type="button" onClick={openCreate}>
+          Nova equipe
+        </Button>
       </div>
 
-      <FormSection title={editingId ? "Editar equipe" : "Nova equipe"}>
-        <FormGrid cols={2} className="max-w-3xl">
+      <FormSheet
+        open={sheetOpen}
+        onOpenChange={(open) => {
+          if (!open) closeSheet();
+          else setSheetOpen(true);
+        }}
+        title={editingId ? "Editar equipe" : "Nova equipe"}
+        description="Nomeie a equipe, escolha o líder e marque os membros."
+        footer={
+          <FormSheetActions
+            onCancel={closeSheet}
+            onSubmit={() => {
+              setFormError(null);
+              save.mutate();
+            }}
+            submitLabel={editingId ? "Salvar alterações" : "Criar equipe"}
+            pending={save.isPending}
+            disabled={!canSave}
+          />
+        }
+      >
+        <FormGrid cols={2}>
           <FormField
             label="Nome da equipe"
             htmlFor="team-name"
@@ -210,29 +253,7 @@ export function TeamsPage() {
         {formError ? (
           <p className="mt-3 text-sm text-destructive">{formError}</p>
         ) : null}
-
-        <FormActions>
-          {editingId ? (
-            <Button type="button" variant="outline" onClick={resetForm}>
-              Cancelar
-            </Button>
-          ) : null}
-          <Button
-            type="button"
-            onClick={() => {
-              setFormError(null);
-              save.mutate();
-            }}
-            disabled={!canSave || save.isPending}
-          >
-            {save.isPending
-              ? "Salvando…"
-              : editingId
-                ? "Salvar alterações"
-                : "Criar equipe"}
-          </Button>
-        </FormActions>
-      </FormSection>
+      </FormSheet>
 
       {isLoading ? (
         <p className="text-muted-foreground">Carregando equipes…</p>
@@ -241,33 +262,33 @@ export function TeamsPage() {
           Nenhuma equipe cadastrada ainda.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <table className="w-full min-w-[640px] text-sm">
-            <thead className="bg-background text-left text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3">Equipe</th>
-                <th className="px-4 py-3">Líder</th>
-                <th className="px-4 py-3">Membros</th>
-                <th className="px-4 py-3 w-40" />
-              </tr>
-            </thead>
-            <tbody>
+        <div className="rounded-xl border border-border bg-card">
+          <Table className="min-w-[640px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="px-4">Equipe</TableHead>
+                <TableHead className="px-4">Líder</TableHead>
+                <TableHead className="px-4">Membros</TableHead>
+                <TableHead className="px-4 w-40" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {teams.map((team) => (
-                <tr key={team.id} className="border-t border-border">
-                  <td className="px-4 py-3 font-medium text-foreground">
+                <TableRow key={team.id}>
+                  <TableCell className="px-4 py-3 font-medium text-foreground">
                     {team.name}
-                  </td>
-                  <td className="px-4 py-3 text-foreground">
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-foreground">
                     {team.leader.name}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground">
                     {team.memberCount}
-                  </td>
-                  <td className="px-4 py-3 text-right">
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-right">
                     <button
                       type="button"
                       className="mr-3 text-primary hover:underline"
-                      onClick={() => setEditingId(team.id)}
+                      onClick={() => openEdit(team)}
                     >
                       Editar
                     </button>
@@ -281,11 +302,11 @@ export function TeamsPage() {
                     >
                       Excluir
                     </button>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>

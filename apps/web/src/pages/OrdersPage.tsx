@@ -1,3 +1,11 @@
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../lib/api";
@@ -70,26 +78,26 @@ export function OrdersPage() {
       {isLoading ? (
         <p className="text-muted-foreground">Carregando…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <table className="w-full text-sm">
-            <thead className="bg-background text-left text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3">Data</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Vendedor</th>
-                <th className="px-4 py-3">Cliente</th>
-                <th className="px-4 py-3">Itens</th>
-                <th className="px-4 py-3">Total</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody>
+        <div className="rounded-xl border border-border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="px-4">Data</TableHead>
+                <TableHead className="px-4">Status</TableHead>
+                <TableHead className="px-4">Vendedor</TableHead>
+                <TableHead className="px-4">Cliente</TableHead>
+                <TableHead className="px-4">Itens</TableHead>
+                <TableHead className="px-4">Total</TableHead>
+                <TableHead className="px-4" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {orders.map((o) => (
-                <tr key={o.id} className="border-t border-border">
-                  <td className="px-4 py-3 whitespace-nowrap">
+                <TableRow key={o.id}>
+                  <TableCell className="px-4 py-3 whitespace-nowrap">
                     {new Date(o.createdAt).toLocaleString("pt-BR")}
-                  </td>
-                  <td className="px-4 py-3">
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
                     <span
                       className={`rounded px-2 py-0.5 text-xs font-medium ${
                         o.status === "CONFIRMED"
@@ -103,20 +111,20 @@ export function OrdersPage() {
                     >
                       {o.status}
                     </span>
-                  </td>
-                  <td className="px-4 py-3">{o.seller.user.name}</td>
-                  <td className="px-4 py-3">{o.customer?.name ?? "—"}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{o.items.length}</td>
-                  <td className="px-4 py-3 font-medium">R$ {Number(o.totalAmount).toFixed(2)}</td>
-                  <td className="px-4 py-3 text-right">
+                  </TableCell>
+                  <TableCell className="px-4 py-3">{o.seller.user.name}</TableCell>
+                  <TableCell className="px-4 py-3">{o.customer?.name ?? "—"}</TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground">{o.items.length}</TableCell>
+                  <TableCell className="px-4 py-3 font-medium">R$ {Number(o.totalAmount).toFixed(2)}</TableCell>
+                  <TableCell className="px-4 py-3 text-right">
                     <Link to={`/vendas/${o.id}`} className="text-primary hover:underline">
                       Detalhe
                     </Link>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>
