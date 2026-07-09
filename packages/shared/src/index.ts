@@ -86,3 +86,24 @@ export {
   formatProductUnitLabel,
   isProductSaleBlockedByStock,
 } from "./product-display.js";
+export {
+  computeMarkupPercent,
+  emptyProductForm,
+  formToProductPayload,
+  isNcmComplete,
+  normalizeNcm,
+  PRODUCT_CLASSIFICATIONS,
+  productClassificationLabel,
+  productToForm,
+  PURCHASE_UNITS,
+  validateProductForm,
+} from "./product-form.js";
+export type {
+  ProductApiPayload,
+  ProductClassification,
+  ProductFormErrors,
+  ProductFormTab,
+  ProductFormValidation,
+  ProductFormValues,
+  ProductRecord,
+} from "./product-form.js";
