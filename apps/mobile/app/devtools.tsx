@@ -158,7 +158,7 @@ export default function DevToolsScreen() {
         <ThemedText variant="caption" muted>
           {__DEV__
             ? "Em builds de teste também há atalhos visíveis no login e no perfil."
-            : "Em produção: toque 7× rápido em «Pedidos v…» no login ou no perfil para abrir esta tela."}
+            : "Em produção: toque 7× rápido no rodapé do app no login ou no perfil para abrir esta tela."}
         </ThemedText>
       </MobileScreen>
     </View>

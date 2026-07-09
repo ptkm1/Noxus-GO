@@ -40,6 +40,14 @@ export type {
   IbgeUf,
 } from "./address.js";
 export {
+  APP_BRAND_LILAC,
+  APP_BRAND_NAME,
+  APP_BRAND_SHORT,
+  COMMERCE_PRO_ICON_ASPECT,
+  COMMERCE_PRO_ICON_PATH,
+  COMMERCE_PRO_ICON_VIEWBOX,
+} from "./brand.js";
+export {
   cnpjDigitsOnly,
   formatBrazilPhoneDigits,
   formatCnpjAddress,
