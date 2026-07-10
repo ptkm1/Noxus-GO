@@ -40,6 +40,12 @@ import {
   validateProductAttributes,
 } from "../services/product-attributes.js";
 import {
+  mapProductCadastroPrisma,
+  normalizeProductNcm,
+  productCadastroFieldsSchema,
+  syncProductAttributesNcm,
+} from "../services/product-cadastro-schema.js";
+import {
   applyStockOnStatusChange,
   assertSufficientStock,
   StockError,
@@ -965,6 +971,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         commissionPercent: optionalCommissionPercentSchema,
         stockQty: z.number().int().min(0).optional(),
         blockSaleWhenOutOfStock: z.boolean().optional(),
+        ...productCadastroFieldsSchema,
       })
       .safeParse(req.body);
     if (!body.success)
@@ -991,6 +998,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!validated.ok)
       return reply.status(400).send({ error: validated.error });
 
+    const ncmCol =
+      body.data.ncm === undefined
+        ? undefined
+        : normalizeProductNcm(body.data.ncm);
+    const attrsSynced = syncProductAttributesNcm(
+      validated.value,
+      ncmCol ?? null,
+    );
+
     try {
       return await prisma.product.create({
         data: {
@@ -1006,7 +1022,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           organizationId: auth.organizationId,
           categoryId: body.data.categoryId,
           supplierId: body.data.supplierId,
-          attributes: validated.value as Prisma.InputJsonValue,
+          attributes: attrsSynced as Prisma.InputJsonValue,
           maxSellerDiscountPercent:
             body.data.maxSellerDiscountPercent === undefined
               ? undefined
@@ -1021,6 +1037,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
               : body.data.commissionPercent,
           stockQty: body.data.stockQty ?? 0,
           blockSaleWhenOutOfStock: body.data.blockSaleWhenOutOfStock ?? false,
+          ...mapProductCadastroPrisma(body.data),
         },
         include: productRelationsInclude,
       });
@@ -1064,6 +1081,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         commissionPercent: optionalCommissionPercentSchema,
         stockQty: z.number().int().min(0).optional(),
         blockSaleWhenOutOfStock: z.boolean().optional(),
+        ...productCadastroFieldsSchema,
       })
       .safeParse(req.body);
     if (!body.success)
@@ -1128,6 +1146,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       validatedAttrs = validated.value;
     }
 
+    const ncmProvided = body.data.ncm !== undefined;
+    if (ncmProvided || validatedAttrs !== undefined) {
+      const baseAttrs =
+        validatedAttrs ?? (existing.attributes as Record<string, unknown>);
+      const ncmCol = ncmProvided
+        ? normalizeProductNcm(body.data.ncm)
+        : existing.ncm;
+      validatedAttrs = syncProductAttributesNcm(baseAttrs, ncmCol ?? null);
+    }
+
     try {
       return await prisma.product.update({
         where: { id },
@@ -1176,6 +1204,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
               : body.data.commissionPercent,
           stockQty: body.data.stockQty,
           blockSaleWhenOutOfStock: body.data.blockSaleWhenOutOfStock,
+          ...mapProductCadastroPrisma(body.data),
         },
         include: productRelationsInclude,
       });

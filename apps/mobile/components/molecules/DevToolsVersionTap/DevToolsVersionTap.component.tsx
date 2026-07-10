@@ -1,3 +1,4 @@
+import { APP_BRAND_NAME } from "@pedidos/shared";
 import Constants from "expo-constants";
 import { Pressable, Text } from "react-native";
 import { apiBase } from "../../../lib/api";
@@ -17,8 +18,14 @@ export function DevToolsVersionTap({ variant = "default" }: Props) {
   const version = Constants.expoConfig?.version ?? "1.0.0";
 
   return (
-    <Pressable style={styles.wrap} onPress={onSecretPress} accessibilityRole="button">
-      <Text style={styles.version}>Pedidos v{version}</Text>
+    <Pressable
+      style={styles.wrap}
+      onPress={onSecretPress}
+      accessibilityRole="button"
+    >
+      <Text style={styles.version}>
+        {APP_BRAND_NAME} v{version}
+      </Text>
       <Text style={styles.api} numberOfLines={2}>
         API · {apiBase()}
       </Text>

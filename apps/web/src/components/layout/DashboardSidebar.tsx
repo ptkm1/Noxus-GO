@@ -1,7 +1,7 @@
 import { useAuth } from "@/auth/AuthContext";
+import { CommerceProWordmark } from "@/components/brand/CommerceProBrand";
 import { isWebTeamLeader } from "@/lib/staff";
 import { cn } from "@/lib/utils";
-import { Zap } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { navForRole } from "./navConfig";
 
@@ -21,13 +21,8 @@ export function DashboardSidebar({ onNavigate, className }: Props) {
         className,
       )}
     >
-      <div className="flex h-16 items-center gap-3 border-b border-sidebar-border px-6">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-          <Zap className="h-5 w-5 text-primary-foreground" />
-        </div>
-        <span className="text-lg font-bold text-sidebar-foreground">
-          Pedidos
-        </span>
+      <div className="flex h-16 items-center border-b border-sidebar-border px-4">
+        <CommerceProWordmark iconSize={32} />
       </div>
 
       <nav

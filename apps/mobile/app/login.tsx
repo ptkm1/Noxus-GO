@@ -1,5 +1,4 @@
 import { Redirect } from "expo-router";
-import { ShoppingBag } from "lucide-react-native";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -10,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { ThemedTextInput } from "../components/atoms/ThemedTextInput";
+import { CommerceProWordmark } from "../components/brand/CommerceProBrand";
 import { DevToolsEntry } from "../components/molecules/DevToolsEntry";
 import { DevToolsVersionTap } from "../components/molecules/DevToolsVersionTap";
 import { useLoginScreen } from "../hooks/screens/useLoginScreen";
@@ -43,8 +43,7 @@ export default function LoginScreen() {
       <View style={styles.inner}>
         <View style={styles.card}>
           <View style={styles.brand}>
-            <ShoppingBag color={colors.primary} size={36} strokeWidth={2} />
-            <Text style={styles.title}>Pedidos</Text>
+            <CommerceProWordmark iconSize={44} />
           </View>
           <Text style={styles.sub}>Acesso vendedor</Text>
           <ThemedTextInput
@@ -90,8 +89,7 @@ function createLoginStyles(c: AppColors) {
       padding: 24,
       gap: 12,
     },
-    brand: { flexDirection: "row", alignItems: "center", gap: 12 },
-    title: { fontSize: 24, fontWeight: "700", color: c.text },
+    brand: { alignItems: "flex-start" },
     sub: { fontSize: 14, color: c.textSecondary, marginBottom: 8 },
     err: { color: c.danger, fontSize: 14 },
     btn: {

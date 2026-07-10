@@ -103,6 +103,7 @@ export default function CustomersScreen() {
           contentContainerStyle={{
             paddingHorizontal: 16,
             paddingBottom: MOBILE_TAB_SCROLL_BOTTOM,
+            paddingTop: 10,
           }}
           ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
           ListEmptyComponent={

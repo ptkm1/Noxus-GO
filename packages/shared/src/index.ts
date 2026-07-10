@@ -40,6 +40,14 @@ export type {
   IbgeUf,
 } from "./address.js";
 export {
+  APP_BRAND_LILAC,
+  APP_BRAND_NAME,
+  APP_BRAND_SHORT,
+  COMMERCE_PRO_ICON_ASPECT,
+  COMMERCE_PRO_ICON_PATH,
+  COMMERCE_PRO_ICON_VIEWBOX,
+} from "./brand.js";
+export {
   cnpjDigitsOnly,
   formatBrazilPhoneDigits,
   formatCnpjAddress,
@@ -86,3 +94,24 @@ export {
   formatProductUnitLabel,
   isProductSaleBlockedByStock,
 } from "./product-display.js";
+export {
+  computeMarkupPercent,
+  emptyProductForm,
+  formToProductPayload,
+  isNcmComplete,
+  normalizeNcm,
+  PRODUCT_CLASSIFICATIONS,
+  productClassificationLabel,
+  productToForm,
+  PURCHASE_UNITS,
+  validateProductForm,
+} from "./product-form.js";
+export type {
+  ProductApiPayload,
+  ProductClassification,
+  ProductFormErrors,
+  ProductFormTab,
+  ProductFormValidation,
+  ProductFormValues,
+  ProductRecord,
+} from "./product-form.js";

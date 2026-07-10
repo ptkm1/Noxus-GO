@@ -1,10 +1,17 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
+import { CommerceProWordmark } from "@/components/brand/CommerceProBrand";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -32,7 +39,8 @@ export function LoginPage() {
     <div className="relative z-10 flex flex-1 flex-col items-center justify-center p-4 pb-10">
       <Card className="glass glow-primary w-full max-w-md border-border/50 shadow-2xl">
         <CardHeader>
-          <CardTitle className="text-2xl">Pedidos — Admin</CardTitle>
+          <CommerceProWordmark iconSize={40} className="mb-2" />
+          <CardTitle className="text-xl">Admin</CardTitle>
           <CardDescription>Gestão de vendas em campo</CardDescription>
         </CardHeader>
         <CardContent>
@@ -64,7 +72,10 @@ export function LoginPage() {
           </form>
           <p className="mt-6 text-center text-sm text-muted-foreground">
             Ainda não tens conta?{" "}
-            <Link to="/cadastro" className="font-medium text-primary hover:underline">
+            <Link
+              to="/cadastro"
+              className="font-medium text-primary hover:underline"
+            >
               Criar conta
             </Link>
           </p>
