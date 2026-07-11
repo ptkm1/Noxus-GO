@@ -25,6 +25,7 @@ export function DashboardTopBar() {
     staleTime: 10_000,
     refetchInterval: 15_000,
     enabled: showAlerts,
+    meta: { silentError: true },
   });
   const unreadCount = unreadPayload?.count ?? 0;
 

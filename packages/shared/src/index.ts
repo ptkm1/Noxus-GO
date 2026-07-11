@@ -32,3 +32,19 @@ export {
   sellerCommissionTypeLabel,
 } from "./commission.js";
 export type { SellerCommissionType } from "./commission.js";
+export {
+  FISCAL_INVOICE_STATUS_LABELS,
+  FISCAL_TAX_REGIME_LABELS,
+  NFE_ENVIRONMENT_LABELS,
+  isProductFiscalReady,
+} from "./fiscal.js";
+export type {
+  FiscalDocumentDirection,
+  FiscalInvoiceStatus,
+  FiscalManifestationType,
+  FiscalOperationDirection,
+  FiscalTaxRegime,
+  NfeEnvironment,
+} from "./fiscal.js";
+export { STOCK_MOVEMENT_TYPE_LABELS } from "./stock.js";
+export type { StockMovementType } from "./stock.js";

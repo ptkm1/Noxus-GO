@@ -49,6 +49,7 @@ export function ProductCategoriesPage() {
   );
 
   const create = useMutation({
+    meta: { inlineError: true },
     mutationFn: (payload: {
       code: string;
       name: string;
@@ -72,6 +73,7 @@ export function ProductCategoriesPage() {
   });
 
   const update = useMutation({
+    meta: { inlineError: true },
     mutationFn: (payload: {
       id: string;
       name: string;

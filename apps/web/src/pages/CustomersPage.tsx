@@ -22,6 +22,13 @@ type Customer = {
   latitude?: unknown;
   longitude?: unknown;
   addressNote?: string | null;
+  document?: string | null;
+  stateRegistration?: string | null;
+  street?: string | null;
+  addressNumber?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zipCode?: string | null;
 };
 
 type Seller = { id: string; user: { name: string } };
@@ -73,6 +80,13 @@ export function CustomersPage() {
   const [geoLatStr, setGeoLatStr] = useState("");
   const [geoLngStr, setGeoLngStr] = useState("");
   const [geoNoteStr, setGeoNoteStr] = useState("");
+  const [document, setDocument] = useState("");
+  const [stateRegistration, setStateRegistration] = useState("");
+  const [street, setStreet] = useState("");
+  const [addressNumber, setAddressNumber] = useState("");
+  const [city, setCity] = useState("");
+  const [stateUf, setStateUf] = useState("");
+  const [zipCode, setZipCode] = useState("");
 
   const create = useMutation({
     mutationFn: () => {
@@ -98,6 +112,13 @@ export function CustomersPage() {
           sellerId: sellerId || undefined,
           ...(latitude !== undefined && longitude !== undefined ? { latitude, longitude } : {}),
           ...(note ? { addressNote: note } : {}),
+          document: document.trim() || undefined,
+          stateRegistration: stateRegistration.trim() || undefined,
+          street: street.trim() || undefined,
+          addressNumber: addressNumber.trim() || undefined,
+          city: city.trim() || undefined,
+          state: stateUf.trim() || undefined,
+          zipCode: zipCode.trim() || undefined,
         }),
       });
     },
@@ -110,8 +131,14 @@ export function CustomersPage() {
       setGeoLatStr("");
       setGeoLngStr("");
       setGeoNoteStr("");
+      setDocument("");
+      setStateRegistration("");
+      setStreet("");
+      setAddressNumber("");
+      setCity("");
+      setStateUf("");
+      setZipCode("");
     },
-    onError: (e: Error) => window.alert(e.message),
   });
 
   const update = useMutation({
@@ -148,6 +175,13 @@ export function CustomersPage() {
           latitude,
           longitude,
           addressNote: noteTrim === "" ? null : noteTrim,
+          document: document.trim() || undefined,
+          stateRegistration: stateRegistration.trim() || undefined,
+          street: street.trim() || undefined,
+          addressNumber: addressNumber.trim() || undefined,
+          city: city.trim() || undefined,
+          state: stateUf.trim() || undefined,
+          zipCode: zipCode.trim() || undefined,
         }),
       });
     },
@@ -164,7 +198,6 @@ export function CustomersPage() {
       setGeoLngStr("");
       setGeoNoteStr("");
     },
-    onError: (e: Error) => window.alert(e.message),
   });
 
   const remove = useMutation({
@@ -191,6 +224,13 @@ export function CustomersPage() {
       c.longitude != null && c.longitude !== "" ? String(Number(c.longitude as string)) : "",
     );
     setGeoNoteStr(c.addressNote ?? "");
+    setDocument(c.document ?? "");
+    setStateRegistration(c.stateRegistration ?? "");
+    setStreet(c.street ?? "");
+    setAddressNumber(c.addressNumber ?? "");
+    setCity(c.city ?? "");
+    setStateUf(c.state ?? "");
+    setZipCode(c.zipCode ?? "");
   }
 
   function cancelEdit() {
@@ -204,6 +244,13 @@ export function CustomersPage() {
     setGeoLatStr("");
     setGeoLngStr("");
     setGeoNoteStr("");
+    setDocument("");
+    setStateRegistration("");
+    setStreet("");
+    setAddressNumber("");
+    setCity("");
+    setStateUf("");
+    setZipCode("");
   }
 
   return (
@@ -240,6 +287,12 @@ export function CustomersPage() {
               setName(suggestedTradeName(d));
               setEmail(d.email ?? "");
               setPhone(d.telefone ?? "");
+              setDocument(d.cnpj ?? "");
+              if (d.logradouro) setStreet(d.logradouro);
+              if (d.numero) setAddressNumber(d.numero);
+              if (d.municipio) setCity(d.municipio);
+              if (d.uf) setStateUf(d.uf);
+              if (d.cep) setZipCode(d.cep.replace(/\D/g, ""));
               const address = formatCnpjAddress(d);
               if (address) setGeoNoteStr(address);
             }}
@@ -287,6 +340,33 @@ export function CustomersPage() {
             </select>
           </FormField>
         </FormGrid>
+
+        <div className="mt-4 rounded-lg border border-border bg-background/90 p-4">
+          <p className="text-xs font-semibold text-foreground">Dados fiscais (NF-e)</p>
+          <FormGrid cols={3} className="mt-3">
+            <FormField label="CNPJ/CPF" htmlFor="cust-doc">
+              <Input id="cust-doc" value={document} onChange={(e) => setDocument(e.target.value)} />
+            </FormField>
+            <FormField label="Inscrição estadual" htmlFor="cust-ie">
+              <Input id="cust-ie" value={stateRegistration} onChange={(e) => setStateRegistration(e.target.value)} />
+            </FormField>
+            <FormField label="CEP" htmlFor="cust-zip">
+              <Input id="cust-zip" value={zipCode} onChange={(e) => setZipCode(e.target.value)} />
+            </FormField>
+            <FormField label="Logradouro" htmlFor="cust-street" className="sm:col-span-2">
+              <Input id="cust-street" value={street} onChange={(e) => setStreet(e.target.value)} />
+            </FormField>
+            <FormField label="Número" htmlFor="cust-num">
+              <Input id="cust-num" value={addressNumber} onChange={(e) => setAddressNumber(e.target.value)} />
+            </FormField>
+            <FormField label="Cidade" htmlFor="cust-city">
+              <Input id="cust-city" value={city} onChange={(e) => setCity(e.target.value)} />
+            </FormField>
+            <FormField label="UF" htmlFor="cust-uf">
+              <Input id="cust-uf" maxLength={2} value={stateUf} onChange={(e) => setStateUf(e.target.value)} />
+            </FormField>
+          </FormGrid>
+        </div>
 
         <div className="mt-4 rounded-lg border border-dashed border-border bg-background/90 p-4">
           <p className="text-xs font-semibold text-foreground">Localização no mapa (app do vendedor)</p>

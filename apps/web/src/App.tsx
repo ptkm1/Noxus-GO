@@ -1,6 +1,8 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
+import { AppNotificationsProvider } from "./lib/app-notifications";
+import { createAppQueryClient } from "./lib/query-client";
 import { AppLogo } from "./components/layout/AppLogo";
 import { PublicAuthLayout } from "./components/layout/PublicAuthLayout";
 import { CustomersPage } from "./pages/CustomersPage";
@@ -21,10 +23,12 @@ import { ReportsPage } from "./pages/ReportsPage";
 import { SellerProductsPage } from "./pages/SellerProductsPage";
 import { SellersPage } from "./pages/SellersPage";
 import { SellerTrackingPage } from "./pages/SellerTrackingPage";
+import { FaturamentoPage } from "./pages/FaturamentoPage";
+import { StockPage } from "./pages/StockPage";
 import { isWebStaff } from "./lib/staff";
 import { ThemeProvider } from "./lib/theme";
 
-const qc = new QueryClient();
+const qc = createAppQueryClient();
 
 function SellerNotice() {
   const { logout } = useAuth();
@@ -134,6 +138,8 @@ function AppRoutes() {
         <Route path="rastreio" element={<SellerTrackingPage />} />
         <Route path="vendas" element={<OrdersPage />} />
         <Route path="vendas/:orderId" element={<OrderDetailPage />} />
+        <Route path="faturamento" element={<FaturamentoPage />} />
+        <Route path="estoque" element={<StockPage />} />
         <Route path="notificacoes" element={<NotificationsPage />} />
         <Route path="relatorios" element={<ReportsPage />} />
         </Route>
@@ -147,11 +153,13 @@ export default function App() {
   return (
     <ThemeProvider>
       <QueryClientProvider client={qc}>
-        <BrowserRouter>
-          <AuthProvider>
-            <AppRoutes />
-          </AuthProvider>
-        </BrowserRouter>
+        <AppNotificationsProvider>
+          <BrowserRouter>
+            <AuthProvider>
+              <AppRoutes />
+            </AuthProvider>
+          </BrowserRouter>
+        </AppNotificationsProvider>
       </QueryClientProvider>
     </ThemeProvider>
   );

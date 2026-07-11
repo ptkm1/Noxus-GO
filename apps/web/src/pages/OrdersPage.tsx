@@ -112,6 +112,14 @@ export function OrdersPage() {
                     <Link to={`/vendas/${o.id}`} className="text-primary hover:underline">
                       Detalhe
                     </Link>
+                    {o.status === "CONFIRMED" ? (
+                      <>
+                        {" · "}
+                        <Link to="/faturamento" className="text-primary hover:underline">
+                          NF-e
+                        </Link>
+                      </>
+                    ) : null}
                   </td>
                 </tr>
               ))}

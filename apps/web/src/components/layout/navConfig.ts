@@ -2,6 +2,7 @@ import type { Role } from "@pedidos/shared";
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
+  FileText,
   LayoutDashboard,
   MapPin,
   Navigation,
@@ -11,6 +12,7 @@ import {
   Target,
   UserCircle,
   Users,
+  Warehouse,
 } from "lucide-react";
 
 export type NavItem = { to: string; label: string; end?: boolean; icon: LucideIcon };
@@ -27,6 +29,8 @@ export const DASHBOARD_NAV: NavItem[] = [
   { to: "/visitas", label: "Visitas em campo", icon: MapPin },
   { to: "/rastreio", label: "Rastreio ao vivo", icon: Navigation },
   { to: "/vendas", label: "Vendas", icon: ShoppingCart },
+  { to: "/faturamento", label: "Faturamento", icon: FileText },
+  { to: "/estoque", label: "Estoque", icon: Warehouse },
   { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
 ];
 

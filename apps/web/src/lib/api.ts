@@ -1,4 +1,5 @@
 import { API_PREFIX } from "@pedidos/shared";
+import { errorFromResponse } from "./api-error";
 
 /** Ngrok free: evita página HTML de aviso em fetch / APIs. */
 function applyTunnelHeaders(h: Headers, absoluteUrl: string) {
@@ -42,9 +43,16 @@ export function getRefreshToken(): string | null {
 type Opt = RequestInit & { skipAuth?: boolean };
 
 export async function apiFetch<T>(path: string, opts: Opt = {}): Promise<T> {
-  const { skipAuth, headers, ...rest } = opts;
+  const { skipAuth, headers, body, method, ...rest } = opts;
   const h = new Headers(headers);
-  h.set("Content-Type", "application/json");
+  const m = (method ?? "GET").toUpperCase();
+  let reqBody = body;
+  if (reqBody !== undefined) {
+    h.set("Content-Type", "application/json");
+  } else if (m === "POST" || m === "PUT" || m === "PATCH") {
+    reqBody = JSON.stringify({});
+    h.set("Content-Type", "application/json");
+  }
   if (!skipAuth) {
     const t = getAccessToken();
     if (t) h.set("Authorization", `Bearer ${t}`);
@@ -52,7 +60,7 @@ export async function apiFetch<T>(path: string, opts: Opt = {}): Promise<T> {
 
   const reqUrl = apiUrl(path);
   applyTunnelHeaders(h, reqUrl);
-  let res = await fetch(reqUrl, { ...rest, headers: h });
+  let res = await fetch(reqUrl, { ...rest, method: m, body: reqBody, headers: h });
 
   if (res.status === 401 && !skipAuth && getRefreshToken()) {
     const refreshUrl = apiUrl("/auth/refresh");
@@ -68,13 +76,12 @@ export async function apiFetch<T>(path: string, opts: Opt = {}): Promise<T> {
       localStorage.setItem(ACCESS, data.accessToken);
       h.set("Authorization", `Bearer ${data.accessToken}`);
       applyTunnelHeaders(h, reqUrl);
-      res = await fetch(reqUrl, { ...rest, headers: h });
+      res = await fetch(reqUrl, { ...rest, method: m, body: reqBody, headers: h });
     }
   }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as { error?: string }).error ?? res.statusText);
+    throw await errorFromResponse(res);
   }
 
   if (res.status === 204) return undefined as T;
@@ -98,7 +105,7 @@ async function fetchPdfBlob(pathWithQuery: string): Promise<Blob> {
   const pdfUrl = apiUrl(pathWithQuery);
   applyTunnelHeaders(h, pdfUrl);
   const res = await fetch(pdfUrl, { headers: h });
-  if (!res.ok) throw new Error("Falha ao gerar PDF");
+  if (!res.ok) throw await errorFromResponse(res);
   return res.blob();
 }
 

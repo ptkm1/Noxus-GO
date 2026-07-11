@@ -2,6 +2,7 @@ import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/db.js";
 import { upsertRouteDemoCustomer } from "./seed-route-customer.js";
+import { upsertFiscalDemoData } from "./seed-fiscal-demo.js";
 import { CATEGORY_SCHEMA_BY_CODE } from "./category-schemas.js";
 
 /** Senhas conhecidas — sempre re-hasheadas para recuperar login após DB “estranho”. */
@@ -61,6 +62,7 @@ async function main() {
   });
 
   await upsertDemoCategories(org.id);
+  await upsertFiscalDemoData(org.id);
 
   const adminPass = await bcrypt.hash(DEMO_ADMIN_PASSWORD, 10);
   const sellerPass = await bcrypt.hash(DEMO_SELLER_PASSWORD, 10);
@@ -248,6 +250,16 @@ async function main() {
       email: "cliente@exemplo.com",
       organizationId: org.id,
       sellerId: seller.id,
+      documentType: "CNPJ",
+      document: "11444777000161",
+      stateRegistration: "ISENTO",
+      street: "Av. Paulista",
+      addressNumber: "1000",
+      district: "Bela Vista",
+      city: "São Paulo",
+      state: "SP",
+      zipCode: "01310100",
+      cityIbge: "3550308",
     },
   });
 
@@ -278,6 +290,8 @@ async function main() {
       body: "Seu acesso ao app Pedidos está ativo.",
     },
   });
+
+  await upsertFiscalDemoData(org.id);
 
   console.log("Seed de produtos/pedidos demo concluído.");
 }

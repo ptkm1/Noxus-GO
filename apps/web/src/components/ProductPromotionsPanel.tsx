@@ -95,6 +95,7 @@ export function ProductPromotionsPanel({ productId }: Props) {
   });
 
   const remove = useMutation({
+    meta: { inlineError: true },
     mutationFn: (promotionId: string) =>
       apiFetch(`/admin/products/${productId}/promotions/${promotionId}`, { method: "DELETE" }),
     onSuccess: async () => {
@@ -104,6 +105,7 @@ export function ProductPromotionsPanel({ productId }: Props) {
   });
 
   const patchActive = useMutation({
+    meta: { inlineError: true },
     mutationFn: ({ id, active }: { id: string; active: boolean }) =>
       apiFetch<PromotionDto>(`/admin/products/${productId}/promotions/${id}`, {
         method: "PATCH",
@@ -117,6 +119,7 @@ export function ProductPromotionsPanel({ productId }: Props) {
   });
 
   const create = useMutation({
+    meta: { inlineError: true },
     mutationFn: (body: Record<string, unknown>) =>
       apiFetch<PromotionDto>(`/admin/products/${productId}/promotions`, {
         method: "POST",

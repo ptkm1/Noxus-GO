@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
+  FileText,
   LayoutDashboard,
   MapPin,
   Navigation,
@@ -12,6 +13,7 @@ import {
   Target,
   UserCircle,
   Users,
+  Warehouse,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 import { apiFetch } from "@/lib/api";
@@ -29,6 +31,8 @@ const adminCards: DashCard[] = [
   { to: "/rastreio", title: "Rastreio ao vivo", description: "Mapa com posição em tempo real", icon: Navigation },
   { to: "/visitas", title: "Visitas em campo", description: "Check-ins com GPS e duração", icon: MapPin },
   { to: "/vendas", title: "Vendas", description: "Lista e detalhes com itens e status", icon: ShoppingCart },
+  { to: "/faturamento", title: "Faturamento", description: "NF-e de saída e entrada", icon: FileText },
+  { to: "/estoque", title: "Estoque", description: "Saldos e lançamentos manuais", icon: Warehouse },
   { to: "/relatorios", title: "Relatórios", description: "Painel e PDF opcional", icon: BarChart3 },
 ];
 
@@ -49,6 +53,7 @@ export function DashboardHome() {
     staleTime: 15_000,
     refetchInterval: 20_000,
     enabled: admin,
+    meta: { silentError: true },
   });
 
   const pendingCount = pendingCredit?.count ?? 0;

@@ -18,6 +18,9 @@ import {
 } from "../components/DynamicCategoryAttributes";
 import { ProductPromotionsPanel } from "../components/ProductPromotionsPanel";
 import { apiFetch } from "../lib/api";
+import { isProductFiscalReady } from "@pedidos/shared";
+
+type FiscalNcm = { id: string; code: string; description: string };
 
 type CategoryBrief = {
   id: string;
@@ -37,6 +40,12 @@ type Product = {
   categoryId?: string | null;
   attributes?: Record<string, unknown>;
   category?: CategoryBrief | null;
+  ncmId?: string | null;
+  fiscalOrigin?: number | null;
+  fiscalGtin?: string | null;
+  fiscalUnit?: string | null;
+  fiscalCest?: string | null;
+  fiscalDescription?: string | null;
 };
 
 function coerceDefs(raw: unknown): AttributeFieldDef[] {
@@ -76,6 +85,17 @@ export function ProductFormPage() {
   const [categoryId, setCategoryId] = useState("");
   const [attrs, setAttrs] = useState<Record<string, unknown>>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [ncmId, setNcmId] = useState("");
+  const [fiscalOrigin, setFiscalOrigin] = useState("0");
+  const [fiscalGtin, setFiscalGtin] = useState("");
+  const [fiscalUnit, setFiscalUnit] = useState("UN");
+  const [fiscalCest, setFiscalCest] = useState("");
+  const [fiscalDescription, setFiscalDescription] = useState("");
+
+  const { data: ncms = [] } = useQuery({
+    queryKey: ["admin", "fiscal", "ncm"],
+    queryFn: () => apiFetch<FiscalNcm[]>("/admin/fiscal/ncm"),
+  });
 
   const { data: categories = [] } = useQuery({
     queryKey: ["admin", "product-categories"],
@@ -112,10 +132,19 @@ export function ProductFormPage() {
       );
       setCategoryId(product.categoryId ?? "");
       setAttrs(normalizeAttrsJson(product.attributes));
+      setNcmId(product.ncmId ?? "");
+      setFiscalOrigin(
+        product.fiscalOrigin != null ? String(product.fiscalOrigin) : "0",
+      );
+      setFiscalGtin(product.fiscalGtin ?? "");
+      setFiscalUnit(product.fiscalUnit ?? "UN");
+      setFiscalCest(product.fiscalCest ?? "");
+      setFiscalDescription(product.fiscalDescription ?? "");
     }
   }, [product]);
 
   const create = useMutation({
+    meta: { inlineError: true },
     mutationFn: (body: {
       name: string;
       sku?: string;
@@ -125,6 +154,12 @@ export function ProductFormPage() {
       categoryId?: string | null;
       commissionPercent?: number | null;
       attributes?: Record<string, unknown>;
+      ncmId?: string | null;
+      fiscalOrigin?: number | null;
+      fiscalGtin?: string | null;
+      fiscalUnit?: string | null;
+      fiscalCest?: string | null;
+      fiscalDescription?: string | null;
     }) =>
       apiFetch<Product>("/admin/products", {
         method: "POST",
@@ -138,6 +173,7 @@ export function ProductFormPage() {
   });
 
   const update = useMutation({
+    meta: { inlineError: true },
     mutationFn: (body: {
       name: string;
       sku: string | null;
@@ -147,6 +183,12 @@ export function ProductFormPage() {
       categoryId?: string | null;
       commissionPercent?: number | null;
       attributes?: Record<string, unknown>;
+      ncmId?: string | null;
+      fiscalOrigin?: number | null;
+      fiscalGtin?: string | null;
+      fiscalUnit?: string | null;
+      fiscalCest?: string | null;
+      fiscalDescription?: string | null;
     }) =>
       apiFetch<Product>(`/admin/products/${productId}`, {
         method: "PATCH",
@@ -197,6 +239,12 @@ export function ProductFormPage() {
         categoryId: cid,
         commissionPercent: commissionNum,
         attributes: attrs,
+        ncmId: ncmId || null,
+        fiscalOrigin: Number(fiscalOrigin),
+        fiscalGtin: fiscalGtin.trim() || null,
+        fiscalUnit: fiscalUnit.trim() || null,
+        fiscalCest: fiscalCest.trim() || null,
+        fiscalDescription: fiscalDescription.trim() || null,
       });
     } else {
       create.mutate({
@@ -208,6 +256,12 @@ export function ProductFormPage() {
         categoryId: cid ?? undefined,
         ...(commissionNum !== null ? { commissionPercent: commissionNum } : {}),
         attributes: attrs,
+        ncmId: ncmId || undefined,
+        fiscalOrigin: Number(fiscalOrigin),
+        fiscalGtin: fiscalGtin.trim() || undefined,
+        fiscalUnit: fiscalUnit.trim() || undefined,
+        fiscalCest: fiscalCest.trim() || undefined,
+        fiscalDescription: fiscalDescription.trim() || undefined,
       });
     }
   }
@@ -387,6 +441,54 @@ export function ProductFormPage() {
               />
             </FormField>
           </FormGrid>
+
+          <div className="border-t border-border/60 pt-4">
+            <p className="mb-3 text-sm font-semibold">Cadastro fiscal (NF-e)</p>
+            <FormGrid cols={3}>
+              <FormField label="NCM" className="sm:col-span-2">
+                <select
+                  className={fieldControlClass}
+                  value={ncmId}
+                  onChange={(e) => setNcmId(e.target.value)}
+                >
+                  <option value="">Selecione…</option>
+                  {ncms.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.code} — {n.description}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+              <FormField label="Origem">
+                <Input value={fiscalOrigin} onChange={(e) => setFiscalOrigin(e.target.value)} />
+              </FormField>
+              <FormField label="Unidade fiscal">
+                <Input value={fiscalUnit} onChange={(e) => setFiscalUnit(e.target.value)} />
+              </FormField>
+              <FormField label="GTIN">
+                <Input value={fiscalGtin} onChange={(e) => setFiscalGtin(e.target.value)} />
+              </FormField>
+              <FormField label="CEST">
+                <Input value={fiscalCest} onChange={(e) => setFiscalCest(e.target.value)} />
+              </FormField>
+              <FormField label="Descrição na nota" className="sm:col-span-2">
+                <Input
+                  value={fiscalDescription}
+                  onChange={(e) => setFiscalDescription(e.target.value)}
+                  placeholder="Opcional — usa nome do produto se vazio"
+                />
+              </FormField>
+            </FormGrid>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {isProductFiscalReady({
+                ncmId: ncmId || null,
+                fiscalOrigin: fiscalOrigin ? Number(fiscalOrigin) : null,
+                fiscalUnit,
+              })
+                ? "Pronto para NF-e"
+                : "Cadastro fiscal incompleto para emissão de nota"}
+            </p>
+          </div>
 
           <div className="border-t border-border/60 pt-4">
             <DynamicCategoryAttributes

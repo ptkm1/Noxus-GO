@@ -36,6 +36,8 @@ import { getSellerLocationHistory } from "../services/seller-location-history.js
 import { registerSellerLocationClient } from "../services/seller-location-ws.js";
 import { listAdminSellerLocations } from "../services/seller-locations-admin.js";
 import { decToNum } from "../util/money.js";
+import { fiscalRoutes } from "./fiscal.js";
+import { stockRoutes } from "./stock.js";
 
 const idParam = z.object({ id: z.string().min(1) });
 
@@ -822,6 +824,13 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .optional(),
         minSaleUnitPrice: z.number().nonnegative().nullable().optional(),
         commissionPercent: optionalCommissionPercentSchema,
+        ncmId: z.string().nullable().optional(),
+        fiscalOrigin: z.number().int().min(0).max(8).nullable().optional(),
+        fiscalGtin: z.string().nullable().optional(),
+        fiscalUnit: z.string().nullable().optional(),
+        fiscalCest: z.string().nullable().optional(),
+        fiscalDescription: z.string().nullable().optional(),
+        outboundOperationId: z.string().nullable().optional(),
       })
       .safeParse(req.body);
     if (!body.success)
@@ -867,6 +876,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           body.data.commissionPercent === undefined
             ? undefined
             : body.data.commissionPercent,
+        ncmId: body.data.ncmId === undefined ? undefined : body.data.ncmId,
+        fiscalOrigin:
+          body.data.fiscalOrigin === undefined ? undefined : body.data.fiscalOrigin,
+        fiscalGtin: body.data.fiscalGtin === undefined ? undefined : body.data.fiscalGtin,
+        fiscalUnit: body.data.fiscalUnit === undefined ? undefined : body.data.fiscalUnit,
+        fiscalCest: body.data.fiscalCest === undefined ? undefined : body.data.fiscalCest,
+        fiscalDescription:
+          body.data.fiscalDescription === undefined ? undefined : body.data.fiscalDescription,
+        outboundOperationId:
+          body.data.outboundOperationId === undefined
+            ? undefined
+            : body.data.outboundOperationId,
       },
       include: productCategoryInclude,
     });
@@ -895,6 +916,13 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .optional(),
         minSaleUnitPrice: z.number().nonnegative().nullable().optional(),
         commissionPercent: optionalCommissionPercentSchema,
+        ncmId: z.string().nullable().optional(),
+        fiscalOrigin: z.number().int().min(0).max(8).nullable().optional(),
+        fiscalGtin: z.string().nullable().optional(),
+        fiscalUnit: z.string().nullable().optional(),
+        fiscalCest: z.string().nullable().optional(),
+        fiscalDescription: z.string().nullable().optional(),
+        outboundOperationId: z.string().nullable().optional(),
       })
       .safeParse(req.body);
     if (!body.success)
@@ -976,6 +1004,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           body.data.commissionPercent === undefined
             ? undefined
             : body.data.commissionPercent,
+        ncmId: body.data.ncmId === undefined ? undefined : body.data.ncmId,
+        fiscalOrigin:
+          body.data.fiscalOrigin === undefined ? undefined : body.data.fiscalOrigin,
+        fiscalGtin: body.data.fiscalGtin === undefined ? undefined : body.data.fiscalGtin,
+        fiscalUnit: body.data.fiscalUnit === undefined ? undefined : body.data.fiscalUnit,
+        fiscalCest: body.data.fiscalCest === undefined ? undefined : body.data.fiscalCest,
+        fiscalDescription:
+          body.data.fiscalDescription === undefined ? undefined : body.data.fiscalDescription,
+        outboundOperationId:
+          body.data.outboundOperationId === undefined
+            ? undefined
+            : body.data.outboundOperationId,
       },
       include: productCategoryInclude,
     });
@@ -1454,6 +1494,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         latitude: z.number().gte(-90).lte(90).nullable().optional(),
         longitude: z.number().gte(-180).lte(180).nullable().optional(),
         addressNote: z.string().max(500).nullable().optional(),
+        documentType: z.enum(["CNPJ", "CPF"]).optional(),
+        document: z.string().optional(),
+        stateRegistration: z.string().optional(),
+        street: z.string().optional(),
+        addressNumber: z.string().optional(),
+        complement: z.string().optional(),
+        district: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().max(2).optional(),
+        zipCode: z.string().optional(),
+        cityIbge: z.string().optional(),
       })
       .safeParse(req.body);
     if (!body.success)
@@ -1500,6 +1551,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
             : body.data.addressNote === null
               ? null
               : body.data.addressNote,
+        documentType: body.data.documentType,
+        document: body.data.document,
+        stateRegistration: body.data.stateRegistration,
+        street: body.data.street,
+        addressNumber: body.data.addressNumber,
+        complement: body.data.complement,
+        district: body.data.district,
+        city: body.data.city,
+        state: body.data.state,
+        zipCode: body.data.zipCode,
+        cityIbge: body.data.cityIbge,
       },
     });
   });
@@ -1519,6 +1581,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         latitude: z.number().gte(-90).lte(90).nullable().optional(),
         longitude: z.number().gte(-180).lte(180).nullable().optional(),
         addressNote: z.string().max(500).nullable().optional(),
+        documentType: z.enum(["CNPJ", "CPF"]).optional(),
+        document: z.string().optional(),
+        stateRegistration: z.string().optional(),
+        street: z.string().optional(),
+        addressNumber: z.string().optional(),
+        complement: z.string().optional(),
+        district: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().max(2).optional(),
+        zipCode: z.string().optional(),
+        cityIbge: z.string().optional(),
       })
       .safeParse(req.body);
     if (!body.success)
@@ -1574,6 +1647,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
             : body.data.addressNote === null
               ? null
               : body.data.addressNote,
+        documentType: body.data.documentType,
+        document: body.data.document,
+        stateRegistration: body.data.stateRegistration,
+        street: body.data.street,
+        addressNumber: body.data.addressNumber,
+        complement: body.data.complement,
+        district: body.data.district,
+        city: body.data.city,
+        state: body.data.state,
+        zipCode: body.data.zipCode,
+        cityIbge: body.data.cityIbge,
       },
     });
   });
@@ -2712,4 +2796,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       )
       .send(pdf);
   });
+
+  await app.register(fiscalRoutes, { prefix: "/fiscal" });
+  await app.register(stockRoutes, { prefix: "/stock" });
 };
