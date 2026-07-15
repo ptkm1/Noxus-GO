@@ -84,6 +84,7 @@ export async function listStockProducts(params: {
       name: p.name,
       sku: p.sku,
       barcode: p.barcode,
+      imageUrl: p.imageUrl,
       stockQty: p.stockQty,
       minStockQty: p.minStockQty,
       maxStockQty: p.maxStockQty,
@@ -157,7 +158,9 @@ export async function listStockMovements(params: {
       take,
       skip,
       include: {
-        product: { select: { id: true, name: true, sku: true } },
+        product: {
+          select: { id: true, name: true, sku: true, imageUrl: true },
+        },
         user: {
           select: { id: true, name: true, email: true, matricula: true },
         },

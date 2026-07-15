@@ -19,6 +19,7 @@ import {
   Target,
   Truck,
   UserCircle,
+  UserCog,
   Users,
   UsersRound,
 } from "lucide-react";
@@ -57,6 +58,12 @@ const adminCards: DashCard[] = [
     icon: Users,
   },
   {
+    to: "/usuarios",
+    title: "Usuários",
+    description: "Administradores e gestores da empresa",
+    icon: UserCog,
+  },
+  {
     to: "/equipes",
     title: "Equipes",
     description: "Equipes nomeadas com líder e membros",
@@ -65,7 +72,7 @@ const adminCards: DashCard[] = [
   {
     to: "/comissao",
     title: "Comissões e metas",
-    description: "Faixas progressivas e metas mensais",
+    description: "Faixas progressivas ou metas mensais",
     icon: Target,
   },
   {

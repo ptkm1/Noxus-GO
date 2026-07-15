@@ -1,6 +1,7 @@
 import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/db.js";
+import { ensureOrgRolePermissions } from "../src/services/role-permissions.js";
 import { CATEGORY_SCHEMA_BY_CODE } from "./category-schemas.js";
 import { upsertRouteDemoCustomer } from "./seed-route-customer.js";
 
@@ -82,19 +83,53 @@ async function upsertDemoSupplier(organizationId: string) {
   });
 }
 
+async function upsertDemoFiscalLookups(organizationId: string) {
+  await prisma.costCenter.upsert({
+    where: {
+      organizationId_code: { organizationId, code: "ADM" },
+    },
+    create: {
+      organizationId,
+      code: "ADM",
+      name: "Administrativo",
+    },
+    update: { name: "Administrativo", active: true },
+  });
+  await prisma.expenseHistory.upsert({
+    where: {
+      organizationId_code: { organizationId, code: "IMPOSTO" },
+    },
+    create: {
+      organizationId,
+      code: "IMPOSTO",
+      description: "Impostos e taxas",
+    },
+    update: { description: "Impostos e taxas", active: true },
+  });
+}
+
 async function main() {
   const org = await prisma.organization.upsert({
     where: { id: "seed-org" },
-    update: { name: "Empresa Demo", displayName: "Empresa Demo" },
+    update: {
+      name: "Empresa Demo",
+      displayName: "Empresa Demo",
+      cnpj: "12345678000199",
+      stateRegistration: "ISENTO",
+    },
     create: {
       id: "seed-org",
       name: "Empresa Demo",
       displayName: "Empresa Demo",
+      cnpj: "12345678000199",
+      stateRegistration: "ISENTO",
     },
   });
 
+  await ensureOrgRolePermissions(org.id);
   await upsertDemoCategories(org.id);
   const demoSupplier = await upsertDemoSupplier(org.id);
+  await upsertDemoFiscalLookups(org.id);
 
   const adminPass = await bcrypt.hash(DEMO_ADMIN_PASSWORD, 10);
   const sellerPass = await bcrypt.hash(DEMO_SELLER_PASSWORD, 10);

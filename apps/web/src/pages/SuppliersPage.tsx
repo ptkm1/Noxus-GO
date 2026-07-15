@@ -4,6 +4,7 @@ import {
   FormSheet,
   FormSheetActions,
 } from "@/components/forms";
+import { useConfirm } from "@/components/confirm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -45,6 +46,7 @@ function maskCnpjInput(value: string): string {
 
 export function SuppliersPage() {
   const qc = useQueryClient();
+  const { confirm } = useConfirm();
   const { data: suppliers = [], isLoading } = useQuery({
     queryKey: ["admin", "suppliers"],
     queryFn: () => apiFetch<Supplier[]>("/admin/suppliers"),
@@ -261,8 +263,14 @@ export function SuppliersPage() {
                       type="button"
                       className="text-destructive hover:underline"
                       onClick={() => {
-                        if (confirm(`Excluir o fornecedor "${s.tradeName}"?`))
-                          remove.mutate(s.id);
+                        void confirm({
+                          title: "Excluir fornecedor?",
+                          description: `O fornecedor “${s.tradeName}” será removido permanentemente.`,
+                          confirmLabel: "Excluir",
+                          tone: "destructive",
+                        }).then((ok) => {
+                          if (ok) remove.mutate(s.id);
+                        });
                       }}
                     >
                       Excluir

@@ -1,4 +1,5 @@
 import { ProductCard, type ProductCardItem } from "@/components/ProductCard";
+import { useConfirm } from "@/components/confirm";
 import { FormField } from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ type Supplier = { id: string; tradeName: string; legalName: string };
 
 export function ProductsPage() {
   const qc = useQueryClient();
+  const { confirm } = useConfirm();
   const [supplierId, setSupplierId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [q, setQ] = useState("");
@@ -135,13 +137,15 @@ export function ProductsPage() {
               key={p.id}
               product={p}
               onDelete={() => {
-                if (
-                  confirm(
-                    "Excluir este produto? Esta ação não pode ser desfeita.",
-                  )
-                ) {
-                  remove.mutate(p.id);
-                }
+                void confirm({
+                  title: "Excluir produto?",
+                  description:
+                    "Esta ação não pode ser desfeita. O produto será removido permanentemente.",
+                  confirmLabel: "Excluir",
+                  tone: "destructive",
+                }).then((ok) => {
+                  if (ok) remove.mutate(p.id);
+                });
               }}
             />
           ))}

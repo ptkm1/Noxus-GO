@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -152,18 +153,18 @@ export function DateRangeField({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <input
-          type="date"
-          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+        <DatePicker
           value={from}
-          onChange={(e) => onChange(e.target.value, to)}
+          onChange={(v) => onChange(v, to)}
+          placeholder="De"
+          className="w-[11.5rem]"
         />
         <span className="text-muted-foreground">até</span>
-        <input
-          type="date"
-          className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+        <DatePicker
           value={to}
-          onChange={(e) => onChange(from, e.target.value)}
+          onChange={(v) => onChange(from, v)}
+          placeholder="Até"
+          className="w-[11.5rem]"
         />
       </div>
       <div className="flex flex-wrap gap-1.5">

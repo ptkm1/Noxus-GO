@@ -1,4 +1,5 @@
 import { useAuth } from "@/auth/AuthContext";
+import { ProductListCell } from "@/components/ProductCombobox";
 import {
   FormField,
   FormGrid,
@@ -7,6 +8,7 @@ import {
 } from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -34,6 +36,7 @@ type StockProduct = {
   id: string;
   name: string;
   sku: string | null;
+  imageUrl?: string | null;
   stockQty: number;
   hasExpiringSoon: boolean;
   expiringLotsCount: number;
@@ -220,12 +223,7 @@ export function StockPage() {
               {products.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell>
-                    <div className="font-medium">{p.name}</div>
-                    {p.sku ? (
-                      <div className="text-xs text-muted-foreground">
-                        {p.sku}
-                      </div>
-                    ) : null}
+                    <ProductListCell product={p} />
                   </TableCell>
                   <TableCell>{p.category?.name ?? "—"}</TableCell>
                   <TableCell>{p.supplier?.tradeName ?? "—"}</TableCell>
@@ -336,11 +334,11 @@ export function StockPage() {
             />
           </FormField>
           <FormField label="Validade" htmlFor="stock-expires" required>
-            <Input
+            <DatePicker
               id="stock-expires"
-              type="date"
               value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
+              onChange={setExpiresAt}
+              placeholder="Validade do lote"
             />
           </FormField>
           <FormField

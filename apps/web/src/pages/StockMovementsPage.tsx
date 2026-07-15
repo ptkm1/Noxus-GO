@@ -1,3 +1,4 @@
+import { ProductListCell } from "@/components/ProductCombobox";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -20,7 +21,12 @@ type Movement = {
   expiresAt: string | null;
   reason: string | null;
   createdAt: string;
-  product: { id: string; name: string; sku: string | null };
+  product: {
+    id: string;
+    name: string;
+    sku: string | null;
+    imageUrl?: string | null;
+  };
   user: {
     id: string;
     name: string;
@@ -98,12 +104,7 @@ export function StockMovementsPage() {
                   </TableCell>
                   <TableCell>{TYPE_LABELS[m.type] ?? m.type}</TableCell>
                   <TableCell>
-                    <div className="font-medium">{m.product.name}</div>
-                    {m.product.sku ? (
-                      <div className="text-xs text-muted-foreground">
-                        {m.product.sku}
-                      </div>
-                    ) : null}
+                    <ProductListCell product={m.product} />
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {m.qtyDelta > 0 ? `+${m.qtyDelta}` : m.qtyDelta}

@@ -1,4 +1,4 @@
-import type { Role } from "@pedidos/shared";
+type Role = "ADMIN" | "SELLER" | "SUPERVISOR" | "MANAGER";
 
 export type PermissionLevel = "none" | "read" | "write";
 
@@ -7,10 +7,12 @@ export type PermissionResource =
   | "products"
   | "stock"
   | "suppliers"
+  | "fiscal"
   | "customers"
   | "orders"
   | "sellers"
   | "teams"
+  | "users"
   | "tracking"
   | "visits"
   | "reports"
@@ -19,7 +21,33 @@ export type PermissionResource =
   | "permissions"
   | "audit";
 
-/** Espelho da matriz da API para UI (manter alinhado com apps/api/src/auth/permissions.ts). */
+export const PERMISSION_RESOURCES: PermissionResource[] = [
+  "dashboard",
+  "products",
+  "stock",
+  "suppliers",
+  "fiscal",
+  "customers",
+  "orders",
+  "sellers",
+  "teams",
+  "users",
+  "tracking",
+  "visits",
+  "reports",
+  "commissions",
+  "price_tables",
+  "permissions",
+  "audit",
+];
+
+export const EDITABLE_ROLES: Role[] = ["MANAGER", "SELLER", "SUPERVISOR"];
+export const LOCKED_ROLES: Role[] = ["ADMIN"];
+
+/**
+ * Defaults alinhados com API (`apps/api/src/auth/permissions.ts`).
+ * Em runtime, a web deve preferir `user.permissions` de `/auth/me`.
+ */
 export const ROLE_PERMISSIONS: Record<
   PermissionResource,
   Partial<Record<Role, PermissionLevel>>
@@ -48,6 +76,12 @@ export const ROLE_PERMISSIONS: Record<
     SELLER: "none",
     SUPERVISOR: "none",
   },
+  fiscal: {
+    ADMIN: "write",
+    MANAGER: "none",
+    SELLER: "none",
+    SUPERVISOR: "none",
+  },
   customers: {
     ADMIN: "write",
     MANAGER: "none",
@@ -67,6 +101,12 @@ export const ROLE_PERMISSIONS: Record<
     SUPERVISOR: "none",
   },
   teams: {
+    ADMIN: "write",
+    MANAGER: "none",
+    SELLER: "none",
+    SUPERVISOR: "none",
+  },
+  users: {
     ADMIN: "write",
     MANAGER: "none",
     SELLER: "none",
@@ -121,10 +161,12 @@ export const PERMISSION_RESOURCE_LABELS: Record<PermissionResource, string> = {
   products: "Produtos",
   stock: "Estoque",
   suppliers: "Fornecedores",
+  fiscal: "Fiscal",
   customers: "Clientes",
   orders: "Pedidos / Vendas",
   sellers: "Vendedores",
   teams: "Equipes",
+  users: "Usuários (admin/gestor)",
   tracking: "Rastreio",
   visits: "Visitas",
   reports: "Relatórios",
@@ -141,18 +183,47 @@ export const ROLE_LABELS: Record<Role, string> = {
   SUPERVISOR: "Supervisor (não usado)",
 };
 
+export type PermissionsMap = Partial<
+  Record<PermissionResource, PermissionLevel>
+>;
+
 export function getPermission(
   role: Role,
   resource: PermissionResource,
 ): PermissionLevel {
-  return ROLE_PERMISSIONS[resource][role] ?? "none";
+  return ROLE_PERMISSIONS[resource]?.[role] ?? "none";
 }
 
-export function canRead(role: Role, resource: PermissionResource): boolean {
-  const level = getPermission(role, resource);
+export function levelAllowsRead(level: PermissionLevel | undefined): boolean {
   return level === "read" || level === "write";
 }
 
-export function canWrite(role: Role, resource: PermissionResource): boolean {
-  return getPermission(role, resource) === "write";
+export function levelAllowsWrite(level: PermissionLevel | undefined): boolean {
+  return level === "write";
+}
+
+/** Preferir mapa efetivo (`/auth/me`); fallback para defaults estáticos. */
+export function resolvePermission(
+  role: Role,
+  resource: PermissionResource,
+  map?: PermissionsMap | null,
+): PermissionLevel {
+  if (map && map[resource] != null) return map[resource]!;
+  return getPermission(role, resource);
+}
+
+export function canRead(
+  role: Role,
+  resource: PermissionResource,
+  map?: PermissionsMap | null,
+): boolean {
+  return levelAllowsRead(resolvePermission(role, resource, map));
+}
+
+export function canWrite(
+  role: Role,
+  resource: PermissionResource,
+  map?: PermissionsMap | null,
+): boolean {
+  return levelAllowsWrite(resolvePermission(role, resource, map));
 }

@@ -21,9 +21,15 @@ import {
   validateManagerAssignment,
 } from "../auth/org-roles.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
-import { buildPermissionsMatrix } from "../auth/permissions.js";
 import { prisma } from "../db.js";
 import { writeAuditLog } from "../services/audit-log.js";
+import { isPermissionResource } from "../auth/permissions.js";
+import {
+  adminPathToResource,
+  buildEffectivePermissionsMatrix,
+  canReadEffective,
+  updateOrgRolePermissions,
+} from "../services/role-permissions.js";
 import {
   customerBodySchema,
   customerPatchSchema,
@@ -31,6 +37,36 @@ import {
   type CustomerBodyInput,
 } from "../services/customer-validation.js";
 import { buildDistributorInsights } from "../services/distributor-insights.js";
+import {
+  AccountsPayableError,
+  createAccountsPayable,
+  deleteAccountsPayable,
+  listAccountsPayable,
+  updateAccountsPayable,
+} from "../services/fiscal/accounts-payable.js";
+import {
+  createCostCenter,
+  createExpenseHistory,
+  deleteCostCenter,
+  deleteExpenseHistory,
+  FiscalLookupError,
+  listCostCenters,
+  listExpenseHistories,
+  updateCostCenter,
+  updateExpenseHistory,
+} from "../services/fiscal/fiscal-lookups.js";
+import {
+  createFixedExpense,
+  deleteFixedExpense,
+  FixedExpenseError,
+  listFixedExpenses,
+  updateFixedExpense,
+} from "../services/fiscal/fixed-expenses.js";
+import {
+  buildNfeXml,
+  listFiscalOrders,
+  NfeXmlError,
+} from "../services/fiscal/nfe-xml.js";
 import { sendOrderPdfReply } from "../services/order-pdf-load.js";
 import {
   computeSaleOrder,
@@ -259,14 +295,24 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
       if (routePath === "/seller-locations/ws") return;
 
-      if (
-        auth.role === "MANAGER" &&
-        method === "GET" &&
-        !isManagerGetAllowed(routePath)
-      ) {
-        return reply
-          .status(403)
-          .send({ error: "Gestores não têm acesso a este recurso" });
+      if (auth.role === "MANAGER" && method === "GET") {
+        const resource = adminPathToResource(routePath);
+        if (resource) {
+          const allowed = await canReadEffective(
+            auth.organizationId,
+            auth.role,
+            resource,
+          );
+          if (!allowed) {
+            return reply
+              .status(403)
+              .send({ error: "Gestores não têm acesso a este recurso" });
+          }
+        } else if (!isManagerGetAllowed(routePath)) {
+          return reply
+            .status(403)
+            .send({ error: "Gestores não têm acesso a este recurso" });
+        }
       }
 
       if (
@@ -941,6 +987,295 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
+  /* --- Fiscal: centros de custo, históricos, despesas fixas, AP, XML --- */
+  app.get("/cost-centers", async (req) => {
+    return listCostCenters(req.auth!.organizationId);
+  });
+
+  app.post("/cost-centers", async (req, reply) => {
+    const body = z
+      .object({ code: z.string().min(1), name: z.string().min(1) })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      return await createCostCenter(req.auth!.organizationId, body.data);
+    } catch (e) {
+      if (e instanceof FiscalLookupError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.patch("/cost-centers/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        code: z.string().min(1).optional(),
+        name: z.string().min(1).optional(),
+        active: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      const row = await updateCostCenter(
+        req.auth!.organizationId,
+        id,
+        body.data,
+      );
+      if (!row)
+        return reply
+          .status(404)
+          .send({ error: "Centro de custo não encontrado" });
+      return row;
+    } catch (e) {
+      if (e instanceof FiscalLookupError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.delete("/cost-centers/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const ok = await deleteCostCenter(req.auth!.organizationId, id);
+    if (!ok)
+      return reply
+        .status(404)
+        .send({ error: "Centro de custo não encontrado" });
+    return reply.status(204).send();
+  });
+
+  app.get("/expense-histories", async (req) => {
+    return listExpenseHistories(req.auth!.organizationId);
+  });
+
+  app.post("/expense-histories", async (req, reply) => {
+    const body = z
+      .object({ code: z.string().min(1), description: z.string().min(1) })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      return await createExpenseHistory(req.auth!.organizationId, body.data);
+    } catch (e) {
+      if (e instanceof FiscalLookupError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.patch("/expense-histories/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        code: z.string().min(1).optional(),
+        description: z.string().min(1).optional(),
+        active: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      const row = await updateExpenseHistory(
+        req.auth!.organizationId,
+        id,
+        body.data,
+      );
+      if (!row)
+        return reply.status(404).send({ error: "Histórico não encontrado" });
+      return row;
+    } catch (e) {
+      if (e instanceof FiscalLookupError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.delete("/expense-histories/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const ok = await deleteExpenseHistory(req.auth!.organizationId, id);
+    if (!ok)
+      return reply.status(404).send({ error: "Histórico não encontrado" });
+    return reply.status(204).send();
+  });
+
+  app.get("/fixed-expenses", async (req) => {
+    return listFixedExpenses(req.auth!.organizationId);
+  });
+
+  app.post("/fixed-expenses", async (req, reply) => {
+    const body = z
+      .object({
+        name: z.string().min(1),
+        amount: z.number().positive(),
+        dayOfMonth: z.number().int().min(1).max(28),
+        supplierId: z.string().nullable().optional(),
+        costCenterId: z.string().nullable().optional(),
+        historyId: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+        competenceLabel: z.string().nullable().optional(),
+        active: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      return await createFixedExpense(req.auth!.organizationId, body.data);
+    } catch (e) {
+      if (e instanceof FixedExpenseError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.patch("/fixed-expenses/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        name: z.string().min(1).optional(),
+        amount: z.number().positive().optional(),
+        dayOfMonth: z.number().int().min(1).max(28).optional(),
+        supplierId: z.string().nullable().optional(),
+        costCenterId: z.string().nullable().optional(),
+        historyId: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+        competenceLabel: z.string().nullable().optional(),
+        active: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      const row = await updateFixedExpense(
+        req.auth!.organizationId,
+        id,
+        body.data,
+      );
+      if (!row)
+        return reply.status(404).send({ error: "Despesa fixa não encontrada" });
+      return row;
+    } catch (e) {
+      if (e instanceof FixedExpenseError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.delete("/fixed-expenses/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const ok = await deleteFixedExpense(req.auth!.organizationId, id);
+    if (!ok)
+      return reply.status(404).send({ error: "Despesa fixa não encontrada" });
+    return reply.status(204).send();
+  });
+
+  const apStatusSchema = z.enum(["AUTHORIZED", "PENDING", "PAID", "CANCELLED"]);
+
+  app.get("/accounts-payable", async (req, reply) => {
+    const q = z
+      .object({
+        status: apStatusSchema.optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        supplierId: z.string().optional(),
+      })
+      .safeParse(req.query);
+    if (!q.success)
+      return reply.status(400).send({ error: "Filtros inválidos" });
+    try {
+      return await listAccountsPayable(req.auth!.organizationId, q.data);
+    } catch (e) {
+      if (e instanceof AccountsPayableError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  const accountsPayableBody = z.object({
+    docNumber: z.string().min(1),
+    supplierId: z.string().min(1),
+    issueDate: z.string().min(1),
+    dueDate: z.string().min(1),
+    competence: z.string().min(1),
+    amount: z.number().positive(),
+    status: apStatusSchema.optional(),
+    historyId: z.string().nullable().optional(),
+    costCenterId: z.string().nullable().optional(),
+    notes: z.string().nullable().optional(),
+  });
+
+  app.post("/accounts-payable", async (req, reply) => {
+    const body = accountsPayableBody.safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      return await createAccountsPayable(req.auth!.organizationId, body.data);
+    } catch (e) {
+      if (e instanceof AccountsPayableError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.patch("/accounts-payable/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const body = accountsPayableBody.partial().safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      const row = await updateAccountsPayable(
+        req.auth!.organizationId,
+        id,
+        body.data,
+      );
+      if (!row)
+        return reply.status(404).send({ error: "Lançamento não encontrado" });
+      return row;
+    } catch (e) {
+      if (e instanceof AccountsPayableError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.delete("/accounts-payable/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const ok = await deleteAccountsPayable(req.auth!.organizationId, id);
+    if (!ok)
+      return reply.status(404).send({ error: "Lançamento não encontrado" });
+    return reply.status(204).send();
+  });
+
+  app.get("/fiscal/orders", async (req, reply) => {
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+      })
+      .safeParse(req.query);
+    if (!q.success)
+      return reply.status(400).send({ error: "Filtros inválidos" });
+    return listFiscalOrders(req.auth!.organizationId, q.data);
+  });
+
+  app.get("/orders/:id/nfe.xml", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    try {
+      const { xml, filename } = await buildNfeXml(req.auth!.organizationId, id);
+      return reply
+        .header("Content-Type", "application/xml; charset=utf-8")
+        .header("Content-Disposition", `attachment; filename="${filename}"`)
+        .send(xml);
+    } catch (e) {
+      if (e instanceof NfeXmlError) {
+        const status = e.message.includes("não encontrado") ? 404 : 400;
+        return reply.status(status).send({ error: e.message });
+      }
+      throw e;
+    }
+  });
+
   app.get("/products", async (req) => {
     const auth = req.auth!;
     const q = z
@@ -1067,8 +1402,61 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  app.get("/permissions", async () => {
-    return buildPermissionsMatrix();
+  app.get("/permissions", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    return buildEffectivePermissionsMatrix(auth.organizationId);
+  });
+
+  app.put("/permissions", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+
+    const body = z
+      .object({
+        updates: z
+          .array(
+            z.object({
+              role: z.enum(["MANAGER", "SELLER", "SUPERVISOR", "ADMIN"]),
+              resource: z.string().min(1),
+              level: z.enum(["none", "read", "write"]),
+            }),
+          )
+          .min(1),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
+    }
+
+    const updates = body.data.updates.filter((u) =>
+      isPermissionResource(u.resource),
+    );
+    if (updates.length === 0) {
+      return reply.status(400).send({ error: "Nenhum recurso válido" });
+    }
+
+    const matrix = await updateOrgRolePermissions(
+      auth.organizationId,
+      updates.map((u) => ({
+        role: u.role,
+        resource: u.resource as import("../auth/permissions.js").PermissionResource,
+        level: u.level,
+      })),
+    );
+
+    await writeAuditLog({
+      organizationId: auth.organizationId,
+      userId: auth.sub,
+      action: "PERMISSIONS_MATRIX_UPDATE",
+      entityType: "OrganizationRolePermission",
+      entityId: auth.organizationId,
+      metadata: { updateCount: updates.length },
+    });
+
+    return matrix;
   });
 
   app.get("/audit-logs", async (req) => {
@@ -1691,6 +2079,82 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       select: { id: true, email: true, name: true },
       orderBy: { name: "asc" },
     });
+  });
+
+  /* --- Usuários da organização (ADMIN / MANAGER; vendedores em /sellers) --- */
+  app.get("/users", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    return prisma.user.findMany({
+      where: {
+        organizationId: auth.organizationId,
+        role: { in: ["ADMIN", "MANAGER"] },
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+      },
+      orderBy: [{ role: "asc" }, { name: "asc" }],
+    });
+  });
+
+  app.post("/users", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+
+    const body = z
+      .object({
+        email: z.string().email(),
+        password: z.string().min(6),
+        name: z.string().min(1),
+        role: z.enum(["ADMIN", "MANAGER"]),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
+
+    const email = body.data.email.toLowerCase();
+    const exists = await prisma.user.findUnique({ where: { email } });
+    if (exists) return reply.status(409).send({ error: "Email já cadastrado" });
+
+    const passwordHash = await hashPassword(body.data.password);
+    const created = await prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        name: body.data.name.trim(),
+        role: body.data.role,
+        organizationId: auth.organizationId,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    const actor = await prisma.user.findUnique({
+      where: { id: auth.sub },
+      select: { matricula: true },
+    });
+    await writeAuditLog({
+      organizationId: auth.organizationId,
+      userId: auth.sub,
+      userMatricula: actor?.matricula ?? null,
+      action: "user.create",
+      entityType: "User",
+      entityId: created.id,
+      metadata: { email: created.email, role: created.role },
+    });
+
+    return created;
   });
 
   /* --- Equipes de vendas (admin) --- */

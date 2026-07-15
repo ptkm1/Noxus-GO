@@ -7,10 +7,12 @@ export type PermissionResource =
   | "products"
   | "stock"
   | "suppliers"
+  | "fiscal"
   | "customers"
   | "orders"
   | "sellers"
   | "teams"
+  | "users"
   | "tracking"
   | "visits"
   | "reports"
@@ -19,7 +21,36 @@ export type PermissionResource =
   | "permissions"
   | "audit";
 
-/** Matriz estática: fonte única de verdade para controle de roles. */
+export const PERMISSION_RESOURCES: PermissionResource[] = [
+  "dashboard",
+  "products",
+  "stock",
+  "suppliers",
+  "fiscal",
+  "customers",
+  "orders",
+  "sellers",
+  "teams",
+  "users",
+  "tracking",
+  "visits",
+  "reports",
+  "commissions",
+  "price_tables",
+  "permissions",
+  "audit",
+];
+
+export const EDITABLE_ROLES: Role[] = ["MANAGER", "SELLER", "SUPERVISOR"];
+
+/** Coluna ADMIN é imutável no painel (evita lockout de permissions/users). */
+export const LOCKED_ROLES: Role[] = ["ADMIN"];
+
+/**
+ * Defaults estáticos: seed + fallback.
+ * Smoke tests (`canWrite`/`buildPermissionsMatrix`) usam esta matriz.
+ * Em runtime org-scoped, preferir `role-permissions.ts` (DB).
+ */
 export const ROLE_PERMISSIONS: Record<
   PermissionResource,
   Partial<Record<Role, PermissionLevel>>
@@ -48,6 +79,12 @@ export const ROLE_PERMISSIONS: Record<
     SELLER: "none",
     SUPERVISOR: "none",
   },
+  fiscal: {
+    ADMIN: "write",
+    MANAGER: "none",
+    SELLER: "none",
+    SUPERVISOR: "none",
+  },
   customers: {
     ADMIN: "write",
     MANAGER: "none",
@@ -67,6 +104,12 @@ export const ROLE_PERMISSIONS: Record<
     SUPERVISOR: "none",
   },
   teams: {
+    ADMIN: "write",
+    MANAGER: "none",
+    SELLER: "none",
+    SUPERVISOR: "none",
+  },
+  users: {
     ADMIN: "write",
     MANAGER: "none",
     SELLER: "none",
@@ -121,10 +164,12 @@ export const PERMISSION_RESOURCE_LABELS: Record<PermissionResource, string> = {
   products: "Produtos",
   stock: "Estoque",
   suppliers: "Fornecedores",
+  fiscal: "Fiscal",
   customers: "Clientes",
   orders: "Pedidos / Vendas",
   sellers: "Vendedores",
   teams: "Equipes",
+  users: "Usuários (admin/gestor)",
   tracking: "Rastreio",
   visits: "Visitas",
   reports: "Relatórios",
@@ -141,11 +186,12 @@ export const ROLE_LABELS: Record<Role, string> = {
   SUPERVISOR: "Supervisor (não usado)",
 };
 
+/** Nível default (sem override de org). Usado por smoke e seed. */
 export function getPermission(
   role: Role,
   resource: PermissionResource,
 ): PermissionLevel {
-  return ROLE_PERMISSIONS[resource][role] ?? "none";
+  return ROLE_PERMISSIONS[resource]?.[role] ?? "none";
 }
 
 export function canRead(role: Role, resource: PermissionResource): boolean {
@@ -157,28 +203,60 @@ export function canWrite(role: Role, resource: PermissionResource): boolean {
   return getPermission(role, resource) === "write";
 }
 
-/** Payload para a página de permissões (somente leitura). */
+export function isPermissionLevel(value: string): value is PermissionLevel {
+  return value === "none" || value === "read" || value === "write";
+}
+
+export function isPermissionResource(
+  value: string,
+): value is PermissionResource {
+  return (PERMISSION_RESOURCES as string[]).includes(value);
+}
+
+/** Matriz default (smoke / documentação). Preferir buildEffectivePermissionsMatrix no painel. */
 export function buildPermissionsMatrix() {
-  const resources = Object.keys(ROLE_PERMISSIONS) as PermissionResource[];
   const roles: Role[] = ["ADMIN", "MANAGER", "SELLER", "SUPERVISOR"];
   return {
     roles: roles.map((role) => ({
       role,
       label: ROLE_LABELS[role],
-      /** Gestor não possui perfil de vendedor. */
       hasSellerProfile: role === "SELLER",
+      locked: LOCKED_ROLES.includes(role),
     })),
-    resources: resources.map((resource) => ({
+    resources: PERMISSION_RESOURCES.map((resource) => ({
       resource,
       label: PERMISSION_RESOURCE_LABELS[resource],
       levels: Object.fromEntries(
         roles.map((role) => [role, getPermission(role, resource)]),
       ) as Record<Role, PermissionLevel>,
     })),
+    editableRoles: EDITABLE_ROLES,
+    lockedRoles: LOCKED_ROLES,
     notes: [
       "Gestor (MANAGER) é usuário de staff somente leitura, sem perfil Seller.",
+      "A coluna Administrador é somente leitura no painel (evita lockout em Usuários/Permissões).",
       "Alterações de estoque exigem reautenticação (senha) e geram AuditLog.",
       "SUPERVISOR existe no enum mas não tem acesso efetivo neste ciclo.",
+      "Escritas em /admin continuam exigindo role ADMIN; a matriz controla leitura/nav e futuros gates.",
     ],
   };
+}
+
+export function defaultPermissionRows(): Array<{
+  role: Role;
+  resource: PermissionResource;
+  level: PermissionLevel;
+}> {
+  const roles: Role[] = ["ADMIN", "MANAGER", "SELLER", "SUPERVISOR"];
+  const rows: Array<{
+    role: Role;
+    resource: PermissionResource;
+    level: PermissionLevel;
+  }> = [];
+  for (const resource of PERMISSION_RESOURCES) {
+    for (const role of roles) {
+      rows.push({ role, resource, level: getPermission(role, resource) });
+    }
+  }
+  return rows;
 }

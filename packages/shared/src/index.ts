@@ -91,12 +91,22 @@ export {
 export {
   canRead,
   canWrite,
+  EDITABLE_ROLES,
   getPermission,
+  levelAllowsRead,
+  levelAllowsWrite,
+  LOCKED_ROLES,
   PERMISSION_RESOURCE_LABELS,
+  PERMISSION_RESOURCES,
+  resolvePermission,
   ROLE_LABELS,
   ROLE_PERMISSIONS,
 } from "./permissions.js";
-export type { PermissionLevel, PermissionResource } from "./permissions.js";
+export type {
+  PermissionLevel,
+  PermissionResource,
+  PermissionsMap,
+} from "./permissions.js";
 export {
   formatProductPriceWithUnit,
   formatProductStockLabel,

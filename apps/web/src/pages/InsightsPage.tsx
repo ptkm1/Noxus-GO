@@ -1,5 +1,6 @@
 import { useAuth } from "@/auth/AuthContext";
 import { AppSelect } from "@/components/ui/app-select";
+import { DateTimePicker } from "@/components/ui/date-picker";
 import {
   Table,
   TableBody,
@@ -192,22 +193,22 @@ export function InsightsPage() {
             <label className="block text-sm font-medium text-foreground">
               De
             </label>
-            <input
-              type="datetime-local"
-              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+            <DateTimePicker
+              className="mt-1"
               value={from}
-              onChange={(e) => setFrom(e.target.value)}
+              onChange={setFrom}
+              placeholder="De"
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-foreground">
               Até
             </label>
-            <input
-              type="datetime-local"
-              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+            <DateTimePicker
+              className="mt-1"
               value={to}
-              onChange={(e) => setTo(e.target.value)}
+              onChange={setTo}
+              placeholder="Até"
             />
           </div>
           <button
@@ -325,9 +326,7 @@ export function InsightsPage() {
       <div>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">
-              Insights
-            </h1>
+            <h1 className="text-2xl font-semibold text-foreground">Insights</h1>
             <p className="mt-2 max-w-2xl text-muted-foreground">
               Visão pronta para o dia a dia: sem filtros obrigatórios. Use o
               botão para atualizar os números; embaixo, exporte PDF quando
@@ -742,22 +741,22 @@ export function InsightsPage() {
             <label className="block text-sm font-medium text-foreground">
               De
             </label>
-            <input
-              type="datetime-local"
-              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+            <DateTimePicker
+              className="mt-1"
               value={from}
-              onChange={(e) => setFrom(e.target.value)}
+              onChange={setFrom}
+              placeholder="De"
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-foreground">
               Até
             </label>
-            <input
-              type="datetime-local"
-              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+            <DateTimePicker
+              className="mt-1"
               value={to}
-              onChange={(e) => setTo(e.target.value)}
+              onChange={setTo}
+              placeholder="Até"
             />
           </div>
           <div>
