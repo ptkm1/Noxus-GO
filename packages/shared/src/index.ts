@@ -89,6 +89,15 @@ export {
   formatSaleItemCount,
 } from "./format-sale-date.js";
 export {
+  canRead,
+  canWrite,
+  getPermission,
+  PERMISSION_RESOURCE_LABELS,
+  ROLE_LABELS,
+  ROLE_PERMISSIONS,
+} from "./permissions.js";
+export type { PermissionLevel, PermissionResource } from "./permissions.js";
+export {
   formatProductPriceWithUnit,
   formatProductStockLabel,
   formatProductUnitLabel,

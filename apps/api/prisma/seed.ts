@@ -107,6 +107,7 @@ async function main() {
       name: "Admin Demo",
       role: Role.ADMIN,
       organizationId: org.id,
+      matricula: "ADM-001",
     },
     create: {
       email: DEMO_ADMIN_EMAIL,
@@ -114,6 +115,7 @@ async function main() {
       name: "Admin Demo",
       role: Role.ADMIN,
       organizationId: org.id,
+      matricula: "ADM-001",
     },
   });
 
@@ -124,6 +126,7 @@ async function main() {
       name: "Gestor Demo",
       role: Role.MANAGER,
       organizationId: org.id,
+      matricula: "GES-001",
     },
     create: {
       email: DEMO_MANAGER_EMAIL,
@@ -131,6 +134,7 @@ async function main() {
       name: "Gestor Demo",
       role: Role.MANAGER,
       organizationId: org.id,
+      matricula: "GES-001",
     },
   });
 
@@ -141,6 +145,7 @@ async function main() {
       name: "Vendedor Demo",
       role: Role.SELLER,
       organizationId: org.id,
+      matricula: "VEN-001",
     },
     create: {
       email: DEMO_SELLER_EMAIL,
@@ -148,6 +153,7 @@ async function main() {
       name: "Vendedor Demo",
       role: Role.SELLER,
       organizationId: org.id,
+      matricula: "VEN-001",
     },
   });
 

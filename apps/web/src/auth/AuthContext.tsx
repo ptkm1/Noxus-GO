@@ -14,6 +14,7 @@ export type User = {
   id: string;
   email: string;
   name: string;
+  matricula?: string | null;
   role: Role;
   organizationId: string;
   sellerId: string | null;

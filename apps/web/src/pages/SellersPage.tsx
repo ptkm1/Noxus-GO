@@ -36,7 +36,7 @@ type Seller = {
   commissionPercent: unknown;
   active: boolean;
   managerUserId: string | null;
-  user: { id: string; email: string; name: string };
+  user: { id: string; email: string; name: string; matricula?: string | null };
   manager: Manager | null;
   team: { id: string; name: string } | null;
 };
@@ -62,6 +62,7 @@ export function SellersPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [matricula, setMatricula] = useState("");
   const [commissionType, setCommissionType] =
     useState<SellerCommissionType>("FIXED");
   const [commission, setCommission] = useState("10");
@@ -70,6 +71,7 @@ export function SellersPage() {
     setEmail("");
     setPassword("");
     setName("");
+    setMatricula("");
     setCommissionType("FIXED");
     setCommission("10");
   }
@@ -92,6 +94,7 @@ export function SellersPage() {
           email,
           password,
           name,
+          ...(matricula.trim() ? { matricula: matricula.trim() } : {}),
           commissionType,
           ...(commissionType === "FIXED"
             ? { commissionPercent: Number(commission) }
@@ -163,12 +166,25 @@ export function SellersPage() {
         }
       >
         <FormGrid cols={2}>
-          <FormField label="Nome" htmlFor="seller-name" required className="sm:col-span-2">
+          <FormField
+            label="Nome"
+            htmlFor="seller-name"
+            required
+            className="sm:col-span-2"
+          >
             <Input
               id="seller-name"
               placeholder="Nome"
               value={name}
               onChange={(e) => setName(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Matrícula" htmlFor="seller-matricula">
+            <Input
+              id="seller-matricula"
+              placeholder="Opcional"
+              value={matricula}
+              onChange={(e) => setMatricula(e.target.value)}
             />
           </FormField>
           <FormField label="Email" htmlFor="seller-email" required>
@@ -297,6 +313,7 @@ export function SellersPage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="px-4">Nome</TableHead>
+                <TableHead className="px-4">Matrícula</TableHead>
                 <TableHead className="px-4">Email</TableHead>
                 <TableHead className="px-4">Gestor</TableHead>
                 <TableHead className="px-4">Equipe</TableHead>
@@ -312,6 +329,9 @@ export function SellersPage() {
                 return (
                   <TableRow key={s.id}>
                     <TableCell className="px-4 py-3">{s.user.name}</TableCell>
+                    <TableCell className="px-4 py-3 text-muted-foreground">
+                      {s.user.matricula ?? "—"}
+                    </TableCell>
                     <TableCell className="px-4 py-3">{s.user.email}</TableCell>
                     <TableCell className="px-4 py-3">
                       <AppSelect
@@ -339,12 +359,12 @@ export function SellersPage() {
                         value={type}
                         triggerClassName="max-w-[200px] text-xs"
                         options={[
-                          ...SELLER_COMMISSION_TYPES.filter((t) => !t.comingSoon).map(
-                            (t) => ({
-                              value: t.value,
-                              label: t.label,
-                            }),
-                          ),
+                          ...SELLER_COMMISSION_TYPES.filter(
+                            (t) => !t.comingSoon,
+                          ).map((t) => ({
+                            value: t.value,
+                            label: t.label,
+                          })),
                           {
                             value: "BY_SUPPLIER",
                             label: `${sellerCommissionTypeLabel("BY_SUPPLIER")} (em breve)`,

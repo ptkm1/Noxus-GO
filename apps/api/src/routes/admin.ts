@@ -20,8 +20,10 @@ import {
   teamMemberSellerIds,
   validateManagerAssignment,
 } from "../auth/org-roles.js";
-import { hashPassword } from "../auth/password.js";
+import { hashPassword, verifyPassword } from "../auth/password.js";
+import { buildPermissionsMatrix } from "../auth/permissions.js";
 import { prisma } from "../db.js";
+import { writeAuditLog } from "../services/audit-log.js";
 import {
   customerBodySchema,
   customerPatchSchema,
@@ -50,6 +52,11 @@ import {
   assertSufficientStock,
   StockError,
 } from "../services/product-stock.js";
+import { buildCustomersPdf } from "../services/reports/customers-pdf.js";
+import { readExtraParams } from "../services/reports/extra-filters.js";
+import { buildOrderItemsPdf } from "../services/reports/order-items-pdf.js";
+import { buildOrdersPdf } from "../services/reports/orders-pdf.js";
+import { buildStockPdf } from "../services/reports/stock-pdf.js";
 import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
 import {
   createSalesTeam,
@@ -63,6 +70,12 @@ import {
 import { getSellerLocationHistory } from "../services/seller-location-history.js";
 import { registerSellerLocationClient } from "../services/seller-location-ws.js";
 import { listAdminSellerLocations } from "../services/seller-locations-admin.js";
+import {
+  applyManualStockEntry,
+  listExpiringLots,
+  listStockMovements,
+  listStockProducts,
+} from "../services/stock-ledger.js";
 import {
   assertSupplierInOrg,
   createSupplier,
@@ -930,11 +943,164 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/products", async (req) => {
     const auth = req.auth!;
+    const q = z
+      .object({
+        supplierId: z.string().optional(),
+        categoryId: z.string().optional(),
+        q: z.string().optional(),
+      })
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    const where: Prisma.ProductWhereInput = {
+      organizationId: auth.organizationId,
+    };
+    if (filters.supplierId) where.supplierId = filters.supplierId;
+    if (filters.categoryId) where.categoryId = filters.categoryId;
+    if (filters.q?.trim()) {
+      const text = filters.q.trim();
+      where.OR = [
+        { name: { contains: text, mode: "insensitive" } },
+        { sku: { contains: text, mode: "insensitive" } },
+        { barcode: { contains: text, mode: "insensitive" } },
+      ];
+    }
     return prisma.product.findMany({
-      where: { organizationId: auth.organizationId },
+      where,
       orderBy: { name: "asc" },
       include: productRelationsInclude,
     });
+  });
+
+  /* --- Estoque --- */
+  app.get("/stock", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        supplierId: z.string().optional(),
+        categoryId: z.string().optional(),
+        q: z.string().optional(),
+      })
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    return listStockProducts({
+      organizationId: auth.organizationId,
+      supplierId: filters.supplierId,
+      categoryId: filters.categoryId,
+      q: filters.q,
+    });
+  });
+
+  app.get("/stock/expiring", async (req) => {
+    const auth = req.auth!;
+    return listExpiringLots(auth.organizationId);
+  });
+
+  app.get("/stock/movements", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        productId: z.string().optional(),
+        type: z
+          .enum(["MANUAL_IN", "MANUAL_OUT", "ADJUST", "SALE", "SALE_REVERSAL"])
+          .optional(),
+        take: z.coerce.number().int().positive().optional(),
+        skip: z.coerce.number().int().nonnegative().optional(),
+      })
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    return listStockMovements({
+      organizationId: auth.organizationId,
+      productId: filters.productId,
+      type: filters.type,
+      take: filters.take,
+      skip: filters.skip,
+    });
+  });
+
+  app.post("/stock/entries", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        productId: z.string().min(1),
+        type: z.enum(["MANUAL_IN", "MANUAL_OUT", "ADJUST"]),
+        qty: z.number().int().positive(),
+        lotCode: z.string().min(1).max(80),
+        expiresAt: z.string().min(1),
+        reason: z.string().max(500).optional(),
+        password: z.string().min(1),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const user = await prisma.user.findUnique({
+      where: { id: auth.sub },
+      select: { passwordHash: true, matricula: true },
+    });
+    if (!user) return reply.status(401).send({ error: "Não autorizado" });
+
+    const ok = await verifyPassword(body.data.password, user.passwordHash);
+    if (!ok) return reply.status(401).send({ error: "Senha incorreta" });
+
+    const expiresAt = new Date(body.data.expiresAt);
+    if (Number.isNaN(expiresAt.getTime())) {
+      return reply.status(400).send({ error: "Validade inválida" });
+    }
+
+    try {
+      const result = await applyManualStockEntry({
+        organizationId: auth.organizationId,
+        userId: auth.sub,
+        userMatricula: user.matricula,
+        productId: body.data.productId,
+        type: body.data.type,
+        qty: body.data.qty,
+        lotCode: body.data.lotCode,
+        expiresAt,
+        reason: body.data.reason,
+      });
+      return result;
+    } catch (e) {
+      if (e instanceof StockError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.get("/permissions", async () => {
+    return buildPermissionsMatrix();
+  });
+
+  app.get("/audit-logs", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        take: z.coerce.number().int().positive().optional(),
+        skip: z.coerce.number().int().nonnegative().optional(),
+        entityType: z.string().optional(),
+      })
+      .safeParse(req.query);
+    const take = Math.min(q.success ? (q.data.take ?? 50) : 50, 200);
+    const skip = q.success ? (q.data.skip ?? 0) : 0;
+    const where: Prisma.AuditLogWhereInput = {
+      organizationId: auth.organizationId,
+    };
+    if (q.success && q.data.entityType) where.entityType = q.data.entityType;
+    const [items, total] = await Promise.all([
+      prisma.auditLog.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take,
+        skip,
+        include: {
+          user: {
+            select: { id: true, name: true, email: true, matricula: true },
+          },
+        },
+      }),
+      prisma.auditLog.count({ where }),
+    ]);
+    return { items, total, take, skip };
   });
 
   app.get("/products/:id", async (req, reply) => {
@@ -1008,7 +1174,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     );
 
     try {
-      return await prisma.product.create({
+      const created = await prisma.product.create({
         data: {
           name: body.data.name,
           sku: body.data.sku,
@@ -1041,6 +1207,36 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         },
         include: productRelationsInclude,
       });
+
+      const actor = await prisma.user.findUnique({
+        where: { id: auth.sub },
+        select: { matricula: true },
+      });
+      const initialQty = body.data.stockQty ?? 0;
+      if (initialQty > 0) {
+        await prisma.stockMovement.create({
+          data: {
+            organizationId: auth.organizationId,
+            productId: created.id,
+            type: "ADJUST",
+            qtyDelta: initialQty,
+            balanceAfter: initialQty,
+            userId: auth.sub,
+            reason: "Estoque inicial no cadastro",
+          },
+        });
+      }
+      await writeAuditLog({
+        organizationId: auth.organizationId,
+        userId: auth.sub,
+        userMatricula: actor?.matricula ?? null,
+        action: "product.create",
+        entityType: "Product",
+        entityId: created.id,
+        metadata: { name: created.name, stockQty: initialQty },
+      });
+
+      return created;
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -1079,7 +1275,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .optional(),
         minSaleUnitPrice: z.number().nonnegative().nullable().optional(),
         commissionPercent: optionalCommissionPercentSchema,
-        stockQty: z.number().int().min(0).optional(),
         blockSaleWhenOutOfStock: z.boolean().optional(),
         ...productCadastroFieldsSchema,
       })
@@ -1092,6 +1287,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
 
+    if ((req.body as { stockQty?: unknown })?.stockQty !== undefined) {
+      return reply.status(400).send({
+        error:
+          "Alterações de estoque devem ser feitas em /admin/stock/entries (com reautenticação).",
+      });
+    }
     if (body.data.categoryId === null) {
       return reply
         .status(400)
@@ -1202,7 +1403,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
             body.data.commissionPercent === undefined
               ? undefined
               : body.data.commissionPercent,
-          stockQty: body.data.stockQty,
           blockSaleWhenOutOfStock: body.data.blockSaleWhenOutOfStock,
           ...mapProductCadastroPrisma(body.data),
         },
@@ -1229,6 +1429,19 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
     await prisma.product.delete({ where: { id } });
+    const actor = await prisma.user.findUnique({
+      where: { id: auth.sub },
+      select: { matricula: true },
+    });
+    await writeAuditLog({
+      organizationId: auth.organizationId,
+      userId: auth.sub,
+      userMatricula: actor?.matricula ?? null,
+      action: "product.delete",
+      entityType: "Product",
+      entityId: id,
+      metadata: { name: existing.name },
+    });
     return reply.status(204).send();
   });
 
@@ -1556,7 +1769,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return prisma.seller.findMany({
       where: sellerScopeWhere(auth),
       include: {
-        user: { select: { id: true, email: true, name: true, role: true } },
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            matricula: true,
+          },
+        },
         manager: { select: { id: true, name: true, email: true } },
         team: { select: { id: true, name: true } },
       },
@@ -1571,6 +1792,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         email: z.string().email(),
         password: z.string().min(6),
         name: z.string().min(1),
+        matricula: z.string().min(1).max(40).optional(),
         commissionType: sellerCommissionTypeSchema.default("FIXED"),
         commissionPercent: z.number().min(0).max(100).optional(),
         teamId: z.string().min(1).nullable().optional(),
@@ -1601,35 +1823,49 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       if (!team) return reply.status(400).send({ error: "Equipe inválida" });
     }
 
-    const user = await prisma.user.create({
-      data: {
-        email,
-        passwordHash,
-        name: body.data.name,
-        role: "SELLER",
-        organizationId: auth.organizationId,
-        seller: {
-          create: {
-            organizationId: auth.organizationId,
-            commissionType,
-            commissionPercent,
-            active: true,
-            ...(body.data.teamId ? { teamId: body.data.teamId } : {}),
+    try {
+      const user = await prisma.user.create({
+        data: {
+          email,
+          passwordHash,
+          name: body.data.name,
+          matricula: body.data.matricula?.trim() || null,
+          role: "SELLER",
+          organizationId: auth.organizationId,
+          seller: {
+            create: {
+              organizationId: auth.organizationId,
+              commissionType,
+              commissionPercent,
+              active: true,
+              ...(body.data.teamId ? { teamId: body.data.teamId } : {}),
+            },
           },
         },
-      },
-      include: { seller: true },
-    });
+        include: { seller: true },
+      });
 
-    return {
-      id: user.seller!.id,
-      userId: user.id,
-      email: user.email,
-      name: user.name,
-      commissionType: user.seller!.commissionType,
-      commissionPercent: decToNum(user.seller!.commissionPercent),
-      active: user.seller!.active,
-    };
+      return {
+        id: user.seller!.id,
+        userId: user.id,
+        email: user.email,
+        name: user.name,
+        matricula: user.matricula,
+        commissionType: user.seller!.commissionType,
+        commissionPercent: decToNum(user.seller!.commissionPercent),
+        active: user.seller!.active,
+      };
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "Matrícula já cadastrada nesta empresa" });
+      }
+      throw e;
+    }
   });
 
   app.patch("/sellers/:id", async (req, reply) => {
@@ -1641,6 +1877,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         commissionPercent: z.number().min(0).max(100).optional(),
         active: z.boolean().optional(),
         name: z.string().min(1).optional(),
+        matricula: z.string().min(1).max(40).nullable().optional(),
         managerUserId: z.string().min(1).nullable().optional(),
       })
       .safeParse(req.body);
@@ -1661,27 +1898,46 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       if (!v.ok) return reply.status(400).send({ error: v.error });
     }
 
-    await prisma.$transaction([
-      prisma.seller.update({
-        where: { id },
-        data: {
-          commissionType: body.data.commissionType ?? undefined,
-          commissionPercent: body.data.commissionPercent ?? undefined,
-          active: body.data.active ?? undefined,
-          ...(body.data.managerUserId !== undefined
-            ? { managerUserId: body.data.managerUserId }
-            : {}),
-        },
-      }),
-      ...(body.data.name
-        ? [
-            prisma.user.update({
-              where: { id: seller.userId },
-              data: { name: body.data.name },
-            }),
-          ]
-        : []),
-    ]);
+    try {
+      await prisma.$transaction([
+        prisma.seller.update({
+          where: { id },
+          data: {
+            commissionType: body.data.commissionType ?? undefined,
+            commissionPercent: body.data.commissionPercent ?? undefined,
+            active: body.data.active ?? undefined,
+            ...(body.data.managerUserId !== undefined
+              ? { managerUserId: body.data.managerUserId }
+              : {}),
+          },
+        }),
+        ...(body.data.name || body.data.matricula !== undefined
+          ? [
+              prisma.user.update({
+                where: { id: seller.userId },
+                data: {
+                  ...(body.data.name ? { name: body.data.name } : {}),
+                  ...(body.data.matricula !== undefined
+                    ? {
+                        matricula: body.data.matricula?.trim() || null,
+                      }
+                    : {}),
+                },
+              }),
+            ]
+          : []),
+      ]);
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "Matrícula já cadastrada nesta empresa" });
+      }
+      throw e;
+    }
 
     return prisma.seller.findUnique({
       where: { id },
@@ -2359,7 +2615,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
 
     try {
-      await applyStockOnStatusChange(id, existing.status, body.data.status);
+      await applyStockOnStatusChange(
+        id,
+        existing.status,
+        body.data.status,
+        auth.sub,
+      );
     } catch (e) {
       if (e instanceof StockError)
         return reply.status(400).send({ error: e.message });
@@ -2461,7 +2722,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       });
 
       if (order.status === "CONFIRMED") {
-        await applyStockOnStatusChange(order.id, "DRAFT", "CONFIRMED");
+        await applyStockOnStatusChange(
+          order.id,
+          "DRAFT",
+          "CONFIRMED",
+          auth.sub,
+        );
       }
 
       return order;
@@ -3087,6 +3353,152 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   });
 
   /* --- Relatório PDF --- */
+  app.get("/reports/customers.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const q = z
+      .object({
+        sellerId: z.string().optional(),
+        customerId: z.string().optional(),
+        creditStatus: z.enum(["blocked", "ok"]).optional(),
+      })
+      .passthrough()
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    const extras = readExtraParams(
+      (q.success ? q.data : req.query) as Record<string, unknown>,
+    );
+    const pdf = await buildCustomersPdf({
+      organizationId: auth.organizationId,
+      sellerId: filters.sellerId,
+      customerId: filters.customerId,
+      creditStatus: filters.creditStatus,
+      extras,
+    });
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="relatorio-clientes.pdf"',
+      )
+      .send(pdf);
+  });
+
+  app.get("/reports/orders.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const q = z
+      .object({
+        sellerId: z.string().optional(),
+        customerId: z.string().optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        status: z
+          .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
+          .optional(),
+        romaneio: z
+          .union([z.literal("1"), z.literal("true"), z.literal("0")])
+          .optional(),
+      })
+      .passthrough()
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    const extras = readExtraParams(
+      (q.success ? q.data : req.query) as Record<string, unknown>,
+    );
+    const pdf = await buildOrdersPdf({
+      organizationId: auth.organizationId,
+      sellerId: filters.sellerId,
+      customerId: filters.customerId,
+      from: filters.from,
+      to: filters.to,
+      status: filters.status,
+      romaneio: filters.romaneio === "1" || filters.romaneio === "true",
+      extras,
+    });
+    const filename =
+      filters.romaneio === "1" || filters.romaneio === "true"
+        ? "relatorio-pedidos-romaneio.pdf"
+        : "relatorio-pedidos.pdf";
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header("Content-Disposition", `attachment; filename="${filename}"`)
+      .send(pdf);
+  });
+
+  app.get("/reports/order-items.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const q = z
+      .object({
+        sellerId: z.string().optional(),
+        customerId: z.string().optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        status: z
+          .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
+          .optional(),
+        groupByOrder: z
+          .union([z.literal("1"), z.literal("true"), z.literal("0")])
+          .optional(),
+      })
+      .passthrough()
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    const extras = readExtraParams(
+      (q.success ? q.data : req.query) as Record<string, unknown>,
+    );
+    const pdf = await buildOrderItemsPdf({
+      organizationId: auth.organizationId,
+      sellerId: filters.sellerId,
+      customerId: filters.customerId,
+      from: filters.from,
+      to: filters.to,
+      status: filters.status,
+      groupByOrder:
+        filters.groupByOrder === "1" || filters.groupByOrder === "true",
+      extras,
+    });
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="relatorio-itens-pedidos.pdf"',
+      )
+      .send(pdf);
+  });
+
+  app.get("/reports/stock.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const q = z
+      .object({
+        supplierId: z.string().optional(),
+        categoryId: z.string().optional(),
+        q: z.string().optional(),
+      })
+      .passthrough()
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    const extras = readExtraParams(
+      (q.success ? q.data : req.query) as Record<string, unknown>,
+    );
+    const pdf = await buildStockPdf({
+      organizationId: auth.organizationId,
+      supplierId: filters.supplierId,
+      categoryId: filters.categoryId,
+      q: filters.q,
+      extras,
+    });
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="relatorio-estoque.pdf"',
+      )
+      .send(pdf);
+  });
+
   app.get("/reports/sales.pdf", async (req, reply) => {
     const auth = req.auth!;
     const q = z

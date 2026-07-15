@@ -74,6 +74,14 @@ enum ProductClassification {
   OTHER
 }
 
+enum StockMovementType {
+  MANUAL_IN
+  MANUAL_OUT
+  ADJUST
+  SALE
+  SALE_REVERSAL
+}
+
 model Organization {
   id               String             @id @default(cuid())
   name             String
@@ -109,6 +117,9 @@ model Organization {
   sellerLocationHistory SellerLocationHistory[]
   salesTeams         SalesTeam[]
   suppliers          Supplier[]
+  productLots        ProductLot[]
+  stockMovements     StockMovement[]
+  auditLogs          AuditLog[]
 }
 
 model User {
@@ -116,14 +127,20 @@ model User {
   email          String       @unique
   passwordHash   String
   name           String
+  /// Matrícula funcional (única por organização quando preenchida).
+  matricula      String?
   role           Role
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   seller         Seller?
   managedSellers Seller[]     @relation("SellerManager")
   notifications  Notification[]
+  stockMovements StockMovement[]
+  auditLogs      AuditLog[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, matricula])
 }
 
 model Seller {
@@ -339,12 +356,78 @@ model Product {
   comboLines       ProductComboLine[]
   commissionRules  SellerCommissionRule[]
   orderItems       OrderItem[]
+  lots             ProductLot[]
+  stockMovements   StockMovement[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
   @@unique([organizationId, barcode])
   @@index([organizationId, supplierId])
+  @@index([organizationId, categoryId])
   @@index([organizationId, ncm])
+}
+
+/// Lote de produto com validade e saldo próprio.
+model ProductLot {
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  lotCode        String
+  expiresAt      DateTime
+  qty            Int            @default(0)
+  movements      StockMovement[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([productId, lotCode])
+  @@index([organizationId, expiresAt])
+  @@index([productId, expiresAt])
+}
+
+/// Ledger de movimentações de estoque.
+model StockMovement {
+  id             String            @id @default(cuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type           StockMovementType
+  qtyDelta       Int
+  balanceAfter   Int
+  lotId          String?
+  lot            ProductLot?       @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  lotCode        String?
+  expiresAt      DateTime?
+  userId         String?
+  user           User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  orderId        String?
+  order          Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  reason         String?
+  createdAt      DateTime          @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([productId, createdAt])
+  @@index([orderId])
+}
+
+/// Histórico rastreável de alterações sensíveis.
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userMatricula  String?
+  action         String
+  entityType     String
+  entityId       String?
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, entityType, entityId])
 }
 
 model ProductPromotion {
@@ -589,9 +672,19 @@ model Order {
   clientMutationId String? @unique
   /// Motivos registrados quando o pedido ficou aguardando aprovação de crédito.
   creditHoldReasons Json?
+  /// TODO futuro: número sequencial por org para filtro "Número entre" (hoje id=cuid). Pode ser removido ou implementado depois.
+  orderNumber    Int?
+  /// TODO futuro: flag de orçamento vs pedido real. Reservado; UI não filtra neste ciclo.
+  isQuote        Boolean      @default(false)
+  /// TODO futuro: "Representada" (multi-empresa). Reservado; UI não filtra neste ciclo.
+  representada   String?
   items          OrderItem[]
+  stockMovements StockMovement[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, orderNumber])
+  @@index([organizationId, createdAt])
 }
 
 model OrderItem {

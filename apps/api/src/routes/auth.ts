@@ -35,6 +35,7 @@ async function userResponseForMe(user: {
   id: string;
   email: string;
   name: string;
+  matricula: string | null;
   role: import("@prisma/client").Role;
   organizationId: string;
   seller: {
@@ -47,6 +48,7 @@ async function userResponseForMe(user: {
     id: user.id,
     email: user.email,
     name: user.name,
+    matricula: user.matricula,
     role: user.role,
     organizationId: user.organizationId,
     sellerId: user.seller?.id ?? null,
@@ -124,6 +126,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         id: user.id,
         email: user.email,
         name: user.name,
+        matricula: user.matricula,
         role: user.role,
         organizationId: user.organizationId,
         sellerId: user.seller?.id ?? null,

@@ -17,19 +17,27 @@ import { CustomersPage } from "./pages/CustomersPage";
 import { CustomerVisitsPage } from "./pages/CustomerVisitsPage";
 import { DashboardHome } from "./pages/DashboardHome";
 import { DashboardLayout } from "./pages/DashboardLayout";
+import { InsightsPage } from "./pages/InsightsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { OrderDetailPage } from "./pages/OrderDetailPage";
 import { OrdersPage } from "./pages/OrdersPage";
+import { PermissionsPage } from "./pages/PermissionsPage";
 import { PriceTablesPage } from "./pages/PriceTablesPage";
 import { ProductCategoriesPage } from "./pages/ProductCategoriesPage";
 import { ProductFormPage } from "./pages/ProductFormPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { RegisterPage } from "./pages/RegisterPage";
-import { ReportsPage } from "./pages/ReportsPage";
+import { ReportCustomersPage } from "./pages/ReportCustomersPage";
+import { ReportOrderItemsPage } from "./pages/ReportOrderItemsPage";
+import { ReportOrdersPage } from "./pages/ReportOrdersPage";
+import { ReportsHubPage } from "./pages/ReportsHubPage";
+import { ReportStockPage } from "./pages/ReportStockPage";
 import { SellerProductsPage } from "./pages/SellerProductsPage";
 import { SellersPage } from "./pages/SellersPage";
 import { SellerTrackingPage } from "./pages/SellerTrackingPage";
+import { StockMovementsPage } from "./pages/StockMovementsPage";
+import { StockPage } from "./pages/StockPage";
 import { SuppliersPage } from "./pages/SuppliersPage";
 import { TeamsPage } from "./pages/TeamsPage";
 
@@ -71,7 +79,7 @@ const TEAM_LEADER_ROUTE_PREFIXES = [
   "/rastreio",
   "/visitas",
   "/vendas",
-  "/relatorios",
+  "/insights",
 ];
 
 function ManagerRouteGuard() {
@@ -169,6 +177,11 @@ function AppRoutes() {
                 element={<ProductFormPage />}
               />
               <Route path="produtos" element={<ProductsPage />} />
+              <Route path="estoque" element={<StockPage />} />
+              <Route
+                path="estoque/movimentos"
+                element={<StockMovementsPage />}
+              />
               <Route path="fornecedores" element={<SuppliersPage />} />
               <Route path="comissao" element={<CommissionAdminPage />} />
               <Route path="vendedores" element={<SellersPage />} />
@@ -179,12 +192,24 @@ function AppRoutes() {
               <Route path="equipes" element={<TeamsPage />} />
               <Route path="clientes" element={<CustomersPage />} />
               <Route path="notificacoes" element={<NotificationsPage />} />
+              <Route path="permissoes" element={<PermissionsPage />} />
+              <Route path="relatorios" element={<ReportsHubPage />} />
+              <Route
+                path="relatorios/clientes"
+                element={<ReportCustomersPage />}
+              />
+              <Route path="relatorios/pedidos" element={<ReportOrdersPage />} />
+              <Route
+                path="relatorios/itens"
+                element={<ReportOrderItemsPage />}
+              />
+              <Route path="relatorios/estoque" element={<ReportStockPage />} />
             </Route>
             <Route path="visitas" element={<CustomerVisitsPage />} />
             <Route path="rastreio" element={<SellerTrackingPage />} />
             <Route path="vendas" element={<OrdersPage />} />
             <Route path="vendas/:orderId" element={<OrderDetailPage />} />
-            <Route path="relatorios" element={<ReportsPage />} />
+            <Route path="insights" element={<InsightsPage />} />
           </Route>
         </Route>
       </Route>

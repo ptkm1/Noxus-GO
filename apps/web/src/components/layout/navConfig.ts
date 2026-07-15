@@ -3,9 +3,11 @@ import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
   LayoutDashboard,
+  Lightbulb,
   MapPin,
   Navigation,
   Package,
+  Shield,
   ShoppingCart,
   Table,
   Target,
@@ -13,6 +15,7 @@ import {
   UserCircle,
   Users,
   UsersRound,
+  Warehouse,
 } from "lucide-react";
 
 export type NavItem = {
@@ -33,6 +36,7 @@ export const DASHBOARD_NAV: NavItem[] = [
   home,
   { to: "/tabelas-preco", label: "Tabelas de preço", icon: Table },
   { to: "/produtos", label: "Produtos", icon: Package },
+  { to: "/estoque", label: "Estoque", icon: Warehouse },
   { to: "/vendedores", label: "Vendedores", icon: Users },
   { to: "/comissao", label: "Comissões e metas", icon: Target },
   { to: "/clientes", label: "Clientes", icon: UserCircle },
@@ -40,6 +44,8 @@ export const DASHBOARD_NAV: NavItem[] = [
   { to: "/rastreio", label: "Rastreio ao vivo", icon: Navigation },
   { to: "/vendas", label: "Vendas", icon: ShoppingCart },
   { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
+  { to: "/insights", label: "Insights", icon: Lightbulb },
+  { to: "/permissoes", label: "Permissões", icon: Shield },
 ];
 
 export const MANAGER_NAV: NavItem[] = [
@@ -54,7 +60,7 @@ export const TEAM_LEADER_NAV: NavItem[] = [
   { to: "/rastreio", label: "Rastreio ao vivo", icon: Navigation },
   { to: "/visitas", label: "Visitas em campo", icon: MapPin },
   { to: "/vendas", label: "Vendas", icon: ShoppingCart },
-  { to: "/relatorios", label: "Relatórios da equipe", icon: BarChart3 },
+  { to: "/insights", label: "Insights da equipe", icon: BarChart3 },
 ];
 
 function adminNav(): NavItem[] {

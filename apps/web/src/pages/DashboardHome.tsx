@@ -10,6 +10,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
   LayoutDashboard,
+  Loader2,
   MapPin,
   Navigation,
   Package,
@@ -20,7 +21,6 @@ import {
   UserCircle,
   Users,
   UsersRound,
-  Loader2,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -95,7 +95,7 @@ const adminCards: DashCard[] = [
   {
     to: "/relatorios",
     title: "Relatórios",
-    description: "Painel e PDF opcional",
+    description: "PDFs de clientes, pedidos, itens e estoque",
     icon: BarChart3,
   },
 ];
@@ -141,8 +141,8 @@ const teamLeaderCards: DashCard[] = [
     icon: ShoppingCart,
   },
   {
-    to: "/relatorios",
-    title: "Relatórios da equipe",
+    to: "/insights",
+    title: "Insights da equipe",
     description: "Totais, ranking e produtos vendidos",
     icon: BarChart3,
   },
