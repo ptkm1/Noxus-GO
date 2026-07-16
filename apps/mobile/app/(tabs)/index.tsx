@@ -1,6 +1,6 @@
 import { fmtMoney } from "@/components/atoms/formatMoney";
 import { ThemedText } from "@/components/atoms/ThemedText";
-import { MobileHeader, MobileScreen } from "@/components/layout";
+import { MobileHeader, MobileScreen, SafeScreen } from "@/components/layout";
 import { HeaderIconButton } from "@/components/molecules/HeaderIconButton";
 import { QuickAction } from "@/components/molecules/QuickAction";
 import { RecentSalesBlock } from "@/components/molecules/RecentSalesBlock";
@@ -83,7 +83,7 @@ export default function HomeScreen() {
   const goalTarget = goal?.targetAmount ?? 0;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeScreen variant="tab">
       <MobileHeader
         title={`Olá, ${firstName}`}
         subtitle={today}
@@ -209,7 +209,7 @@ export default function HomeScreen() {
           isRefetching={isRefetching && !isLoading}
         />
       </MobileScreen>
-    </View>
+    </SafeScreen>
   );
 }
 

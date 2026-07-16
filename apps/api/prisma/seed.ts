@@ -108,6 +108,68 @@ async function upsertDemoFiscalLookups(organizationId: string) {
   });
 }
 
+/** Produto físico de teste de leitura de código de barras (EAN real). */
+async function upsertBarcodeScanTestProduct(params: {
+  organizationId: string;
+  supplierId: string;
+  categoryId: string;
+  sellerId: string;
+}) {
+  const barcode = "7908236800643";
+  const existing = await prisma.product.findFirst({
+    where: { organizationId: params.organizationId, barcode },
+  });
+
+  const product =
+    existing ??
+    (await prisma.product.create({
+      data: {
+        name: "Produto teste barcode",
+        sku: "EAN-7908236800643",
+        barcode,
+        basePrice: 12.9,
+        costPrice: 8,
+        stockQty: 40,
+        minStockQty: 5,
+        blockSaleWhenOutOfStock: true,
+        productLine: "Teste scanner",
+        productClassification: "RESALE",
+        purchaseUnit: "UN",
+        ncm: "19059090",
+        nfeOrigin: 0,
+        organizationId: params.organizationId,
+        categoryId: params.categoryId,
+        supplierId: params.supplierId,
+        attributes: {
+          sale_unit: "UN",
+          brand: "Teste físico",
+          gtin: barcode,
+        },
+      },
+    }));
+
+  if (existing) {
+    await prisma.product.update({
+      where: { id: existing.id },
+      data: {
+        name: "Produto teste barcode",
+        sku: "EAN-7908236800643",
+        barcode,
+        basePrice: 12.9,
+        stockQty: existing.stockQty > 0 ? existing.stockQty : 40,
+        categoryId: params.categoryId,
+        supplierId: params.supplierId,
+        blockSaleWhenOutOfStock: true,
+      },
+    });
+  }
+
+  await prisma.sellerProduct.createMany({
+    data: [{ sellerId: params.sellerId, productId: product.id }],
+    skipDuplicates: true,
+  });
+}
+
 async function main() {
   const org = await prisma.organization.upsert({
     where: { id: "seed-org" },
@@ -254,8 +316,24 @@ async function main() {
       where: { organizationId: org.id, supplierId: null },
       data: { supplierId: demoSupplier.id },
     });
+    const catSnackExisting = await prisma.productCategory.findUnique({
+      where: {
+        organizationId_code: { organizationId: org.id, code: "SNACK" },
+      },
+    });
+    if (catSnackExisting) {
+      await upsertBarcodeScanTestProduct({
+        organizationId: org.id,
+        supplierId: demoSupplier.id,
+        categoryId: catSnackExisting.id,
+        sellerId: seller.id,
+      });
+    }
     console.log(
       "Dados de exemplo (produtos) já existem — categorias e fornecedor demo garantidos.",
+    );
+    console.log(
+      "  Produto teste barcode: 7908236800643 (liberado ao vendedor demo)",
     );
     return;
   }
@@ -378,6 +456,13 @@ async function main() {
       { sellerId: seller.id, productId: p2.id },
     ],
     skipDuplicates: true,
+  });
+
+  await upsertBarcodeScanTestProduct({
+    organizationId: org.id,
+    supplierId: demoSupplier.id,
+    categoryId: catSnack.id,
+    sellerId: seller.id,
   });
 
   await prisma.productPromotion.createMany({

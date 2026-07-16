@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fmtMoney } from "../../components/atoms/formatMoney";
+import { useAppToast } from "../../context/ToastContext";
 import { apiFetch } from "../../lib/api";
 import { enqueueOfflineSale } from "../../lib/offline-outbox";
 import { postSellerSale } from "../../lib/offline-sale-sync";
@@ -35,6 +36,7 @@ type SubmitSaleResult =
 
 export function useQuickSaleScreen() {
   const router = useRouter();
+  const { showToast } = useAppToast();
   const { customerId: customerIdParam } = useLocalSearchParams<{
     customerId?: string;
   }>();
@@ -47,6 +49,7 @@ export function useQuickSaleScreen() {
   const [cart, setCart] = useState<Record<string, CartLine>>({});
   const [barcodeOpen, setBarcodeOpen] = useState(false);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
+  const [scanMsgOk, setScanMsgOk] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [lastCustomerId, setLastCustomerId] = useState<string | null>(null);
   const productTapTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
@@ -90,7 +93,10 @@ export function useQuickSaleScreen() {
 
   useEffect(() => {
     if (!scanMsg) return;
-    const t = setTimeout(() => setScanMsg(null), 3800);
+    const t = setTimeout(() => {
+      setScanMsg(null);
+      setScanMsgOk(false);
+    }, 3800);
     return () => clearTimeout(t);
   }, [scanMsg]);
 
@@ -173,13 +179,16 @@ export function useQuickSaleScreen() {
 
   const onBarcode = useCallback(
     (raw: string) => {
+      const codeLabel = raw.trim() || "(vazio)";
       const p = findProductByBarcode(products, raw);
+      setBarcodeOpen(false);
       if (p && typeof p.effectiveUnitPrice === "number") {
         bumpQty(p, 1);
-        setBarcodeOpen(false);
-        setScanMsg(null);
+        setScanMsgOk(true);
+        setScanMsg(`Produto adicionado: ${p.name}`);
       } else {
-        setScanMsg("Nenhum produto com este código.");
+        setScanMsgOk(false);
+        setScanMsg(`Não existe produto com o código ${codeLabel} no sistema.`);
       }
     },
     [products, bumpQty],
@@ -266,6 +275,10 @@ export function useQuickSaleScreen() {
         );
         return;
       }
+      showToast({
+        message: "Venda realizada com sucesso!",
+        tone: "success",
+      });
       router.back();
     },
   });
@@ -281,7 +294,11 @@ export function useQuickSaleScreen() {
     if (customerId) router.push(`/customer/${customerId}`);
   }, [customerId, router]);
 
-  const footerPad = Math.max(insets.bottom, 12) + 72;
+  const clearScanMsg = useCallback(() => {
+    setScanMsg(null);
+    setScanMsgOk(false);
+  }, []);
+
   const emptyCatalogMessage =
     products.length === 0
       ? "Nenhum produto liberado pelo admin."
@@ -311,12 +328,13 @@ export function useQuickSaleScreen() {
     barcodeOpen,
     setBarcodeOpen,
     scanMsg,
+    scanMsgOk,
+    clearScanMsg,
     onBarcode,
     err,
     create,
     finalize,
     openCustomerCredit,
-    footerPad,
     emptyCatalogMessage,
   };
 }

@@ -4,7 +4,6 @@ import { useRouter } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Props = {
   title: string;
@@ -23,7 +22,6 @@ export function MobileHeader({
   leftAction,
   rightAction,
 }: Props) {
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { colors } = useTheme();
 
@@ -37,7 +35,6 @@ export function MobileHeader({
       style={[
         styles.wrap,
         {
-          paddingTop: insets.top + 12,
           backgroundColor: colors.headerBackground,
           borderBottomColor: colors.border,
         },
@@ -77,6 +74,7 @@ export function MobileHeader({
 const styles = StyleSheet.create({
   wrap: {
     borderBottomWidth: 1,
+    paddingTop: 12,
     paddingBottom: 14,
     paddingHorizontal: 16,
   },

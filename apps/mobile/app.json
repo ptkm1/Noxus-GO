@@ -24,6 +24,7 @@
       },
       "package": "com.pedidos.app",
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
       "usesCleartextTraffic": true
     },
     "web": {

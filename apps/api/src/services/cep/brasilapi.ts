@@ -1,4 +1,5 @@
 import type { CepAddressData } from "@pedidos/shared";
+import { BRASIL_API_HEADERS } from "../brasilapi-headers.js";
 
 type BrasilApiCep = {
   cep?: string;
@@ -10,7 +11,7 @@ type BrasilApiCep = {
 
 export async function fetchCep(digits8: string): Promise<CepAddressData> {
   const res = await fetch(`https://brasilapi.com.br/api/cep/v1/${digits8}`, {
-    headers: { Accept: "application/json" },
+    headers: BRASIL_API_HEADERS,
   });
   if (res.status === 404) {
     throw new Error("CEP não encontrado.");

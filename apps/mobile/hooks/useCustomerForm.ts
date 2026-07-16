@@ -14,9 +14,16 @@ import {
   suggestedTradeName,
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Alert } from "react-native";
+
+function parseCoord(value: unknown): number | null {
+  if (value == null) return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
 
 export function useCustomerForm(customerId?: string) {
   const router = useRouter();
@@ -24,6 +31,9 @@ export function useCustomerForm(customerId?: string) {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<CustomerFormValues>(emptyCustomerForm());
   const [cnpjLoading, setCnpjLoading] = useState(false);
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
 
   const { data: initial, isLoading } = useQuery({
     queryKey: ["seller", "customer", customerId],
@@ -32,7 +42,19 @@ export function useCustomerForm(customerId?: string) {
   });
 
   useEffect(() => {
-    if (initial) setForm(customerToForm(initial));
+    setStep(0);
+    if (!customerId) {
+      setForm(emptyCustomerForm());
+      setLatitude(null);
+      setLongitude(null);
+    }
+  }, [customerId]);
+
+  useEffect(() => {
+    if (!initial) return;
+    setForm(customerToForm(initial));
+    setLatitude(parseCoord(initial.latitude));
+    setLongitude(parseCoord(initial.longitude));
   }, [initial]);
 
   const patch = useCallback((p: Partial<CustomerFormValues>) => {
@@ -75,9 +97,38 @@ export function useCustomerForm(customerId?: string) {
     }
   }
 
+  const captureLocation = useCallback(async () => {
+    setLocationLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permissão necessária",
+          "Ative a localização para gravar as coordenadas do cliente.",
+        );
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      setLatitude(pos.coords.latitude);
+      setLongitude(pos.coords.longitude);
+    } catch (e) {
+      Alert.alert(
+        "Localização",
+        e instanceof Error ? e.message : "Não foi possível obter o GPS.",
+      );
+    } finally {
+      setLocationLoading(false);
+    }
+  }, []);
+
   const save = useMutation({
     mutationFn: async () => {
-      const payload = formToCustomerPayload(form);
+      const payload = formToCustomerPayload(form, {
+        latitude,
+        longitude,
+      });
       if (customerId) {
         return apiFetch(`/seller/customers/${customerId}`, {
           method: "PATCH",
@@ -113,5 +164,9 @@ export function useCustomerForm(customerId?: string) {
     isLoading: !!customerId && isLoading,
     save,
     isEdit: !!customerId,
+    latitude,
+    longitude,
+    captureLocation,
+    locationLoading,
   };
 }

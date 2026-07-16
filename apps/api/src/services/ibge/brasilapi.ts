@@ -1,4 +1,5 @@
 import type { IbgeMunicipio, IbgeUf } from "@pedidos/shared";
+import { BRASIL_API_HEADERS } from "../brasilapi-headers.js";
 
 type BrasilApiUf = { id?: number; sigla?: string; nome?: string };
 type BrasilApiMunicipio = {
@@ -9,7 +10,7 @@ type BrasilApiMunicipio = {
 
 export async function fetchIbgeUfs(): Promise<IbgeUf[]> {
   const res = await fetch("https://brasilapi.com.br/api/ibge/uf/v1", {
-    headers: { Accept: "application/json" },
+    headers: BRASIL_API_HEADERS,
   });
   if (!res.ok) throw new Error("Falha ao listar UFs.");
   const json = (await res.json()) as BrasilApiUf[];
@@ -32,7 +33,7 @@ export async function fetchIbgeMunicipios(
   }
   const res = await fetch(
     `https://brasilapi.com.br/api/ibge/municipios/v1/${sigla}`,
-    { headers: { Accept: "application/json" } },
+    { headers: BRASIL_API_HEADERS },
   );
   if (!res.ok) throw new Error("Falha ao listar municípios.");
   const json = (await res.json()) as BrasilApiMunicipio[];

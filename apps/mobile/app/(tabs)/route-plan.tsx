@@ -1,4 +1,4 @@
-import { MobileHeader } from "@/components/layout";
+import { MobileHeader, SafeScreen } from "@/components/layout";
 import { MOBILE_TAB_SCROLL_BOTTOM } from "@/components/layout/MobileScreen";
 import { StatCard } from "@/components/molecules/StatCard";
 import * as Location from "expo-location";
@@ -26,7 +26,7 @@ export default function RoutePlanScreen() {
   const s = useRoutePlanScreen();
 
   return (
-    <View style={styles.root}>
+    <SafeScreen variant="tab">
       <MobileHeader
         title="Rota"
         subtitle={`Raio ${s.radiusKm} km · clientes no mapa`}
@@ -143,7 +143,14 @@ export default function RoutePlanScreen() {
                 disabled={s.checkOut.isPending}
                 onPress={s.requestCheckOut}
               >
-                <Text style={styles.checkOutTxt}>Check-out</Text>
+                {s.checkOut.isPending ? (
+                  <ActivityIndicator
+                    color={colors.primaryForeground}
+                    size="small"
+                  />
+                ) : (
+                  <Text style={styles.checkOutTxt}>Check-out</Text>
+                )}
               </Pressable>
               <Pressable
                 style={styles.saleBtn}
@@ -159,11 +166,18 @@ export default function RoutePlanScreen() {
 
         <View style={styles.toolbar}>
           <Pressable
-            style={styles.toolBtn}
+            style={[styles.toolBtn, s.locPending && styles.btnDis]}
+            disabled={s.locPending}
             onPress={() => void s.refreshLocation()}
           >
-            <Navigation color={colors.link} size={20} />
-            <Text style={styles.toolBtnTxt}>Atualizar GPS</Text>
+            {s.locPending ? (
+              <ActivityIndicator color={colors.link} size="small" />
+            ) : (
+              <Navigation color={colors.link} size={20} />
+            )}
+            <Text style={styles.toolBtnTxt}>
+              {s.locPending ? "Atualizando…" : "Atualizar GPS"}
+            </Text>
           </Pressable>
           <Pressable
             style={[
@@ -177,8 +191,16 @@ export default function RoutePlanScreen() {
             }
             onPress={() => s.optimizeMutation.mutate()}
           >
+            {s.optimizeMutation.isPending ? (
+              <ActivityIndicator
+                color={colors.primaryForeground}
+                size="small"
+              />
+            ) : null}
             <Text style={styles.toolBtnPrimaryTxt}>
-              {s.optimizeMutation.isPending ? "…" : "Rota por estrada"}
+              {s.optimizeMutation.isPending
+                ? "Calculando rota…"
+                : "Rota por estrada"}
             </Text>
           </Pressable>
         </View>
@@ -336,6 +358,6 @@ export default function RoutePlanScreen() {
         onClose={() => s.setCheckOutModalOpen(false)}
         onConfirm={(notes) => s.submitCheckOut(notes)}
       />
-    </View>
+    </SafeScreen>
   );
 }

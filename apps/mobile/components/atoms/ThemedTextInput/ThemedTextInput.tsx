@@ -9,21 +9,30 @@ const base = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
   },
+  singleLine: {
+    overflow: "hidden",
+  },
 });
 
 export function ThemedTextInput({
   style,
   placeholderTextColor,
   invalid,
+  multiline,
+  numberOfLines,
   ...props
 }: TextInputProps & { invalid?: boolean }) {
   const { colors } = useTheme();
+  const isMultiline = multiline === true;
 
   return (
     <TextInput
       placeholderTextColor={placeholderTextColor ?? colors.placeholder}
+      multiline={isMultiline}
+      numberOfLines={isMultiline ? numberOfLines : 1}
       style={[
         base.field,
+        !isMultiline && base.singleLine,
         {
           color: colors.inputText,
           backgroundColor: colors.inputBackground,

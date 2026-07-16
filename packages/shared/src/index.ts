@@ -75,6 +75,8 @@ export {
   emptyCustomerForm,
   formToCustomerPayload,
   isCustomerFormValid,
+  isStateRegistrationUnavailable,
+  STATE_REGISTRATION_UNAVAILABLE,
   validateCustomerForm,
   validateCustomerFormStep,
 } from "./customer-form.js";

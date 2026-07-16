@@ -1,25 +1,36 @@
-import { MobileHeader } from "@/components/layout";
-import { CatalogViewModeToggle } from "@/components/molecules/CatalogViewModeToggle";
 import {
+  KeyboardAvoidingScreen,
+  MobileHeader,
+  SafeScreen,
+} from "@/components/layout";
+import { AppToast } from "@/components/molecules/AppToast";
+import { CatalogFiltersModal } from "@/components/molecules/CatalogFiltersModal";
+import { CatalogViewModeToggle } from "@/components/molecules/CatalogViewModeToggle";
+import { CATALOG_SEARCH_PLACEHOLDER } from "@/lib/catalog-search";
+import {
+  ChevronDown,
+  ChevronUp,
   ClipboardCheck,
   Minus,
   Plus,
   ScanBarcode,
   Search,
+  ShoppingCart,
+  SlidersHorizontal,
 } from "lucide-react-native";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { BarcodeScannerModal } from "../components/BarcodeScannerModal";
 import {
-  CategoryFilterBar,
+  CollapsibleCatalogSection,
   HorizontalProductRail,
   ProductCatalogTile,
 } from "../components/ProductCatalogViews";
@@ -35,9 +46,39 @@ import { createQuickSaleStyles } from "./_quick-sale.styles";
 export default function QuickSaleScreen() {
   const styles = useThemedStyles(createQuickSaleStyles);
   const { colors } = useTheme();
+  const { height: windowHeight } = useWindowDimensions();
   const { viewMode, toggleViewMode } = useCatalogViewMode();
   const s = useQuickSaleScreen();
   const { catalog, layout } = s;
+
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [cartExpanded, setCartExpanded] = useState(false);
+
+  const cartExpandedMaxH = Math.min(windowHeight * 0.4, 280);
+  const hasCart = s.cartLines.length > 0;
+  const filterActive = catalog.categoryFilterId != null;
+
+  useEffect(() => {
+    if (!hasCart) setCartExpanded(false);
+  }, [hasCart]);
+
+  const footerHeight = useMemo(() => {
+    const padBottom = Math.max(s.insets.bottom, 12);
+    let h = 10 + padBottom + 56;
+    if (s.err || s.creditBlockedCheckout) h += 28;
+    if (hasCart) h += 52;
+    if (hasCart && cartExpanded) h += cartExpandedMaxH + 8;
+    return h;
+  }, [
+    s.insets.bottom,
+    s.err,
+    s.creditBlockedCheckout,
+    hasCart,
+    cartExpanded,
+    cartExpandedMaxH,
+  ]);
+
+  const toastBottom = footerHeight + 8;
 
   const header = (
     <View style={styles.headerBlock}>
@@ -102,6 +143,7 @@ export default function QuickSaleScreen() {
                 styles.pillText,
                 s.customerId === c.id && styles.pillTextActive,
               ]}
+              numberOfLines={1}
             >
               {c.name}
             </Text>
@@ -165,78 +207,31 @@ export default function QuickSaleScreen() {
         />
       ) : null}
 
-      {s.cartLines.length > 0 ? (
-        <View style={styles.cartSection}>
-          <Text style={styles.sectionTitle}>
-            Carrinho ({s.cartLines.length})
-          </Text>
-          {s.cartLines.map((line) => (
-            <View key={line.productId} style={styles.cartRow}>
-              <View style={styles.cartMain}>
-                <Text style={styles.cartName} numberOfLines={2}>
-                  {line.name}
-                </Text>
-                <Text style={styles.cartMeta}>
-                  R$ {fmtMoney(line.effectiveUnitPrice)}
-                  {line.discountPercent > 0
-                    ? ` · −${line.discountPercent}%`
-                    : ""}
-                  {" · "}Subtotal R$ {fmtMoney(s.cartLineTotal(line))}
-                </Text>
-              </View>
-              <View style={styles.cartActions}>
-                <View style={styles.qtyRow}>
-                  <Pressable
-                    hitSlop={8}
-                    style={styles.iconBtn}
-                    onPress={() => s.bumpQty(s.cartProductStub(line), -1)}
-                  >
-                    <Minus size={20} color={colors.text} strokeWidth={2.5} />
-                  </Pressable>
-                  <Text style={styles.qtyTxt}>{line.qty}</Text>
-                  <Pressable
-                    hitSlop={8}
-                    style={styles.iconBtn}
-                    onPress={() => s.bumpQty(s.cartProductStub(line), 1)}
-                  >
-                    <Plus size={20} color={colors.text} strokeWidth={2.5} />
-                  </Pressable>
-                </View>
-                <Pressable
-                  style={styles.discBtn}
-                  onPress={() => s.cycleDiscount(line.productId)}
-                >
-                  <Text style={styles.discBtnTxt}>
-                    Desc. {line.discountPercent}%
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          ))}
-          <Text style={styles.cartTotal}>Total R$ {fmtMoney(s.cartTotal)}</Text>
-        </View>
-      ) : null}
-
-      <Text
-        style={[
-          styles.sectionTitle,
-          { marginTop: s.cartLines.length ? 12 : 8 },
-        ]}
-      >
+      <Text style={[styles.sectionTitle, { marginTop: 8 }]}>
         Catálogo visual
       </Text>
       <View style={styles.searchRow}>
         <Search size={18} color={colors.iconMuted} style={styles.searchIcon} />
         <ThemedTextInput
           style={styles.searchInput}
-          placeholder="Buscar nome, SKU, código de barras ou categoria…"
+          placeholder={CATALOG_SEARCH_PLACEHOLDER}
           value={catalog.productQuery}
           onChangeText={catalog.setProductQuery}
           autoCorrect={false}
           autoCapitalize="none"
-          numberOfLines={1}
-          multiline={false}
         />
+        <Pressable
+          style={styles.filterBtn}
+          onPress={() => setFiltersOpen(true)}
+          accessibilityLabel="Filtros"
+        >
+          <SlidersHorizontal
+            size={20}
+            color={colors.primary}
+            strokeWidth={2.2}
+          />
+          {filterActive ? <View style={styles.filterBadge} /> : null}
+        </Pressable>
         <Pressable
           style={styles.scanBtn}
           onPress={() => s.setBarcodeOpen(true)}
@@ -252,18 +247,14 @@ export default function QuickSaleScreen() {
         Toque na foto para adicionar 1 · dois toques rápidos somam 2. Coração
         guarda nos favoritos (neste aparelho).
       </Text>
-      {s.scanMsg ? <Text style={styles.scanWarn}>{s.scanMsg}</Text> : null}
 
-      <CategoryFilterBar
-        categories={catalog.catalogCategories}
-        selectedCategoryId={catalog.categoryFilterId}
-        onSelectCategory={catalog.setCategoryFilterId}
-      />
-
-      <HorizontalProductRail
+      <CollapsibleCatalogSection
         title="Mais vendidos"
         products={catalog.topSellingProducts}
-        tileWidth={layout.railTileW}
+        viewMode={viewMode}
+        tileWidth={layout.tileW}
+        listTileWidth={layout.listTileW}
+        catalogGap={layout.catalogGap}
         favoriteIds={catalog.favoriteIds}
         onToggleFavorite={catalog.toggleFavorite}
         onProductPress={(p) => s.scheduleProductTap(p as SaleProduct)}
@@ -287,7 +278,7 @@ export default function QuickSaleScreen() {
   );
 
   return (
-    <View style={[styles.flex, { backgroundColor: colors.background }]}>
+    <SafeScreen variant="topOnly">
       <MobileHeader
         title="Venda rápida"
         subtitle="Montar pedido e carrinho"
@@ -299,19 +290,17 @@ export default function QuickSaleScreen() {
           />
         }
       />
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={64}
-      >
+      <KeyboardAvoidingScreen style={styles.flex} offset={8}>
         <FlatList
           key={viewMode}
           numColumns={viewMode === "list" ? 1 : 2}
           data={catalog.filteredProducts}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={header}
-          ListFooterComponent={<View style={{ height: s.footerPad }} />}
+          ListFooterComponent={<View style={{ height: footerHeight + 16 }} />}
           contentContainerStyle={styles.listContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           columnWrapperStyle={
             viewMode === "list"
               ? undefined
@@ -333,12 +322,120 @@ export default function QuickSaleScreen() {
           }
         />
 
+        <AppToast
+          visible={!!s.scanMsg}
+          message={s.scanMsg ?? ""}
+          tone={s.scanMsgOk ? "success" : "warning"}
+          onDismiss={s.clearScanMsg}
+          bottomOffset={toastBottom}
+        />
+
         <View
           style={[
             styles.footer,
             { paddingBottom: Math.max(s.insets.bottom, 12) },
           ]}
         >
+          {hasCart ? (
+            <>
+              <Pressable
+                style={styles.cartSummaryBtn}
+                onPress={() => setCartExpanded((v) => !v)}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: cartExpanded }}
+                accessibilityLabel="Carrinho"
+              >
+                <ShoppingCart
+                  size={18}
+                  color={colors.primary}
+                  strokeWidth={2.2}
+                />
+                <Text style={styles.cartSummaryText} numberOfLines={1}>
+                  Carrinho · {s.cartLines.length}{" "}
+                  {s.cartLines.length === 1 ? "item" : "itens"}
+                </Text>
+                <Text style={styles.cartSummaryMeta} numberOfLines={1}>
+                  R$ {fmtMoney(s.cartTotal)}
+                </Text>
+                {cartExpanded ? (
+                  <ChevronDown size={20} color={colors.textSecondary} />
+                ) : (
+                  <ChevronUp size={20} color={colors.textSecondary} />
+                )}
+              </Pressable>
+              {cartExpanded ? (
+                <View
+                  style={[
+                    styles.cartExpandedPanel,
+                    { maxHeight: cartExpandedMaxH },
+                  ]}
+                >
+                  <ScrollView
+                    style={styles.cartExpandedScroll}
+                    nestedScrollEnabled
+                    keyboardShouldPersistTaps="handled"
+                  >
+                    {s.cartLines.map((line) => (
+                      <View key={line.productId} style={styles.cartRow}>
+                        <View style={styles.cartMain}>
+                          <Text style={styles.cartName} numberOfLines={2}>
+                            {line.name}
+                          </Text>
+                          <Text style={styles.cartMeta}>
+                            R$ {fmtMoney(line.effectiveUnitPrice)}
+                            {line.discountPercent > 0
+                              ? ` · −${line.discountPercent}%`
+                              : ""}
+                            {" · "}Subtotal R$ {fmtMoney(s.cartLineTotal(line))}
+                          </Text>
+                        </View>
+                        <View style={styles.cartActions}>
+                          <View style={styles.qtyRow}>
+                            <Pressable
+                              hitSlop={8}
+                              style={styles.iconBtn}
+                              onPress={() =>
+                                s.bumpQty(s.cartProductStub(line), -1)
+                              }
+                            >
+                              <Minus
+                                size={20}
+                                color={colors.text}
+                                strokeWidth={2.5}
+                              />
+                            </Pressable>
+                            <Text style={styles.qtyTxt}>{line.qty}</Text>
+                            <Pressable
+                              hitSlop={8}
+                              style={styles.iconBtn}
+                              onPress={() =>
+                                s.bumpQty(s.cartProductStub(line), 1)
+                              }
+                            >
+                              <Plus
+                                size={20}
+                                color={colors.text}
+                                strokeWidth={2.5}
+                              />
+                            </Pressable>
+                          </View>
+                          <Pressable
+                            style={styles.discBtn}
+                            onPress={() => s.cycleDiscount(line.productId)}
+                          >
+                            <Text style={styles.discBtnTxt}>
+                              Desc. {line.discountPercent}%
+                            </Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null}
+            </>
+          ) : null}
+
           {s.err ? <Text style={styles.errFoot}>{s.err}</Text> : null}
           {s.creditBlockedCheckout ? (
             <Text style={styles.errFoot}>
@@ -382,7 +479,15 @@ export default function QuickSaleScreen() {
           onClose={() => s.setBarcodeOpen(false)}
           onBarcode={s.onBarcode}
         />
-      </KeyboardAvoidingView>
-    </View>
+
+        <CatalogFiltersModal
+          visible={filtersOpen}
+          onClose={() => setFiltersOpen(false)}
+          categories={catalog.catalogCategories}
+          selectedCategoryId={catalog.categoryFilterId}
+          onApply={catalog.setCategoryFilterId}
+        />
+      </KeyboardAvoidingScreen>
+    </SafeScreen>
   );
 }

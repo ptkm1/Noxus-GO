@@ -18,9 +18,12 @@ import {
   formatCepMask,
   formatCnpjMask,
   formatCpfMask,
+  isStateRegistrationUnavailable,
+  STATE_REGISTRATION_UNAVAILABLE,
 } from "@pedidos/shared";
+import { MapPin } from "lucide-react-native";
 import { useEffect } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
 const DOC_OPTIONS = [
   { id: "CNPJ" as CustomerDocumentType, label: "CNPJ" },
@@ -34,6 +37,10 @@ type Props = {
   onLookupCnpj: () => void;
   cnpjLoading: boolean;
   errors?: CustomerFormErrors;
+  latitude?: number | null;
+  longitude?: number | null;
+  onCaptureLocation?: () => void;
+  locationLoading?: boolean;
 };
 
 function FieldError({ message }: { message?: string }) {
@@ -46,6 +53,14 @@ function FieldError({ message }: { message?: string }) {
   );
 }
 
+function FieldLabel({ children }: { children: string }) {
+  return (
+    <ThemedText variant="caption" muted>
+      {children}
+    </ThemedText>
+  );
+}
+
 export function CustomerFormWizard({
   step,
   form,
@@ -53,7 +68,12 @@ export function CustomerFormWizard({
   onLookupCnpj,
   cnpjLoading,
   errors = {},
+  latitude,
+  longitude,
+  onCaptureLocation,
+  locationLoading,
 }: Props) {
+  const { colors } = useTheme();
   const { data: ufs = [] } = useIbgeUfs();
   const { data: municipios = [], isLoading: citiesLoading } = useIbgeMunicipios(
     form.state,
@@ -94,6 +114,8 @@ export function CustomerFormWizard({
     )?.nome ??
     form.city;
 
+  const hasCoords = latitude != null && longitude != null;
+
   if (step === 0) {
     return (
       <View style={styles.gap}>
@@ -114,9 +136,7 @@ export function CustomerFormWizard({
 
         {form.documentType === "CNPJ" ? (
           <>
-            <ThemedText variant="caption" muted>
-              CNPJ *
-            </ThemedText>
+            <FieldLabel>CNPJ *</FieldLabel>
             <View style={styles.row}>
               <ThemedTextInput
                 style={[styles.flex, { fontFamily: "monospace" }]}
@@ -130,24 +150,24 @@ export function CustomerFormWizard({
                 variant="secondary"
                 onPress={onLookupCnpj}
                 disabled={cnpjLoading}
-                style={{ minWidth: 100 }}
+                loading={cnpjLoading}
+                loadingLabel="Buscando…"
+                style={{ minWidth: 110 }}
               >
-                {cnpjLoading ? "…" : "Buscar"}
+                Buscar
               </ThemedButton>
             </View>
             <FieldError message={errors.cnpj} />
-            <ThemedText variant="caption" muted>
-              Razão social *
-            </ThemedText>
+
+            <FieldLabel>Razão social *</FieldLabel>
             <ThemedTextInput
               invalid={!!errors.legalName}
               value={form.legalName}
               onChangeText={(t) => onChange({ legalName: t })}
             />
             <FieldError message={errors.legalName} />
-            <ThemedText variant="caption" muted>
-              Nome fantasia
-            </ThemedText>
+
+            <FieldLabel>Nome fantasia</FieldLabel>
             <ThemedTextInput
               invalid={!!errors.tradeName}
               value={form.tradeName}
@@ -157,9 +177,7 @@ export function CustomerFormWizard({
           </>
         ) : (
           <>
-            <ThemedText variant="caption" muted>
-              CPF *
-            </ThemedText>
+            <FieldLabel>CPF *</FieldLabel>
             <ThemedTextInput
               style={{ fontFamily: "monospace" }}
               invalid={!!errors.cpf}
@@ -169,9 +187,8 @@ export function CustomerFormWizard({
               placeholder="000.000.000-00"
             />
             <FieldError message={errors.cpf} />
-            <ThemedText variant="caption" muted>
-              Nome completo *
-            </ThemedText>
+
+            <FieldLabel>Nome completo *</FieldLabel>
             <ThemedTextInput
               invalid={!!errors.name}
               value={form.name}
@@ -188,9 +205,7 @@ export function CustomerFormWizard({
     return (
       <View style={styles.gap}>
         <ThemedText variant="titleSm">Endereço</ThemedText>
-        <ThemedText variant="caption" muted>
-          CEP
-        </ThemedText>
+        <FieldLabel>CEP</FieldLabel>
         <View style={styles.row}>
           <ThemedTextInput
             style={[styles.flex, { fontFamily: "monospace" }]}
@@ -202,73 +217,191 @@ export function CustomerFormWizard({
             variant="secondary"
             onPress={() => void onLookupCep()}
             disabled={cepLoading}
+            loading={cepLoading}
+            loadingLabel="Buscando…"
           >
-            {cepLoading ? "…" : "Buscar"}
+            Buscar
           </ThemedButton>
         </View>
         {cepError ? (
-          <ThemedText variant="caption" style={{ color: "#c00" }}>
+          <ThemedText variant="caption" style={{ color: colors.danger }}>
             {cepError}
           </ThemedText>
         ) : null}
-        <ThemedText variant="caption" muted>
-          Endereço
-        </ThemedText>
+
+        <FieldLabel>Endereço</FieldLabel>
         <ThemedTextInput
           value={form.street}
           onChangeText={(t) => onChange({ street: t })}
         />
-        <ThemedText variant="caption" muted>
-          Bairro
-        </ThemedText>
+
+        <FieldLabel>Bairro</FieldLabel>
         <ThemedTextInput
           value={form.neighborhood}
           onChangeText={(t) => onChange({ neighborhood: t })}
         />
-        <ThemedText variant="caption" muted>
-          Número
-        </ThemedText>
+
+        <FieldLabel>Número</FieldLabel>
         <ThemedTextInput
           value={form.number}
           onChangeText={(t) => onChange({ number: t })}
         />
-        <FormSelectField
-          label="UF"
-          value={form.state}
-          options={ufs.map((u) => ({
-            value: u.sigla,
-            label: `${u.sigla} — ${u.nome}`,
-          }))}
-          onChange={(uf) => onChange({ state: uf, city: "", cityIbgeCode: "" })}
-        />
-        <FormSelectField
-          label="Cidade"
-          value={citySelectValue}
-          disabled={!form.state}
-          placeholder={
-            form.state
-              ? citiesLoading
-                ? "Carregando…"
-                : "Selecione"
-              : "Escolha a UF primeiro"
-          }
-          options={municipios.map((m) => ({ value: m.nome, label: m.nome }))}
-          onChange={(cityName) => {
-            const m = municipios.find((x) => x.nome === cityName);
-            onChange({ city: cityName, cityIbgeCode: m ? String(m.id) : "" });
-          }}
-        />
-        <ThemedText variant="caption" muted>
-          Inscrição estadual
-        </ThemedText>
+
+        <FieldLabel>Complemento</FieldLabel>
         <ThemedTextInput
-          value={form.stateRegistration}
-          onChangeText={(t) => onChange({ stateRegistration: t })}
+          value={form.addressNote}
+          onChangeText={(t) => onChange({ addressNote: t })}
+          placeholder="Apto, sala, referência…"
         />
-        <ThemedText variant="caption" muted>
-          Cód. município
-        </ThemedText>
-        <ThemedTextInput value={form.cityIbgeCode} editable={false} />
+
+        <View style={styles.row}>
+          <View style={styles.flex}>
+            <FormSelectField
+              label="UF"
+              value={form.state}
+              options={ufs.map((u) => ({
+                value: u.sigla,
+                label: `${u.sigla} — ${u.nome}`,
+              }))}
+              onChange={(uf) =>
+                onChange({ state: uf, city: "", cityIbgeCode: "" })
+              }
+            />
+          </View>
+          <View style={[styles.flex, { flex: 1.4 }]}>
+            <FormSelectField
+              label="Cidade"
+              value={citySelectValue}
+              disabled={!form.state}
+              placeholder={
+                form.state
+                  ? citiesLoading
+                    ? "Carregando…"
+                    : "Selecione"
+                  : "UF primeiro"
+              }
+              options={municipios.map((m) => ({
+                value: m.nome,
+                label: m.nome,
+              }))}
+              onChange={(cityName) => {
+                const m = municipios.find((x) => x.nome === cityName);
+                onChange({
+                  city: cityName,
+                  cityIbgeCode: m ? String(m.id) : "",
+                });
+              }}
+            />
+          </View>
+        </View>
+
+        <FieldLabel>Inscrição estadual *</FieldLabel>
+        <View
+          style={[
+            styles.ieField,
+            {
+              backgroundColor: colors.inputBackground,
+              borderColor: errors.stateRegistration
+                ? colors.danger
+                : colors.inputBorder,
+            },
+          ]}
+        >
+          <ThemedTextInput
+            style={styles.ieInput}
+            invalid={!!errors.stateRegistration}
+            value={
+              isStateRegistrationUnavailable(form.stateRegistration)
+                ? ""
+                : form.stateRegistration
+            }
+            editable={!isStateRegistrationUnavailable(form.stateRegistration)}
+            placeholder={
+              isStateRegistrationUnavailable(form.stateRegistration)
+                ? "indisponível"
+                : "Número da IE"
+            }
+            onChangeText={(t) => onChange({ stateRegistration: t })}
+          />
+          <Pressable
+            style={styles.ieCheckRow}
+            onPress={() => {
+              if (isStateRegistrationUnavailable(form.stateRegistration)) {
+                onChange({ stateRegistration: "" });
+              } else {
+                onChange({
+                  stateRegistration: STATE_REGISTRATION_UNAVAILABLE,
+                });
+              }
+            }}
+            accessibilityRole="checkbox"
+            accessibilityState={{
+              checked: isStateRegistrationUnavailable(form.stateRegistration),
+            }}
+          >
+            <View
+              style={[
+                styles.ieCheckbox,
+                {
+                  borderColor: colors.primary,
+                  backgroundColor: isStateRegistrationUnavailable(
+                    form.stateRegistration,
+                  )
+                    ? colors.primary
+                    : "transparent",
+                },
+              ]}
+            >
+              {isStateRegistrationUnavailable(form.stateRegistration) ? (
+                <ThemedText
+                  variant="caption"
+                  style={{ color: colors.primaryForeground, fontWeight: "800" }}
+                >
+                  ✓
+                </ThemedText>
+              ) : null}
+            </View>
+            <ThemedText variant="caption" muted style={{ flex: 1 }}>
+              Não sei a inscrição estadual
+            </ThemedText>
+          </Pressable>
+        </View>
+        <FieldError message={errors.stateRegistration} />
+
+        <FieldLabel>Código município (IBGE)</FieldLabel>
+        <ThemedTextInput
+          value={form.cityIbgeCode}
+          onChangeText={(t) => onChange({ cityIbgeCode: t.replace(/\D/g, "") })}
+          keyboardType="number-pad"
+          placeholder="Preenchido pelo CEP"
+        />
+
+        {onCaptureLocation ? (
+          <View style={styles.locationBlock}>
+            <ThemedButton
+              variant="secondary"
+              onPress={onCaptureLocation}
+              loading={locationLoading}
+              loadingLabel="Obtendo localização…"
+            >
+              <View style={styles.locationBtnInner}>
+                <MapPin size={18} color={colors.primary} />
+                <ThemedText variant="bodySm" style={{ fontWeight: "600" }}>
+                  Usar localização atual
+                </ThemedText>
+              </View>
+            </ThemedButton>
+            {hasCoords ? (
+              <ThemedText variant="caption" muted>
+                GPS: {latitude!.toFixed(5)}, {longitude!.toFixed(5)}
+              </ThemedText>
+            ) : (
+              <ThemedText variant="caption" muted>
+                Opcional — grava latitude e longitude no cadastro.
+              </ThemedText>
+            )}
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -276,16 +409,14 @@ export function CustomerFormWizard({
   return (
     <View style={styles.gap}>
       <ThemedText variant="titleSm">Contato</ThemedText>
-      <ThemedText variant="caption" muted>
-        Telefone
-      </ThemedText>
+      <FieldLabel>Telefone</FieldLabel>
       <ThemedTextInput
         value={form.phone}
         onChangeText={(t) => onChange({ phone: t })}
+        keyboardType="phone-pad"
       />
-      <ThemedText variant="caption" muted>
-        E-mail
-      </ThemedText>
+
+      <FieldLabel>E-mail</FieldLabel>
       <ThemedTextInput
         invalid={!!errors.email}
         value={form.email}
@@ -294,16 +425,14 @@ export function CustomerFormWizard({
         autoCapitalize="none"
       />
       <FieldError message={errors.email} />
-      <ThemedText variant="caption" muted>
-        Comprador
-      </ThemedText>
+
+      <FieldLabel>Comprador</FieldLabel>
       <ThemedTextInput
         value={form.buyerName}
         onChangeText={(t) => onChange({ buyerName: t })}
       />
-      <ThemedText variant="caption" muted>
-        Observação
-      </ThemedText>
+
+      <FieldLabel>Observação</FieldLabel>
       <ThemedTextInput
         value={form.notes}
         onChangeText={(t) => onChange({ notes: t })}
@@ -320,6 +449,38 @@ export function CustomerFormWizardLoading() {
 
 const styles = StyleSheet.create({
   gap: { gap: 12 },
-  row: { flexDirection: "row", gap: 8, alignItems: "center" },
+  row: { flexDirection: "row", gap: 8, alignItems: "flex-start" },
   flex: { flex: 1 },
+  locationBlock: { gap: 8, marginTop: 4 },
+  locationBtnInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  ieField: {
+    borderWidth: 1,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  ieInput: {
+    borderWidth: 0,
+    borderRadius: 0,
+    backgroundColor: "transparent",
+  },
+  ieCheckRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+    paddingTop: 2,
+  },
+  ieCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

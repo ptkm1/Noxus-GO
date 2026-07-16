@@ -4,12 +4,14 @@ import { radiiPx } from "@pedidos/design-tokens";
 import { useMemo, useState } from "react";
 import {
   FlatList,
+  KeyboardAvoidingView,
   Modal,
   Pressable,
   StyleSheet,
   TextInput,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type Option = { value: string; label: string };
 
@@ -82,68 +84,76 @@ export function FormSelectField({
         visible={open}
         animationType="slide"
         onRequestClose={() => setOpen(false)}
+        statusBarTranslucent
       >
-        <View style={[styles.modal, { backgroundColor: colors.background }]}>
-          <ThemedText variant="titleSm" style={{ marginBottom: 12 }}>
-            {label}
-          </ThemedText>
-          <TextInput
-            value={q}
-            onChangeText={setQ}
-            placeholder="Buscar…"
-            placeholderTextColor={colors.placeholder}
-            style={[
-              styles.search,
-              {
-                color: colors.inputText,
-                borderColor: colors.inputBorder,
-                backgroundColor: colors.inputBackground,
-              },
-            ]}
-          />
-          <FlatList
-            data={filtered}
-            keyExtractor={(item) => item.value}
-            style={{ marginTop: 12 }}
-            renderItem={({ item }) => (
-              <Pressable
-                onPress={() => {
-                  onChange(item.value);
-                  setOpen(false);
-                  setQ("");
-                }}
-                style={[
-                  styles.option,
-                  {
-                    backgroundColor:
-                      item.value === value ? colors.chipActive : colors.card,
-                    borderColor: colors.border,
-                  },
-                ]}
-              >
-                <ThemedText
-                  variant="bodySm"
-                  style={{
-                    color:
-                      item.value === value
-                        ? colors.chipTextActive
-                        : colors.text,
-                  }}
-                >
-                  {item.label}
-                </ThemedText>
-              </Pressable>
-            )}
-          />
-          <Pressable onPress={() => setOpen(false)} style={{ marginTop: 16 }}>
-            <ThemedText
-              variant="body"
-              style={{ color: colors.primary, textAlign: "center" }}
-            >
-              Fechar
+        <SafeAreaView
+          style={[styles.modal, { backgroundColor: colors.background }]}
+          edges={["top", "bottom", "left", "right"]}
+        >
+          <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+            <ThemedText variant="titleSm" style={{ marginBottom: 12 }}>
+              {label}
             </ThemedText>
-          </Pressable>
-        </View>
+            <TextInput
+              value={q}
+              onChangeText={setQ}
+              placeholder="Buscar…"
+              placeholderTextColor={colors.placeholder}
+              style={[
+                styles.search,
+                {
+                  color: colors.inputText,
+                  borderColor: colors.inputBorder,
+                  backgroundColor: colors.inputBackground,
+                },
+              ]}
+            />
+            <FlatList
+              data={filtered}
+              keyExtractor={(item) => item.value}
+              style={{ marginTop: 12, flex: 1 }}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              renderItem={({ item }) => (
+                <Pressable
+                  onPress={() => {
+                    onChange(item.value);
+                    setOpen(false);
+                    setQ("");
+                  }}
+                  style={[
+                    styles.option,
+                    {
+                      backgroundColor:
+                        item.value === value ? colors.chipActive : colors.card,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <ThemedText
+                    variant="bodySm"
+                    style={{
+                      color:
+                        item.value === value
+                          ? colors.chipTextActive
+                          : colors.text,
+                    }}
+                  >
+                    {item.label}
+                  </ThemedText>
+                </Pressable>
+              )}
+            />
+            <Pressable onPress={() => setOpen(false)} style={{ marginTop: 16 }}>
+              <ThemedText
+                variant="body"
+                style={{ color: colors.primary, textAlign: "center" }}
+              >
+                Fechar
+              </ThemedText>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
       </Modal>
     </View>
   );
@@ -158,7 +168,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
     justifyContent: "center",
   },
-  modal: { flex: 1, padding: 20, paddingTop: 56 },
+  modal: { flex: 1, padding: 20 },
   search: {
     borderWidth: 1,
     borderRadius: radiiPx.md,
