@@ -1,4 +1,9 @@
+import { useAuth } from "@/auth/AuthContext";
+import { useConfirm } from "@/components/confirm";
+import { ProductListCell } from "@/components/ProductCombobox";
 import { AppSelect } from "@/components/ui/app-select";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -7,14 +12,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { apiFetch, downloadPdf, printPdf } from "@/lib/api";
+import { formatOrderCode } from "@/lib/order-code";
+import { isWebAdmin } from "@/lib/staff";
+import { cn } from "@/lib/utils";
 import { ORDER_STATUSES, orderStatusLabel } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Download, Printer } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { apiFetch, downloadPdf, printPdf } from "../lib/api";
 
 type Order = {
   id: string;
+  orderNumber?: number | null;
   status: string;
   totalAmount: unknown;
   notes: string | null;
@@ -24,15 +34,54 @@ type Order = {
   customer: { name: string; email: string | null } | null;
   items: {
     id: string;
+    productId?: string;
     productName: string;
     quantity: number;
     unitPrice: unknown;
-    product: { name: string; sku: string | null };
+    product: {
+      id?: string;
+      name: string;
+      sku: string | null;
+      imageUrl?: string | null;
+    };
   }[];
 };
 
+function statusBadgeClass(status: string): string {
+  switch (status) {
+    case "CONFIRMED":
+      return "border-transparent bg-emerald-500/15 text-emerald-800 dark:text-emerald-300";
+    case "CANCELLED":
+      return "border-transparent bg-destructive/15 text-destructive";
+    case "PENDING_CREDIT_APPROVAL":
+      return "border-transparent bg-amber-500/15 text-amber-800 dark:text-amber-300";
+    default:
+      return "border-transparent bg-muted text-muted-foreground";
+  }
+}
+
+function formatMoney(value: unknown) {
+  return Number(value).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
+function statusChangeHint(status: string): string {
+  if (status === "CANCELLED") {
+    return " Pedidos cancelados podem estornar estoque se estavam confirmados.";
+  }
+  if (status === "CONFIRMED") {
+    return " Confirmar a venda pode baixar estoque.";
+  }
+  return "";
+}
+
 export function OrderDetailPage() {
   const { orderId } = useParams<{ orderId: string }>();
+  const { user } = useAuth();
+  const canWrite = isWebAdmin(user?.role);
+  const { confirm } = useConfirm();
   const qc = useQueryClient();
   const [pdfPending, setPdfPending] = useState(false);
   const [pdfErr, setPdfErr] = useState<string | null>(null);
@@ -61,8 +110,6 @@ export function OrderDetailPage() {
     },
   });
 
-  if (!orderId) return null;
-
   async function handlePrintPdf() {
     if (!orderId) return;
     setPdfErr(null);
@@ -77,13 +124,13 @@ export function OrderDetailPage() {
   }
 
   async function handleDownloadPdf() {
-    if (!orderId) return;
+    if (!orderId || !order) return;
     setPdfErr(null);
     setPdfPending(true);
     try {
       await downloadPdf(
         `/admin/orders/${orderId}/pdf`,
-        `pedido-${orderId.slice(0, 8)}.pdf`,
+        `pedido-${formatOrderCode(order).replace("#", "")}.pdf`,
       );
     } catch {
       setPdfErr("Não foi possível baixar o PDF.");
@@ -92,115 +139,226 @@ export function OrderDetailPage() {
     }
   }
 
+  async function handleStatusChange(status: string) {
+    if (!order || status === order.status) return;
+    const ok = await confirm({
+      title: "Alterar status da venda?",
+      description: `O status será alterado de “${orderStatusLabel(order.status)}” para “${orderStatusLabel(status)}”.${statusChangeHint(status)}`,
+      confirmLabel: "Alterar status",
+      tone: status === "CANCELLED" ? "destructive" : "default",
+    });
+    if (!ok) return;
+    patchStatus.mutate(status);
+  }
+
+  if (!orderId) return null;
+
+  const backLink = (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button variant="ghost" size="sm" className="-ml-2 gap-1.5" asChild>
+        <Link to="/vendas">
+          <ArrowLeft className="size-4" />
+          Todas as vendas
+        </Link>
+      </Button>
+    </div>
+  );
+
+  if (isLoading || !order) {
+    return (
+      <div className="space-y-6">
+        {backLink}
+        <p className="text-muted-foreground">Carregando…</p>
+      </div>
+    );
+  }
+
+  const code = formatOrderCode(order);
+  const showCreditHold =
+    order.status === "PENDING_CREDIT_APPROVAL" &&
+    order.creditHoldReasons != null;
+
   return (
     <div className="space-y-6">
-      <Link to="/vendas" className="text-sm text-primary">
-        ← Todas as vendas
-      </Link>
+      {backLink}
 
-      {isLoading || !order ? (
-        <p className="text-muted-foreground">Carregando…</p>
-      ) : (
-        <div className="rounded-xl border border-border bg-card p-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h1 className="text-xl font-semibold">
-                Venda {order.id.slice(0, 8)}…
-              </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {new Date(order.createdAt).toLocaleString("pt-BR")}
-              </p>
-            </div>
+      <div className="surface-card overflow-hidden">
+        <div className="flex flex-col gap-6 border-b border-border p-6 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              <button
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                Venda {code}
+              </h1>
+              <Badge
+                variant="outline"
+                className={statusBadgeClass(order.status)}
+              >
+                {orderStatusLabel(order.status)}
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {new Date(order.createdAt).toLocaleString("pt-BR")}
+            </p>
+            <p className="text-3xl font-semibold tabular-nums text-foreground">
+              {formatMoney(order.totalAmount)}
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:items-end">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
                 type="button"
-                className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-50"
+                variant="outline"
+                size="sm"
                 onClick={() => void handlePrintPdf()}
                 disabled={pdfPending}
               >
-                {pdfPending ? "Gerando…" : "Imprimir pedido"}
-              </button>
-              <button
+                <Printer className="size-4" />
+                {pdfPending ? "Gerando…" : "Imprimir"}
+              </Button>
+              <Button
                 type="button"
-                className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-50"
+                variant="outline"
+                size="sm"
                 onClick={() => void handleDownloadPdf()}
                 disabled={pdfPending}
               >
-                Baixar PDF
-              </button>
-              <span className="text-sm text-muted-foreground">Status:</span>
-              <AppSelect
-                value={order.status}
-                disabled={patchStatus.isPending}
-                triggerClassName="w-auto min-w-[10rem]"
-                options={ORDER_STATUSES.map((s) => ({
-                  value: s,
-                  label: orderStatusLabel(s),
-                }))}
-                onValueChange={(v) => patchStatus.mutate(v)}
-              />
+                <Download className="size-4" />
+                Exportar PDF
+              </Button>
             </div>
+            {canWrite ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-muted-foreground">Status</span>
+                <AppSelect
+                  value={order.status}
+                  disabled={patchStatus.isPending}
+                  triggerClassName="w-auto min-w-[11rem]"
+                  options={ORDER_STATUSES.map((s) => ({
+                    value: s,
+                    label: orderStatusLabel(s),
+                  }))}
+                  onValueChange={(v) => void handleStatusChange(v)}
+                />
+              </div>
+            ) : null}
           </div>
+        </div>
 
-          {pdfErr ? (
-            <p className="mt-4 text-sm text-destructive">{pdfErr}</p>
-          ) : null}
+        {pdfErr ? (
+          <p className="border-b border-border px-6 py-3 text-sm text-destructive">
+            {pdfErr}
+          </p>
+        ) : null}
+        {patchStatus.isError ? (
+          <p className="border-b border-border px-6 py-3 text-sm text-destructive">
+            {(patchStatus.error as Error).message ||
+              "Não foi possível alterar o status."}
+          </p>
+        ) : null}
 
-          <dl className="mt-6 grid gap-2 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-muted-foreground">Vendedor</dt>
-              <dd className="font-medium">
-                {order.seller.user.name} ({order.seller.user.email})
+        <dl className="grid gap-6 p-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Cliente
+            </dt>
+            <dd className="mt-1.5 text-sm font-medium text-foreground">
+              {order.customer?.name ?? "—"}
+            </dd>
+            {order.customer?.email ? (
+              <dd className="mt-0.5 text-xs text-muted-foreground">
+                {order.customer.email}
               </dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Cliente</dt>
-              <dd className="font-medium">{order.customer?.name ?? "—"}</dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-muted-foreground">
-                Motivos de crédito (se aguardando)
-              </dt>
-              <dd className="whitespace-pre-wrap font-mono text-xs text-foreground">
-                {order.creditHoldReasons != null
-                  ? JSON.stringify(order.creditHoldReasons, null, 2)
-                  : "—"}
-              </dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-muted-foreground">Observações</dt>
-              <dd>{order.notes ?? "—"}</dd>
-            </div>
-          </dl>
+            ) : null}
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Vendedor
+            </dt>
+            <dd className="mt-1.5 text-sm font-medium text-foreground">
+              {order.seller.user.name}
+            </dd>
+            <dd className="mt-0.5 text-xs text-muted-foreground">
+              {order.seller.user.email}
+            </dd>
+          </div>
+          <div className="sm:col-span-2">
+            <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Observações
+            </dt>
+            <dd className="mt-1.5 text-sm text-foreground">
+              {order.notes?.trim() ? order.notes : "—"}
+            </dd>
+          </div>
+        </dl>
 
-          <h2 className="mt-8 font-medium">Itens</h2>
-          <Table className="mt-2">
+        {showCreditHold ? (
+          <div className="mx-6 mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+            <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+              Motivos de crédito
+            </p>
+            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-xs text-amber-950/80 dark:text-amber-100/80">
+              {JSON.stringify(order.creditHoldReasons, null, 2)}
+            </pre>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="surface-card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+          <h2 className="font-medium text-foreground">Itens</h2>
+          <span className="text-sm text-muted-foreground">
+            {order.items.length} {order.items.length === 1 ? "item" : "itens"}
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="pb-2">Produto</TableHead>
-                <TableHead className="pb-2">Qtd</TableHead>
-                <TableHead className="pb-2">Preço unit.</TableHead>
-                <TableHead className="pb-2">Subtotal</TableHead>
+                <TableHead className="px-6">Produto</TableHead>
+                <TableHead className="px-4 text-right">Qtd</TableHead>
+                <TableHead className="px-4 text-right">Preço unit.</TableHead>
+                <TableHead className="px-6 text-right">Subtotal</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {order.items.map((it) => (
                 <TableRow key={it.id}>
-                  <TableCell className="py-2">{it.productName}</TableCell>
-                  <TableCell>{it.quantity}</TableCell>
-                  <TableCell>R$ {Number(it.unitPrice).toFixed(2)}</TableCell>
-                  <TableCell>
-                    R$ {(Number(it.unitPrice) * it.quantity).toFixed(2)}
+                  <TableCell className="px-6 py-3">
+                    <ProductListCell
+                      product={{
+                        id: it.product?.id ?? it.productId ?? it.id,
+                        name: it.product?.name ?? it.productName,
+                        sku: it.product?.sku,
+                        imageUrl: it.product?.imageUrl,
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-right tabular-nums">
+                    {it.quantity}
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-right tabular-nums">
+                    {formatMoney(it.unitPrice)}
+                  </TableCell>
+                  <TableCell className="px-6 py-3 text-right font-medium tabular-nums">
+                    {formatMoney(Number(it.unitPrice) * it.quantity)}
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-          <p className="mt-4 text-right text-lg font-semibold">
-            Total: R$ {Number(order.totalAmount).toFixed(2)}
-          </p>
         </div>
-      )}
+        <div
+          className={cn(
+            "flex items-center justify-between border-t border-border px-6 py-4",
+          )}
+        >
+          <span className="text-sm text-muted-foreground">Total</span>
+          <span className="text-lg font-semibold tabular-nums">
+            {formatMoney(order.totalAmount)}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

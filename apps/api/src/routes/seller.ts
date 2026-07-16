@@ -330,7 +330,12 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       }
 
       if (order.status === "CONFIRMED") {
-        await applyStockOnStatusChange(order.id, "DRAFT", "CONFIRMED");
+        await applyStockOnStatusChange(
+          order.id,
+          "DRAFT",
+          "CONFIRMED",
+          auth.sub,
+        );
       }
 
       return order;

@@ -74,6 +74,28 @@ enum ProductClassification {
   OTHER
 }
 
+enum StockMovementType {
+  MANUAL_IN
+  MANUAL_OUT
+  ADJUST
+  SALE
+  SALE_REVERSAL
+}
+
+enum AccountsPayableStatus {
+  AUTHORIZED
+  PENDING
+  PAID
+  CANCELLED
+}
+
+/// Nível de acesso na matriz de roles (org-scoped).
+enum AccessLevel {
+  none
+  read
+  write
+}
+
 model Organization {
   id               String             @id @default(cuid())
   name             String
@@ -88,6 +110,10 @@ model Organization {
   creditPolicy     CreditPolicy       @default(WARN_ONLY)
   /// Desconto máximo extra do vendedor (%) quando o produto não define `maxSellerDiscountPercent`.
   defaultMaxSellerDiscountPercent Decimal @default(50) @db.Decimal(5, 2)
+  /// TODO futuro: CNPJ do emitente para NF-e real / certificado.
+  cnpj             String?
+  /// TODO futuro: Inscrição estadual do emitente.
+  stateRegistration String?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   users            User[]
@@ -109,6 +135,30 @@ model Organization {
   sellerLocationHistory SellerLocationHistory[]
   salesTeams         SalesTeam[]
   suppliers          Supplier[]
+  productLots        ProductLot[]
+  stockMovements     StockMovement[]
+  auditLogs          AuditLog[]
+  costCenters        CostCenter[]
+  expenseHistories   ExpenseHistory[]
+  fixedExpenses      OperationalFixedExpense[]
+  accountsPayables   AccountsPayable[]
+  rolePermissions    OrganizationRolePermission[]
+}
+
+/// Matriz de permissões por organização (defaults seedados; ADMIN edita via painel).
+model OrganizationRolePermission {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role           Role
+  /// Chave estável alinhada a PermissionResource (ex.: stock, orders).
+  resource       String
+  level          AccessLevel
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([organizationId, role, resource])
+  @@index([organizationId])
 }
 
 model User {
@@ -116,14 +166,20 @@ model User {
   email          String       @unique
   passwordHash   String
   name           String
+  /// Matrícula funcional (única por organização quando preenchida).
+  matricula      String?
   role           Role
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   seller         Seller?
   managedSellers Seller[]     @relation("SellerManager")
   notifications  Notification[]
+  stockMovements StockMovement[]
+  auditLogs      AuditLog[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, matricula])
 }
 
 model Seller {
@@ -268,6 +324,8 @@ model Supplier {
   tradeName      String
   active         Boolean      @default(true)
   products       Product[]
+  fixedExpenses  OperationalFixedExpense[]
+  accountsPayables AccountsPayable[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -339,12 +397,78 @@ model Product {
   comboLines       ProductComboLine[]
   commissionRules  SellerCommissionRule[]
   orderItems       OrderItem[]
+  lots             ProductLot[]
+  stockMovements   StockMovement[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
   @@unique([organizationId, barcode])
   @@index([organizationId, supplierId])
+  @@index([organizationId, categoryId])
   @@index([organizationId, ncm])
+}
+
+/// Lote de produto com validade e saldo próprio.
+model ProductLot {
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  lotCode        String
+  expiresAt      DateTime
+  qty            Int            @default(0)
+  movements      StockMovement[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([productId, lotCode])
+  @@index([organizationId, expiresAt])
+  @@index([productId, expiresAt])
+}
+
+/// Ledger de movimentações de estoque.
+model StockMovement {
+  id             String            @id @default(cuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type           StockMovementType
+  qtyDelta       Int
+  balanceAfter   Int
+  lotId          String?
+  lot            ProductLot?       @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  lotCode        String?
+  expiresAt      DateTime?
+  userId         String?
+  user           User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  orderId        String?
+  order          Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  reason         String?
+  createdAt      DateTime          @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([productId, createdAt])
+  @@index([orderId])
+}
+
+/// Histórico rastreável de alterações sensíveis.
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userMatricula  String?
+  action         String
+  entityType     String
+  entityId       String?
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, entityType, entityId])
 }
 
 model ProductPromotion {
@@ -589,9 +713,19 @@ model Order {
   clientMutationId String? @unique
   /// Motivos registrados quando o pedido ficou aguardando aprovação de crédito.
   creditHoldReasons Json?
+  /// TODO futuro: número sequencial por org para filtro "Número entre" (hoje id=cuid). Pode ser removido ou implementado depois.
+  orderNumber    Int?
+  /// TODO futuro: flag de orçamento vs pedido real. Reservado; UI não filtra neste ciclo.
+  isQuote        Boolean      @default(false)
+  /// TODO futuro: "Representada" (multi-empresa). Reservado; UI não filtra neste ciclo.
+  representada   String?
   items          OrderItem[]
+  stockMovements StockMovement[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, orderNumber])
+  @@index([organizationId, createdAt])
 }
 
 model OrderItem {
@@ -614,6 +748,92 @@ model Notification {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String
   body      String
-  read      Boolean  @default(false)
+  read      Boolean   @default(false)
   createdAt DateTime @default(now())
+}
+
+/// Centro de custo (lookup para lançamentos / despesas fixas).
+model CostCenter {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code           String
+  name           String
+  active         Boolean      @default(true)
+  fixedExpenses  OperationalFixedExpense[]
+  accountsPayables AccountsPayable[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+/// Histórico contábil / natureza da despesa (ex.: IMPOSTO).
+model ExpenseHistory {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code           String
+  description    String
+  active         Boolean      @default(true)
+  fixedExpenses  OperationalFixedExpense[]
+  accountsPayables AccountsPayable[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+/// Template de despesa operacional fixa (recorrente) para uso futuro em relatórios.
+model OperationalFixedExpense {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  supplierId     String?
+  supplier       Supplier?    @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  costCenterId   String?
+  costCenter     CostCenter?  @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
+  historyId      String?
+  history        ExpenseHistory? @relation(fields: [historyId], references: [id], onDelete: SetNull)
+  amount         Decimal      @db.Decimal(14, 2)
+  /// Dia do mês do vencimento recorrente (1–28).
+  dayOfMonth     Int
+  active         Boolean      @default(true)
+  notes          String?
+  competenceLabel String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, active])
+}
+
+/// Lançamento de contas a pagar (despesa operacional).
+model AccountsPayable {
+  id             String                @id @default(cuid())
+  organizationId String
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Número / referência do documento.
+  docNumber      String
+  supplierId     String
+  supplier       Supplier              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  issueDate      DateTime
+  dueDate        DateTime
+  /// Competência (usar 1º dia do mês).
+  competence     DateTime
+  historyId      String?
+  history        ExpenseHistory?       @relation(fields: [historyId], references: [id], onDelete: SetNull)
+  costCenterId   String?
+  costCenter     CostCenter?           @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
+  amount         Decimal               @db.Decimal(14, 2)
+  notes          String?
+  status         AccountsPayableStatus @default(AUTHORIZED)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@index([organizationId, dueDate])
+  @@index([organizationId, status])
+  @@index([organizationId, supplierId])
 }

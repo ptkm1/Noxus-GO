@@ -1,4 +1,4 @@
-import type { Role } from "@pedidos/shared";
+import type { PermissionLevel, PermissionResource, Role } from "@pedidos/shared";
 import {
   createContext,
   useCallback,
@@ -14,12 +14,15 @@ export type User = {
   id: string;
   email: string;
   name: string;
+  matricula?: string | null;
   role: Role;
   organizationId: string;
   sellerId: string | null;
   isTeamLeader?: boolean;
   teamId?: string | null;
   teamName?: string | null;
+  /** Permissões efetivas da org para o role atual (`/auth/me`). */
+  permissions?: Partial<Record<PermissionResource, PermissionLevel>>;
 };
 
 export type RegisterInput = {
@@ -35,6 +38,7 @@ type AuthState = {
   login: (email: string, password: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -60,9 +64,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    if (!getAccessToken()) {
+      setUser(null);
+      return;
+    }
+    try {
+      const me = await apiFetch<User>("/auth/me");
+      setUser(me);
+    } catch {
+      /* mantém user atual se falhar refresh pontual */
+    }
+  }, []);
+
   useEffect(() => {
     void loadMe();
   }, [loadMe]);
+
+  useEffect(() => {
+    const onRefresh = () => {
+      void refreshUser();
+    };
+    window.addEventListener("pedidos:auth-refresh", onRefresh);
+    return () => window.removeEventListener("pedidos:auth-refresh", onRefresh);
+  }, [refreshUser]);
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await apiFetch<{
@@ -98,8 +123,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, register, logout }),
-    [user, loading, login, register, logout],
+    () => ({ user, loading, login, register, logout, refreshUser }),
+    [user, loading, login, register, logout, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

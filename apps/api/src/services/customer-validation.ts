@@ -92,6 +92,17 @@ function refineCustomerDocument(
       path: ["state"],
     });
   }
+
+  if (!partial) {
+    const ie = (data.stateRegistration ?? "").trim();
+    if (!ie) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Inscrição estadual obrigatória.",
+        path: ["stateRegistration"],
+      });
+    }
+  }
 }
 
 export const customerBodySchema = customerFieldsSchema.superRefine(

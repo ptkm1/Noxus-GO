@@ -1,9 +1,9 @@
+import { KeyboardAvoidingScreen, SafeScreen } from "@/components/layout";
 import { Redirect } from "expo-router";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -36,53 +36,61 @@ export default function LoginScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={styles.wrap}
-    >
-      <View style={styles.inner}>
-        <View style={styles.card}>
-          <View style={styles.brand}>
-            <CommerceProWordmark iconSize={44} />
+    <SafeScreen backgroundColor={colors.loginHero}>
+      <KeyboardAvoidingScreen>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.card}>
+            <View style={styles.brand}>
+              <CommerceProWordmark iconSize={44} />
+            </View>
+            <Text style={styles.sub}>Acesso vendedor</Text>
+            <ThemedTextInput
+              placeholder="Email"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={email}
+              onChangeText={setEmail}
+            />
+            <ThemedTextInput
+              placeholder="Senha"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+            />
+            {err ? <Text style={styles.err}>{err}</Text> : null}
+            <Pressable
+              style={[styles.btn, pending && styles.btnDisabled]}
+              onPress={() => void onSubmit()}
+              disabled={pending}
+            >
+              {pending ? (
+                <ActivityIndicator color={colors.primaryForeground} />
+              ) : (
+                <Text style={styles.btnText}>Entrar</Text>
+              )}
+            </Pressable>
           </View>
-          <Text style={styles.sub}>Acesso vendedor</Text>
-          <ThemedTextInput
-            placeholder="Email"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <ThemedTextInput
-            placeholder="Senha"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
-          {err ? <Text style={styles.err}>{err}</Text> : null}
-          <Pressable
-            style={[styles.btn, pending && styles.btnDisabled]}
-            onPress={() => void onSubmit()}
-            disabled={pending}
-          >
-            {pending ? (
-              <ActivityIndicator color={colors.primaryForeground} />
-            ) : (
-              <Text style={styles.btnText}>Entrar</Text>
-            )}
-          </Pressable>
-        </View>
-        <DevToolsEntry variant="login" />
-        <DevToolsVersionTap variant="onDark" />
-      </View>
-    </KeyboardAvoidingView>
+          <DevToolsEntry variant="login" />
+          <DevToolsVersionTap variant="onDark" />
+        </ScrollView>
+      </KeyboardAvoidingScreen>
+    </SafeScreen>
   );
 }
 
 function createLoginStyles(c: AppColors) {
   return StyleSheet.create({
-    wrap: { flex: 1, backgroundColor: c.loginHero },
-    inner: { flex: 1, justifyContent: "center", padding: 24 },
+    scroll: {
+      flexGrow: 1,
+      justifyContent: "center",
+      padding: 24,
+      gap: 16,
+    },
     card: {
       backgroundColor: c.loginCard,
       borderRadius: 16,

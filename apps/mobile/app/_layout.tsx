@@ -1,10 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { DevToolsBootstrap } from "../components/DevToolsBootstrap";
 import { OfflineSyncBootstrap } from "../components/OfflineSyncBootstrap";
 import { SellerLocationReporter } from "../components/SellerLocationReporter";
 import { AuthProvider } from "../context/AuthContext";
+import { ToastProvider } from "../context/ToastContext";
 import { ThemeProvider, useTheme } from "../lib/theme";
 
 const qc = new QueryClient();
@@ -46,16 +48,20 @@ function RootStack() {
 
 export default function RootLayout() {
   return (
-    <QueryClientProvider client={qc}>
-      <ThemeProvider>
-        <DevToolsBootstrap>
-          <AuthProvider>
-            <OfflineSyncBootstrap />
-            <SellerLocationReporter />
-            <RootStack />
-          </AuthProvider>
-        </DevToolsBootstrap>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <SafeAreaProvider>
+      <QueryClientProvider client={qc}>
+        <ThemeProvider>
+          <ToastProvider>
+            <DevToolsBootstrap>
+              <AuthProvider>
+                <OfflineSyncBootstrap />
+                <SellerLocationReporter />
+                <RootStack />
+              </AuthProvider>
+            </DevToolsBootstrap>
+          </ToastProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </SafeAreaProvider>
   );
 }

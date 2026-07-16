@@ -1,9 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useConfirm } from "@/components/confirm";
 import { FormActions, FormField, FormGrid } from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
+import { DateTimePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 
 export type PromotionDto = {
@@ -67,6 +69,7 @@ type Props = { productId: string };
 
 export function ProductPromotionsPanel({ productId }: Props) {
   const qc = useQueryClient();
+  const { confirm } = useConfirm();
   const [hint, setHint] = useState<string | null>(null);
 
   const [scope, setScope] = useState<PromotionDto["scope"]>("PRODUCT_GLOBAL");
@@ -81,7 +84,8 @@ export function ProductPromotionsPanel({ productId }: Props) {
 
   const { data: promotions = [], isLoading } = useQuery({
     queryKey: ["admin", "product-promotions", productId],
-    queryFn: () => apiFetch<PromotionDto[]>(`/admin/products/${productId}/promotions`),
+    queryFn: () =>
+      apiFetch<PromotionDto[]>(`/admin/products/${productId}/promotions`),
   });
 
   const { data: sellers = [] } = useQuery({
@@ -96,9 +100,13 @@ export function ProductPromotionsPanel({ productId }: Props) {
 
   const remove = useMutation({
     mutationFn: (promotionId: string) =>
-      apiFetch(`/admin/products/${productId}/promotions/${promotionId}`, { method: "DELETE" }),
+      apiFetch(`/admin/products/${productId}/promotions/${promotionId}`, {
+        method: "DELETE",
+      }),
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["admin", "product-promotions", productId] });
+      await qc.invalidateQueries({
+        queryKey: ["admin", "product-promotions", productId],
+      });
     },
     onError: (e: Error) => setHint(e.message),
   });
@@ -110,7 +118,9 @@ export function ProductPromotionsPanel({ productId }: Props) {
         body: JSON.stringify({ active }),
       }),
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["admin", "product-promotions", productId] });
+      await qc.invalidateQueries({
+        queryKey: ["admin", "product-promotions", productId],
+      });
       setHint(null);
     },
     onError: (e: Error) => setHint(e.message),
@@ -123,10 +133,14 @@ export function ProductPromotionsPanel({ productId }: Props) {
         body: JSON.stringify(body),
       }),
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["admin", "product-promotions", productId] });
+      await qc.invalidateQueries({
+        queryKey: ["admin", "product-promotions", productId],
+      });
       setHint(null);
       setLabel("");
-      setValueStr(kind === "PERCENT_OFF" ? "10" : kind === "FIXED_AMOUNT_OFF" ? "5" : "");
+      setValueStr(
+        kind === "PERCENT_OFF" ? "10" : kind === "FIXED_AMOUNT_OFF" ? "5" : "",
+      );
       setValidFromLocal("");
       setValidToLocal("");
     },
@@ -179,29 +193,42 @@ export function ProductPromotionsPanel({ productId }: Props) {
 
   return (
     <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
-      <h2 className="text-lg font-semibold text-foreground">Promoções e descontos</h2>
+      <h2 className="text-lg font-semibold text-foreground">
+        Promoções e descontos
+      </h2>
       <p className="mt-2 text-sm text-muted-foreground">
         O preço usado na venda parte sempre do{" "}
-        <strong className="font-medium text-foreground">catálogo</strong> (tabela de preços ou preço base). Uma{" "}
-        <strong className="font-medium text-foreground">promoção</strong> só altera esse valor na hora da venda.
+        <strong className="font-medium text-foreground">catálogo</strong>{" "}
+        (tabela de preços ou preço base). Uma{" "}
+        <strong className="font-medium text-foreground">promoção</strong> só
+        altera esse valor na hora da venda.
       </p>
       <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-muted-foreground">
         <li>
-          <strong className="text-foreground">Desconto %</strong>: reduz o preço de catálogo em uma percentagem.
+          <strong className="text-foreground">Desconto %</strong>: reduz o preço
+          de catálogo em uma percentagem.
         </li>
         <li>
-          <strong className="text-foreground">Desconto fixo (R$)</strong>: subtrai um valor por unidade do catálogo.
+          <strong className="text-foreground">Desconto fixo (R$)</strong>:
+          subtrai um valor por unidade do catálogo.
         </li>
         <li>
-          <strong className="text-foreground">Preço fixo / oferta</strong>: substitui o catálogo por um preço promocional por unidade (é o formato típico de “oferta”).
+          <strong className="text-foreground">Preço fixo / oferta</strong>:
+          substitui o catálogo por um preço promocional por unidade (é o formato
+          típico de “oferta”).
         </li>
       </ul>
       <p className="mt-2 text-xs text-muted-foreground">
-        Escopo mais específico vence: <strong>cliente</strong> &gt; <strong>vendedor</strong> &gt;{" "}
-        <strong>todos</strong>. Em empate, usa-se o maior <code className="rounded bg-muted px-1">prioridade</code>.
+        Escopo mais específico vence: <strong>cliente</strong> &gt;{" "}
+        <strong>vendedor</strong> &gt; <strong>todos</strong>. Em empate, usa-se
+        o maior <code className="rounded bg-muted px-1">prioridade</code>.
       </p>
 
-      {hint ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-destructive">{hint}</p> : null}
+      {hint ? (
+        <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-destructive">
+          {hint}
+        </p>
+      ) : null}
 
       <div className="mt-6">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -210,48 +237,76 @@ export function ProductPromotionsPanel({ productId }: Props) {
         {isLoading ? (
           <p className="mt-2 text-sm text-muted-foreground">Carregando…</p>
         ) : promotions.length === 0 ? (
-          <p className="mt-2 text-sm text-muted-foreground">Nenhuma promoção cadastrada.</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Nenhuma promoção cadastrada.
+          </p>
         ) : (
           <ul className="mt-3 divide-y divide-border rounded-lg border border-border">
             {promotions.map((p) => (
-              <li key={p.id} className="flex flex-wrap items-start justify-between gap-3 px-3 py-3">
+              <li
+                key={p.id}
+                className="flex flex-wrap items-start justify-between gap-3 px-3 py-3"
+              >
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span
                       className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase ${
-                        p.active ? "bg-emerald-50 text-emerald-800" : "bg-muted text-muted-foreground"
+                        p.active
+                          ? "bg-emerald-50 text-emerald-800"
+                          : "bg-muted text-muted-foreground"
                       }`}
                     >
                       {p.active ? "Ativa" : "Inativa"}
                     </span>
-                    <span className="text-xs font-medium text-primary">{scopeLabel(p.scope)}</span>
-                    <span className="text-xs text-muted-foreground">{kindLabel(p.kind)}</span>
+                    <span className="text-xs font-medium text-primary">
+                      {scopeLabel(p.scope)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {kindLabel(p.kind)}
+                    </span>
                   </div>
                   <p className="text-sm font-medium text-foreground">
                     {formatValue(p.kind, p.value)}
                     {p.label ? (
-                      <span className="font-normal text-muted-foreground"> — {p.label}</span>
+                      <span className="font-normal text-muted-foreground">
+                        {" "}
+                        — {p.label}
+                      </span>
                     ) : null}
                   </p>
                   {p.scope === "SELLER" && p.seller ? (
-                    <p className="text-xs text-muted-foreground">Vendedor: {p.seller.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Vendedor: {p.seller.name}
+                    </p>
                   ) : null}
                   {p.scope === "CUSTOMER" && p.customer ? (
-                    <p className="text-xs text-muted-foreground">Cliente: {p.customer.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Cliente: {p.customer.name}
+                    </p>
                   ) : null}
                   {(p.validFrom || p.validTo) && (
                     <p className="text-[11px] text-muted-foreground">
-                      Vigência: {p.validFrom ? new Date(p.validFrom).toLocaleString("pt-BR") : "…"} →{" "}
-                      {p.validTo ? new Date(p.validTo).toLocaleString("pt-BR") : "…"}
+                      Vigência:{" "}
+                      {p.validFrom
+                        ? new Date(p.validFrom).toLocaleString("pt-BR")
+                        : "…"}{" "}
+                      →{" "}
+                      {p.validTo
+                        ? new Date(p.validTo).toLocaleString("pt-BR")
+                        : "…"}
                     </p>
                   )}
-                  <p className="text-[11px] text-muted-foreground">Prioridade {p.priority}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Prioridade {p.priority}
+                  </p>
                 </div>
                 <div className="flex shrink-0 gap-2">
                   <button
                     type="button"
                     className="rounded-lg border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-background"
-                    onClick={() => patchActive.mutate({ id: p.id, active: !p.active })}
+                    onClick={() =>
+                      patchActive.mutate({ id: p.id, active: !p.active })
+                    }
                     disabled={patchActive.isPending}
                   >
                     {p.active ? "Desativar" : "Ativar"}
@@ -260,7 +315,15 @@ export function ProductPromotionsPanel({ productId }: Props) {
                     type="button"
                     className="rounded-lg px-2 py-1 text-xs font-medium text-destructive hover:bg-red-50"
                     onClick={() => {
-                      if (confirm("Remover esta promoção?")) remove.mutate(p.id);
+                      void confirm({
+                        title: "Remover promoção?",
+                        description:
+                          "Esta promoção será excluída e deixará de aplicar descontos.",
+                        confirmLabel: "Remover",
+                        tone: "destructive",
+                      }).then((ok) => {
+                        if (ok) remove.mutate(p.id);
+                      });
                     }}
                     disabled={remove.isPending}
                   >
@@ -273,8 +336,13 @@ export function ProductPromotionsPanel({ productId }: Props) {
         )}
       </div>
 
-      <form onSubmit={(e) => void submitNew(e)} className="mt-8 space-y-4 border-t border-border pt-6">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Nova promoção</h3>
+      <form
+        onSubmit={(e) => void submitNew(e)}
+        className="mt-8 space-y-4 border-t border-border pt-6"
+      >
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Nova promoção
+        </h3>
 
         <FormGrid cols={2}>
           <FormField label="Escopo" htmlFor="promo-scope">
@@ -295,7 +363,10 @@ export function ProductPromotionsPanel({ productId }: Props) {
               value={kind}
               options={[
                 { value: "PERCENT_OFF", label: "Desconto percentual" },
-                { value: "FIXED_AMOUNT_OFF", label: "Desconto em R$ por unidade" },
+                {
+                  value: "FIXED_AMOUNT_OFF",
+                  label: "Desconto em R$ por unidade",
+                },
                 { value: "SALE_PRICE", label: "Preço fixo (oferta)" },
               ]}
               onValueChange={(v) => setKind(v as PromotionDto["kind"])}
@@ -303,7 +374,11 @@ export function ProductPromotionsPanel({ productId }: Props) {
           </FormField>
 
           {scope === "SELLER" ? (
-            <FormField label="Vendedor" htmlFor="promo-seller" className="sm:col-span-2">
+            <FormField
+              label="Vendedor"
+              htmlFor="promo-seller"
+              className="sm:col-span-2"
+            >
               <AppSelect
                 id="promo-seller"
                 value={sellerId}
@@ -319,7 +394,11 @@ export function ProductPromotionsPanel({ productId }: Props) {
           ) : null}
 
           {scope === "CUSTOMER" ? (
-            <FormField label="Cliente" htmlFor="promo-customer" className="sm:col-span-2">
+            <FormField
+              label="Cliente"
+              htmlFor="promo-customer"
+              className="sm:col-span-2"
+            >
               <AppSelect
                 id="promo-customer"
                 value={customerId}
@@ -364,19 +443,19 @@ export function ProductPromotionsPanel({ productId }: Props) {
             />
           </FormField>
           <FormField label="Início (opcional)" htmlFor="promo-from">
-            <Input
+            <DateTimePicker
               id="promo-from"
-              type="datetime-local"
               value={validFromLocal}
-              onChange={(e) => setValidFromLocal(e.target.value)}
+              onChange={setValidFromLocal}
+              placeholder="Início"
             />
           </FormField>
           <FormField label="Fim (opcional)" htmlFor="promo-to">
-            <Input
+            <DateTimePicker
               id="promo-to"
-              type="datetime-local"
               value={validToLocal}
-              onChange={(e) => setValidToLocal(e.target.value)}
+              onChange={setValidToLocal}
+              placeholder="Fim"
             />
           </FormField>
         </FormGrid>

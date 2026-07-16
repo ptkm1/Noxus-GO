@@ -2,6 +2,7 @@ import type { Prisma, Role } from "@prisma/client";
 import type { FastifyReply } from "fastify";
 import { prisma } from "../db.js";
 import type { AccessPayload } from "./jwt.js";
+import { canWrite } from "./permissions.js";
 
 const STAFF_ROLES: Role[] = ["ADMIN", "MANAGER"];
 
@@ -152,4 +153,13 @@ export async function teamMemberSellerIds(teamId: string): Promise<string[]> {
     select: { id: true },
   });
   return rows.map((r) => r.id);
+}
+
+/** Invariante: Gestor não escreve estoque/produtos (sem perfil Seller). */
+export function assertManagerHasNoStockWrite(): boolean {
+  return (
+    !canWrite("MANAGER", "stock") &&
+    !canWrite("MANAGER", "products") &&
+    canWrite("ADMIN", "stock")
+  );
 }

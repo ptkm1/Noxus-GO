@@ -5,7 +5,13 @@ export function createRoutePlanStyles(c: AppColors) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: c.background },
     scroll: { paddingBottom: 120 },
-    lead: { paddingHorizontal: 16, paddingTop: 12, fontSize: 13, color: c.textSecondary, lineHeight: 18 },
+    lead: {
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      fontSize: 13,
+      color: c.textSecondary,
+      lineHeight: 18,
+    },
     leadStrong: { fontWeight: "700", color: c.text },
     filterRow: {
       flexDirection: "row",
@@ -34,7 +40,12 @@ export function createRoutePlanStyles(c: AppColors) {
     },
     visitRow: { flexDirection: "row", alignItems: "center", gap: 10 },
     visitTitle: { fontSize: 16, fontWeight: "700", color: c.text },
-    visitSub: { marginTop: 4, fontSize: 14, fontWeight: "600", color: c.textSecondary },
+    visitSub: {
+      marginTop: 4,
+      fontSize: 14,
+      fontWeight: "600",
+      color: c.textSecondary,
+    },
     visitActions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     checkOutBtn: {
       backgroundColor: c.warning,
@@ -42,7 +53,11 @@ export function createRoutePlanStyles(c: AppColors) {
       paddingVertical: 10,
       borderRadius: 10,
     },
-    checkOutTxt: { color: c.primaryForeground, fontWeight: "700", fontSize: 15 },
+    checkOutTxt: {
+      color: c.primaryForeground,
+      fontWeight: "700",
+      fontSize: 15,
+    },
     saleBtn: {
       paddingHorizontal: 14,
       paddingVertical: 10,
@@ -71,17 +86,41 @@ export function createRoutePlanStyles(c: AppColors) {
     },
     toolBtnTxt: { fontWeight: "600", color: c.link, fontSize: 14 },
     toolBtnPrimary: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
       paddingHorizontal: 14,
       paddingVertical: 10,
       borderRadius: 10,
       backgroundColor: c.primary,
     },
-    toolBtnPrimaryTxt: { fontWeight: "700", color: c.primaryForeground, fontSize: 14 },
+    toolBtnPrimaryTxt: {
+      fontWeight: "700",
+      color: c.primaryForeground,
+      fontSize: 14,
+    },
     btnDis: { opacity: 0.5 },
     err: { marginHorizontal: 16, marginTop: 8, color: c.danger, fontSize: 13 },
-    warn: { marginHorizontal: 16, marginTop: 8, color: c.warning, fontSize: 13 },
-    map: { marginHorizontal: 16, marginTop: 12, height: 280, borderRadius: 14, overflow: "hidden" },
-    mapHint: { textAlign: "center", fontSize: 12, color: c.textMuted, paddingHorizontal: 24, marginTop: 6 },
+    warn: {
+      marginHorizontal: 16,
+      marginTop: 8,
+      color: c.warning,
+      fontSize: 13,
+    },
+    map: {
+      marginHorizontal: 16,
+      marginTop: 12,
+      height: 280,
+      borderRadius: 14,
+      overflow: "hidden",
+    },
+    mapHint: {
+      textAlign: "center",
+      fontSize: 12,
+      color: c.textMuted,
+      paddingHorizontal: 24,
+      marginTop: 6,
+    },
     mapHintBtn: { paddingVertical: 4 },
     routeBox: {
       marginHorizontal: 16,
@@ -102,7 +141,12 @@ export function createRoutePlanStyles(c: AppColors) {
       fontWeight: "600",
       color: c.textMuted,
     },
-    clearRoute: { marginTop: 8, fontSize: 13, fontWeight: "600", color: c.primary },
+    clearRoute: {
+      marginTop: 8,
+      fontSize: 13,
+      fontWeight: "600",
+      color: c.primary,
+    },
     section: {
       marginHorizontal: 16,
       marginTop: 18,
@@ -110,7 +154,13 @@ export function createRoutePlanStyles(c: AppColors) {
       fontWeight: "700",
       color: c.text,
     },
-    empty: { marginHorizontal: 16, marginTop: 8, color: c.textMuted, fontSize: 13, lineHeight: 18 },
+    empty: {
+      marginHorizontal: 16,
+      marginTop: 8,
+      color: c.textMuted,
+      fontSize: 13,
+      lineHeight: 18,
+    },
     visitHist: {
       marginHorizontal: 16,
       marginTop: 8,

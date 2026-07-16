@@ -1,7 +1,13 @@
 import { LogIn, MapPin, Navigation } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { useTheme } from "../../../lib/theme";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import type { NearbyCustomersResp } from "../../../lib/route/types";
+import { useTheme } from "../../../lib/theme";
 
 export type RouteListCustomer = NearbyCustomersResp["customers"][number];
 
@@ -43,27 +49,43 @@ export function RouteCustomerListItem({
       <Pressable onPress={onPressCustomer} style={styles.main}>
         {routeIndex != null ? (
           <View style={[styles.idx, { backgroundColor: colors.primary }]}>
-            <Text style={[styles.idxTxt, { color: colors.primaryForeground }]}>{routeIndex}</Text>
+            <Text style={[styles.idxTxt, { color: colors.primaryForeground }]}>
+              {routeIndex}
+            </Text>
           </View>
         ) : null}
         <View style={styles.body}>
-          <Text style={[styles.name, { color: colors.text }]}>{customer.name}</Text>
+          <Text style={[styles.name, { color: colors.text }]}>
+            {customer.name}
+          </Text>
           <Text style={[styles.meta, { color: colors.textSecondary }]}>
-            ≈ {customer.distanceKm} km · {customer.assignedToMe ? "Teu cliente" : "Carteira"}
+            ≈ {customer.distanceKm} km ·{" "}
+            {customer.assignedToMe ? "Teu cliente" : "Carteira"}
           </Text>
           {customer.addressNote ? (
-            <Text style={[styles.note, { color: colors.textMuted }]} numberOfLines={2}>
+            <Text
+              style={[styles.note, { color: colors.textMuted }]}
+              numberOfLines={2}
+            >
               {customer.addressNote}
             </Text>
           ) : null}
           {isActiveVisit ? (
-            <Text style={[styles.activeTag, { color: colors.warning }]}>Visita em curso</Text>
+            <Text style={[styles.activeTag, { color: colors.warning }]}>
+              Visita em curso
+            </Text>
           ) : null}
         </View>
       </Pressable>
       <View style={styles.actions}>
         <Pressable
-          style={[styles.actionBtn, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}
+          style={[
+            styles.actionBtn,
+            {
+              borderColor: colors.border,
+              backgroundColor: colors.surfaceMuted,
+            },
+          ]}
           onPress={onNavigateGoogle}
           accessibilityLabel="Abrir no Google Maps"
         >
@@ -71,7 +93,13 @@ export function RouteCustomerListItem({
           <Text style={[styles.actionTxt, { color: colors.link }]}>Maps</Text>
         </Pressable>
         <Pressable
-          style={[styles.actionBtn, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}
+          style={[
+            styles.actionBtn,
+            {
+              borderColor: colors.border,
+              backgroundColor: colors.surfaceMuted,
+            },
+          ]}
           onPress={onNavigateWaze}
           accessibilityLabel="Abrir no Waze"
         >
@@ -89,8 +117,19 @@ export function RouteCustomerListItem({
             disabled={checkInPending}
             onPress={onCheckIn}
           >
-            <LogIn color={colors.primaryForeground} size={18} />
-            <Text style={[styles.actionTxt, { color: colors.primaryForeground }]}>Check-in</Text>
+            {checkInPending ? (
+              <ActivityIndicator
+                color={colors.primaryForeground}
+                size="small"
+              />
+            ) : (
+              <LogIn color={colors.primaryForeground} size={18} />
+            )}
+            <Text
+              style={[styles.actionTxt, { color: colors.primaryForeground }]}
+            >
+              {checkInPending ? "…" : "Check-in"}
+            </Text>
           </Pressable>
         ) : null}
       </View>
@@ -106,7 +145,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: "hidden",
   },
-  main: { flexDirection: "row", padding: 14, gap: 10, alignItems: "flex-start" },
+  main: {
+    flexDirection: "row",
+    padding: 14,
+    gap: 10,
+    alignItems: "flex-start",
+  },
   idx: {
     width: 26,
     height: 26,

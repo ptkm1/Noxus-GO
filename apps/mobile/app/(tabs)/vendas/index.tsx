@@ -1,5 +1,5 @@
 import { ThemedText } from "@/components/atoms/ThemedText";
-import { MobileHeader, MobileScreen } from "@/components/layout";
+import { MobileHeader, MobileScreen, SafeScreen } from "@/components/layout";
 import {
   RecentSaleDivider,
   RecentSaleRow,
@@ -14,7 +14,7 @@ export default function VendasListScreen() {
   const { orders, isLoading, isRefetching, refetch } = useSalesListScreen();
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeScreen variant="tab">
       <MobileHeader
         title="Vendas"
         subtitle={`${orders.length} pedido${orders.length === 1 ? "" : "s"}`}
@@ -53,7 +53,7 @@ export default function VendasListScreen() {
           </View>
         )}
       </MobileScreen>
-    </View>
+    </SafeScreen>
   );
 }
 

@@ -11,6 +11,10 @@ import {
   resolveTeamLeaderContext,
   resolveTeamLeaderTeamId,
 } from "../services/sales-teams.js";
+import {
+  ensureOrgRolePermissions,
+  getRolePermissionsMap,
+} from "../services/role-permissions.js";
 import { getAuth } from "../util/guards.js";
 
 async function accessPayloadForUser(user: {
@@ -35,6 +39,7 @@ async function userResponseForMe(user: {
   id: string;
   email: string;
   name: string;
+  matricula: string | null;
   role: import("@prisma/client").Role;
   organizationId: string;
   seller: {
@@ -43,10 +48,15 @@ async function userResponseForMe(user: {
   } | null;
 }) {
   const leader = await resolveTeamLeaderContext(user.seller?.id ?? null);
+  const permissions = await getRolePermissionsMap(
+    user.organizationId,
+    user.role,
+  );
   return {
     id: user.id,
     email: user.email,
     name: user.name,
+    matricula: user.matricula,
     role: user.role,
     organizationId: user.organizationId,
     sellerId: user.seller?.id ?? null,
@@ -56,6 +66,7 @@ async function userResponseForMe(user: {
     isTeamLeader: !!leader,
     teamId: leader?.teamId ?? null,
     teamName: leader?.teamName ?? null,
+    permissions,
   };
 }
 
@@ -114,23 +125,16 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       });
     });
 
+    await ensureOrgRolePermissions(user.organizationId);
+
     const accessToken = signAccessToken(await accessPayloadForUser(user));
     const refreshToken = signRefreshToken(user.id);
+    const me = await userResponseForMe(user);
 
     return {
       accessToken,
       refreshToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        organizationId: user.organizationId,
-        sellerId: user.seller?.id ?? null,
-        isTeamLeader: false,
-        teamId: null,
-        teamName: null,
-      },
+      user: me,
     };
   });
 

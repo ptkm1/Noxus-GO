@@ -8,30 +8,48 @@ import {
   useLocation,
 } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
+import { ConfirmProvider } from "./components/confirm";
 import { AppLogo } from "./components/layout/AppLogo";
 import { PublicAuthLayout } from "./components/layout/PublicAuthLayout";
-import { isWebAdmin, isWebStaff, isWebTeamLeader } from "./lib/staff";
+import { resourceForPath } from "./components/layout/navConfig";
+import { isWebStaff, isWebTeamLeader } from "./lib/staff";
 import { ThemeProvider } from "./lib/theme";
-import { CommissionAdminPage } from "./pages/CommissionAdminPage";
+import { canRead } from "@pedidos/shared";
+import { CommissionGoalsPage } from "./pages/CommissionGoalsPage";
+import { CommissionHubPage } from "./pages/CommissionHubPage";
+import { CommissionTiersPage } from "./pages/CommissionTiersPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { CustomerVisitsPage } from "./pages/CustomerVisitsPage";
 import { DashboardHome } from "./pages/DashboardHome";
 import { DashboardLayout } from "./pages/DashboardLayout";
+import { FiscalAccountsPayablePage } from "./pages/FiscalAccountsPayablePage";
+import { FiscalFixedExpensesPage } from "./pages/FiscalFixedExpensesPage";
+import { FiscalHubPage } from "./pages/FiscalHubPage";
+import { FiscalXmlPage } from "./pages/FiscalXmlPage";
+import { InsightsPage } from "./pages/InsightsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { OrderDetailPage } from "./pages/OrderDetailPage";
 import { OrdersPage } from "./pages/OrdersPage";
+import { PermissionsPage } from "./pages/PermissionsPage";
 import { PriceTablesPage } from "./pages/PriceTablesPage";
 import { ProductCategoriesPage } from "./pages/ProductCategoriesPage";
 import { ProductFormPage } from "./pages/ProductFormPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { RegisterPage } from "./pages/RegisterPage";
-import { ReportsPage } from "./pages/ReportsPage";
+import { ReportCustomersPage } from "./pages/ReportCustomersPage";
+import { ReportOrderItemsPage } from "./pages/ReportOrderItemsPage";
+import { ReportOrdersPage } from "./pages/ReportOrdersPage";
+import { ReportsHubPage } from "./pages/ReportsHubPage";
+import { ReportStockPage } from "./pages/ReportStockPage";
 import { SellerProductsPage } from "./pages/SellerProductsPage";
 import { SellersPage } from "./pages/SellersPage";
 import { SellerTrackingPage } from "./pages/SellerTrackingPage";
+import { StockMovementsPage } from "./pages/StockMovementsPage";
+import { StockPage } from "./pages/StockPage";
 import { SuppliersPage } from "./pages/SuppliersPage";
 import { TeamsPage } from "./pages/TeamsPage";
+import { UsersPage } from "./pages/UsersPage";
 
 const qc = new QueryClient();
 
@@ -64,26 +82,13 @@ function SellerNotice() {
   );
 }
 
-const MANAGER_ROUTE_PREFIXES = ["/", "/rastreio", "/visitas", "/vendas"];
-
 const TEAM_LEADER_ROUTE_PREFIXES = [
   "/",
   "/rastreio",
   "/visitas",
   "/vendas",
-  "/relatorios",
+  "/insights",
 ];
-
-function ManagerRouteGuard() {
-  const { user } = useAuth();
-  const { pathname } = useLocation();
-  if (user?.role !== "MANAGER") return <Outlet />;
-  const allowed = MANAGER_ROUTE_PREFIXES.some(
-    (p) => pathname === p || (p !== "/" && pathname.startsWith(`${p}/`)),
-  );
-  if (!allowed) return <Navigate to="/" replace />;
-  return <Outlet />;
-}
 
 function TeamLeaderRouteGuard() {
   const { user } = useAuth();
@@ -96,10 +101,16 @@ function TeamLeaderRouteGuard() {
   return <Outlet />;
 }
 
-function AdminOnlyRoute() {
+/** ADMIN/MANAGER: rota visível se canRead efetivo do recurso. */
+function PermissionRouteGuard() {
   const { user } = useAuth();
-  if (!isWebAdmin(user?.role)) return <Navigate to="/" replace />;
-  return <Outlet />;
+  const { pathname } = useLocation();
+  if (isWebTeamLeader(user) && user?.role === "SELLER") return <Outlet />;
+  if (!user) return <Navigate to="/login" replace />;
+  const resource = resourceForPath(pathname);
+  if (!resource) return <Outlet />;
+  if (canRead(user.role, resource, user.permissions)) return <Outlet />;
+  return <Navigate to="/" replace />;
 }
 
 function StaffGate({ children }: { children: React.ReactNode }) {
@@ -154,37 +165,59 @@ function AppRoutes() {
           </StaffGate>
         }
       >
-        <Route element={<ManagerRouteGuard />}>
-          <Route element={<TeamLeaderRouteGuard />}>
+        <Route element={<TeamLeaderRouteGuard />}>
+          <Route element={<PermissionRouteGuard />}>
             <Route index element={<DashboardHome />} />
-            <Route element={<AdminOnlyRoute />}>
-              <Route path="tabelas-preco" element={<PriceTablesPage />} />
-              <Route
-                path="produtos/categorias"
-                element={<ProductCategoriesPage />}
-              />
-              <Route path="produtos/novo" element={<ProductFormPage />} />
-              <Route
-                path="produtos/:productId/editar"
-                element={<ProductFormPage />}
-              />
-              <Route path="produtos" element={<ProductsPage />} />
-              <Route path="fornecedores" element={<SuppliersPage />} />
-              <Route path="comissao" element={<CommissionAdminPage />} />
-              <Route path="vendedores" element={<SellersPage />} />
-              <Route
-                path="vendedores/:sellerId/produtos"
-                element={<SellerProductsPage />}
-              />
-              <Route path="equipes" element={<TeamsPage />} />
-              <Route path="clientes" element={<CustomersPage />} />
-              <Route path="notificacoes" element={<NotificationsPage />} />
-            </Route>
+            <Route path="tabelas-preco" element={<PriceTablesPage />} />
+            <Route
+              path="produtos/categorias"
+              element={<ProductCategoriesPage />}
+            />
+            <Route path="produtos/novo" element={<ProductFormPage />} />
+            <Route
+              path="produtos/:productId/editar"
+              element={<ProductFormPage />}
+            />
+            <Route path="produtos" element={<ProductsPage />} />
+            <Route path="estoque" element={<StockPage />} />
+            <Route path="estoque/movimentos" element={<StockMovementsPage />} />
+            <Route path="fornecedores" element={<SuppliersPage />} />
+            <Route path="fiscal" element={<FiscalHubPage />} />
+            <Route
+              path="fiscal/despesas-fixas"
+              element={<FiscalFixedExpensesPage />}
+            />
+            <Route
+              path="fiscal/contas-a-pagar"
+              element={<FiscalAccountsPayablePage />}
+            />
+            <Route path="fiscal/xml" element={<FiscalXmlPage />} />
+            <Route path="comissao" element={<CommissionHubPage />} />
+            <Route path="comissao/faixas" element={<CommissionTiersPage />} />
+            <Route path="comissao/metas" element={<CommissionGoalsPage />} />
+            <Route path="vendedores" element={<SellersPage />} />
+            <Route
+              path="vendedores/:sellerId/produtos"
+              element={<SellerProductsPage />}
+            />
+            <Route path="usuarios" element={<UsersPage />} />
+            <Route path="equipes" element={<TeamsPage />} />
+            <Route path="clientes" element={<CustomersPage />} />
+            <Route path="notificacoes" element={<NotificationsPage />} />
+            <Route path="permissoes" element={<PermissionsPage />} />
+            <Route path="relatorios" element={<ReportsHubPage />} />
+            <Route
+              path="relatorios/clientes"
+              element={<ReportCustomersPage />}
+            />
+            <Route path="relatorios/pedidos" element={<ReportOrdersPage />} />
+            <Route path="relatorios/itens" element={<ReportOrderItemsPage />} />
+            <Route path="relatorios/estoque" element={<ReportStockPage />} />
             <Route path="visitas" element={<CustomerVisitsPage />} />
             <Route path="rastreio" element={<SellerTrackingPage />} />
             <Route path="vendas" element={<OrdersPage />} />
             <Route path="vendas/:orderId" element={<OrderDetailPage />} />
-            <Route path="relatorios" element={<ReportsPage />} />
+            <Route path="insights" element={<InsightsPage />} />
           </Route>
         </Route>
       </Route>
@@ -199,7 +232,9 @@ export default function App() {
       <QueryClientProvider client={qc}>
         <BrowserRouter>
           <AuthProvider>
-            <AppRoutes />
+            <ConfirmProvider>
+              <AppRoutes />
+            </ConfirmProvider>
           </AuthProvider>
         </BrowserRouter>
       </QueryClientProvider>

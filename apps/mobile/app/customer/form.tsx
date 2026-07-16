@@ -1,12 +1,11 @@
 import { ThemedButton } from "@/components/atoms/ThemedButton";
 import { ThemedText } from "@/components/atoms/ThemedText";
-import { MobileHeader, MobileScreen } from "@/components/layout";
+import { KeyboardForm, MobileHeader, SafeScreen } from "@/components/layout";
 import {
   CustomerFormWizard,
   CustomerFormWizardLoading,
 } from "@/components/organisms/CustomerFormWizard";
 import { useCustomerForm } from "@/hooks/useCustomerForm";
-import { useTheme } from "@/lib/theme";
 import {
   customerFormErrorStep,
   validateCustomerForm,
@@ -14,14 +13,22 @@ import {
 } from "@pedidos/shared";
 import { useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
-import { KeyboardAvoidingView, Platform, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
 const STEP_TITLES = ["Documento", "Endereço", "Contato"];
 
+function paramString(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return typeof raw === "string" && raw.length > 0 ? raw : undefined;
+}
+
 export default function CustomerFormScreen() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
-  const customerId = typeof id === "string" && id.length > 0 ? id : undefined;
-  const { colors } = useTheme();
+  const params = useLocalSearchParams<{
+    customerId?: string | string[];
+    id?: string | string[];
+  }>();
+  /** Preferir `customerId` — `id` colide com a rota dinâmica `customer/[id]`. */
+  const customerId = paramString(params.customerId) ?? paramString(params.id);
   const {
     step,
     setStep,
@@ -32,6 +39,10 @@ export default function CustomerFormScreen() {
     isLoading,
     save,
     isEdit,
+    latitude,
+    longitude,
+    captureLocation,
+    locationLoading,
   } = useCustomerForm(customerId);
 
   const [showValidation, setShowValidation] = useState(false);
@@ -63,63 +74,77 @@ export default function CustomerFormScreen() {
     save.mutate();
   }
 
+  const footer = !isLoading ? (
+    <View style={styles.footerInner}>
+      <View style={styles.actions}>
+        {step > 0 ? (
+          <ThemedButton
+            variant="secondary"
+            style={styles.flex}
+            onPress={() => setStep(step - 1)}
+          >
+            Voltar
+          </ThemedButton>
+        ) : null}
+        {!isLast ? (
+          <ThemedButton style={styles.flex} onPress={onContinue}>
+            Continuar
+          </ThemedButton>
+        ) : (
+          <ThemedButton
+            style={styles.flex}
+            loading={save.isPending}
+            loadingLabel="Salvando…"
+            onPress={onSave}
+          >
+            {isEdit ? "Salvar" : "Cadastrar"}
+          </ThemedButton>
+        )}
+      </View>
+      {!isLast ? (
+        <ThemedText variant="caption" muted style={styles.hint}>
+          Você pode revisar tudo no último passo antes de salvar.
+        </ThemedText>
+      ) : null}
+    </View>
+  ) : null;
+
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeScreen>
       <MobileHeader
-        title={isEdit ? "Editar cliente" : "Pré-cadastro"}
+        title={isEdit ? "Editar cliente" : "Cadastro de cliente"}
         subtitle={`Passo ${step + 1} de 3 · ${STEP_TITLES[step]}`}
         showBack
       />
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      <KeyboardForm
+        contentContainerStyle={{ gap: 20 }}
+        bottomPadding={20}
+        footer={footer}
       >
-        <MobileScreen contentContainerStyle={{ gap: 20, paddingBottom: 32 }}>
-          {isLoading ? (
-            <CustomerFormWizardLoading />
-          ) : (
-            <CustomerFormWizard
-              step={step}
-              form={form}
-              onChange={patch}
-              onLookupCnpj={() => void lookupCnpj()}
-              cnpjLoading={cnpjLoading}
-              errors={visibleErrors}
-            />
-          )}
-
-          <View style={{ flexDirection: "row", gap: 12, marginTop: 8 }}>
-            {step > 0 ? (
-              <ThemedButton
-                variant="secondary"
-                style={{ flex: 1 }}
-                onPress={() => setStep(step - 1)}
-              >
-                Voltar
-              </ThemedButton>
-            ) : null}
-            {!isLast ? (
-              <ThemedButton style={{ flex: 1 }} onPress={onContinue}>
-                Continuar
-              </ThemedButton>
-            ) : (
-              <ThemedButton
-                style={{ flex: 1 }}
-                disabled={save.isPending}
-                onPress={onSave}
-              >
-                {save.isPending ? "Salvando…" : isEdit ? "Salvar" : "Cadastrar"}
-              </ThemedButton>
-            )}
-          </View>
-
-          {!isLast ? (
-            <ThemedText variant="caption" muted style={{ textAlign: "center" }}>
-              Você pode revisar tudo no último passo antes de salvar.
-            </ThemedText>
-          ) : null}
-        </MobileScreen>
-      </KeyboardAvoidingView>
-    </View>
+        {isLoading ? (
+          <CustomerFormWizardLoading />
+        ) : (
+          <CustomerFormWizard
+            step={step}
+            form={form}
+            onChange={patch}
+            onLookupCnpj={() => void lookupCnpj()}
+            cnpjLoading={cnpjLoading}
+            errors={visibleErrors}
+            latitude={latitude}
+            longitude={longitude}
+            onCaptureLocation={() => void captureLocation()}
+            locationLoading={locationLoading}
+          />
+        )}
+      </KeyboardForm>
+    </SafeScreen>
   );
 }
+
+const styles = StyleSheet.create({
+  footerInner: { gap: 8 },
+  actions: { flexDirection: "row", gap: 12 },
+  flex: { flex: 1 },
+  hint: { textAlign: "center" },
+});

@@ -91,6 +91,26 @@ export async function downloadPdf(pathWithQuery: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+export async function downloadXml(pathWithQuery: string, filename: string) {
+  const h = new Headers();
+  const t = getAccessToken();
+  if (t) h.set("Authorization", `Bearer ${t}`);
+  const fileUrl = apiUrl(pathWithQuery);
+  applyTunnelHeaders(h, fileUrl);
+  const res = await fetch(fileUrl, { headers: h });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? "Falha ao baixar XML");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 async function fetchPdfBlob(pathWithQuery: string): Promise<Blob> {
   const h = new Headers();
   const t = getAccessToken();

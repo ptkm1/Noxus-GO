@@ -5,6 +5,7 @@ import {
   FormSheet,
   FormSheetActions,
 } from "@/components/forms";
+import { useConfirm } from "@/components/confirm";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +57,7 @@ function formatCityUf(c: CustomerRecord): string {
 
 export function CustomersPage() {
   const qc = useQueryClient();
+  const { confirm, alert } = useConfirm();
   const { data: customers = [], isLoading } = useQuery({
     queryKey: ["admin", "customers"],
     queryFn: () => apiFetch<CustomerRecord[]>("/admin/customers"),
@@ -174,7 +176,13 @@ export function CustomersPage() {
       void qc.invalidateQueries({ queryKey: ["admin", "customers"] });
       closeSheet();
     },
-    onError: (e: Error) => window.alert(e.message),
+    onError: (e: Error) => {
+      void alert({
+        title: "Não foi possível criar o cliente",
+        description: e.message,
+        tone: "danger",
+      });
+    },
   });
 
   const update = useMutation({
@@ -199,7 +207,13 @@ export function CustomersPage() {
       void qc.invalidateQueries({ queryKey: ["admin", "customers"] });
       closeSheet();
     },
-    onError: (e: Error) => window.alert(e.message),
+    onError: (e: Error) => {
+      void alert({
+        title: "Não foi possível atualizar o cliente",
+        description: e.message,
+        tone: "danger",
+      });
+    },
   });
 
   const remove = useMutation({
@@ -438,7 +452,15 @@ export function CustomersPage() {
                       type="button"
                       className="ml-3 text-destructive"
                       onClick={() => {
-                        if (confirm("Excluir cliente?")) remove.mutate(c.id);
+                        void confirm({
+                          title: "Excluir cliente?",
+                          description:
+                            "O cliente será removido permanentemente do sistema.",
+                          confirmLabel: "Excluir",
+                          tone: "destructive",
+                        }).then((ok) => {
+                          if (ok) remove.mutate(c.id);
+                        });
                       }}
                     >
                       Excluir

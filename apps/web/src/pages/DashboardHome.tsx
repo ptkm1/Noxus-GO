@@ -10,6 +10,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
   LayoutDashboard,
+  Loader2,
   MapPin,
   Navigation,
   Package,
@@ -18,9 +19,9 @@ import {
   Target,
   Truck,
   UserCircle,
+  UserCog,
   Users,
   UsersRound,
-  Loader2,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -57,6 +58,12 @@ const adminCards: DashCard[] = [
     icon: Users,
   },
   {
+    to: "/usuarios",
+    title: "Usuários",
+    description: "Administradores e gestores da empresa",
+    icon: UserCog,
+  },
+  {
     to: "/equipes",
     title: "Equipes",
     description: "Equipes nomeadas com líder e membros",
@@ -65,7 +72,7 @@ const adminCards: DashCard[] = [
   {
     to: "/comissao",
     title: "Comissões e metas",
-    description: "Faixas progressivas e metas mensais",
+    description: "Faixas progressivas ou metas mensais",
     icon: Target,
   },
   {
@@ -95,7 +102,7 @@ const adminCards: DashCard[] = [
   {
     to: "/relatorios",
     title: "Relatórios",
-    description: "Painel e PDF opcional",
+    description: "PDFs de clientes, pedidos, itens e estoque",
     icon: BarChart3,
   },
 ];
@@ -141,8 +148,8 @@ const teamLeaderCards: DashCard[] = [
     icon: ShoppingCart,
   },
   {
-    to: "/relatorios",
-    title: "Relatórios da equipe",
+    to: "/insights",
+    title: "Insights da equipe",
     description: "Totais, ranking e produtos vendidos",
     icon: BarChart3,
   },
