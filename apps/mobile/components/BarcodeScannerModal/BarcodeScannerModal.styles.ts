@@ -35,6 +35,21 @@ export function useBarcodeScannerModalStyles(
         },
         topSpacer: { width: 56 },
         camera: { flex: 1 },
+        statusBar: {
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+          backgroundColor: "rgba(15, 23, 42, 0.92)",
+        },
+        statusText: {
+          color: "#f8fafc",
+          fontSize: 14,
+          fontWeight: "600",
+          textAlign: "center",
+        },
         fallback: {
           flex: 1,
           justifyContent: "center",

@@ -4,6 +4,7 @@ import {
   FormSheet,
   FormSheetActions,
 } from "@/components/forms";
+import { useConfirm } from "@/components/confirm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -17,7 +18,6 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiFetch } from "../lib/api";
-import { confirmAction } from "../lib/app-notifications";
 
 type Supplier = {
   id: string;
@@ -46,6 +46,7 @@ function maskCnpjInput(value: string): string {
 
 export function SuppliersPage() {
   const qc = useQueryClient();
+  const { confirm } = useConfirm();
   const { data: suppliers = [], isLoading } = useQuery({
     queryKey: ["admin", "suppliers"],
     queryFn: () => apiFetch<Supplier[]>("/admin/suppliers"),
@@ -262,11 +263,11 @@ export function SuppliersPage() {
                       type="button"
                       className="text-destructive hover:underline"
                       onClick={() => {
-                        void confirmAction({
+                        void confirm({
                           title: "Excluir fornecedor?",
-                          message: `Remover o fornecedor "${s.tradeName}"?`,
+                          description: `O fornecedor “${s.tradeName}” será removido permanentemente.`,
                           confirmLabel: "Excluir",
-                          variant: "destructive",
+                          tone: "destructive",
                         }).then((ok) => {
                           if (ok) remove.mutate(s.id);
                         });

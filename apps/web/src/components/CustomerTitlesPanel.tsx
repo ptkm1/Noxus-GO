@@ -1,3 +1,5 @@
+import { useConfirm } from "@/components/confirm";
+import { DateTimePicker } from "@/components/ui/date-picker";
 import {
   Table,
   TableBody,
@@ -9,7 +11,6 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiFetch } from "../lib/api";
-import { confirmAction } from "../lib/app-notifications";
 
 type TitleRow = {
   id: string;
@@ -30,9 +31,11 @@ function num(v: unknown): number {
 
 export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
   const qc = useQueryClient();
+  const { confirm } = useConfirm();
   const { data: titles = [], isLoading } = useQuery({
     queryKey: ["admin", "credit-titles", customerId],
-    queryFn: () => apiFetch<TitleRow[]>(`/admin/customers/${customerId}/credit-titles`),
+    queryFn: () =>
+      apiFetch<TitleRow[]>(`/admin/customers/${customerId}/credit-titles`),
   });
 
   const [amount, setAmount] = useState("");
@@ -50,7 +53,9 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
         }),
       }),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["admin", "credit-titles", customerId] });
+      void qc.invalidateQueries({
+        queryKey: ["admin", "credit-titles", customerId],
+      });
       setAmount("");
       setDue("");
       setRef("");
@@ -63,19 +68,29 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
         method: "PATCH",
         body: JSON.stringify({ status: "PAID" }),
       }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "credit-titles", customerId] }),
+    onSuccess: () =>
+      void qc.invalidateQueries({
+        queryKey: ["admin", "credit-titles", customerId],
+      }),
   });
 
   const remove = useMutation({
-    mutationFn: (id: string) => apiFetch(`/admin/credit-titles/${id}`, { method: "DELETE" }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "credit-titles", customerId] }),
+    mutationFn: (id: string) =>
+      apiFetch(`/admin/credit-titles/${id}`, { method: "DELETE" }),
+    onSuccess: () =>
+      void qc.invalidateQueries({
+        queryKey: ["admin", "credit-titles", customerId],
+      }),
   });
 
   return (
     <div className="mt-6 rounded-lg border border-border bg-background/80 p-4">
-      <h3 className="text-sm font-semibold text-foreground">Títulos em aberto / histórico recente</h3>
+      <h3 className="text-sm font-semibold text-foreground">
+        Títulos em aberto / histórico recente
+      </h3>
       <p className="mt-1 text-xs text-muted-foreground">
-        Cadastre duplicatas ou carnês; vencidos bloqueiam ou pedem aprovação conforme a política da empresa.
+        Cadastre duplicatas ou carnês; vencidos bloqueiam ou pedem aprovação
+        conforme a política da empresa.
       </p>
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -91,11 +106,11 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
         />
-        <input
-          type="datetime-local"
-          className="rounded border px-2 py-1 text-xs"
+        <DateTimePicker
           value={due}
-          onChange={(e) => setDue(e.target.value)}
+          onChange={setDue}
+          placeholder="Vencimento"
+          className="min-w-[16rem]"
         />
         <button
           type="button"
@@ -108,7 +123,9 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
       </div>
 
       {isLoading ? (
-        <p className="mt-3 text-xs text-muted-foreground">Carregando títulos…</p>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Carregando títulos…
+        </p>
       ) : (
         <div className="mt-3">
           <Table className="min-w-[560px] text-xs">
@@ -125,9 +142,15 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
             <TableBody>
               {titles.map((t) => (
                 <TableRow key={t.id}>
-                  <TableCell className="py-2 pr-2">{t.reference ?? "—"}</TableCell>
-                  <TableCell className="py-2 pr-2 tabular-nums">R$ {num(t.amount).toFixed(2)}</TableCell>
-                  <TableCell className="py-2 pr-2 tabular-nums">R$ {num(t.paidAmount).toFixed(2)}</TableCell>
+                  <TableCell className="py-2 pr-2">
+                    {t.reference ?? "—"}
+                  </TableCell>
+                  <TableCell className="py-2 pr-2 tabular-nums">
+                    R$ {num(t.amount).toFixed(2)}
+                  </TableCell>
+                  <TableCell className="py-2 pr-2 tabular-nums">
+                    R$ {num(t.paidAmount).toFixed(2)}
+                  </TableCell>
                   <TableCell className="py-2 pr-2 whitespace-nowrap">
                     {new Date(t.dueDate).toLocaleString("pt-BR")}
                   </TableCell>
@@ -147,11 +170,12 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
                       type="button"
                       className="text-destructive hover:underline"
                       onClick={() => {
-                        void confirmAction({
+                        void confirm({
                           title: "Remover título?",
-                          message: "Este título será removido do sistema.",
+                          description:
+                            "Este título de crédito será removido do sistema.",
                           confirmLabel: "Remover",
-                          variant: "destructive",
+                          tone: "destructive",
                         }).then((ok) => {
                           if (ok) remove.mutate(t.id);
                         });
@@ -165,7 +189,9 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
             </TableBody>
           </Table>
           {titles.length === 0 ? (
-            <p className="mt-2 text-xs text-muted-foreground">Nenhum título cadastrado.</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Nenhum título cadastrado.
+            </p>
           ) : null}
         </div>
       )}

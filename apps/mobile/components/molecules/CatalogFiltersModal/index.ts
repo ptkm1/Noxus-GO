@@ -1,0 +1,1 @@
+export { CatalogFiltersModal } from "./CatalogFiltersModal";

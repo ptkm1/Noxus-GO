@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import { ThemedTextInput } from "../../atoms/ThemedTextInput";
 import { useTheme } from "../../../lib/theme";
+import { ThemedTextInput } from "../../atoms/ThemedTextInput";
 
 type Props = {
   visible: boolean;
@@ -38,45 +39,84 @@ export function VisitNotesModal({
   }, [visible]);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.overlay}
-      >
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
+      navigationBarTranslucent
+    >
+      <KeyboardAvoidingView behavior="padding" style={styles.overlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-          {subtitle ? (
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
-          ) : null}
-          <ThemedTextInput
-            placeholder="Notas (opcional)"
-            value={notes}
-            onChangeText={setNotes}
-            multiline
-            numberOfLines={3}
-            style={styles.input}
-            textAlignVertical="top"
-          />
-          <View style={styles.actions}>
-            <Pressable
-              style={[styles.btnGhost, { borderColor: colors.border }]}
-              onPress={onClose}
-              disabled={pending}
-            >
-              <Text style={[styles.btnGhostTxt, { color: colors.textSecondary }]}>Cancelar</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.btnPrimary, { backgroundColor: colors.primary }, pending && styles.btnDis]}
-              disabled={pending}
-              onPress={() => onConfirm(notes.trim() || undefined)}
-            >
-              <Text style={[styles.btnPrimaryTxt, { color: colors.primaryForeground }]}>
-                {pending ? "…" : confirmLabel}
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          contentContainerStyle={styles.scroll}
+          bounces={false}
+        >
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+            {subtitle ? (
+              <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                {subtitle}
               </Text>
-            </Pressable>
+            ) : null}
+            <ThemedTextInput
+              placeholder="Notas (opcional)"
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+              numberOfLines={3}
+              style={styles.input}
+              textAlignVertical="top"
+            />
+            <View style={styles.actions}>
+              <Pressable
+                style={[styles.btnGhost, { borderColor: colors.border }]}
+                onPress={onClose}
+                disabled={pending}
+              >
+                <Text
+                  style={[styles.btnGhostTxt, { color: colors.textSecondary }]}
+                >
+                  Cancelar
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.btnPrimary,
+                  { backgroundColor: colors.primary },
+                  pending && styles.btnDis,
+                ]}
+                disabled={pending}
+                onPress={() => onConfirm(notes.trim() || undefined)}
+              >
+                <View style={styles.btnPrimaryInner}>
+                  {pending ? (
+                    <ActivityIndicator
+                      color={colors.primaryForeground}
+                      size="small"
+                    />
+                  ) : null}
+                  <Text
+                    style={[
+                      styles.btnPrimaryTxt,
+                      { color: colors.primaryForeground },
+                    ]}
+                  >
+                    {pending ? "Aguarde…" : confirmLabel}
+                  </Text>
+                </View>
+              </Pressable>
+            </View>
           </View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -86,8 +126,12 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: "center",
-    padding: 24,
     backgroundColor: "rgba(15,23,42,0.45)",
+  },
+  scroll: {
+    flexGrow: 1,
+    justifyContent: "center",
+    padding: 24,
   },
   card: {
     borderRadius: 16,
@@ -112,6 +156,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: "center",
+  },
+  btnPrimaryInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   btnPrimaryTxt: { fontWeight: "700", fontSize: 15 },
   btnDis: { opacity: 0.55 },

@@ -3,7 +3,8 @@ import { ThemedButton } from "@/components/atoms/ThemedButton";
 import { ThemedCard } from "@/components/atoms/ThemedCard";
 import { ThemedText } from "@/components/atoms/ThemedText";
 import { ThemedTextInput } from "@/components/atoms/ThemedTextInput";
-import { MobileHeader, MobileScreen } from "@/components/layout";
+import { KeyboardForm, MobileHeader, SafeScreen } from "@/components/layout";
+import { MOBILE_TAB_SCROLL_BOTTOM } from "@/components/layout/MobileScreen";
 import { DevToolsVersionTap } from "@/components/molecules/DevToolsVersionTap";
 import { ProgressStat } from "@/components/molecules/StatCard";
 import { SyncStatusBanner } from "@/components/molecules/SyncStatusBanner";
@@ -73,8 +74,9 @@ const menuStyles = StyleSheet.create({
 export default function ProfileScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const logout = useLogout();
-  const { me, name, setName, saveName, goSettings } = useProfileScreen();
+  const { logoutAndGoLogin, logoutPending } = useLogout();
+  const { me, name, setName, saveName, savePending, goSettings } =
+    useProfileScreen();
 
   const { data: commission } = useQuery({
     queryKey: ["seller", "commission-dashboard"],
@@ -96,9 +98,12 @@ export default function ProfileScreen() {
   const totalSellers = commission?.ranking.totalSellers ?? 0;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeScreen variant="tab">
       <MobileHeader title="Perfil" subtitle="Configurações da conta" showBack />
-      <MobileScreen scroll contentContainerStyle={{ gap: 20 }}>
+      <KeyboardForm
+        contentContainerStyle={{ gap: 20 }}
+        bottomPadding={MOBILE_TAB_SCROLL_BOTTOM}
+      >
         <ThemedCard>
           <View style={styles.userRow}>
             <View
@@ -198,7 +203,13 @@ export default function ProfileScreen() {
             Nome de exibição
           </ThemedText>
           <ThemedTextInput value={name} onChangeText={setName} />
-          <ThemedButton size="lg" style={{ marginTop: 12 }} onPress={saveName}>
+          <ThemedButton
+            size="lg"
+            style={{ marginTop: 12 }}
+            loading={savePending}
+            loadingLabel="Salvando…"
+            onPress={saveName}
+          >
             Salvar nome
           </ThemedButton>
         </ThemedCard>
@@ -244,7 +255,12 @@ export default function ProfileScreen() {
           </View>
         </ThemedCard>
 
-        <ThemedButton variant="outline" onPress={() => void logout()}>
+        <ThemedButton
+          variant="outline"
+          loading={logoutPending}
+          loadingLabel="Saindo…"
+          onPress={() => void logoutAndGoLogin()}
+        >
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <LogOut color={colors.danger} size={18} />
             <ThemedText style={{ color: colors.danger, fontWeight: "600" }}>
@@ -254,8 +270,8 @@ export default function ProfileScreen() {
         </ThemedButton>
 
         <DevToolsVersionTap />
-      </MobileScreen>
-    </View>
+      </KeyboardForm>
+    </SafeScreen>
   );
 }
 

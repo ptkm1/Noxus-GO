@@ -1,4 +1,8 @@
-import type { FiscalInvoice, FiscalInvoiceItem, OrganizationFiscalConfig } from "@prisma/client";
+import type {
+  FiscalInvoice,
+  FiscalInvoiceItem,
+  OrganizationFiscalConfig,
+} from "@prisma/client";
 import { taxRegimeToCrt } from "./certificate-store.js";
 import {
   escapeXml,
@@ -21,6 +25,90 @@ type Recipient = {
   zipCode?: string | null;
   cityIbge?: string | null;
 };
+
+/** CSOSN do Simples que no XML levam só orig + CSOSN (grupo ICMSSNxxx). */
+const CSOSN_ORIG_ONLY = new Set(["102", "103", "300", "400"]);
+
+function resolveFiscalOrigin(
+  tax: Record<string, unknown>,
+  lineNumber: number,
+): number {
+  const raw = tax.orig ?? tax.fiscalOrigin ?? tax.nfeOrigin;
+  const orig = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isInteger(orig) || orig < 0 || orig > 8) {
+    throw new Error(
+      `Item ${lineNumber}: origem fiscal inválida (informe 0–8 no produto).`,
+    );
+  }
+  return orig;
+}
+
+function buildIcmsXml(
+  taxRegime: OrganizationFiscalConfig["taxRegime"],
+  tax: Record<string, unknown>,
+  lineNumber: number,
+): string {
+  const orig = resolveFiscalOrigin(tax, lineNumber);
+
+  if (taxRegime === "SIMPLES_NACIONAL") {
+    const csosn = String(tax.csosn ?? "102").padStart(3, "0");
+    const tag = `ICMSSN${csosn}`;
+    if (CSOSN_ORIG_ONLY.has(csosn)) {
+      return `<ICMS>
+          <${tag}>
+            <orig>${orig}</orig>
+            <CSOSN>${csosn}</CSOSN>
+          </${tag}>
+        </ICMS>`;
+    }
+    if (csosn === "101") {
+      const pCred = formatNfeDecimal(Number(tax.pCredSN ?? tax.icmsRate ?? 0));
+      const vCred = formatNfeDecimal(Number(tax.vCredICMSSN ?? tax.icms ?? 0));
+      return `<ICMS>
+          <ICMSSN101>
+            <orig>${orig}</orig>
+            <CSOSN>101</CSOSN>
+            <pCredSN>${pCred}</pCredSN>
+            <vCredICMSSN>${vCred}</vCredICMSSN>
+          </ICMSSN101>
+        </ICMS>`;
+    }
+    // Demais CSOSN: emite grupo genérico com campos mínimos (evita hardcode 102).
+    return `<ICMS>
+          <${tag}>
+            <orig>${orig}</orig>
+            <CSOSN>${csosn}</CSOSN>
+          </${tag}>
+        </ICMS>`;
+  }
+
+  const cst = String(tax.cst ?? "00").padStart(2, "0");
+  const vBC = formatNfeDecimal(Number(tax.base ?? 0));
+  const pICMS = formatNfeDecimal(Number(tax.icmsRate ?? 0));
+  const vICMS = formatNfeDecimal(Number(tax.icms ?? 0));
+  if (cst === "00") {
+    return `<ICMS>
+          <ICMS00>
+            <orig>${orig}</orig>
+            <CST>00</CST>
+            <modBC>3</modBC>
+            <vBC>${vBC}</vBC>
+            <pICMS>${pICMS}</pICMS>
+            <vICMS>${vICMS}</vICMS>
+          </ICMS00>
+        </ICMS>`;
+  }
+  return `<ICMS>
+          <ICMS${cst}>
+            <orig>${orig}</orig>
+            <CST>${cst}</CST>
+            <modBC>3</modBC>
+            <vBC>${vBC}</vBC>
+            <pICMS>${pICMS}</pICMS>
+            <vICMS>${vICMS}</vICMS>
+          </ICMS${cst}>
+        </ICMS>`;
+}
 
 export function buildSignedNfePackage(input: {
   config: OrganizationFiscalConfig;
@@ -60,7 +148,8 @@ function buildInfNFe(input: {
   accessKey: string;
   issuedAt: Date;
 }) {
-  const { config, invoice, recipient, accessKey, issuedAt, emitterName } = input;
+  const { config, invoice, recipient, accessKey, issuedAt, emitterName } =
+    input;
   const uf = (config.uf ?? "SP").toUpperCase();
   const cUF = UF_IBGE[uf] ?? "35";
   const dhEmi = issuedAt.toISOString().replace(/\.\d{3}Z$/, "-03:00");
@@ -78,7 +167,6 @@ function buildInfNFe(input: {
     .map((item) => {
       const tax = (item.taxSnapshot as Record<string, unknown> | null) ?? {};
       const vProd = Number(item.totalPrice);
-      const csosn = tax.csosn ? String(tax.csosn) : "102";
       return `
     <det nItem="${item.lineNumber}">
       <prod>
@@ -98,12 +186,7 @@ function buildInfNFe(input: {
         <indTot>1</indTot>
       </prod>
       <imposto>
-        <ICMS>
-          <ICMSSN102>
-            <orig>0</orig>
-            <CSOSN>${csosn}</CSOSN>
-          </ICMSSN102>
-        </ICMS>
+        ${buildIcmsXml(config.taxRegime, tax, item.lineNumber)}
         <PIS>
           <PISNT><CST>07</CST></PISNT>
         </PIS>

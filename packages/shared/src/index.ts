@@ -64,23 +64,6 @@ export {
 } from "./commission.js";
 export type { SellerCommissionType } from "./commission.js";
 export {
-  FISCAL_INVOICE_STATUS_LABELS,
-  FISCAL_MANIFESTATION_LABELS,
-  FISCAL_TAX_REGIME_LABELS,
-  NFE_ENVIRONMENT_LABELS,
-  isProductFiscalReady,
-} from "./fiscal.js";
-export type {
-  FiscalDocumentDirection,
-  FiscalInvoiceStatus,
-  FiscalManifestationType,
-  FiscalOperationDirection,
-  FiscalTaxRegime,
-  NfeEnvironment,
-} from "./fiscal.js";
-export { STOCK_MOVEMENT_TYPE_LABELS } from "./stock.js";
-export type { StockMovementType } from "./stock.js";
-export {
   cpfDigitsOnly,
   formatCpfMask,
   isCpfComplete,
@@ -92,6 +75,8 @@ export {
   emptyCustomerForm,
   formToCustomerPayload,
   isCustomerFormValid,
+  isStateRegistrationUnavailable,
+  STATE_REGISTRATION_UNAVAILABLE,
   validateCustomerForm,
   validateCustomerFormStep,
 } from "./customer-form.js";
@@ -102,9 +87,53 @@ export type {
   CustomerRecord,
 } from "./customer-form.js";
 export {
+  FISCAL_INVOICE_STATUS_LABELS,
+  FISCAL_MANIFESTATION_LABELS,
+  FISCAL_TAX_REGIME_LABELS,
+  isProductFiscalReady,
+  NFE_ENVIRONMENT_LABELS,
+} from "./fiscal.js";
+export type {
+  FiscalDocumentDirection,
+  FiscalInvoiceStatus,
+  FiscalManifestationType,
+  FiscalOperationDirection,
+  FiscalTaxRegime,
+  NfeEnvironment,
+} from "./fiscal.js";
+export {
   formatRelativeSaleDate,
   formatSaleItemCount,
 } from "./format-sale-date.js";
+export {
+  NOTIFICATION_TYPES,
+  notificationBodyDisplay,
+  notificationHref,
+} from "./notifications.js";
+export type {
+  AppNotification,
+  NotificationData,
+  NotificationType,
+} from "./notifications.js";
+export {
+  canRead,
+  canWrite,
+  EDITABLE_ROLES,
+  getPermission,
+  levelAllowsRead,
+  levelAllowsWrite,
+  LOCKED_ROLES,
+  PERMISSION_RESOURCE_LABELS,
+  PERMISSION_RESOURCES,
+  resolvePermission,
+  ROLE_LABELS,
+  ROLE_PERMISSIONS,
+} from "./permissions.js";
+export type {
+  PermissionLevel,
+  PermissionResource,
+  PermissionsMap,
+} from "./permissions.js";
 export {
   formatProductPriceWithUnit,
   formatProductStockLabel,
@@ -132,3 +161,5 @@ export type {
   ProductFormValues,
   ProductRecord,
 } from "./product-form.js";
+export { STOCK_MOVEMENT_TYPE_LABELS } from "./stock.js";
+export type { StockMovementType } from "./stock.js";

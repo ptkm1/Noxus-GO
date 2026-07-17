@@ -1,293 +1,393 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { STOCK_MOVEMENT_TYPE_LABELS } from "@pedidos/shared";
-import type { StockMovementType } from "@pedidos/shared";
+import { useAuth } from "@/auth/AuthContext";
+import { ProductListCell } from "@/components/ProductCombobox";
+import {
+  FormField,
+  FormGrid,
+  FormSheet,
+  FormSheetActions,
+} from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
-import { FormField, FormGrid, FormSection } from "@/components/forms";
-import { fieldControlClass } from "@/lib/field-styles";
-import { apiFetch } from "../lib/api";
-import { notifySuccess } from "../lib/app-notifications";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { apiFetch } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Package } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
-const BALANCES_PAGE_SIZE = 20;
-const MOVEMENTS_PAGE_SIZE = 15;
+type StockLot = {
+  id: string;
+  lotCode: string;
+  expiresAt: string;
+  qty: number;
+};
 
-type StockRow = {
+type StockProduct = {
   id: string;
   name: string;
   sku: string | null;
-  category: string | null;
-  quantityOnHand: number;
+  imageUrl?: string | null;
+  stockQty: number;
+  hasExpiringSoon: boolean;
+  expiringLotsCount: number;
+  category: { id: string; name: string } | null;
+  supplier: { id: string; tradeName: string } | null;
+  lots: StockLot[];
 };
 
-type ProductOption = { id: string; name: string; sku: string | null };
+type Category = { id: string; name: string };
+type Supplier = { id: string; tradeName: string; legalName: string };
 
-type Movement = {
-  id: string;
-  type: StockMovementType;
-  quantity: unknown;
-  quantityAfter: unknown;
-  notes: string | null;
-  createdAt: string;
-  product: { name: string; sku: string | null };
-};
+type EntryType = "MANUAL_IN" | "MANUAL_OUT" | "ADJUST";
 
-type Paged<T> = {
-  items: T[];
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-};
-
-function PaginationBar({
-  page,
-  totalPages,
-  total,
-  onPageChange,
-}: {
-  page: number;
-  totalPages: number;
-  total: number;
-  onPageChange: (page: number) => void;
-}) {
-  return (
-    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
-      <span className="text-muted-foreground">{total} registro(s)</span>
-      {totalPages > 1 ? (
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
-            Anterior
-          </Button>
-          <span>
-            Página {page} de {totalPages}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={page >= totalPages}
-            onClick={() => onPageChange(page + 1)}
-          >
-            Próxima
-          </Button>
-        </div>
-      ) : null}
-    </div>
-  );
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("pt-BR");
 }
 
 export function StockPage() {
+  const { user } = useAuth();
   const qc = useQueryClient();
-  const [search, setSearch] = useState("");
-  const [balancesPage, setBalancesPage] = useState(1);
-  const [movementsPage, setMovementsPage] = useState(1);
-  const [productId, setProductId] = useState("");
-  const [movementType, setMovementType] = useState<StockMovementType>("MANUAL_IN");
-  const [quantity, setQuantity] = useState("");
-  const [notes, setNotes] = useState("");
+  const [supplierId, setSupplierId] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [q, setQ] = useState("");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<StockProduct | null>(
+    null,
+  );
+  const [entryType, setEntryType] = useState<EntryType>("MANUAL_IN");
+  const [qty, setQty] = useState("1");
+  const [lotCode, setLotCode] = useState("");
+  const [expiresAt, setExpiresAt] = useState("");
+  const [reason, setReason] = useState("");
+  const [password, setPassword] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setBalancesPage(1);
-  }, [search]);
+  const queryParams = useMemo(() => {
+    const p = new URLSearchParams();
+    if (supplierId) p.set("supplierId", supplierId);
+    if (categoryId) p.set("categoryId", categoryId);
+    if (q.trim()) p.set("q", q.trim());
+    const s = p.toString();
+    return s ? `?${s}` : "";
+  }, [supplierId, categoryId, q]);
 
-  const { data: productOptions = [] } = useQuery({
-    queryKey: ["admin", "stock", "options"],
-    queryFn: () => apiFetch<ProductOption[]>("/admin/stock/options"),
+  const { data: products = [], isLoading } = useQuery({
+    queryKey: ["admin", "stock", supplierId, categoryId, q],
+    queryFn: () => apiFetch<StockProduct[]>(`/admin/stock${queryParams}`),
   });
 
-  const { data: balances, isLoading } = useQuery({
-    queryKey: ["admin", "stock", "balances", search, balancesPage],
-    queryFn: () => {
-      const params = new URLSearchParams({
-        page: String(balancesPage),
-        pageSize: String(BALANCES_PAGE_SIZE),
-      });
-      if (search.trim()) params.set("search", search.trim());
-      return apiFetch<Paged<StockRow>>(`/admin/stock?${params}`);
-    },
+  const { data: categories = [] } = useQuery({
+    queryKey: ["admin", "product-categories"],
+    queryFn: () => apiFetch<Category[]>("/admin/product-categories"),
   });
 
-  const { data: movementsPageData } = useQuery({
-    queryKey: ["admin", "stock", "movements", movementsPage],
-    queryFn: () =>
-      apiFetch<Paged<Movement>>(
-        `/admin/stock/movements?page=${movementsPage}&pageSize=${MOVEMENTS_PAGE_SIZE}`,
-      ),
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ["admin", "suppliers"],
+    queryFn: () => apiFetch<Supplier[]>("/admin/suppliers"),
   });
 
-  const rows = balances?.items ?? [];
-  const movements = movementsPageData?.items ?? [];
+  function openEntry(product: StockProduct) {
+    setSelectedProduct(product);
+    setEntryType("MANUAL_IN");
+    setQty("1");
+    setLotCode("");
+    setExpiresAt("");
+    setReason("");
+    setPassword("");
+    setFormError(null);
+    setSheetOpen(true);
+  }
 
-  const createMovement = useMutation({
-    mutationFn: () =>
-      apiFetch<Movement>("/admin/stock/movements", {
+  function closeSheet() {
+    setSheetOpen(false);
+    setSelectedProduct(null);
+    setFormError(null);
+  }
+
+  const entry = useMutation({
+    mutationFn: () => {
+      const qtyNum = Number(qty);
+      if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
+        throw new Error("Quantidade inválida");
+      }
+      return apiFetch("/admin/stock/entries", {
         method: "POST",
         body: JSON.stringify({
-          productId,
-          type: movementType,
-          quantity: Number(quantity),
-          notes: notes.trim() || undefined,
+          productId: selectedProduct!.id,
+          type: entryType,
+          qty: qtyNum,
+          lotCode,
+          expiresAt: new Date(expiresAt).toISOString(),
+          reason: reason.trim() || undefined,
+          password,
         }),
-      }),
-    onSuccess: async (created) => {
-      setQuantity("");
-      setNotes("");
-      qc.setQueryData<Paged<Movement>>(["admin", "stock", "movements", 1], (old) => {
-        if (!old) return old;
-        return {
-          ...old,
-          items: [created, ...old.items].slice(0, MOVEMENTS_PAGE_SIZE),
-          total: old.total + 1,
-          totalPages: Math.max(1, Math.ceil((old.total + 1) / MOVEMENTS_PAGE_SIZE)),
-        };
       });
-      notifySuccess("Movimentação registrada.");
-      await qc.refetchQueries({ queryKey: ["admin", "stock", "balances"] });
     },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin", "stock"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "stock-movements"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "stock-expiring"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "products"] });
+      closeSheet();
+    },
+    onError: (e: Error) => setFormError(e.message),
   });
+
+  const canSubmit =
+    Boolean(selectedProduct) &&
+    Number.isFinite(Number(qty)) &&
+    Number(qty) > 0 &&
+    lotCode.trim() &&
+    expiresAt &&
+    password.length > 0;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Estoque</h1>
-
-      <FormSection title="Lançamento manual">
-        <FormGrid>
-          <FormField label="Produto">
-            <select
-              className={fieldControlClass}
-              value={productId}
-              onChange={(e) => setProductId(e.target.value)}
-            >
-              <option value="">Selecione…</option>
-              {productOptions.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name} {r.sku ? `(${r.sku})` : ""}
-                </option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="Tipo">
-            <select
-              className={fieldControlClass}
-              value={movementType}
-              onChange={(e) => setMovementType(e.target.value as StockMovementType)}
-            >
-              <option value="MANUAL_IN">{STOCK_MOVEMENT_TYPE_LABELS.MANUAL_IN}</option>
-              <option value="MANUAL_OUT">{STOCK_MOVEMENT_TYPE_LABELS.MANUAL_OUT}</option>
-              <option value="MANUAL_ADJUST">{STOCK_MOVEMENT_TYPE_LABELS.MANUAL_ADJUST}</option>
-            </select>
-          </FormField>
-          <FormField label={movementType === "MANUAL_ADJUST" ? "Novo saldo" : "Quantidade"}>
-            <Input value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-          </FormField>
-          <FormField label="Observação">
-            <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
-          </FormField>
-        </FormGrid>
-        <Button
-          className="mt-3"
-          disabled={!productId || !quantity || createMovement.isPending}
-          onClick={() => createMovement.mutate()}
-        >
-          Registrar movimentação
-        </Button>
-      </FormSection>
-
-      <FormSection title="Saldos">
-        <Input
-          className="mb-3 max-w-sm"
-          placeholder="Buscar produto…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        {isLoading ? (
-          <p className="text-muted-foreground">Carregando…</p>
-        ) : (
-          <>
-            <div className="overflow-x-auto rounded-xl border border-border bg-card">
-              <table className="w-full text-sm">
-                <thead className="bg-background text-left text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3">Produto</th>
-                    <th className="px-4 py-3">SKU</th>
-                    <th className="px-4 py-3">Categoria</th>
-                    <th className="px-4 py-3 text-right">Saldo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground">
-                        Nenhum produto encontrado
-                      </td>
-                    </tr>
-                  ) : (
-                    rows.map((r) => (
-                      <tr key={r.id} className="border-t border-border">
-                        <td className="px-4 py-3">{r.name}</td>
-                        <td className="px-4 py-3">{r.sku ?? "—"}</td>
-                        <td className="px-4 py-3">{r.category ?? "—"}</td>
-                        <td className="px-4 py-3 text-right font-medium">{r.quantityOnHand}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {balances ? (
-              <PaginationBar
-                page={balances.page}
-                totalPages={balances.totalPages}
-                total={balances.total}
-                onPageChange={setBalancesPage}
-              />
-            ) : null}
-          </>
-        )}
-      </FormSection>
-
-      <FormSection title="Histórico">
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <table className="w-full text-sm">
-            <thead className="bg-background text-left text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3">Data</th>
-                <th className="px-4 py-3">Produto</th>
-                <th className="px-4 py-3">Tipo</th>
-                <th className="px-4 py-3">Qtd</th>
-                <th className="px-4 py-3">Saldo após</th>
-              </tr>
-            </thead>
-            <tbody>
-              {movements.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
-                    Nenhuma movimentação
-                  </td>
-                </tr>
-              ) : (
-                movements.map((m) => (
-                  <tr key={m.id} className="border-t border-border">
-                    <td className="px-4 py-3">{new Date(m.createdAt).toLocaleString("pt-BR")}</td>
-                    <td className="px-4 py-3">{m.product.name}</td>
-                    <td className="px-4 py-3">{STOCK_MOVEMENT_TYPE_LABELS[m.type]}</td>
-                    <td className="px-4 py-3">{Number(m.quantity)}</td>
-                    <td className="px-4 py-3">{Number(m.quantityAfter)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Estoque</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Lotes, validade e entradas manuais com reautenticação.
+          </p>
         </div>
-        {movementsPageData ? (
-          <PaginationBar
-            page={movementsPageData.page}
-            totalPages={movementsPageData.totalPages}
-            total={movementsPageData.total}
-            onPageChange={setMovementsPage}
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" asChild>
+            <Link to="/estoque/movimentos">Histórico</Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link to="/insights">Validade &lt; 30 dias</Link>
+          </Button>
+        </div>
+      </div>
+
+      <div className="surface-card grid gap-3 p-4 sm:grid-cols-3">
+        <FormField label="Fornecedor" htmlFor="stock-supplier">
+          <AppSelect
+            id="stock-supplier"
+            value={supplierId}
+            onValueChange={setSupplierId}
+            emptyLabel="Todos"
+            options={suppliers.map((s) => ({
+              value: s.id,
+              label: s.tradeName || s.legalName,
+            }))}
           />
-        ) : null}
-      </FormSection>
+        </FormField>
+        <FormField label="Grupo" htmlFor="stock-category">
+          <AppSelect
+            id="stock-category"
+            value={categoryId}
+            onValueChange={setCategoryId}
+            emptyLabel="Todos"
+            options={categories.map((c) => ({
+              value: c.id,
+              label: c.name,
+            }))}
+          />
+        </FormField>
+        <FormField label="Buscar" htmlFor="stock-q">
+          <Input
+            id="stock-q"
+            placeholder="Nome, SKU ou código de barras"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </FormField>
+      </div>
+
+      {isLoading ? (
+        <p className="text-muted-foreground">Carregando estoque…</p>
+      ) : products.length === 0 ? (
+        <div className="surface-card flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+          <Package className="h-12 w-12 text-primary/40" />
+          <p className="text-muted-foreground">Nenhum produto encontrado.</p>
+        </div>
+      ) : (
+        <div className="surface-card overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Produto</TableHead>
+                <TableHead>Grupo</TableHead>
+                <TableHead>Fornecedor</TableHead>
+                <TableHead className="text-right">Saldo</TableHead>
+                <TableHead>Lotes / validade</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {products.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell>
+                    <ProductListCell product={p} />
+                  </TableCell>
+                  <TableCell>{p.category?.name ?? "—"}</TableCell>
+                  <TableCell>{p.supplier?.tradeName ?? "—"}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {p.stockQty}
+                  </TableCell>
+                  <TableCell>
+                    {p.hasExpiringSoon ? (
+                      <span
+                        className={cn(
+                          "mb-1 inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400",
+                        )}
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {p.expiringLotsCount} lote(s) &lt; 30 dias
+                      </span>
+                    ) : null}
+                    {p.lots.length === 0 ? (
+                      <span className="text-sm text-muted-foreground">
+                        Sem lotes
+                      </span>
+                    ) : (
+                      <ul className="space-y-0.5 text-sm">
+                        {p.lots.slice(0, 3).map((l) => (
+                          <li key={l.id}>
+                            {l.lotCode} · {l.qty} un · {formatDate(l.expiresAt)}
+                          </li>
+                        ))}
+                        {p.lots.length > 3 ? (
+                          <li className="text-muted-foreground">
+                            +{p.lots.length - 3} lote(s)
+                          </li>
+                        ) : null}
+                      </ul>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => openEntry(p)}
+                    >
+                      Movimentar
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      <FormSheet
+        open={sheetOpen}
+        onOpenChange={(open) => {
+          if (!open) closeSheet();
+          else setSheetOpen(true);
+        }}
+        title="Movimentação de estoque"
+        description={
+          selectedProduct
+            ? `${selectedProduct.name} — saldo atual: ${selectedProduct.stockQty}`
+            : undefined
+        }
+        footer={
+          <FormSheetActions
+            onCancel={closeSheet}
+            onSubmit={() => entry.mutate()}
+            submitLabel="Confirmar"
+            pending={entry.isPending}
+            disabled={!canSubmit}
+          />
+        }
+      >
+        <FormGrid cols={2}>
+          <FormField
+            label="Tipo"
+            htmlFor="stock-entry-type"
+            className="sm:col-span-2"
+          >
+            <AppSelect
+              id="stock-entry-type"
+              value={entryType}
+              onValueChange={(v) => setEntryType(v as EntryType)}
+              options={[
+                { value: "MANUAL_IN", label: "Entrada" },
+                { value: "MANUAL_OUT", label: "Saída" },
+                { value: "ADJUST", label: "Ajuste (definir qtd. do lote)" },
+              ]}
+            />
+          </FormField>
+          <FormField label="Quantidade" htmlFor="stock-qty" required>
+            <Input
+              id="stock-qty"
+              type="number"
+              min="1"
+              step="1"
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Lote" htmlFor="stock-lot" required>
+            <Input
+              id="stock-lot"
+              value={lotCode}
+              onChange={(e) => setLotCode(e.target.value)}
+              placeholder="Ex.: L2026-01"
+            />
+          </FormField>
+          <FormField label="Validade" htmlFor="stock-expires" required>
+            <DatePicker
+              id="stock-expires"
+              value={expiresAt}
+              onChange={setExpiresAt}
+              placeholder="Validade do lote"
+            />
+          </FormField>
+          <FormField
+            label="Motivo"
+            htmlFor="stock-reason"
+            className="sm:col-span-2"
+          >
+            <Input
+              id="stock-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Opcional"
+            />
+          </FormField>
+          <div className="sm:col-span-2 rounded-lg border border-border bg-muted/30 p-3 text-sm">
+            <p className="font-medium text-foreground">Reautenticação</p>
+            <p className="mt-1 text-muted-foreground">
+              Usuário: {user?.email}
+              {user?.matricula ? ` · Matrícula: ${user.matricula}` : ""}
+            </p>
+          </div>
+          <FormField
+            label="Senha"
+            htmlFor="stock-password"
+            required
+            className="sm:col-span-2"
+          >
+            <Input
+              id="stock-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Confirme sua senha"
+            />
+          </FormField>
+          {formError ? (
+            <p className="sm:col-span-2 text-sm text-destructive">
+              {formError}
+            </p>
+          ) : null}
+        </FormGrid>
+      </FormSheet>
     </div>
   );
 }

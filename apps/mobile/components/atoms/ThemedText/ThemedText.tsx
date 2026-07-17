@@ -1,8 +1,15 @@
-import { Text, type TextProps } from "react-native";
 import { useTheme } from "@/lib/theme";
 import { typography } from "@pedidos/design-tokens";
+import { Text, type TextProps } from "react-native";
 
-type Variant = "display" | "title" | "titleSm" | "body" | "bodySm" | "caption" | "label";
+type Variant =
+  | "display"
+  | "title"
+  | "titleSm"
+  | "body"
+  | "bodySm"
+  | "caption"
+  | "label";
 
 type Props = TextProps & {
   variant?: Variant;
@@ -10,7 +17,13 @@ type Props = TextProps & {
   color?: string;
 };
 
-export function ThemedText({ variant = "body", muted, color, style, ...rest }: Props) {
+export function ThemedText({
+  variant = "body",
+  muted,
+  color,
+  style,
+  ...rest
+}: Props) {
   const { colors } = useTheme();
   const t = typography[variant];
   return (

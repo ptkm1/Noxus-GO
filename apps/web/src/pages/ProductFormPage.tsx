@@ -505,7 +505,7 @@ export function ProductFormPage() {
               <FormField
                 label="Estoque atual"
                 htmlFor="prod-stock"
-                required
+                required={!isEdit}
                 error={fieldError("stockQty")}
               >
                 <Input
@@ -515,7 +515,17 @@ export function ProductFormPage() {
                   step="1"
                   value={values.stockQty}
                   onChange={(e) => setField("stockQty", e.target.value)}
+                  disabled={isEdit}
                 />
+                {isEdit ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Para alterar saldo com lote/validade, use{" "}
+                    <Link className="underline" to="/estoque">
+                      Estoque
+                    </Link>
+                    .
+                  </p>
+                ) : null}
               </FormField>
 
               <FormField

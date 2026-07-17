@@ -5,6 +5,7 @@ import { apiFetch, sharePdf } from "../../lib/api";
 
 export type SellerOrderDetail = {
   id: string;
+  orderNumber?: number | null;
   status: string;
   totalAmount: unknown;
   notes: string | null;

@@ -3,7 +3,15 @@ import { Prisma } from "@prisma/client";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db.js";
-import { notifyAdminsCreditPending } from "../services/admin-notifications.js";
+import {
+  notifyAdminsCreditPending,
+  notifySaleConfirmed,
+} from "../services/admin-notifications.js";
+import { getWebPushPublicKey } from "../services/notify.js";
+import {
+  handleRegisterPushDevice,
+  handleUnregisterPushDevice,
+} from "../services/push-device-routes.js";
 import { buildSellerCommissionDashboard } from "../services/commission-dashboard.js";
 import {
   buildSellerCustomerCreditSnapshot,
@@ -318,19 +326,50 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         include: {
           items: true,
           customer: true,
-          seller: { include: { user: { select: { name: true } } } },
+          seller: {
+            include: {
+              user: { select: { name: true } },
+            },
+          },
         },
       });
 
       if (order.status === "PENDING_CREDIT_APPROVAL") {
         await notifyAdminsCreditPending({
           organizationId: auth.organizationId,
-          order,
+          order: {
+            id: order.id,
+            totalAmount: order.totalAmount,
+            sellerId: order.sellerId,
+            seller: {
+              user: order.seller.user,
+              managerUserId: order.seller.managerUserId,
+            },
+            customer: order.customer,
+          },
         });
       }
 
       if (order.status === "CONFIRMED") {
-        await applyStockOnStatusChange(order.id, "DRAFT", "CONFIRMED");
+        await applyStockOnStatusChange(
+          order.id,
+          "DRAFT",
+          "CONFIRMED",
+          auth.sub,
+        );
+        void notifySaleConfirmed({
+          organizationId: auth.organizationId,
+          order: {
+            id: order.id,
+            totalAmount: order.totalAmount,
+            sellerId: order.sellerId,
+            seller: {
+              user: order.seller.user,
+              managerUserId: order.seller.managerUserId,
+            },
+            customer: order.customer,
+          },
+        });
       }
 
       return order;
@@ -988,5 +1027,26 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       data: { read: true },
     });
     return { ok: true };
+  });
+
+  app.get("/push-vapid-public-key", async () => {
+    const publicKey = getWebPushPublicKey();
+    return { publicKey };
+  });
+
+  app.post("/push-devices", async (req, reply) => {
+    const auth = req.auth!;
+    const result = await handleRegisterPushDevice(auth.sub, req.body);
+    if ("error" in result)
+      return reply.status(result.status).send({ error: result.error });
+    return result;
+  });
+
+  app.delete("/push-devices", async (req, reply) => {
+    const auth = req.auth!;
+    const result = await handleUnregisterPushDevice(auth.sub, req.body);
+    if ("error" in result)
+      return reply.status(result.status).send({ error: result.error });
+    return result;
   });
 };

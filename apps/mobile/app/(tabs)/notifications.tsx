@@ -1,11 +1,17 @@
 import { ThemedCard } from "@/components/atoms/ThemedCard";
 import { ThemedText } from "@/components/atoms/ThemedText";
-import { MobileHeader } from "@/components/layout";
+import { MobileHeader, SafeScreen } from "@/components/layout";
 import { MOBILE_TAB_SCROLL_BOTTOM } from "@/components/layout/MobileScreen";
 import { useNotificationsScreen } from "@/hooks/screens/useNotificationsScreen";
+import { hrefFromNotificationData } from "@/lib/push";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
+import {
+  notificationBodyDisplay,
+  type AppNotification,
+} from "@pedidos/shared";
 import { CheckCheck } from "lucide-react-native";
+import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
   FlatList,
@@ -16,6 +22,7 @@ import {
 
 export default function NotificationsScreen() {
   const { colors } = useTheme();
+  const router = useRouter();
   const {
     notifications,
     isLoading,
@@ -23,19 +30,43 @@ export default function NotificationsScreen() {
     refetch,
     markRead,
     markAllRead,
+    markAllPending,
+    markReadPending,
+    markingId,
   } = useNotificationsScreen();
 
   const unread = notifications.filter((n) => !n.read).length;
+  const busy = markAllPending || markReadPending;
+
+  function openNotification(item: AppNotification) {
+    if (!item.read) markRead(item.id);
+    const href = hrefFromNotificationData(
+      (item.data as Record<string, unknown> | null) ?? undefined,
+    );
+    if (href) router.push(href as never);
+  }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeScreen variant="tab">
       <MobileHeader
         title="Notificações"
         subtitle={unread > 0 ? `${unread} não lida(s)` : "Tudo em dia"}
         showBack
         rightAction={
-          <Pressable onPress={markAllRead} style={styles.markAll}>
-            <CheckCheck color={colors.primary} size={20} />
+          <Pressable
+            onPress={markAllRead}
+            style={styles.markAll}
+            disabled={busy || unread === 0}
+            accessibilityLabel="Marcar todas como lidas"
+          >
+            {markAllPending ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <CheckCheck
+                color={unread === 0 ? colors.iconMuted : colors.primary}
+                size={20}
+              />
+            )}
           </Pressable>
         }
       />
@@ -61,33 +92,47 @@ export default function NotificationsScreen() {
               Sem notificações.
             </ThemedText>
           }
-          renderItem={({ item }) => (
-            <Pressable onPress={() => !item.read && markRead(item.id)}>
-              <ThemedCard
-                style={
-                  !item.read
-                    ? {
-                        borderColor: colors.primary,
-                        backgroundColor: colorWithAlpha(colors.primary, 0.06),
-                      }
-                    : undefined
-                }
+          renderItem={({ item }) => {
+            const itemBusy = markingId === item.id;
+            return (
+              <Pressable
+                onPress={() => openNotification(item)}
+                disabled={busy && !itemBusy}
               >
-                <ThemedText variant="body" style={{ fontWeight: "600" }}>
-                  {item.title}
-                </ThemedText>
-                <ThemedText variant="bodySm" muted style={{ marginTop: 6 }}>
-                  {item.body}
-                </ThemedText>
-                <ThemedText variant="caption" muted style={{ marginTop: 8 }}>
-                  {new Date(item.createdAt).toLocaleString("pt-BR")}
-                </ThemedText>
-              </ThemedCard>
-            </Pressable>
-          )}
+                <ThemedCard
+                  style={
+                    !item.read
+                      ? {
+                          borderColor: colors.primary,
+                          backgroundColor: colorWithAlpha(colors.primary, 0.06),
+                        }
+                      : undefined
+                  }
+                >
+                  <View style={styles.itemHeader}>
+                    <ThemedText
+                      variant="body"
+                      style={{ fontWeight: "600", flex: 1 }}
+                    >
+                      {item.title}
+                    </ThemedText>
+                    {itemBusy ? (
+                      <ActivityIndicator color={colors.primary} size="small" />
+                    ) : null}
+                  </View>
+                  <ThemedText variant="bodySm" muted style={{ marginTop: 6 }}>
+                    {notificationBodyDisplay(item.body)}
+                  </ThemedText>
+                  <ThemedText variant="caption" muted style={{ marginTop: 8 }}>
+                    {new Date(item.createdAt).toLocaleString("pt-BR")}
+                  </ThemedText>
+                </ThemedCard>
+              </Pressable>
+            );
+          }}
         />
       )}
-    </View>
+    </SafeScreen>
   );
 }
 
@@ -98,5 +143,10 @@ const styles = StyleSheet.create({
     borderRadius: 9999,
     alignItems: "center",
     justifyContent: "center",
+  },
+  itemHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
 });

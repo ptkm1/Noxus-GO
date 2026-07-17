@@ -1,4 +1,4 @@
-import { TabBarIcon } from "@/components/layout";
+import { SafeScreen, TabBarIcon } from "@/components/layout";
 import { useAuth } from "@/context/AuthContext";
 import { Redirect, Tabs, useRouter } from "expo-router";
 import {
@@ -66,16 +66,9 @@ export default function TabsLayout() {
 
   if (loading) {
     return (
-      <View
-        style={{
-          flex: 1,
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: colors.background,
-        }}
-      >
+      <SafeScreen style={{ alignItems: "center", justifyContent: "center" }}>
         <ActivityIndicator color={colors.primary} />
-      </View>
+      </SafeScreen>
     );
   }
 
@@ -92,6 +85,7 @@ export default function TabsLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
+          tabBarHideOnKeyboard: true,
           tabBarActiveTintColor: colors.primary,
           tabBarInactiveTintColor: colors.iconMuted,
           tabBarLabelStyle: {

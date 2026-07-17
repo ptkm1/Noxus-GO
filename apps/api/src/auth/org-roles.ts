@@ -2,6 +2,7 @@ import type { Prisma, Role } from "@prisma/client";
 import type { FastifyReply } from "fastify";
 import { prisma } from "../db.js";
 import type { AccessPayload } from "./jwt.js";
+import { canWrite } from "./permissions.js";
 
 const STAFF_ROLES: Role[] = ["ADMIN", "MANAGER"];
 
@@ -25,7 +26,22 @@ const MANAGER_GET_ALLOW = [
   /^\/reports\/credit-aging$/,
   /^\/reports\/fiscal-reconciliation$/,
   /^\/reports\/visit-effectiveness$/,
+  /^\/notifications$/,
+  /^\/notifications\/unread-count$/,
+  /^\/push-vapid-public-key$/,
 ] as const;
+
+/** Write paths managers may use (inbox + push registration). */
+const MANAGER_WRITE_ALLOW = [
+  /^\/notifications\/[^/]+\/read$/,
+  /^\/notifications\/read-all$/,
+  /^\/push-devices$/,
+] as const;
+
+export function isManagerWriteAllowed(routePath: string): boolean {
+  const path = routePath.split("?")[0] ?? routePath;
+  return MANAGER_WRITE_ALLOW.some((re) => re.test(path));
+}
 
 /** GET paths allowed for team leader (seller with led team). */
 const TEAM_LEADER_GET_ALLOW = [
@@ -161,4 +177,13 @@ export async function teamMemberSellerIds(teamId: string): Promise<string[]> {
     select: { id: true },
   });
   return rows.map((r) => r.id);
+}
+
+/** Invariante: Gestor não escreve estoque/produtos (sem perfil Seller). */
+export function assertManagerHasNoStockWrite(): boolean {
+  return (
+    !canWrite("MANAGER", "stock") &&
+    !canWrite("MANAGER", "products") &&
+    canWrite("ADMIN", "stock")
+  );
 }

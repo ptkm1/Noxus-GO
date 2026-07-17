@@ -110,8 +110,17 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const meta = parsePfxMetadata(pfx, body.data.password);
-    const encryptedPfx = encryptBuffer(pfx);
-    const encryptedPassword = encryptSecret(body.data.password);
+
+    let encryptedPfx: Buffer;
+    let encryptedPassword: string;
+    try {
+      encryptedPfx = encryptBuffer(pfx);
+      encryptedPassword = encryptSecret(body.data.password);
+    } catch (e) {
+      return reply.status(500).send({
+        error: e instanceof Error ? e.message : "Falha ao criptografar certificado",
+      });
+    }
 
     await prisma.organizationFiscalConfig.upsert({
       where: { organizationId: auth.organizationId },

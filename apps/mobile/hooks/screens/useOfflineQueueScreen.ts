@@ -18,6 +18,7 @@ export function useOfflineQueueScreen() {
   const [rows, setRows] = useState<OfflineQueueRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,18 +46,28 @@ export function useOfflineQueueScreen() {
 
   const retryRow = useCallback(
     (localId: string) => {
-      Alert.alert("Repetir envio?", "O servidor vai recalcular preços e crédito.", [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Enviar",
-          onPress: () =>
-            void reviveOfflineSaleRow(localId).then(() => {
-              refresh();
-              void load();
-              void syncNow();
-            }),
-        },
-      ]);
+      Alert.alert(
+        "Repetir envio?",
+        "O servidor vai recalcular preços e crédito.",
+        [
+          { text: "Cancelar", style: "cancel" },
+          {
+            text: "Enviar",
+            onPress: () =>
+              void (async () => {
+                setBusyId(localId);
+                try {
+                  await reviveOfflineSaleRow(localId);
+                  refresh();
+                  await load();
+                  await syncNow();
+                } finally {
+                  setBusyId(null);
+                }
+              })(),
+          },
+        ],
+      );
     },
     [load, refresh, syncNow],
   );
@@ -69,10 +80,16 @@ export function useOfflineQueueScreen() {
           text: "Remover",
           style: "destructive",
           onPress: () =>
-            void deleteOfflineSaleRow(localId).then(() => {
-              refresh();
-              void load();
-            }),
+            void (async () => {
+              setBusyId(localId);
+              try {
+                await deleteOfflineSaleRow(localId);
+                refresh();
+                await load();
+              } finally {
+                setBusyId(null);
+              }
+            })(),
         },
       ]);
     },
@@ -83,6 +100,7 @@ export function useOfflineQueueScreen() {
     rows,
     loading,
     syncing,
+    busyId,
     syncNow,
     retryRow,
     discardRow,

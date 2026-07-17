@@ -1,16 +1,47 @@
 import { ProductCard, type ProductCardItem } from "@/components/ProductCard";
+import { useConfirm } from "@/components/confirm";
+import { FormField } from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api";
-import { confirmAction } from "@/lib/app-notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Package } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+
+type Category = { id: string; name: string };
+type Supplier = { id: string; tradeName: string; legalName: string };
 
 export function ProductsPage() {
   const qc = useQueryClient();
+  const { confirm } = useConfirm();
+  const [supplierId, setSupplierId] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [q, setQ] = useState("");
+
+  const queryParams = useMemo(() => {
+    const p = new URLSearchParams();
+    if (supplierId) p.set("supplierId", supplierId);
+    if (categoryId) p.set("categoryId", categoryId);
+    if (q.trim()) p.set("q", q.trim());
+    const s = p.toString();
+    return s ? `?${s}` : "";
+  }, [supplierId, categoryId, q]);
+
   const { data: products = [], isLoading } = useQuery({
-    queryKey: ["admin", "products"],
-    queryFn: () => apiFetch<ProductCardItem[]>("/admin/products"),
+    queryKey: ["admin", "products", supplierId, categoryId, q],
+    queryFn: () => apiFetch<ProductCardItem[]>(`/admin/products${queryParams}`),
+  });
+
+  const { data: categories = [] } = useQuery({
+    queryKey: ["admin", "product-categories"],
+    queryFn: () => apiFetch<Category[]>("/admin/product-categories"),
+  });
+
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ["admin", "suppliers"],
+    queryFn: () => apiFetch<Supplier[]>("/admin/suppliers"),
   });
 
   const remove = useMutation({
@@ -33,6 +64,9 @@ export function ProductsPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" asChild>
+            <Link to="/estoque">Estoque</Link>
+          </Button>
+          <Button variant="outline" asChild>
             <Link to="/produtos/categorias">Grupos</Link>
           </Button>
           <Button variant="outline" asChild>
@@ -42,6 +76,41 @@ export function ProductsPage() {
             <Link to="/produtos/novo">Novo produto</Link>
           </Button>
         </div>
+      </div>
+
+      <div className="surface-card grid gap-3 p-4 sm:grid-cols-3">
+        <FormField label="Fornecedor" htmlFor="prod-filter-supplier">
+          <AppSelect
+            id="prod-filter-supplier"
+            value={supplierId}
+            onValueChange={setSupplierId}
+            emptyLabel="Todos"
+            options={suppliers.map((s) => ({
+              value: s.id,
+              label: s.tradeName || s.legalName,
+            }))}
+          />
+        </FormField>
+        <FormField label="Grupo" htmlFor="prod-filter-category">
+          <AppSelect
+            id="prod-filter-category"
+            value={categoryId}
+            onValueChange={setCategoryId}
+            emptyLabel="Todos"
+            options={categories.map((c) => ({
+              value: c.id,
+              label: c.name,
+            }))}
+          />
+        </FormField>
+        <FormField label="Buscar" htmlFor="prod-filter-q">
+          <Input
+            id="prod-filter-q"
+            placeholder="Nome, SKU ou código de barras"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </FormField>
       </div>
 
       {isLoading ? (
@@ -68,11 +137,12 @@ export function ProductsPage() {
               key={p.id}
               product={p}
               onDelete={() => {
-                void confirmAction({
+                void confirm({
                   title: "Excluir produto?",
-                  message: "Esta ação não pode ser desfeita.",
+                  description:
+                    "Esta ação não pode ser desfeita. O produto será removido permanentemente.",
                   confirmLabel: "Excluir",
-                  variant: "destructive",
+                  tone: "destructive",
                 }).then((ok) => {
                   if (ok) remove.mutate(p.id);
                 });

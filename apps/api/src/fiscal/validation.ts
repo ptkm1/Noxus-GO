@@ -1,4 +1,8 @@
-import type { FiscalTaxRegime, OrganizationFiscalConfig, Product } from "@prisma/client";
+import type {
+  FiscalTaxRegime,
+  OrganizationFiscalConfig,
+  Product,
+} from "@prisma/client";
 import {
   customerFiscalDocument,
   type CustomerFiscalFields,
@@ -21,11 +25,16 @@ export function validateOrganizationFiscalConfigForEmit(
 ): FiscalReadinessIssue[] {
   const issues: FiscalReadinessIssue[] = [];
   if (!config) {
-    issues.push({ code: "NO_CONFIG", message: "Configuração fiscal da empresa não cadastrada" });
+    issues.push({
+      code: "NO_CONFIG",
+      message: "Configuração fiscal da empresa não cadastrada",
+    });
     return issues;
   }
-  if (!config.cnpj?.trim()) issues.push({ code: "NO_CNPJ", message: "CNPJ do emitente obrigatório" });
-  if (!config.uf?.trim()) issues.push({ code: "NO_UF", message: "UF do emitente obrigatória" });
+  if (!config.cnpj?.trim())
+    issues.push({ code: "NO_CNPJ", message: "CNPJ do emitente obrigatório" });
+  if (!config.uf?.trim())
+    issues.push({ code: "NO_UF", message: "UF do emitente obrigatória" });
   return issues;
 }
 
@@ -37,7 +46,10 @@ export function validateOrganizationFiscalCertificate(
   if (!config.certificatePfxEncrypted) {
     issues.push({ code: "NO_CERT", message: "Certificado A1 não enviado" });
   }
-  if (config.certificateExpiresAt && config.certificateExpiresAt.getTime() < Date.now()) {
+  if (
+    config.certificateExpiresAt &&
+    config.certificateExpiresAt.getTime() < Date.now()
+  ) {
     issues.push({ code: "CERT_EXPIRED", message: "Certificado A1 vencido" });
   }
   return issues;
@@ -50,13 +62,22 @@ export function validateCustomerFiscal(
   if (!customerFiscalDocument(customer)) {
     issues.push({ code: "NO_DOC", message: "Cliente sem CNPJ/CPF" });
   }
-  if (!customer.street?.trim() || !customer.city?.trim() || !customer.state?.trim()) {
-    issues.push({ code: "NO_ADDRESS", message: "Cliente sem endereço fiscal completo" });
+  if (
+    !customer.street?.trim() ||
+    !customer.city?.trim() ||
+    !customer.state?.trim()
+  ) {
+    issues.push({
+      code: "NO_ADDRESS",
+      message: "Cliente sem endereço fiscal completo",
+    });
   }
   return issues;
 }
 
-export function validateProductFiscal(product: Product): FiscalReadinessIssue[] {
+export function validateProductFiscal(
+  product: Product,
+): FiscalReadinessIssue[] {
   const missing: string[] = [];
   const hasNcm =
     Boolean(product.ncmId) ||
@@ -77,7 +98,10 @@ export function validateProductFiscal(product: Product): FiscalReadinessIssue[] 
   ];
 }
 
-export function defaultCsosnOrCst(regime: FiscalTaxRegime): { cst?: string; csosn?: string } {
+export function defaultCsosnOrCst(regime: FiscalTaxRegime): {
+  cst?: string;
+  csosn?: string;
+} {
   if (regime === "SIMPLES_NACIONAL") return { csosn: "102" };
   return { cst: "00" };
 }
@@ -103,6 +127,7 @@ export function computeItemTaxes(input: {
     icms,
     pis,
     cofins,
+    icmsRate,
     ...codes,
   };
 }

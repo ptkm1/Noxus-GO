@@ -1,7 +1,7 @@
 import { fmtMoney } from "@/components/atoms/formatMoney";
 import { ThemedCard } from "@/components/atoms/ThemedCard";
 import { ThemedText } from "@/components/atoms/ThemedText";
-import { MobileHeader, MobileScreen } from "@/components/layout";
+import { MobileHeader, MobileScreen, SafeScreen } from "@/components/layout";
 import { ProgressStat, StatCard } from "@/components/molecules/StatCard";
 import { useCommissionScreen } from "@/hooks/screens/useCommissionScreen";
 import { useTheme } from "@/lib/theme";
@@ -16,7 +16,7 @@ export default function CommissionScreen() {
     useCommissionScreen();
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeScreen variant="tab">
       <MobileHeader title="Comissão" subtitle={data?.period.label} showBack />
       <MobileScreen refreshing={isFetching} onRefresh={onRefresh}>
         {isLoading && !data ? (
@@ -184,7 +184,7 @@ export default function CommissionScreen() {
           </ThemedText>
         ) : null}
       </MobileScreen>
-    </View>
+    </SafeScreen>
   );
 }
 
