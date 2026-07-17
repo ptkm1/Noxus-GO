@@ -8,6 +8,7 @@ import { SellerLocationReporter } from "../components/SellerLocationReporter";
 import { AuthProvider } from "../context/AuthContext";
 import { ToastProvider } from "../context/ToastContext";
 import { ThemeProvider, useTheme } from "../lib/theme";
+import { PushBootstrap } from "../components/PushBootstrap";
 
 const qc = new QueryClient();
 
@@ -54,6 +55,7 @@ export default function RootLayout() {
           <ToastProvider>
             <DevToolsBootstrap>
               <AuthProvider>
+                <PushBootstrap />
                 <OfflineSyncBootstrap />
                 <SellerLocationReporter />
                 <RootStack />

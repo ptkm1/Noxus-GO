@@ -64,6 +64,16 @@ export {
 } from "./commission.js";
 export type { SellerCommissionType } from "./commission.js";
 export {
+  notificationBodyDisplay,
+  notificationHref,
+  NOTIFICATION_TYPES,
+} from "./notifications.js";
+export type {
+  AppNotification,
+  NotificationData,
+  NotificationType,
+} from "./notifications.js";
+export {
   cpfDigitsOnly,
   formatCpfMask,
   isCpfComplete,

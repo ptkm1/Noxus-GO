@@ -1,13 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { AppNotification } from "@pedidos/shared";
 import { apiFetch } from "../../lib/api";
 
-export type SellerNotification = {
-  id: string;
-  title: string;
-  body: string;
-  read: boolean;
-  createdAt: string;
-};
+export type SellerNotification = AppNotification;
 
 export function useNotificationsScreen() {
   const qc = useQueryClient();
