@@ -322,8 +322,10 @@ export function FaturamentoPage() {
     mutationFn: async () => {
       if (!certFile) throw new Error("Selecione o arquivo .pfx");
       const buf = await certFile.arrayBuffer();
-      const pfxBase64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-      return apiFetch("/admin/fiscal/certificate", {
+      const bytes = new Uint8Array(buf);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      const pfxBase64 = btoa(binary);
         method: "POST",
         body: JSON.stringify({ pfxBase64, password: certPassword }),
       });
