@@ -74,8 +74,14 @@ export type ProductFormValues = {
   maxDailyQtyPerSeller: string;
   maxDailyQtyPerCustomer: string;
   ncm: string;
+  ncmId: string;
   ncmException: string;
   nfeOrigin: string;
+  fiscalUnit: string;
+  fiscalGtin: string;
+  fiscalCest: string;
+  fiscalDescription: string;
+  outboundOperationId: string;
   fiscalClass: string;
   pisCofinsClassification: string;
   cstPis: string;
@@ -129,8 +135,15 @@ export type ProductRecord = {
   maxDailyQtyPerSeller?: number | null;
   maxDailyQtyPerCustomer?: number | null;
   ncm?: string | null;
+  ncmId?: string | null;
   ncmException?: string | null;
   nfeOrigin?: number | null;
+  fiscalOrigin?: number | null;
+  fiscalUnit?: string | null;
+  fiscalGtin?: string | null;
+  fiscalCest?: string | null;
+  fiscalDescription?: string | null;
+  outboundOperationId?: string | null;
   fiscalClass?: string | null;
   pisCofinsClassification?: string | null;
   cstPis?: string | null;
@@ -185,8 +198,14 @@ export function emptyProductForm(): ProductFormValues {
     maxDailyQtyPerSeller: "",
     maxDailyQtyPerCustomer: "",
     ncm: "",
+    ncmId: "",
     ncmException: "",
     nfeOrigin: "",
+    fiscalUnit: "UN",
+    fiscalGtin: "",
+    fiscalCest: "",
+    fiscalDescription: "",
+    outboundOperationId: "",
     fiscalClass: "",
     pisCofinsClassification: "",
     cstPis: "",
@@ -230,8 +249,19 @@ export function productToForm(p: ProductRecord): ProductFormValues {
     maxDailyQtyPerSeller: intStr(p.maxDailyQtyPerSeller),
     maxDailyQtyPerCustomer: intStr(p.maxDailyQtyPerCustomer),
     ncm: p.ncm ?? attrNcm,
+    ncmId: p.ncmId ?? "",
     ncmException: p.ncmException ?? "",
-    nfeOrigin: p.nfeOrigin != null ? String(p.nfeOrigin) : "",
+    nfeOrigin:
+      p.fiscalOrigin != null
+        ? String(p.fiscalOrigin)
+        : p.nfeOrigin != null
+          ? String(p.nfeOrigin)
+          : "",
+    fiscalUnit: p.fiscalUnit ?? "UN",
+    fiscalGtin: p.fiscalGtin ?? "",
+    fiscalCest: p.fiscalCest ?? "",
+    fiscalDescription: p.fiscalDescription ?? "",
+    outboundOperationId: p.outboundOperationId ?? "",
     fiscalClass: p.fiscalClass ?? "",
     pisCofinsClassification: p.pisCofinsClassification ?? "",
     cstPis: p.cstPis ?? "",
@@ -337,8 +367,14 @@ const TAB_FIELDS: Record<ProductFormTab, (keyof ProductFormValues)[]> = {
   ],
   fiscal: [
     "ncm",
+    "ncmId",
     "ncmException",
     "nfeOrigin",
+    "fiscalUnit",
+    "fiscalGtin",
+    "fiscalCest",
+    "fiscalDescription",
+    "outboundOperationId",
     "fiscalClass",
     "pisCofinsClassification",
     "cstPis",
@@ -542,8 +578,15 @@ export type ProductApiPayload = {
   maxDailyQtyPerSeller?: number | null;
   maxDailyQtyPerCustomer?: number | null;
   ncm?: string | null;
+  ncmId?: string | null;
   ncmException?: string | null;
   nfeOrigin?: number | null;
+  fiscalOrigin?: number | null;
+  fiscalUnit?: string | null;
+  fiscalGtin?: string | null;
+  fiscalCest?: string | null;
+  fiscalDescription?: string | null;
+  outboundOperationId?: string | null;
   fiscalClass?: string | null;
   pisCofinsClassification?: string | null;
   cstPis?: string | null;
@@ -625,8 +668,15 @@ export function formToProductPayload(
       ? Number(values.maxDailyQtyPerCustomer)
       : null,
     ncm: ncm || null,
+    ncmId: strOrNull(values.ncmId),
     ncmException: strOrNull(values.ncmException),
     nfeOrigin: values.nfeOrigin.trim() ? Number(values.nfeOrigin) : null,
+    fiscalOrigin: values.nfeOrigin.trim() ? Number(values.nfeOrigin) : null,
+    fiscalUnit: strOrNull(values.fiscalUnit) ?? "UN",
+    fiscalGtin: strOrNull(values.fiscalGtin),
+    fiscalCest: strOrNull(values.fiscalCest),
+    fiscalDescription: strOrNull(values.fiscalDescription),
+    outboundOperationId: strOrNull(values.outboundOperationId),
     fiscalClass: strOrNull(values.fiscalClass),
     pisCofinsClassification: strOrNull(values.pisCofinsClassification),
     cstPis: strOrNull(values.cstPis),

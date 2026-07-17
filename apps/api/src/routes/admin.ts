@@ -22,25 +22,13 @@ import {
   validateManagerAssignment,
 } from "../auth/org-roles.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
+import { isPermissionResource } from "../auth/permissions.js";
 import { prisma } from "../db.js";
-import { writeAuditLog } from "../services/audit-log.js";
 import {
-  notifyAdminsCreditPending,
   notifySaleConfirmed,
   notifySellerGoalUpdated,
 } from "../services/admin-notifications.js";
-import { getWebPushPublicKey } from "../services/notify.js";
-import {
-  handleRegisterPushDevice,
-  handleUnregisterPushDevice,
-} from "../services/push-device-routes.js";
-import { isPermissionResource } from "../auth/permissions.js";
-import {
-  adminPathToResource,
-  buildEffectivePermissionsMatrix,
-  canReadEffective,
-  updateOrgRolePermissions,
-} from "../services/role-permissions.js";
+import { writeAuditLog } from "../services/audit-log.js";
 import {
   customerBodySchema,
   customerPatchSchema,
@@ -78,6 +66,16 @@ import {
   listFiscalOrders,
   NfeXmlError,
 } from "../services/fiscal/nfe-xml.js";
+import {
+  buildCommissionStatement,
+  buildCreditAgingReport,
+  buildFiscalReconciliation,
+  buildMarginReport,
+  buildSalesScorecard,
+  buildStockHealthReport,
+  buildVisitEffectiveness,
+} from "../services/management-reports.js";
+import { getWebPushPublicKey } from "../services/notify.js";
 import { sendOrderPdfReply } from "../services/order-pdf-load.js";
 import {
   computeSaleOrder,
@@ -99,11 +97,21 @@ import {
   assertSufficientStock,
   StockError,
 } from "../services/product-stock.js";
+import {
+  handleRegisterPushDevice,
+  handleUnregisterPushDevice,
+} from "../services/push-device-routes.js";
 import { buildCustomersPdf } from "../services/reports/customers-pdf.js";
 import { readExtraParams } from "../services/reports/extra-filters.js";
 import { buildOrderItemsPdf } from "../services/reports/order-items-pdf.js";
 import { buildOrdersPdf } from "../services/reports/orders-pdf.js";
 import { buildStockPdf } from "../services/reports/stock-pdf.js";
+import {
+  adminPathToResource,
+  buildEffectivePermissionsMatrix,
+  canReadEffective,
+  updateOrgRolePermissions,
+} from "../services/role-permissions.js";
 import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
 import {
   createSalesTeam,
@@ -134,6 +142,8 @@ import {
 } from "../services/suppliers.js";
 import { buildTeamSalesSummary } from "../services/team-sales-summary.js";
 import { decToNum } from "../util/money.js";
+import { fiscalRoutes } from "./fiscal.js";
+import { stockRoutes } from "./stock.js";
 
 const idParam = z.object({ id: z.string().min(1) });
 
@@ -300,10 +310,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         req.routeOptions?.url ?? req.url.split("?")[0] ?? req.url;
 
       if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
-        if (
-          auth.role === "MANAGER" &&
-          isManagerWriteAllowed(routePath)
-        ) {
+        if (auth.role === "MANAGER" && isManagerWriteAllowed(routePath)) {
           return;
         }
         if (!requireAdmin(reply, auth)) return;
@@ -1459,7 +1466,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       auth.organizationId,
       updates.map((u) => ({
         role: u.role,
-        resource: u.resource as import("../auth/permissions.js").PermissionResource,
+        resource:
+          u.resource as import("../auth/permissions.js").PermissionResource,
         level: u.level,
       })),
     );
@@ -1540,6 +1548,13 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .optional(),
         minSaleUnitPrice: z.number().nonnegative().nullable().optional(),
         commissionPercent: optionalCommissionPercentSchema,
+        ncmId: z.string().nullable().optional(),
+        fiscalOrigin: z.number().int().min(0).max(8).nullable().optional(),
+        fiscalGtin: z.string().nullable().optional(),
+        fiscalUnit: z.string().nullable().optional(),
+        fiscalCest: z.string().nullable().optional(),
+        fiscalDescription: z.string().nullable().optional(),
+        outboundOperationId: z.string().nullable().optional(),
         stockQty: z.number().int().min(0).optional(),
         blockSaleWhenOutOfStock: z.boolean().optional(),
         ...productCadastroFieldsSchema,
@@ -1609,6 +1624,31 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           stockQty: body.data.stockQty ?? 0,
           blockSaleWhenOutOfStock: body.data.blockSaleWhenOutOfStock ?? false,
           ...mapProductCadastroPrisma(body.data),
+          ncmId: body.data.ncmId === undefined ? undefined : body.data.ncmId,
+          fiscalOrigin:
+            body.data.fiscalOrigin === undefined
+              ? undefined
+              : body.data.fiscalOrigin,
+          fiscalGtin:
+            body.data.fiscalGtin === undefined
+              ? undefined
+              : body.data.fiscalGtin,
+          fiscalUnit:
+            body.data.fiscalUnit === undefined
+              ? undefined
+              : body.data.fiscalUnit,
+          fiscalCest:
+            body.data.fiscalCest === undefined
+              ? undefined
+              : body.data.fiscalCest,
+          fiscalDescription:
+            body.data.fiscalDescription === undefined
+              ? undefined
+              : body.data.fiscalDescription,
+          outboundOperationId:
+            body.data.outboundOperationId === undefined
+              ? undefined
+              : body.data.outboundOperationId,
         },
         include: productRelationsInclude,
       });
@@ -1680,6 +1720,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .optional(),
         minSaleUnitPrice: z.number().nonnegative().nullable().optional(),
         commissionPercent: optionalCommissionPercentSchema,
+        ncmId: z.string().nullable().optional(),
+        fiscalOrigin: z.number().int().min(0).max(8).nullable().optional(),
+        fiscalGtin: z.string().nullable().optional(),
+        fiscalUnit: z.string().nullable().optional(),
+        fiscalCest: z.string().nullable().optional(),
+        fiscalDescription: z.string().nullable().optional(),
+        outboundOperationId: z.string().nullable().optional(),
+        stockQty: z.number().int().min(0).optional(),
         blockSaleWhenOutOfStock: z.boolean().optional(),
         ...productCadastroFieldsSchema,
       })
@@ -1810,6 +1858,31 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
               : body.data.commissionPercent,
           blockSaleWhenOutOfStock: body.data.blockSaleWhenOutOfStock,
           ...mapProductCadastroPrisma(body.data),
+          ncmId: body.data.ncmId === undefined ? undefined : body.data.ncmId,
+          fiscalOrigin:
+            body.data.fiscalOrigin === undefined
+              ? undefined
+              : body.data.fiscalOrigin,
+          fiscalGtin:
+            body.data.fiscalGtin === undefined
+              ? undefined
+              : body.data.fiscalGtin,
+          fiscalUnit:
+            body.data.fiscalUnit === undefined
+              ? undefined
+              : body.data.fiscalUnit,
+          fiscalCest:
+            body.data.fiscalCest === undefined
+              ? undefined
+              : body.data.fiscalCest,
+          fiscalDescription:
+            body.data.fiscalDescription === undefined
+              ? undefined
+              : body.data.fiscalDescription,
+          outboundOperationId:
+            body.data.outboundOperationId === undefined
+              ? undefined
+              : body.data.outboundOperationId,
         },
         include: productRelationsInclude,
       });
@@ -3048,6 +3121,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         seller: { include: { user: { select: { name: true, email: true } } } },
         customer: true,
         items: { include: { product: true } },
+        fiscalInvoices: {
+          where: { direction: "OUTBOUND" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { id: true, status: true, number: true, series: true },
+        },
       },
     });
   });
@@ -3142,10 +3221,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       },
     });
 
-    if (
-      body.data.status === "CONFIRMED" &&
-      existing.status !== "CONFIRMED"
-    ) {
+    if (body.data.status === "CONFIRMED" && existing.status !== "CONFIRMED") {
       void notifySaleConfirmed({
         organizationId: auth.organizationId,
         order: {
@@ -3853,6 +3929,142 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return buildDistributorInsights(auth.organizationId);
   });
 
+  app.get("/reports/scorecard", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({ from: z.string().optional(), to: z.string().optional() })
+      .safeParse(req.query);
+    let sellerIds: string[] | undefined;
+    if (isTeamLeaderAuth(auth)) {
+      sellerIds = await teamMemberSellerIds(auth.teamLeaderTeamId!);
+    } else if (auth.role === "MANAGER") {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+    return buildSalesScorecard({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerIds,
+    });
+  });
+
+  app.get("/reports/margin", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply
+        .status(403)
+        .send({
+          error: "Relatório de margem disponível apenas para admin/gestor",
+        });
+    }
+    const q = z
+      .object({ from: z.string().optional(), to: z.string().optional() })
+      .safeParse(req.query);
+    let sellerIds: string[] | undefined;
+    if (auth.role === "MANAGER") {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+    return buildMarginReport({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerIds,
+    });
+  });
+
+  app.get("/reports/commission-statement", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply
+        .status(403)
+        .send({ error: "Extrato de comissão disponível apenas para admin" });
+    }
+    const q = z
+      .object({
+        year: z.coerce.number().int().optional(),
+        month: z.coerce.number().int().min(1).max(12).optional(),
+      })
+      .safeParse(req.query);
+    return buildCommissionStatement({
+      organizationId: auth.organizationId,
+      year: q.success ? q.data.year : undefined,
+      month: q.success ? q.data.month : undefined,
+    });
+  });
+
+  app.get("/reports/stock-health", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply
+        .status(403)
+        .send({ error: "Relatório de estoque disponível apenas para admin" });
+    }
+    return buildStockHealthReport(auth.organizationId);
+  });
+
+  app.get("/reports/credit-aging", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply
+        .status(403)
+        .send({ error: "Aging de crédito disponível apenas para admin" });
+    }
+    return buildCreditAgingReport(auth.organizationId);
+  });
+
+  app.get("/reports/fiscal-reconciliation", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply
+        .status(403)
+        .send({ error: "Conciliação fiscal disponível apenas para admin" });
+    }
+    const q = z
+      .object({ from: z.string().optional(), to: z.string().optional() })
+      .safeParse(req.query);
+    return buildFiscalReconciliation({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+    });
+  });
+
+  app.get("/reports/visit-effectiveness", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        conversionWindowDays: z.coerce.number().int().min(1).max(30).optional(),
+      })
+      .safeParse(req.query);
+    let sellerIds: string[] | undefined;
+    if (isTeamLeaderAuth(auth)) {
+      sellerIds = await teamMemberSellerIds(auth.teamLeaderTeamId!);
+    } else if (auth.role === "MANAGER") {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+    return buildVisitEffectiveness({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      conversionWindowDays: q.success ? q.data.conversionWindowDays : undefined,
+      sellerIds,
+    });
+  });
+
   app.get("/reports/team-summary", async (req, reply) => {
     const auth = req.auth!;
     const q = z
@@ -4144,4 +4356,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       )
       .send(pdf);
   });
+
+  await app.register(fiscalRoutes, { prefix: "/fiscal" });
+  await app.register(stockRoutes, { prefix: "/stock" });
 };

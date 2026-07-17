@@ -1,4 +1,5 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { canRead } from "@pedidos/shared";
+import { QueryClientProvider } from "@tanstack/react-query";
 import {
   BrowserRouter,
   Navigate,
@@ -10,11 +11,12 @@ import {
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { ConfirmProvider } from "./components/confirm";
 import { AppLogo } from "./components/layout/AppLogo";
-import { PublicAuthLayout } from "./components/layout/PublicAuthLayout";
 import { resourceForPath } from "./components/layout/navConfig";
+import { PublicAuthLayout } from "./components/layout/PublicAuthLayout";
+import { AppNotificationsProvider } from "./lib/app-notifications";
+import { createAppQueryClient } from "./lib/query-client";
 import { isWebStaff, isWebTeamLeader } from "./lib/staff";
 import { ThemeProvider } from "./lib/theme";
-import { canRead } from "@pedidos/shared";
 import { CommissionGoalsPage } from "./pages/CommissionGoalsPage";
 import { CommissionHubPage } from "./pages/CommissionHubPage";
 import { CommissionTiersPage } from "./pages/CommissionTiersPage";
@@ -22,6 +24,7 @@ import { CustomersPage } from "./pages/CustomersPage";
 import { CustomerVisitsPage } from "./pages/CustomerVisitsPage";
 import { DashboardHome } from "./pages/DashboardHome";
 import { DashboardLayout } from "./pages/DashboardLayout";
+import { FaturamentoPage } from "./pages/FaturamentoPage";
 import { FiscalAccountsPayablePage } from "./pages/FiscalAccountsPayablePage";
 import { FiscalFixedExpensesPage } from "./pages/FiscalFixedExpensesPage";
 import { FiscalHubPage } from "./pages/FiscalHubPage";
@@ -41,6 +44,7 @@ import { ReportCustomersPage } from "./pages/ReportCustomersPage";
 import { ReportOrderItemsPage } from "./pages/ReportOrderItemsPage";
 import { ReportOrdersPage } from "./pages/ReportOrdersPage";
 import { ReportsHubPage } from "./pages/ReportsHubPage";
+import { ReportsPage } from "./pages/ReportsPage";
 import { ReportStockPage } from "./pages/ReportStockPage";
 import { SellerProductsPage } from "./pages/SellerProductsPage";
 import { SellersPage } from "./pages/SellersPage";
@@ -51,7 +55,7 @@ import { SuppliersPage } from "./pages/SuppliersPage";
 import { TeamsPage } from "./pages/TeamsPage";
 import { UsersPage } from "./pages/UsersPage";
 
-const qc = new QueryClient();
+const qc = createAppQueryClient();
 
 function SellerNotice() {
   const { logout } = useAuth();
@@ -88,6 +92,7 @@ const TEAM_LEADER_ROUTE_PREFIXES = [
   "/visitas",
   "/vendas",
   "/insights",
+  "/relatorios",
 ];
 
 function TeamLeaderRouteGuard() {
@@ -192,6 +197,7 @@ function AppRoutes() {
               element={<FiscalAccountsPayablePage />}
             />
             <Route path="fiscal/xml" element={<FiscalXmlPage />} />
+            <Route path="faturamento" element={<FaturamentoPage />} />
             <Route path="comissao" element={<CommissionHubPage />} />
             <Route path="comissao/faixas" element={<CommissionTiersPage />} />
             <Route path="comissao/metas" element={<CommissionGoalsPage />} />
@@ -213,11 +219,16 @@ function AppRoutes() {
             <Route path="relatorios/pedidos" element={<ReportOrdersPage />} />
             <Route path="relatorios/itens" element={<ReportOrderItemsPage />} />
             <Route path="relatorios/estoque" element={<ReportStockPage />} />
+            <Route path="relatorios/gestao" element={<ReportsPage />} />
             <Route path="visitas" element={<CustomerVisitsPage />} />
             <Route path="rastreio" element={<SellerTrackingPage />} />
             <Route path="vendas" element={<OrdersPage />} />
             <Route path="vendas/:orderId" element={<OrderDetailPage />} />
             <Route path="insights" element={<InsightsPage />} />
+            <Route
+              path="indicadores"
+              element={<Navigate to="/insights" replace />}
+            />
           </Route>
         </Route>
       </Route>
@@ -230,13 +241,15 @@ export default function App() {
   return (
     <ThemeProvider>
       <QueryClientProvider client={qc}>
-        <BrowserRouter>
-          <AuthProvider>
-            <ConfirmProvider>
-              <AppRoutes />
-            </ConfirmProvider>
-          </AuthProvider>
-        </BrowserRouter>
+        <AppNotificationsProvider>
+          <BrowserRouter>
+            <AuthProvider>
+              <ConfirmProvider>
+                <AppRoutes />
+              </ConfirmProvider>
+            </AuthProvider>
+          </BrowserRouter>
+        </AppNotificationsProvider>
       </QueryClientProvider>
     </ThemeProvider>
   );

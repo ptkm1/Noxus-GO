@@ -110,6 +110,7 @@ export function SellerTrackingPage() {
     queryFn: () => apiFetch<Payload>("/admin/seller-locations"),
     refetchInterval: wsConnected ? 60_000 : 15_000,
     staleTime: 5_000,
+    meta: { silentError: true },
   });
 
   const sellers = q.data?.sellers ?? [];

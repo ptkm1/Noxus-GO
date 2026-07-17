@@ -3,12 +3,15 @@ import { RecentSalesList } from "@/components/RecentSalesList";
 import { TopSuppliersChart } from "@/components/TopSuppliersChart";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch } from "@/lib/api";
+import { periodRange } from "@/lib/period-presets";
 import { isWebAdmin, isWebTeamLeader } from "@/lib/staff";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import {
+  Activity,
   BarChart3,
+  FileText,
   LayoutDashboard,
   Loader2,
   MapPin,
@@ -21,6 +24,7 @@ import {
   UserCircle,
   UserCog,
   Users,
+  Warehouse,
   UsersRound,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -100,10 +104,28 @@ const adminCards: DashCard[] = [
     icon: ShoppingCart,
   },
   {
+    to: "/faturamento",
+    title: "Faturamento",
+    description: "NF-e de saída e entrada",
+    icon: FileText,
+  },
+  {
+    to: "/estoque",
+    title: "Estoque",
+    description: "Saldos e lançamentos manuais",
+    icon: Warehouse,
+  },
+  {
     to: "/relatorios",
     title: "Relatórios",
-    description: "PDFs de clientes, pedidos, itens e estoque",
+description: "Vendas, margem, estoque, fiscal, visitas e PDFs",
     icon: BarChart3,
+  },
+  {
+    to: "/indicadores",
+    title: "Indicadores",
+    description: "Quem vendeu menos, carteira e giro",
+    icon: Activity,
   },
 ];
 
@@ -182,6 +204,7 @@ export function DashboardHome() {
     staleTime: 15_000,
     refetchInterval: 20_000,
     enabled: admin,
+    meta: { silentError: true },
   });
 
   const {
@@ -203,6 +226,18 @@ export function DashboardHome() {
         }[]
       >("/admin/orders"),
     staleTime: 30_000,
+  });
+
+  const monthRange = periodRange("this_month");
+  const { data: scorecard, isLoading: scorecardLoading } = useQuery({
+    queryKey: ["admin", "reports", "scorecard", "dashboard", monthRange.from],
+    queryFn: () =>
+      apiFetch<{
+        totals: { orderCount: number; totalAmount: number; avgTicket: number };
+      }>(
+        `/admin/reports/scorecard?from=${encodeURIComponent(monthRange.from)}&to=${encodeURIComponent(monthRange.to)}`,
+      ),
+    staleTime: 60_000,
   });
 
   const pendingCount = pendingCredit?.count ?? 0;
@@ -228,6 +263,34 @@ export function DashboardHome() {
                 ? `Acompanhe rastreio, visitas e vendas da equipe${user?.teamName ? ` ${user.teamName}` : ""}.`
                 : "Acompanhe rastreio, visitas e vendas da equipe."}
           </p>
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-sm text-muted-foreground">Faturamento do mês</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums">
+            {scorecardLoading
+              ? "…"
+              : `R$ ${(scorecard?.totals.totalAmount ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+          </p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-sm text-muted-foreground">Pedidos confirmados</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums">
+            {scorecardLoading ? "…" : String(scorecard?.totals.orderCount ?? 0)}
+          </p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="text-sm text-muted-foreground">Ticket médio</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums">
+            {scorecardLoading
+              ? "…"
+              : `R$ ${(scorecard?.totals.avgTicket ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+          </p>
+          <Link to="/relatorios" className="mt-2 inline-block text-xs text-primary hover:underline">
+            Ver relatórios completos
+          </Link>
         </div>
       </div>
 

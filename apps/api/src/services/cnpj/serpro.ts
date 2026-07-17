@@ -97,7 +97,7 @@ export function mapSerproCnpj(json: Record<string, unknown>): CnpjCompanyData {
       (typeof json.situacaoCadastral === "object" &&
       json.situacaoCadastral &&
       typeof (json.situacaoCadastral as Record<string, unknown>).codigo === "string"
-        ? (json.situacaoCadastral as Record<string, unknown>).codigo
+        ? String((json.situacaoCadastral as Record<string, unknown>).codigo)
         : null),
     cep: formatCep(endereco?.cep ?? json.cep),
     uf: pickString(endereco ?? json, "uf"),

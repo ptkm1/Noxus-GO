@@ -17,9 +17,21 @@ import {
   type ProductClassification,
   type ProductFormTab,
 } from "@pedidos/shared";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { DynamicCategoryAttributes } from "../components/DynamicCategoryAttributes";
 import { ProductPromotionsPanel } from "../components/ProductPromotionsPanel";
+import { apiFetch } from "../lib/api";
+import { fieldControlClass } from "@/lib/field-styles";
+
+type FiscalNcmOption = { id: string; code: string; description: string; active: boolean };
+type FiscalOpOption = {
+  id: string;
+  direction: string;
+  cfop: string;
+  description: string;
+  active: boolean;
+};
 
 const TABS: { id: ProductFormTab; label: string }[] = [
   { id: "principal", label: "Principal" },
@@ -69,6 +81,17 @@ export function ProductFormPage() {
     onCategoryChange,
     pending,
   } = useProductFormPage();
+
+  const { data: ncms = [] } = useQuery({
+    queryKey: ["admin", "fiscal", "ncm"],
+    queryFn: () => apiFetch<FiscalNcmOption[]>("/admin/fiscal/ncm"),
+  });
+
+  const { data: outboundOps = [] } = useQuery({
+    queryKey: ["admin", "fiscal", "operations", "OUTBOUND"],
+    queryFn: () =>
+      apiFetch<FiscalOpOption[]>("/admin/fiscal/operations?direction=OUTBOUND"),
+  });
 
   if (isEdit && isLoading) {
     return (
@@ -666,15 +689,42 @@ export function ProductFormPage() {
 
         {activeTab === "fiscal" ? (
           <FormSection
-            title="Dados fiscais"
-            description="Informações para NF-e e tributação."
+            title="Dados fiscais para NF-e"
+            description="Campos usados na emissão. Cadastre NCM/CFOP em Faturamento → NCM/CFOP."
           >
             <FormGrid cols={2}>
               <FormField
-                label="NCM"
+                label="NCM (cadastro fiscal)"
+                htmlFor="prod-ncm-id"
+                hint="Obrigatório para emitir NF-e."
+              >
+                <select
+                  id="prod-ncm-id"
+                  className={fieldControlClass}
+                  value={values.ncmId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setField("ncmId", id);
+                    const selected = ncms.find((n) => n.id === id);
+                    if (selected) setField("ncm", selected.code);
+                  }}
+                >
+                  <option value="">Selecione o NCM…</option>
+                  {ncms
+                    .filter((n) => n.active)
+                    .map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {n.code} — {n.description}
+                      </option>
+                    ))}
+                </select>
+              </FormField>
+
+              <FormField
+                label="NCM (código)"
                 htmlFor="prod-ncm"
                 error={fieldError("ncm")}
-                hint="8 dígitos."
+                hint="8 dígitos. Preenchido ao selecionar o NCM."
               >
                 <Input
                   id="prod-ncm"
@@ -694,10 +744,10 @@ export function ProductFormPage() {
               </FormField>
 
               <FormField
-                label="Origem NF-e"
+                label="Origem da mercadoria"
                 htmlFor="prod-nfe-origin"
                 error={fieldError("nfeOrigin")}
-                hint="0 = Nacional, 1–8 conforme tabela SEFAZ."
+                hint="0 = Nacional. Obrigatório para NF-e."
               >
                 <Input
                   id="prod-nfe-origin"
@@ -707,6 +757,76 @@ export function ProductFormPage() {
                   step="1"
                   value={values.nfeOrigin}
                   onChange={(e) => setField("nfeOrigin", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Unidade fiscal"
+                htmlFor="prod-fiscal-unit"
+                hint="Ex.: UN, CX, KG. Obrigatório para NF-e."
+              >
+                <select
+                  id="prod-fiscal-unit"
+                  className={fieldControlClass}
+                  value={values.fiscalUnit}
+                  onChange={(e) => setField("fiscalUnit", e.target.value)}
+                >
+                  {PURCHASE_UNITS.map((u) => (
+                    <option key={u.value} value={u.value}>
+                      {u.label}
+                    </option>
+                  ))}
+                  {!PURCHASE_UNITS.some((u) => u.value === values.fiscalUnit) &&
+                  values.fiscalUnit ? (
+                    <option value={values.fiscalUnit}>{values.fiscalUnit}</option>
+                  ) : null}
+                </select>
+              </FormField>
+
+              <FormField label="CFOP padrão de saída" htmlFor="prod-outbound-op">
+                <select
+                  id="prod-outbound-op"
+                  className={fieldControlClass}
+                  value={values.outboundOperationId}
+                  onChange={(e) => setField("outboundOperationId", e.target.value)}
+                >
+                  <option value="">Usar padrão (5102)</option>
+                  {outboundOps
+                    .filter((o) => o.active)
+                    .map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.cfop} — {o.description}
+                      </option>
+                    ))}
+                </select>
+              </FormField>
+
+              <FormField label="GTIN / EAN" htmlFor="prod-fiscal-gtin">
+                <Input
+                  id="prod-fiscal-gtin"
+                  value={values.fiscalGtin}
+                  onChange={(e) => setField("fiscalGtin", e.target.value)}
+                />
+              </FormField>
+
+              <FormField label="CEST" htmlFor="prod-fiscal-cest">
+                <Input
+                  id="prod-fiscal-cest"
+                  value={values.fiscalCest}
+                  onChange={(e) => setField("fiscalCest", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Descrição na NF-e"
+                htmlFor="prod-fiscal-desc"
+                className="sm:col-span-2"
+                hint="Se vazio, usa o nome comercial do produto."
+              >
+                <Input
+                  id="prod-fiscal-desc"
+                  value={values.fiscalDescription}
+                  onChange={(e) => setField("fiscalDescription", e.target.value)}
                 />
               </FormField>
 
@@ -788,6 +908,14 @@ export function ProductFormPage() {
                 />
               </FormField>
             </FormGrid>
+            {values.ncmId && values.nfeOrigin !== "" && values.fiscalUnit ? (
+              <p className="mt-3 text-sm text-green-700">Pronto para NF-e</p>
+            ) : (
+              <p className="mt-3 text-sm text-amber-700">
+                Cadastro fiscal incompleto — selecione NCM, origem e unidade
+                fiscal.
+              </p>
+            )}
           </FormSection>
         ) : null}
 

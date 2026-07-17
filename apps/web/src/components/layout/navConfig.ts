@@ -1,11 +1,9 @@
 import type { User } from "@/auth/AuthContext";
-import {
-  canRead,
-  type PermissionResource,
-} from "@pedidos/shared";
+import { canRead, type PermissionResource } from "@pedidos/shared";
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
+  FileText,
   LayoutDashboard,
   Lightbulb,
   MapPin,
@@ -87,6 +85,12 @@ export const DASHBOARD_NAV: NavItem[] = [
   { to: "/vendas", label: "Vendas", icon: ShoppingCart, resource: "orders" },
   { to: "/fiscal", label: "Fiscal", icon: Receipt, resource: "fiscal" },
   {
+    to: "/faturamento",
+    label: "Faturamento",
+    icon: FileText,
+    resource: "fiscal",
+  },
+  {
     to: "/relatorios",
     label: "Relatórios",
     icon: BarChart3,
@@ -145,8 +149,13 @@ export function resourceForPath(pathname: string): PermissionResource | null {
   if (pathname.startsWith("/visitas")) return "visits";
   if (pathname.startsWith("/rastreio")) return "tracking";
   if (pathname.startsWith("/vendas")) return "orders";
-  if (pathname.startsWith("/fiscal")) return "fiscal";
-  if (pathname.startsWith("/relatorios") || pathname.startsWith("/insights"))
+  if (pathname.startsWith("/fiscal") || pathname.startsWith("/faturamento"))
+    return "fiscal";
+  if (
+    pathname.startsWith("/relatorios") ||
+    pathname.startsWith("/insights") ||
+    pathname.startsWith("/indicadores")
+  )
     return "reports";
   if (pathname.startsWith("/permissoes")) return "permissions";
   return null;

@@ -19,6 +19,13 @@ const MANAGER_GET_ALLOW = [
   /^\/orders\/[^/]+$/,
   /^\/orders\/[^/]+\/pdf$/,
   /^\/reports\/sales-by-supplier$/,
+  /^\/reports\/scorecard$/,
+  /^\/reports\/margin$/,
+  /^\/reports\/commission-statement$/,
+  /^\/reports\/stock-health$/,
+  /^\/reports\/credit-aging$/,
+  /^\/reports\/fiscal-reconciliation$/,
+  /^\/reports\/visit-effectiveness$/,
   /^\/notifications$/,
   /^\/notifications\/unread-count$/,
   /^\/push-vapid-public-key$/,
@@ -49,6 +56,8 @@ const TEAM_LEADER_GET_ALLOW = [
   /^\/orders\/[^/]+\/pdf$/,
   /^\/reports\/team-summary$/,
   /^\/reports\/sales-by-supplier$/,
+  /^\/reports\/scorecard$/,
+  /^\/reports\/visit-effectiveness$/,
 ] as const;
 
 export function isOrgStaff(role: Role): boolean {

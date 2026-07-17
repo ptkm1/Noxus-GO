@@ -115,19 +115,24 @@ export function StockPage() {
   }
 
   const entry = useMutation({
-    mutationFn: () =>
-      apiFetch("/admin/stock/entries", {
+    mutationFn: () => {
+      const qtyNum = Number(qty);
+      if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
+        throw new Error("Quantidade inválida");
+      }
+      return apiFetch("/admin/stock/entries", {
         method: "POST",
         body: JSON.stringify({
           productId: selectedProduct!.id,
           type: entryType,
-          qty: Number(qty),
+          qty: qtyNum,
           lotCode,
           expiresAt: new Date(expiresAt).toISOString(),
           reason: reason.trim() || undefined,
           password,
         }),
-      }),
+      });
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin", "stock"] });
       void qc.invalidateQueries({ queryKey: ["admin", "stock-movements"] });
@@ -140,6 +145,7 @@ export function StockPage() {
 
   const canSubmit =
     Boolean(selectedProduct) &&
+    Number.isFinite(Number(qty)) &&
     Number(qty) > 0 &&
     lotCode.trim() &&
     expiresAt &&
