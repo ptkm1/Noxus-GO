@@ -5,11 +5,16 @@ import {
   readEmailOutboundConfig,
   sendTransactionalHtmlEmail,
 } from "./email-send.js";
+import { notifyUsers } from "./notify.js";
 
 type OrderNotifyPayload = {
   id: string;
   totalAmount: unknown;
-  seller: { user: { name: string } };
+  sellerId?: string;
+  seller: {
+    user: { name: string };
+    managerUserId?: string | null;
+  };
   customer: { name: string } | null;
 };
 
@@ -50,7 +55,7 @@ async function notifyAdminsCreditPendingEmail(params: {
   }
 }
 
-/** Dispara alerta in-app para todos os admins da organização e, se configurado, e-mail transacional. */
+/** Alerta in-app + push para admins (e gestor do vendedor) quando há crédito pendente. */
 export async function notifyAdminsCreditPending(params: {
   organizationId: string;
   order: OrderNotifyPayload;
@@ -59,26 +64,120 @@ export async function notifyAdminsCreditPending(params: {
     where: { organizationId: params.organizationId, role: "ADMIN" },
     select: { id: true, email: true },
   });
-  if (!admins.length) return;
+
+  const managerId = params.order.seller.managerUserId ?? null;
+  const userIds = [
+    ...admins.map((a) => a.id),
+    ...(managerId ? [managerId] : []),
+  ];
+
+  if (!userIds.length) return;
 
   const total = decToNum(params.order.totalAmount);
   const cust = params.order.customer?.name ?? "Cliente sem nome";
   const seller = params.order.seller.user.name;
   const title = "Pedido aguardando crédito";
-  const body = `${seller} · ${cust} · R$ ${total.toFixed(2)} — aprove em Vendas.\nORDER_ID:${params.order.id}`;
+  const body = `${seller} · ${cust} · R$ ${total.toFixed(2)} — aprove em Vendas.`;
 
-  await prisma.notification.createMany({
-    data: admins.map((u) => ({
-      userId: u.id,
-      title,
-      body,
-    })),
+  await notifyUsers({
+    userIds,
+    title,
+    body,
+    type: "CREDIT_PENDING",
+    data: {
+      orderId: params.order.id,
+      sellerId: params.order.sellerId,
+      href: `/vendas/${params.order.id}`,
+    },
   });
 
   const emails = admins.map((a) => a.email);
   try {
-    await notifyAdminsCreditPendingEmail({ adminEmails: emails, order: params.order });
+    await notifyAdminsCreditPendingEmail({
+      adminEmails: emails,
+      order: params.order,
+    });
   } catch (e) {
     console.warn("[email] Exceção ao enviar notificação de crédito:", e);
   }
+}
+
+/** Venda confirmada → gestor do vendedor (+ admins da org). */
+export async function notifySaleConfirmed(params: {
+  organizationId: string;
+  order: OrderNotifyPayload;
+}): Promise<void> {
+  const sellerRow = await prisma.seller.findFirst({
+    where: {
+      id: params.order.sellerId,
+      organizationId: params.organizationId,
+    },
+    select: { managerUserId: true },
+  });
+
+  const admins = await prisma.user.findMany({
+    where: { organizationId: params.organizationId, role: "ADMIN" },
+    select: { id: true },
+  });
+
+  const userIds = [
+    ...admins.map((a) => a.id),
+    ...(sellerRow?.managerUserId ? [sellerRow.managerUserId] : []),
+    ...(params.order.seller.managerUserId
+      ? [params.order.seller.managerUserId]
+      : []),
+  ];
+
+  if (!userIds.length) return;
+
+  const total = decToNum(params.order.totalAmount);
+  const cust = params.order.customer?.name ?? "Cliente sem nome";
+  const seller = params.order.seller.user.name;
+
+  await notifyUsers({
+    userIds,
+    title: "Nova venda confirmada",
+    body: `${seller} · ${cust} · R$ ${total.toFixed(2)}`,
+    type: "SALE_CONFIRMED",
+    data: {
+      orderId: params.order.id,
+      sellerId: params.order.sellerId,
+      href: `/vendas/${params.order.id}`,
+    },
+  });
+}
+
+/** Meta mensal criada/alterada → utilizador do vendedor. */
+export async function notifySellerGoalUpdated(params: {
+  sellerId: string;
+  organizationId: string;
+  goalId: string;
+  year: number;
+  month: number;
+  targetAmount: number;
+  title?: string;
+}): Promise<void> {
+  const seller = await prisma.seller.findFirst({
+    where: {
+      id: params.sellerId,
+      organizationId: params.organizationId,
+    },
+    select: { userId: true, user: { select: { name: true } } },
+  });
+  if (!seller) return;
+
+  const label = params.title?.trim() || "Meta do mês";
+  const period = `${String(params.month).padStart(2, "0")}/${params.year}`;
+
+  await notifyUsers({
+    userIds: [seller.userId],
+    title: "Meta atualizada",
+    body: `${label} · ${period} · R$ ${params.targetAmount.toFixed(2)}`,
+    type: "GOAL_UPDATED",
+    data: {
+      sellerId: params.sellerId,
+      goalId: params.goalId,
+      href: "/commission",
+    },
+  });
 }

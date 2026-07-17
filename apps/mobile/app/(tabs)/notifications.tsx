@@ -3,9 +3,15 @@ import { ThemedText } from "@/components/atoms/ThemedText";
 import { MobileHeader, SafeScreen } from "@/components/layout";
 import { MOBILE_TAB_SCROLL_BOTTOM } from "@/components/layout/MobileScreen";
 import { useNotificationsScreen } from "@/hooks/screens/useNotificationsScreen";
+import { hrefFromNotificationData } from "@/lib/push";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
+import {
+  notificationBodyDisplay,
+  type AppNotification,
+} from "@pedidos/shared";
 import { CheckCheck } from "lucide-react-native";
+import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
   FlatList,
@@ -16,6 +22,7 @@ import {
 
 export default function NotificationsScreen() {
   const { colors } = useTheme();
+  const router = useRouter();
   const {
     notifications,
     isLoading,
@@ -30,6 +37,14 @@ export default function NotificationsScreen() {
 
   const unread = notifications.filter((n) => !n.read).length;
   const busy = markAllPending || markReadPending;
+
+  function openNotification(item: AppNotification) {
+    if (!item.read) markRead(item.id);
+    const href = hrefFromNotificationData(
+      (item.data as Record<string, unknown> | null) ?? undefined,
+    );
+    if (href) router.push(href as never);
+  }
 
   return (
     <SafeScreen variant="tab">
@@ -81,7 +96,7 @@ export default function NotificationsScreen() {
             const itemBusy = markingId === item.id;
             return (
               <Pressable
-                onPress={() => !item.read && markRead(item.id)}
+                onPress={() => openNotification(item)}
                 disabled={busy && !itemBusy}
               >
                 <ThemedCard
@@ -106,7 +121,7 @@ export default function NotificationsScreen() {
                     ) : null}
                   </View>
                   <ThemedText variant="bodySm" muted style={{ marginTop: 6 }}>
-                    {item.body}
+                    {notificationBodyDisplay(item.body)}
                   </ThemedText>
                   <ThemedText variant="caption" muted style={{ marginTop: 8 }}>
                     {new Date(item.createdAt).toLocaleString("pt-BR")}

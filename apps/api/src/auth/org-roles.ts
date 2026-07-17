@@ -19,7 +19,22 @@ const MANAGER_GET_ALLOW = [
   /^\/orders\/[^/]+$/,
   /^\/orders\/[^/]+\/pdf$/,
   /^\/reports\/sales-by-supplier$/,
+  /^\/notifications$/,
+  /^\/notifications\/unread-count$/,
+  /^\/push-vapid-public-key$/,
 ] as const;
+
+/** Write paths managers may use (inbox + push registration). */
+const MANAGER_WRITE_ALLOW = [
+  /^\/notifications\/[^/]+\/read$/,
+  /^\/notifications\/read-all$/,
+  /^\/push-devices$/,
+] as const;
+
+export function isManagerWriteAllowed(routePath: string): boolean {
+  const path = routePath.split("?")[0] ?? routePath;
+  return MANAGER_WRITE_ALLOW.some((re) => re.test(path));
+}
 
 /** GET paths allowed for team leader (seller with led team). */
 const TEAM_LEADER_GET_ALLOW = [

@@ -28,6 +28,7 @@
     "jsonwebtoken": "^9.0.3",
     "pdfkit": "^0.18.0",
     "pg": "^8.20.0",
+    "web-push": "^3.6.7",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -36,6 +37,7 @@
     "@types/node": "^25.7.0",
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.20.0",
+    "@types/web-push": "^3.6.4",
     "prisma": "^7.8.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3"

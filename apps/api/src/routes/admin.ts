@@ -10,6 +10,7 @@ import { z } from "zod";
 import { verifyAccessToken } from "../auth/jwt.js";
 import {
   isManagerGetAllowed,
+  isManagerWriteAllowed,
   isOrgStaff,
   isTeamLeaderAuth,
   isTeamLeaderGetAllowed,
@@ -23,6 +24,16 @@ import {
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { prisma } from "../db.js";
 import { writeAuditLog } from "../services/audit-log.js";
+import {
+  notifyAdminsCreditPending,
+  notifySaleConfirmed,
+  notifySellerGoalUpdated,
+} from "../services/admin-notifications.js";
+import { getWebPushPublicKey } from "../services/notify.js";
+import {
+  handleRegisterPushDevice,
+  handleUnregisterPushDevice,
+} from "../services/push-device-routes.js";
 import { isPermissionResource } from "../auth/permissions.js";
 import {
   adminPathToResource,
@@ -289,6 +300,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         req.routeOptions?.url ?? req.url.split("?")[0] ?? req.url;
 
       if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        if (
+          auth.role === "MANAGER" &&
+          isManagerWriteAllowed(routePath)
+        ) {
+          return;
+        }
         if (!requireAdmin(reply, auth)) return;
         return;
       }
@@ -2983,6 +3000,27 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true };
   });
 
+  app.get("/push-vapid-public-key", async () => {
+    const publicKey = getWebPushPublicKey();
+    return { publicKey };
+  });
+
+  app.post("/push-devices", async (req, reply) => {
+    const auth = req.auth!;
+    const result = await handleRegisterPushDevice(auth.sub, req.body);
+    if ("error" in result)
+      return reply.status(result.status).send({ error: result.error });
+    return result;
+  });
+
+  app.delete("/push-devices", async (req, reply) => {
+    const auth = req.auth!;
+    const result = await handleUnregisterPushDevice(auth.sub, req.body);
+    if ("error" in result)
+      return reply.status(result.status).send({ error: result.error });
+    return result;
+  });
+
   /* --- Pedidos (visão admin) --- */
   app.get("/orders", async (req) => {
     const auth = req.auth!;
@@ -3091,10 +3129,39 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       throw e;
     }
 
-    return prisma.order.update({
+    const updated = await prisma.order.update({
       where: { id },
       data: { status: body.data.status },
+      include: {
+        customer: true,
+        seller: {
+          include: {
+            user: { select: { name: true } },
+          },
+        },
+      },
     });
+
+    if (
+      body.data.status === "CONFIRMED" &&
+      existing.status !== "CONFIRMED"
+    ) {
+      void notifySaleConfirmed({
+        organizationId: auth.organizationId,
+        order: {
+          id: updated.id,
+          totalAmount: updated.totalAmount,
+          sellerId: updated.sellerId,
+          seller: {
+            user: updated.seller.user,
+            managerUserId: updated.seller.managerUserId,
+          },
+          customer: updated.customer,
+        },
+      });
+    }
+
+    return updated;
   });
 
   app.post("/orders", async (req, reply) => {
@@ -3192,6 +3259,19 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           "CONFIRMED",
           auth.sub,
         );
+        void notifySaleConfirmed({
+          organizationId: auth.organizationId,
+          order: {
+            id: order.id,
+            totalAmount: order.totalAmount,
+            sellerId: order.sellerId,
+            seller: {
+              user: { name: order.seller.user.name },
+              managerUserId: order.seller.managerUserId,
+            },
+            customer: order.customer,
+          },
+        });
       }
 
       return order;
@@ -3671,7 +3751,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!seller) return reply.status(400).send({ error: "Vendedor inválido" });
 
-    return prisma.sellerMonthlyGoal.upsert({
+    const goal = await prisma.sellerMonthlyGoal.upsert({
       where: {
         organizationId_sellerId_year_month: {
           organizationId: auth.organizationId,
@@ -3696,6 +3776,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         seller: { include: { user: { select: { name: true } } } },
       },
     });
+
+    void notifySellerGoalUpdated({
+      sellerId: goal.sellerId,
+      organizationId: auth.organizationId,
+      goalId: goal.id,
+      year: goal.year,
+      month: goal.month,
+      targetAmount: Number(goal.targetAmount),
+      title: goal.title,
+    });
+
+    return goal;
   });
 
   app.patch("/seller-monthly-goals/:id", async (req, reply) => {
@@ -3715,7 +3807,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
 
-    return prisma.sellerMonthlyGoal.update({
+    const goal = await prisma.sellerMonthlyGoal.update({
       where: { id },
       data: {
         title: body.data.title?.trim(),
@@ -3725,6 +3817,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         seller: { include: { user: { select: { name: true } } } },
       },
     });
+
+    void notifySellerGoalUpdated({
+      sellerId: goal.sellerId,
+      organizationId: auth.organizationId,
+      goalId: goal.id,
+      year: goal.year,
+      month: goal.month,
+      targetAmount: Number(goal.targetAmount),
+      title: goal.title,
+    });
+
+    return goal;
   });
 
   app.delete("/seller-monthly-goals/:id", async (req, reply) => {
