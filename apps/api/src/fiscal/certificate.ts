@@ -47,6 +47,11 @@ export function parsePfxMetadata(pfx: Buffer, password: string): CertificateInfo
     } catch {
       /* ignore */
     }
+    try {
+      execFileSync("rm", ["-rf", dir]);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
