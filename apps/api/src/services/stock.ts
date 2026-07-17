@@ -23,7 +23,11 @@ export async function applyStockMovement(input: {
   notes?: string;
   createdByUserId?: string;
 }) {
-  if (input.quantity <= 0) throw new Error("Quantidade deve ser positiva");
+  if (input.type === "MANUAL_ADJUST") {
+    if (input.quantity < 0) throw new Error("Novo saldo não pode ser negativo");
+  } else if (input.quantity <= 0) {
+    throw new Error("Quantidade deve ser positiva");
+  }
 
   return prisma.$transaction(async (tx) => {
     const stock = await getOrCreateProductStock(
