@@ -1,3 +1,4 @@
+import { DatePicker } from "@/components/ui/date-picker";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -290,12 +291,12 @@ export function SellerTrackingPage() {
                   Mostrar trajeto
                 </label>
                 {showTrail ? (
-                  <input
-                    type="date"
-                    className="rounded border border-border px-2 py-1 text-sm"
+                  <DatePicker
                     value={trailDate}
+                    onChange={setTrailDate}
                     max={todayIso()}
-                    onChange={(e) => setTrailDate(e.target.value)}
+                    className="w-[11.5rem]"
+                    placeholder="Data do trajeto"
                   />
                 ) : null}
               </div>

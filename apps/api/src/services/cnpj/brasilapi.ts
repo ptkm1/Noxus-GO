@@ -6,8 +6,10 @@ const BRASIL_API_CNPJ = "https://brasilapi.com.br/api/cnpj/v1";
 function formatPhoneFromBrasilApi(raw: unknown): string | null {
   if (typeof raw !== "string" || !raw.trim()) return null;
   const x = raw.replace(/\D/g, "");
-  if (x.length === 11) return `(${x.slice(0, 2)}) ${x.slice(2, 7)}-${x.slice(7)}`;
-  if (x.length === 10) return `(${x.slice(0, 2)}) ${x.slice(2, 6)}-${x.slice(6)}`;
+  if (x.length === 11)
+    return `(${x.slice(0, 2)}) ${x.slice(2, 7)}-${x.slice(7)}`;
+  if (x.length === 10)
+    return `(${x.slice(0, 2)}) ${x.slice(2, 6)}-${x.slice(6)}`;
   return raw.trim();
 }
 
@@ -18,9 +20,13 @@ function formatCep(raw: unknown): string | null {
   return raw.trim() || null;
 }
 
-export function mapBrasilApiCnpj(json: Record<string, unknown>): CnpjCompanyData {
-  const razaoSocial = typeof json.razao_social === "string" ? json.razao_social.trim() : "";
-  const nfRaw = typeof json.nome_fantasia === "string" ? json.nome_fantasia.trim() : "";
+export function mapBrasilApiCnpj(
+  json: Record<string, unknown>,
+): CnpjCompanyData {
+  const razaoSocial =
+    typeof json.razao_social === "string" ? json.razao_social.trim() : "";
+  const nfRaw =
+    typeof json.nome_fantasia === "string" ? json.nome_fantasia.trim() : "";
   const nomeFantasia = nfRaw.length > 0 ? nfRaw : null;
 
   return {
@@ -34,18 +40,29 @@ export function mapBrasilApiCnpj(json: Record<string, unknown>): CnpjCompanyData
     cep: formatCep(json.cep),
     uf: typeof json.uf === "string" ? json.uf : null,
     municipio: typeof json.municipio === "string" ? json.municipio : null,
-    logradouro: typeof json.logradouro === "string" ? json.logradouro.trim() : null,
+    logradouro:
+      typeof json.logradouro === "string" ? json.logradouro.trim() : null,
     numero: typeof json.numero === "string" ? json.numero.trim() : null,
-    complemento: typeof json.complemento === "string" ? json.complemento.trim() || null : null,
+    complemento:
+      typeof json.complemento === "string"
+        ? json.complemento.trim() || null
+        : null,
     bairro: typeof json.bairro === "string" ? json.bairro.trim() : null,
-    email: typeof json.email === "string" && json.email.trim() ? json.email.trim().toLowerCase() : null,
+    email:
+      typeof json.email === "string" && json.email.trim()
+        ? json.email.trim().toLowerCase()
+        : null,
     telefone: formatPhoneFromBrasilApi(json.ddd_telefone_1),
     naturezaJuridica:
-      typeof json.natureza_juridica === "string" ? json.natureza_juridica.trim() : null,
+      typeof json.natureza_juridica === "string"
+        ? json.natureza_juridica.trim()
+        : null,
   };
 }
 
-export async function fetchCnpjFromBrasilApi(digits14: string): Promise<CnpjCompanyData> {
+export async function fetchCnpjFromBrasilApi(
+  digits14: string,
+): Promise<CnpjCompanyData> {
   const url = `${BRASIL_API_CNPJ}/${digits14}`;
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 18_000);
@@ -60,7 +77,10 @@ export async function fetchCnpjFromBrasilApi(digits14: string): Promise<CnpjComp
     clearTimeout(t);
   }
 
-  const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  const body = (await res.json().catch(() => null)) as Record<
+    string,
+    unknown
+  > | null;
 
   if (!res.ok) {
     const msg =

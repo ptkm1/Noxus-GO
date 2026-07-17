@@ -172,8 +172,12 @@ export function useProductFormPage() {
       setFieldErrors({});
       try {
         const payload = formToProductPayload(values, attrs);
-        if (isEdit) update.mutate(payload);
-        else create.mutate(payload);
+        if (isEdit) {
+          const { stockQty: _stockQty, ...rest } = payload;
+          update.mutate(rest as typeof payload);
+        } else {
+          create.mutate(payload);
+        }
       } catch (err) {
         setFormError(err instanceof Error ? err.message : "Erro ao salvar.");
       }

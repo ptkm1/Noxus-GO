@@ -14,6 +14,7 @@ export type CustomerFormValues = {
   street: string;
   number: string;
   neighborhood: string;
+  addressNote: string;
   state: string;
   city: string;
   cityIbgeCode: string;
@@ -31,7 +32,6 @@ export type CustomerRecord = CustomerFormValues & {
   creditBlocked?: boolean;
   latitude?: unknown;
   longitude?: unknown;
-  addressNote?: string | null;
 };
 
 export function emptyCustomerForm(
@@ -48,6 +48,7 @@ export function emptyCustomerForm(
     street: "",
     number: "",
     neighborhood: "",
+    addressNote: "",
     state: "",
     city: "",
     cityIbgeCode: "",
@@ -73,6 +74,7 @@ export function customerToForm(
     street: c.street ?? "",
     number: c.number ?? "",
     neighborhood: c.neighborhood ?? "",
+    addressNote: c.addressNote ?? "",
     state: c.state ?? "",
     city: c.city ?? "",
     cityIbgeCode: c.cityIbgeCode ?? "",
@@ -114,6 +116,7 @@ export function formToCustomerPayload(
     street: values.street.trim() || null,
     number: values.number.trim() || null,
     neighborhood: values.neighborhood.trim() || null,
+    addressNote: values.addressNote.trim() || null,
     state: values.state.trim().toUpperCase() || null,
     city: values.city.trim() || null,
     cityIbgeCode: values.cityIbgeCode.trim() || null,
@@ -133,6 +136,13 @@ export function formToCustomerPayload(
 export type CustomerFormErrors = Partial<
   Record<keyof CustomerFormValues, string>
 >;
+
+/** Valor gravado quando o utilizador marca que não sabe a IE. */
+export const STATE_REGISTRATION_UNAVAILABLE = "indisponível";
+
+export function isStateRegistrationUnavailable(value: string): boolean {
+  return value.trim().toLowerCase() === STATE_REGISTRATION_UNAVAILABLE;
+}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -168,6 +178,11 @@ export function validateCustomerForm(
 ): CustomerFormErrors {
   const errors = validateDocument(values);
 
+  if (!values.stateRegistration.trim()) {
+    errors.stateRegistration =
+      "Informe a inscrição estadual ou marque que não sabe.";
+  }
+
   const email = values.email.trim();
   if (email && !EMAIL_RE.test(email)) {
     errors.email = "Informe um e-mail válido.";
@@ -197,6 +212,11 @@ export function validateCustomerFormStep(
     return out;
   }
 
+  if (step === 1 && all.stateRegistration) {
+    out.stateRegistration = all.stateRegistration;
+    return out;
+  }
+
   if (step === 2 && all.email) out.email = all.email;
   return out;
 }
@@ -205,6 +225,7 @@ export function validateCustomerFormStep(
 export function customerFormErrorStep(errors: CustomerFormErrors): number {
   const step0Keys = ["cnpj", "cpf", "legalName", "tradeName", "name"] as const;
   if (step0Keys.some((k) => errors[k])) return 0;
+  if (errors.stateRegistration) return 1;
   if (errors.email) return 2;
   return 0;
 }

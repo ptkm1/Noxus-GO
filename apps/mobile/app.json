@@ -24,6 +24,7 @@
       },
       "package": "com.pedidos.app",
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
       "usesCleartextTraffic": true
     },
     "web": {
@@ -50,7 +51,20 @@
           "isAndroidBackgroundLocationEnabled": true
         }
       ],
-      "expo-task-manager"
-    ]
+      "expo-task-manager",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#8A3FFC",
+          "defaultChannel": "default"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a9c668f5-9dd0-4407-be08-de451fa3d86c"
+      }
+    }
   }
 }

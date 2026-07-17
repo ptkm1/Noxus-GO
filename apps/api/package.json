@@ -32,6 +32,7 @@
     "pdfkit": "^0.18.0",
     "pg": "^8.20.0",
     "qrcode": "^1.5.4",
+    "web-push": "^3.6.7",
     "xpath": "^0.0.34",
     "zod": "^4.4.3"
   },
@@ -43,6 +44,7 @@
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.20.0",
     "@types/qrcode": "^1.5.6",
+    "@types/web-push": "^3.6.4",
     "@types/xmldom": "^0.1.34",
     "prisma": "^7.8.0",
     "tsx": "^4.21.0",

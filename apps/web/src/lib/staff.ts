@@ -19,3 +19,7 @@ export function isWebStaff(
 export function isWebAdmin(role: Role | undefined): boolean {
   return role === "ADMIN";
 }
+
+export function isWebManager(role: Role | undefined): boolean {
+  return role === "MANAGER";
+}

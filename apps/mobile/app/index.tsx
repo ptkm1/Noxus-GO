@@ -1,5 +1,6 @@
 import { Redirect } from "expo-router";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator } from "react-native";
+import { SafeScreen } from "@/components/layout";
 import { useAuth } from "../context/AuthContext";
 
 export default function Index() {
@@ -7,9 +8,9 @@ export default function Index() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <SafeScreen style={{ justifyContent: "center", alignItems: "center" }}>
         <ActivityIndicator size="large" />
-      </View>
+      </SafeScreen>
     );
   }
 

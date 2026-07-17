@@ -1,22 +1,52 @@
 import { ThemedButton } from "@/components/atoms/ThemedButton";
 import { ThemedText } from "@/components/atoms/ThemedText";
 import { ThemedTextInput } from "@/components/atoms/ThemedTextInput";
-import { MobileHeader } from "@/components/layout";
+import {
+  KeyboardAvoidingScreen,
+  MobileHeader,
+  SafeScreen,
+} from "@/components/layout";
 import { MOBILE_TAB_SCROLL_BOTTOM } from "@/components/layout/MobileScreen";
-import { FilterChipRow } from "@/components/molecules/FilterChipRow";
 import { ClienteCard } from "@/components/molecules/QuickAction";
 import { useCustomersScreen } from "@/hooks/screens/useCustomersScreen";
 import { useTheme } from "@/lib/theme";
+import {
+  formatCnpjMask,
+  formatCpfMask,
+  formatStructuredAddress,
+} from "@pedidos/shared";
 import { Search, UserPlus } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, StyleSheet, View } from "react-native";
 
-type Filter = "all";
+function customerSubtitle(item: {
+  city?: string | null;
+  state?: string | null;
+  street?: string | null;
+  number?: string | null;
+  neighborhood?: string | null;
+  cep?: string | null;
+  addressNote?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  cnpj?: string | null;
+  cpf?: string | null;
+}): string {
+  const place =
+    formatStructuredAddress(item) ??
+    ([item.city, item.state].filter(Boolean).join("/") || null);
+  const doc = item.cnpj
+    ? formatCnpjMask(item.cnpj)
+    : item.cpf
+      ? formatCpfMask(item.cpf)
+      : null;
+  if (place && doc) return `${place} · ${doc}`;
+  return place ?? doc ?? item.phone ?? item.email ?? "Sem dados de contato";
+}
 
 export default function CustomersScreen() {
   const { colors } = useTheme();
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
 
   const {
     customers,
@@ -42,7 +72,7 @@ export default function CustomersScreen() {
   }, [customers, search]);
 
   const listHeader = (
-    <View style={{ gap: 14, paddingBottom: 8 }}>
+    <View style={styles.header}>
       <View
         style={[
           styles.searchRow,
@@ -54,29 +84,18 @@ export default function CustomersScreen() {
       >
         <Search size={20} color={colors.iconMuted} style={{ marginRight: 8 }} />
         <ThemedTextInput
-          style={{
-            flex: 1,
-            borderWidth: 0,
-            backgroundColor: "transparent",
-            minHeight: 48,
-          }}
-          placeholder="Buscar cliente…"
+          style={styles.searchInput}
+          placeholder="Buscar por nome, documento, cidade…"
           value={search}
           onChangeText={setSearch}
         />
       </View>
 
-      <FilterChipRow
-        options={[{ id: "all" as Filter, label: "Todos" }]}
-        value={filter}
-        onChange={setFilter}
-      />
-
-      <ThemedButton onPress={openNewCustomer}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <ThemedButton onPress={openNewCustomer} style={styles.newBtn}>
+        <View style={styles.newBtnInner}>
           <UserPlus color={colors.primaryForeground} size={18} />
           <ThemedText
-            style={{ color: colors.primaryForeground, fontWeight: "600" }}
+            style={{ color: colors.primaryForeground, fontWeight: "700" }}
           >
             Novo cliente
           </ThemedText>
@@ -86,61 +105,85 @@ export default function CustomersScreen() {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeScreen variant="tab">
       <MobileHeader
         title="Clientes"
-        subtitle={`${customers.length} cadastrados`}
+        subtitle={`${customers.length} cadastrado${customers.length === 1 ? "" : "s"}`}
       />
       {isLoading ? (
         <ActivityIndicator style={{ marginTop: 24 }} color={colors.primary} />
       ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={(c) => c.id}
-          refreshing={isRefetching}
-          onRefresh={() => void refetch()}
-          ListHeaderComponent={listHeader}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingBottom: MOBILE_TAB_SCROLL_BOTTOM,
-            paddingTop: 10,
-          }}
-          ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-          ListEmptyComponent={
-            <ThemedText
-              variant="bodySm"
-              muted
-              style={{ textAlign: "center", marginTop: 24 }}
-            >
-              Nenhum cliente.
-            </ThemedText>
-          }
-          renderItem={({ item }) => (
-            <ClienteCard
-              nome={item.name}
-              endereco={
-                item.city && item.state
-                  ? `${item.city}/${item.state}`
-                  : (item.addressNote ??
-                    item.email ??
-                    item.phone ??
-                    "Sem contacto")
-              }
-              onPress={() => openCustomer(item.id)}
-            />
-          )}
-        />
+        <KeyboardAvoidingScreen>
+          <FlatList
+            data={filtered}
+            keyExtractor={(c) => c.id}
+            refreshing={isRefetching}
+            onRefresh={() => void refetch()}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            ListHeaderComponent={listHeader}
+            contentContainerStyle={styles.list}
+            ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+            ListEmptyComponent={
+              <View style={styles.empty}>
+                <ThemedText variant="body" style={{ fontWeight: "600" }}>
+                  {search.trim() ? "Nenhum resultado" : "Nenhum cliente ainda"}
+                </ThemedText>
+                <ThemedText
+                  variant="bodySm"
+                  muted
+                  style={{ textAlign: "center", marginTop: 6 }}
+                >
+                  {search.trim()
+                    ? "Tente outro termo de busca."
+                    : "Cadastre o primeiro cliente para começar a vender."}
+                </ThemedText>
+              </View>
+            }
+            renderItem={({ item }) => (
+              <ClienteCard
+                nome={item.name}
+                endereco={customerSubtitle(item)}
+                inadimplente={Boolean(item.creditBlocked)}
+                onPress={() => openCustomer(item.id)}
+              />
+            )}
+          />
+        </KeyboardAvoidingScreen>
       )}
-    </View>
+    </SafeScreen>
   );
 }
 
 const styles = StyleSheet.create({
+  header: { gap: 12, paddingBottom: 10 },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
     borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 12,
+  },
+  searchInput: {
+    flex: 1,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    minHeight: 48,
+  },
+  newBtn: { minHeight: 48 },
+  newBtnInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  list: {
+    paddingHorizontal: 16,
+    paddingBottom: MOBILE_TAB_SCROLL_BOTTOM,
+    paddingTop: 10,
+  },
+  empty: {
+    alignItems: "center",
+    paddingTop: 40,
+    paddingHorizontal: 24,
   },
 });

@@ -1,5 +1,7 @@
 import type { OrderStatus } from "@prisma/client";
 import { prisma } from "../db.js";
+import { writeAuditLog } from "./audit-log.js";
+import { consumeLotsFefo } from "./stock-ledger.js";
 
 export class StockError extends Error {
   constructor(message: string) {
@@ -57,6 +59,7 @@ export async function applyStockOnStatusChange(
   orderId: string,
   fromStatus: OrderStatus,
   toStatus: OrderStatus,
+  actorUserId?: string | null,
 ): Promise<void> {
   if (fromStatus === toStatus) return;
 
@@ -66,9 +69,14 @@ export async function applyStockOnStatusChange(
 
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { items: true },
+    include: {
+      items: true,
+      seller: { select: { userId: true } },
+    },
   });
   if (!order) return;
+
+  const userId = actorUserId ?? order.seller.userId;
 
   if (confirming) {
     await assertSufficientStock(
@@ -93,16 +101,59 @@ export async function applyStockOnStatusChange(
         if (newQty < 0) {
           throw new StockError(`Estoque insuficiente para "${product.name}".`);
         }
+        await consumeLotsFefo(tx, {
+          organizationId: order.organizationId,
+          productId: item.productId,
+          qty: item.quantity,
+          type: "SALE",
+          userId,
+          orderId: order.id,
+          startingBalance: product.stockQty,
+        });
         await tx.product.update({
           where: { id: item.productId },
           data: { stockQty: newQty },
         });
       } else {
+        const newQty = product.stockQty + item.quantity;
+        await consumeLotsFefo(tx, {
+          organizationId: order.organizationId,
+          productId: item.productId,
+          qty: item.quantity,
+          type: "SALE_REVERSAL",
+          userId,
+          orderId: order.id,
+          startingBalance: product.stockQty,
+        });
         await tx.product.update({
           where: { id: item.productId },
-          data: { stockQty: product.stockQty + item.quantity },
+          data: { stockQty: newQty },
         });
       }
     }
+
+    const actor = userId
+      ? await tx.user.findUnique({
+          where: { id: userId },
+          select: { matricula: true },
+        })
+      : null;
+
+    await writeAuditLog(
+      {
+        organizationId: order.organizationId,
+        userId: userId ?? null,
+        userMatricula: actor?.matricula ?? null,
+        action: confirming ? "stock.sale" : "stock.sale_reversal",
+        entityType: "Order",
+        entityId: order.id,
+        metadata: {
+          fromStatus,
+          toStatus,
+          itemCount: order.items.length,
+        },
+      },
+      tx,
+    );
   });
 }

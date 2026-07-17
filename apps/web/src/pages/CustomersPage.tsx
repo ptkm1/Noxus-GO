@@ -5,6 +5,7 @@ import {
   FormSheet,
   FormSheetActions,
 } from "@/components/forms";
+import { useConfirm } from "@/components/confirm";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +31,6 @@ import { useMemo, useState } from "react";
 import { CustomerFormFields } from "../components/CustomerFormFields";
 import { CustomerTitlesPanel } from "../components/CustomerTitlesPanel";
 import { apiFetch } from "../lib/api";
-import { confirmAction, notifyError } from "../lib/app-notifications";
 
 type Seller = { id: string; user: { name: string } };
 
@@ -57,6 +57,7 @@ function formatCityUf(c: CustomerRecord): string {
 
 export function CustomersPage() {
   const qc = useQueryClient();
+  const { confirm, alert } = useConfirm();
   const { data: customers = [], isLoading } = useQuery({
     queryKey: ["admin", "customers"],
     queryFn: () => apiFetch<CustomerRecord[]>("/admin/customers"),
@@ -175,7 +176,13 @@ export function CustomersPage() {
       void qc.invalidateQueries({ queryKey: ["admin", "customers"] });
       closeSheet();
     },
-    onError: (e: Error) => notifyError(e.message),
+    onError: (e: Error) => {
+      void alert({
+        title: "Não foi possível criar o cliente",
+        description: e.message,
+        tone: "danger",
+      });
+    },
   });
 
   const update = useMutation({
@@ -200,7 +207,13 @@ export function CustomersPage() {
       void qc.invalidateQueries({ queryKey: ["admin", "customers"] });
       closeSheet();
     },
-    onError: (e: Error) => notifyError(e.message),
+    onError: (e: Error) => {
+      void alert({
+        title: "Não foi possível atualizar o cliente",
+        description: e.message,
+        tone: "danger",
+      });
+    },
   });
 
   const remove = useMutation({
@@ -439,11 +452,12 @@ export function CustomersPage() {
                       type="button"
                       className="ml-3 text-destructive"
                       onClick={() => {
-                        void confirmAction({
+                        void confirm({
                           title: "Excluir cliente?",
-                          message: "Esta ação remove o cliente do sistema.",
+                          description:
+                            "O cliente será removido permanentemente do sistema.",
                           confirmLabel: "Excluir",
-                          variant: "destructive",
+                          tone: "destructive",
                         }).then((ok) => {
                           if (ok) remove.mutate(c.id);
                         });

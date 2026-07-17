@@ -1,9 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
 import { FilterBar, FormField } from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Table,
   TableBody,
@@ -12,6 +10,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { fmtCoord, googleMapsSearchUrl } from "../lib/maps-links";
 
@@ -47,7 +47,10 @@ function isoDateUTC(d: Date): string {
 }
 
 function fmtDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  return new Date(iso).toLocaleString("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
 }
 
 function fmtDuration(seconds: number | null, openVisit: boolean): string {
@@ -82,7 +85,9 @@ function LocationPoint({
   return (
     <div className="flex flex-col gap-0.5">
       <span className="font-medium text-muted-foreground">{label}</span>
-      <span className="font-mono text-xs text-muted-foreground">{fmtCoord(lat, lng)}</span>
+      <span className="font-mono text-xs text-muted-foreground">
+        {fmtCoord(lat, lng)}
+      </span>
       <a
         href={googleMapsSearchUrl(lat, lng, mapsLabel)}
         target="_blank"
@@ -96,7 +101,8 @@ function LocationPoint({
 }
 
 function VisitLocationsCell({ v }: { v: CustomerVisitRow }) {
-  const customerHasGps = v.customerLatitude != null && v.customerLongitude != null;
+  const customerHasGps =
+    v.customerLatitude != null && v.customerLongitude != null;
 
   return (
     <div className="flex min-w-[200px] flex-col gap-3 py-1">
@@ -114,7 +120,9 @@ function VisitLocationsCell({ v }: { v: CustomerVisitRow }) {
       />
       {customerHasGps ? (
         <div className="border-t border-border pt-2">
-          <span className="text-xs text-muted-foreground">Cliente (cadastro)</span>
+          <span className="text-xs text-muted-foreground">
+            Cliente (cadastro)
+          </span>
           <div className="mt-1 font-mono text-xs text-muted-foreground">
             {fmtCoord(v.customerLatitude!, v.customerLongitude!)}
           </div>
@@ -159,7 +167,9 @@ export function CustomerVisitsPage() {
       q.set("from", from);
       q.set("to", to);
       if (sellerId.trim()) q.set("sellerId", sellerId.trim());
-      return apiFetch<CustomerVisitsPayload>(`/admin/customer-visits?${q.toString()}`);
+      return apiFetch<CustomerVisitsPayload>(
+        `/admin/customer-visits?${q.toString()}`,
+      );
     },
     enabled: Boolean(from.trim() && to.trim()),
     staleTime: 30_000,
@@ -168,29 +178,39 @@ export function CustomerVisitsPage() {
   const visits = visitsQ.data?.visits ?? [];
   const completed = visits.filter((v) => !v.openVisit).length;
   const open = visits.filter((v) => v.openVisit).length;
-  const withCheckInGps = visits.filter((v) => v.checkInLat != null && v.checkInLng != null).length;
+  const withCheckInGps = visits.filter(
+    (v) => v.checkInLat != null && v.checkInLng != null,
+  ).length;
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">Visitas em campo</h1>
+        <h1 className="text-2xl font-semibold text-foreground">
+          Visitas em campo
+        </h1>
         <p className="mt-2 max-w-2xl text-muted-foreground">
-          Check-in e check-out registados pelo app do vendedor, com coordenadas GPS quando o telemóvel as
-          enviou. Use os links para abrir o ponto no Google Maps.
+          Check-in e check-out registados pelo app do vendedor, com coordenadas
+          GPS quando o telemóvel as enviou. Use os links para abrir o ponto no
+          Google Maps.
         </p>
       </div>
 
       <FilterBar className="p-4">
         <FormField label="De" htmlFor="visits-from">
-          <Input
+          <DatePicker
             id="visits-from"
-            type="date"
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            onChange={setFrom}
+            placeholder="De"
           />
         </FormField>
         <FormField label="Até" htmlFor="visits-to">
-          <Input id="visits-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          <DatePicker
+            id="visits-to"
+            value={to}
+            onChange={setTo}
+            placeholder="Até"
+          />
         </FormField>
         <FormField label="Vendedor" htmlFor="visits-seller">
           <AppSelect
@@ -220,21 +240,30 @@ export function CustomerVisitsPage() {
 
       {visitsQ.isError ? (
         <p className="text-sm text-destructive">
-          Não foi possível carregar as visitas. Verifique as datas ou tente novamente.
+          Não foi possível carregar as visitas. Verifique as datas ou tente
+          novamente.
         </p>
       ) : null}
 
       {visitsQ.data ? (
         <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
           <span>
-            Período: <strong className="text-foreground">{fmtDateTime(visitsQ.data.period.from)}</strong>
+            Período:{" "}
+            <strong className="text-foreground">
+              {fmtDateTime(visitsQ.data.period.from)}
+            </strong>
             {" → "}
-            <strong className="text-foreground">{fmtDateTime(visitsQ.data.period.to)}</strong>
+            <strong className="text-foreground">
+              {fmtDateTime(visitsQ.data.period.to)}
+            </strong>
           </span>
           <span>
             Linhas: <strong className="text-foreground">{visits.length}</strong>
             {visits.length >= visitsQ.data.limit ? (
-              <span className="text-amber-700"> (limite {visitsQ.data.limit})</span>
+              <span className="text-amber-700">
+                {" "}
+                (limite {visitsQ.data.limit})
+              </span>
             ) : null}
           </span>
           <span>
@@ -244,7 +273,8 @@ export function CustomerVisitsPage() {
             Em aberto: <strong className="text-foreground">{open}</strong>
           </span>
           <span>
-            Com GPS no check-in: <strong className="text-foreground">{withCheckInGps}</strong>
+            Com GPS no check-in:{" "}
+            <strong className="text-foreground">{withCheckInGps}</strong>
           </span>
         </div>
       ) : null}
@@ -269,20 +299,29 @@ export function CustomerVisitsPage() {
             <TableBody>
               {visits.length === 0 ? (
                 <TableRow>
-                  <TableCell className="px-4 py-8 text-center text-muted-foreground" colSpan={8}>
+                  <TableCell
+                    className="px-4 py-8 text-center text-muted-foreground"
+                    colSpan={8}
+                  >
                     Nenhuma visita neste período.
                   </TableCell>
                 </TableRow>
               ) : (
                 visits.map((v) => (
                   <TableRow key={v.id} className="align-top">
-                    <TableCell className="whitespace-nowrap px-4 py-3">{fmtDateTime(v.checkedInAt)}</TableCell>
+                    <TableCell className="whitespace-nowrap px-4 py-3">
+                      {fmtDateTime(v.checkedInAt)}
+                    </TableCell>
                     <TableCell className="whitespace-nowrap px-4 py-3">
                       {v.checkedOutAt ? fmtDateTime(v.checkedOutAt) : "—"}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap px-4 py-3">{fmtDuration(v.durationSeconds, v.openVisit)}</TableCell>
+                    <TableCell className="whitespace-nowrap px-4 py-3">
+                      {fmtDuration(v.durationSeconds, v.openVisit)}
+                    </TableCell>
                     <TableCell className="px-4 py-3">{v.sellerName}</TableCell>
-                    <TableCell className="px-4 py-3">{v.customerName}</TableCell>
+                    <TableCell className="px-4 py-3">
+                      {v.customerName}
+                    </TableCell>
                     <TableCell className="px-4 py-3">
                       <VisitLocationsCell v={v} />
                     </TableCell>
@@ -297,8 +336,13 @@ export function CustomerVisitsPage() {
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="max-w-[240px] px-4 py-3 text-muted-foreground" title={v.notes ?? undefined}>
-                      <span className="line-clamp-3">{v.notes?.trim() ? v.notes : "—"}</span>
+                    <TableCell
+                      className="max-w-[240px] px-4 py-3 text-muted-foreground"
+                      title={v.notes ?? undefined}
+                    >
+                      <span className="line-clamp-3">
+                        {v.notes?.trim() ? v.notes : "—"}
+                      </span>
                     </TableCell>
                   </TableRow>
                 ))

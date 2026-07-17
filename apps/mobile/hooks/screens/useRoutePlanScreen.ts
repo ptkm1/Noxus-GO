@@ -6,7 +6,11 @@ import { Alert } from "react-native";
 import type { RoutePlanMapRef } from "../../components/RoutePlanMap";
 import type { RouteListCustomer } from "../../components/molecules/RouteCustomerListItem";
 import { apiFetch } from "../../lib/api";
-import type { DirectionsRouteResp, NearbyCustomersResp, SellerVisit } from "../../lib/route/types";
+import type {
+  DirectionsRouteResp,
+  NearbyCustomersResp,
+  SellerVisit,
+} from "../../lib/route/types";
 import { formatDurationSeconds } from "../../lib/utils/format-duration";
 import { openNavigationApp } from "../../lib/utils/open-navigation";
 
@@ -26,10 +30,18 @@ export function useRoutePlanScreen() {
   const [optimized, setOptimized] = useState<DirectionsRouteResp | null>(null);
   const [radiusKm, setRadiusKm] = useState<RouteRadiusKm>(30);
   const [myClientsOnly, setMyClientsOnly] = useState(false);
-  const [checkInModal, setCheckInModal] = useState<{ id: string; name: string } | null>(null);
+  const [checkInModal, setCheckInModal] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [checkOutModalOpen, setCheckOutModalOpen] = useState(false);
+  const [locPending, setLocPending] = useState(false);
+  const locPendingRef = useRef(false);
 
   const refreshLocation = useCallback(async () => {
+    if (locPendingRef.current) return;
+    locPendingRef.current = true;
+    setLocPending(true);
     setLocErr(null);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -38,11 +50,16 @@ export function useRoutePlanScreen() {
         setLocErr("Sem permissão de localização.");
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
       setMyLat(pos.coords.latitude);
       setMyLng(pos.coords.longitude);
     } catch (e) {
       setLocErr(e instanceof Error ? e.message : "Falha ao obter GPS.");
+    } finally {
+      locPendingRef.current = false;
+      setLocPending(false);
     }
   }, []);
 
@@ -128,10 +145,15 @@ export function useRoutePlanScreen() {
         (c) => Number.isFinite(c.latitude) && Number.isFinite(c.longitude),
       );
       const ids = withPins.slice(0, 14).map((c) => c.id);
-      if (ids.length === 0) throw new Error("Nenhum cliente com GPS por perto.");
+      if (ids.length === 0)
+        throw new Error("Nenhum cliente com GPS por perto.");
       return apiFetch<DirectionsRouteResp>("/seller/route-plan/directions", {
         method: "POST",
-        body: JSON.stringify({ originLat: myLat, originLng: myLng, customerIds: ids }),
+        body: JSON.stringify({
+          originLat: myLat,
+          originLng: myLng,
+          customerIds: ids,
+        }),
       });
     },
     onSuccess: (data) => {
@@ -164,14 +186,22 @@ export function useRoutePlanScreen() {
     if (myLat == null || myLng == null) return [];
     return [
       { latitude: myLat, longitude: myLng },
-      ...optimized.orderedCustomers.map((c) => ({ latitude: c.latitude, longitude: c.longitude })),
+      ...optimized.orderedCustomers.map((c) => ({
+        latitude: c.latitude,
+        longitude: c.longitude,
+      })),
     ];
   }, [optimized, myLat, myLng]);
 
   const region = useMemo(() => {
     const lat = myLat ?? -14.235;
     const lng = myLng ?? -51.9253;
-    return { latitude: lat, longitude: lng, latitudeDelta: 0.12, longitudeDelta: 0.12 };
+    return {
+      latitude: lat,
+      longitude: lng,
+      latitudeDelta: 0.12,
+      longitudeDelta: 0.12,
+    };
   }, [myLat, myLng]);
 
   const activeVisit = activeVisitQuery.data;
@@ -180,7 +210,12 @@ export function useRoutePlanScreen() {
   const displayElapsed =
     hasOpenVisit && activeVisit
       ? formatDurationSeconds(
-          Math.max(0, Math.floor((Date.now() - new Date(activeVisit.checkedInAt).getTime()) / 1000)),
+          Math.max(
+            0,
+            Math.floor(
+              (Date.now() - new Date(activeVisit.checkedInAt).getTime()) / 1000,
+            ),
+          ),
         )
       : null;
 
@@ -196,13 +231,19 @@ export function useRoutePlanScreen() {
     [router],
   );
 
-  const navigateToCustomer = useCallback(async (c: RouteListCustomer, app: "google" | "waze") => {
-    try {
-      await openNavigationApp(app, c.latitude, c.longitude, c.name);
-    } catch (e) {
-      Alert.alert("Navegação", e instanceof Error ? e.message : "Não foi possível abrir o app.");
-    }
-  }, []);
+  const navigateToCustomer = useCallback(
+    async (c: RouteListCustomer, app: "google" | "waze") => {
+      try {
+        await openNavigationApp(app, c.latitude, c.longitude, c.name);
+      } catch (e) {
+        Alert.alert(
+          "Navegação",
+          e instanceof Error ? e.message : "Não foi possível abrir o app.",
+        );
+      }
+    },
+    [],
+  );
 
   const submitCheckIn = useCallback(
     (customerId: string, notes?: string) => {
@@ -265,17 +306,21 @@ export function useRoutePlanScreen() {
 
   const openCustomerFromMap = useCallback(
     (c: Pick<RouteListCustomer, "id" | "name" | "latitude" | "longitude">) => {
-      const full: RouteListCustomer =
-        filteredCustomers.find((x) => x.id === c.id) ?? {
-          ...c,
-          addressNote: null,
-          distanceKm: 0,
-          assignedToMe: false,
-        };
+      const full: RouteListCustomer = filteredCustomers.find(
+        (x) => x.id === c.id,
+      ) ?? {
+        ...c,
+        addressNote: null,
+        distanceKm: 0,
+        assignedToMe: false,
+      };
       const isActive = activeVisit?.customerId === full.id && hasOpenVisit;
       Alert.alert(full.name, undefined, [
         { text: "Ver cliente", onPress: () => openCustomer(full.id) },
-        { text: "Google Maps", onPress: () => void navigateToCustomer(full, "google") },
+        {
+          text: "Google Maps",
+          onPress: () => void navigateToCustomer(full, "google"),
+        },
         { text: "Waze", onPress: () => void navigateToCustomer(full, "waze") },
         ...(isActive
           ? [{ text: "Visita em curso", style: "cancel" as const }]
@@ -285,7 +330,14 @@ export function useRoutePlanScreen() {
         { text: "Fechar", style: "cancel" },
       ]);
     },
-    [activeVisit?.customerId, filteredCustomers, hasOpenVisit, navigateToCustomer, openCustomer, requestCheckIn],
+    [
+      activeVisit?.customerId,
+      filteredCustomers,
+      hasOpenVisit,
+      navigateToCustomer,
+      openCustomer,
+      requestCheckIn,
+    ],
   );
 
   const goQuickSaleWithCustomer = useCallback(
@@ -304,6 +356,7 @@ export function useRoutePlanScreen() {
     myLat,
     myLng,
     refreshLocation,
+    locPending,
     nearbyQuery,
     filteredCustomers,
     radiusKm,

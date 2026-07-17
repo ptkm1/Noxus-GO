@@ -1,7 +1,7 @@
 import { ThemedButton } from "@/components/atoms/ThemedButton";
 import { ThemedText } from "@/components/atoms/ThemedText";
 import { ThemedTextInput } from "@/components/atoms/ThemedTextInput";
-import { MobileHeader, MobileScreen } from "@/components/layout";
+import { KeyboardForm, MobileHeader, SafeScreen } from "@/components/layout";
 import { useDevToolsScreen } from "@/hooks/screens/useDevToolsScreen";
 import { useTheme } from "@/lib/theme";
 import { radiiPx } from "@pedidos/design-tokens";
@@ -28,13 +28,13 @@ export default function DevToolsScreen() {
   } = useDevToolsScreen();
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeScreen>
       <MobileHeader
         title="DevTools"
         subtitle="Endpoint da API neste aparelho"
         showBack
       />
-      <MobileScreen scroll contentContainerStyle={{ gap: 16 }}>
+      <KeyboardForm contentContainerStyle={{ gap: 16 }}>
         <View style={[styles.badge, { backgroundColor: colors.warning }]}>
           <ThemedText
             variant="caption"
@@ -160,8 +160,8 @@ export default function DevToolsScreen() {
             ? "Em builds de teste também há atalhos visíveis no login e no perfil."
             : "Em produção: toque 7× rápido no rodapé do app no login ou no perfil para abrir esta tela."}
         </ThemedText>
-      </MobileScreen>
-    </View>
+      </KeyboardForm>
+    </SafeScreen>
   );
 }
 

@@ -4,6 +4,7 @@ import {
   FormSheet,
   FormSheetActions,
 } from "@/components/forms";
+import { useConfirm } from "@/components/confirm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -19,7 +20,6 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { CategorySchemaBuilder } from "../components/CategorySchemaBuilder";
 import { apiFetch } from "../lib/api";
-import { confirmAction } from "../lib/app-notifications";
 import {
   buildSchemaFromDrafts,
   parseSchemaToDrafts,
@@ -36,6 +36,7 @@ type ProductCategory = {
 
 export function ProductCategoriesPage() {
   const qc = useQueryClient();
+  const { confirm } = useConfirm();
   const { data: categories = [], isLoading } = useQuery({
     queryKey: ["admin", "product-categories"],
     queryFn: () => apiFetch<ProductCategory[]>("/admin/product-categories"),
@@ -312,11 +313,11 @@ export function ProductCategoriesPage() {
                       type="button"
                       className="ml-3 text-destructive"
                       onClick={() => {
-                        void confirmAction({
+                        void confirm({
                           title: "Excluir grupo?",
-                          message: `Excluir o grupo “${c.name}”? Produtos ficarão sem grupo.`,
+                          description: `O grupo “${c.name}” será removido. Produtos ficarão sem grupo.`,
                           confirmLabel: "Excluir",
-                          variant: "destructive",
+                          tone: "destructive",
                         }).then((ok) => {
                           if (ok) remove.mutate(c.id);
                         });

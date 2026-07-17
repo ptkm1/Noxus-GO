@@ -4,6 +4,7 @@ import {
   FormSheet,
   FormSheetActions,
 } from "@/components/forms";
+import { useConfirm } from "@/components/confirm";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,6 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
-import { confirmAction } from "../lib/app-notifications";
 
 type SellerOption = {
   id: string;
@@ -44,6 +44,7 @@ type SalesTeam = {
 
 export function TeamsPage() {
   const qc = useQueryClient();
+  const { confirm } = useConfirm();
 
   const { data: teams = [], isLoading } = useQuery({
     queryKey: ["admin", "teams"],
@@ -297,11 +298,11 @@ export function TeamsPage() {
                       type="button"
                       className="text-destructive hover:underline"
                       onClick={() => {
-                        void confirmAction({
+                        void confirm({
                           title: "Excluir equipe?",
-                          message: `Remover a equipe "${team.name}"?`,
+                          description: `A equipe “${team.name}” será removida permanentemente.`,
                           confirmLabel: "Excluir",
-                          variant: "destructive",
+                          tone: "destructive",
                         }).then((ok) => {
                           if (ok) remove.mutate(team.id);
                         });

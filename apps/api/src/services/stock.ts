@@ -26,12 +26,16 @@ export async function applyStockMovement(input: {
   if (input.quantity <= 0) throw new Error("Quantidade deve ser positiva");
 
   return prisma.$transaction(async (tx) => {
-    const stock = await getOrCreateProductStock(input.organizationId, input.productId, tx);
+    const stock = await getOrCreateProductStock(
+      input.organizationId,
+      input.productId,
+      tx,
+    );
     const current = Number(stock.quantityOnHand);
     let delta = input.quantity;
     if (input.type === "MANUAL_OUT" || input.type === "OUTBOUND_INVOICE") {
       delta = -input.quantity;
-    } else if (input.type === "MANUAL_ADJUST") {
+    } else if (input.type === "MANUAL_ADJUST" || input.type === "ADJUST") {
       delta = input.quantity - current;
     }
     const next = current + delta;
@@ -43,22 +47,28 @@ export async function applyStockMovement(input: {
     });
 
     // Mantém Product.stockQty sincronizado para vendas/catálogo.
+    const balanceAfter = Math.max(0, Math.floor(next));
     await tx.product.update({
       where: { id: input.productId },
-      data: { stockQty: Math.max(0, Math.floor(next)) },
+      data: { stockQty: balanceAfter },
     });
+
+    const reasonParts = [
+      input.notes,
+      input.referenceType && input.referenceId
+        ? `${input.referenceType}:${input.referenceId}`
+        : input.referenceType,
+    ].filter(Boolean);
 
     return tx.stockMovement.create({
       data: {
         organizationId: input.organizationId,
         productId: input.productId,
         type: input.type,
-        quantity: input.quantity,
-        quantityAfter: next,
-        referenceType: input.referenceType,
-        referenceId: input.referenceId,
-        notes: input.notes,
-        createdByUserId: input.createdByUserId,
+        qtyDelta: Math.trunc(delta),
+        balanceAfter,
+        userId: input.createdByUserId,
+        reason: reasonParts.length > 0 ? reasonParts.join(" — ") : null,
       },
     });
   });

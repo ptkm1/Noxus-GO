@@ -172,7 +172,11 @@ export function CustomerFormFields({
 
       <div>
         <p className="mb-3 text-sm font-semibold text-foreground">Endereço</p>
-        <AddressFieldsGroup values={values} onChange={onChange} />
+        <AddressFieldsGroup
+          values={values}
+          onChange={onChange}
+          stateRegistrationError={errors.stateRegistration}
+        />
       </div>
 
       <FormGrid cols={2}>

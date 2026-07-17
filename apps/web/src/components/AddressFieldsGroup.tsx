@@ -1,11 +1,17 @@
 import { FormField, FormGrid } from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { useCepLookup } from "@/hooks/useCepLookup";
 import { useIbgeMunicipios, useIbgeUfs } from "@/hooks/useIbgeLocations";
 import type { CepAddressData, CustomerFormValues } from "@pedidos/shared";
-import { cepDigitsOnly, formatCepMask } from "@pedidos/shared";
+import {
+  cepDigitsOnly,
+  formatCepMask,
+  isStateRegistrationUnavailable,
+  STATE_REGISTRATION_UNAVAILABLE,
+} from "@pedidos/shared";
 import { useEffect } from "react";
 
 type Props = {
@@ -21,9 +27,14 @@ type Props = {
     | "stateRegistration"
   >;
   onChange: (patch: Partial<CustomerFormValues>) => void;
+  stateRegistrationError?: string;
 };
 
-export function AddressFieldsGroup({ values, onChange }: Props) {
+export function AddressFieldsGroup({
+  values,
+  onChange,
+  stateRegistrationError,
+}: Props) {
   const { data: ufs = [], isLoading: ufsLoading } = useIbgeUfs();
   const { data: municipios = [], isLoading: citiesLoading } = useIbgeMunicipios(
     values.state,
@@ -168,12 +179,51 @@ export function AddressFieldsGroup({ values, onChange }: Props) {
             onValueChange={onCityChange}
           />
         </FormField>
-        <FormField label="Inscrição estadual" htmlFor="cust-ie">
-          <Input
-            id="cust-ie"
-            value={values.stateRegistration}
-            onChange={(e) => onChange({ stateRegistration: e.target.value })}
-          />
+        <FormField
+          label="Inscrição estadual"
+          htmlFor="cust-ie"
+          required
+          error={stateRegistrationError}
+        >
+          <div className="rounded-md border border-input bg-background overflow-hidden">
+            <Input
+              id="cust-ie"
+              className="border-0 rounded-none shadow-none focus-visible:ring-0"
+              disabled={isStateRegistrationUnavailable(
+                values.stateRegistration,
+              )}
+              placeholder={
+                isStateRegistrationUnavailable(values.stateRegistration)
+                  ? "indisponível"
+                  : "Número da IE"
+              }
+              value={
+                isStateRegistrationUnavailable(values.stateRegistration)
+                  ? ""
+                  : values.stateRegistration
+              }
+              onChange={(e) => onChange({ stateRegistration: e.target.value })}
+            />
+            <label
+              htmlFor="cust-ie-unknown"
+              className="flex items-center gap-2 px-3 pb-2.5 pt-0.5 text-sm text-muted-foreground cursor-pointer"
+            >
+              <Checkbox
+                id="cust-ie-unknown"
+                checked={isStateRegistrationUnavailable(
+                  values.stateRegistration,
+                )}
+                onCheckedChange={(checked) => {
+                  onChange({
+                    stateRegistration: checked
+                      ? STATE_REGISTRATION_UNAVAILABLE
+                      : "",
+                  });
+                }}
+              />
+              Não sei a inscrição estadual
+            </label>
+          </div>
         </FormField>
         <FormField
           label="Cód. município"

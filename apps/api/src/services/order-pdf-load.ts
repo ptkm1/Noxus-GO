@@ -29,6 +29,7 @@ function toPdfInput(
 ): OrderPdfInput {
   return {
     id: order.id,
+    orderNumber: order.orderNumber,
     status: order.status,
     totalAmount: order.totalAmount,
     comboDiscountTotal: order.comboDiscountTotal,
@@ -46,7 +47,7 @@ export async function sendOrderPdfReply(
   order: NonNullable<Awaited<ReturnType<typeof loadOrderForPdf>>>,
 ) {
   const pdf = await buildOrderPdf(toPdfInput(order));
-  const filename = orderPdfFilename(order.id);
+  const filename = orderPdfFilename(order);
   return reply
     .header("Content-Type", "application/pdf")
     .header("Content-Disposition", `inline; filename="${filename}"`)
