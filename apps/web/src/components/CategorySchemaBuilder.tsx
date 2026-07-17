@@ -5,6 +5,7 @@ import {
   removeOptionFromDraft,
   slugifyKeyFromLabel,
 } from "../lib/categorySchemaDraft";
+import { AppSelect } from "@/components/ui/app-select";
 import type { AttributeFieldDef } from "./DynamicCategoryAttributes";
 
 const TYPE_OPTIONS: { value: AttributeFieldDef["type"]; label: string }[] = [
@@ -128,22 +129,20 @@ export function CategorySchemaBuilder({ drafts, onChange, disabled }: Props) {
 
               <div>
                 <label className="block text-xs font-medium text-muted-foreground">Tipo do campo</label>
-                <select
-                  className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none ring-ring focus:ring-2 disabled:bg-muted"
+                <AppSelect
+                  className="mt-1"
                   value={d.type}
                   disabled={disabled}
-                  onChange={(e) =>
+                  options={TYPE_OPTIONS.map((opt) => ({
+                    value: opt.value,
+                    label: opt.label,
+                  }))}
+                  onValueChange={(v) =>
                     patchDraft(d.id, {
-                      type: e.target.value as AttributeFieldDef["type"],
+                      type: v as AttributeFieldDef["type"],
                     })
                   }
-                >
-                  {TYPE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
 
               <div className="flex items-end pb-2">

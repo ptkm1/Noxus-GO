@@ -44,5 +44,5 @@ const cssVarMap: Record<string, string> = {
 /** Bloco :root para injetar em index.css (VendaForce dark). */
 export function cssRootBlock(selector = ":root"): string {
   const lines = Object.entries(cssVarMap).map(([k, v]) => `  --${k}: ${v};`);
-  return `${selector} {\n${lines.join("\n")}\n  --radius: 0.75rem;\n}`;
+  return `${selector} {\n${lines.join("\n")}\n  --radius: 0.625rem;\n}`;
 }

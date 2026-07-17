@@ -2,6 +2,7 @@ export type SaleProduct = {
   id: string;
   name: string;
   sku?: string | null;
+  barcode?: string | null;
   soldQty?: number;
   basePrice: unknown;
   catalogUnitPrice?: number;
@@ -10,6 +11,9 @@ export type SaleProduct = {
   maxSellerDiscountPercent?: number | null;
   maxSellerDiscountPercentEffective?: number;
   minSaleUnitPrice?: number | null;
+  stockQty?: number;
+  blockSaleWhenOutOfStock?: boolean;
+  attributes?: Record<string, unknown>;
   category?: { id: string; code: string; name: string } | null;
   imageUrl?: string | null;
 };

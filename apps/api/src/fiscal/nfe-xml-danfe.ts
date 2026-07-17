@@ -61,6 +61,8 @@ export type DanfeNfeData = {
   grossWeight?: number;
   netWeight?: number;
   volumeQty?: number;
+  /** Logo da empresa — área dedicada no canto superior esquerdo do DANFE. */
+  logo?: { buffer: Buffer; mimeType: string } | null;
 };
 
 function tag(xml: string, name: string): string | undefined {

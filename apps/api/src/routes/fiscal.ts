@@ -3,8 +3,9 @@ import { z } from "zod";
 import { requireAdmin } from "../auth/org-roles.js";
 import { prisma } from "../db.js";
 import { certificateStatus, parsePfxMetadata } from "../fiscal/certificate.js";
+import { parseLogoUpload } from "../fiscal/danfe-logo.js";
 import { encryptBuffer, encryptSecret } from "../fiscal/encryption.js";
-import { confirmInboundImport, cancelInboundInvoice, importInboundNfeXml, listInboundPending } from "../services/fiscal-inbound.js";
+import { confirmInboundImport, cancelInboundInvoice, importInboundNfeXml, listInboundPending, manifestInboundNfe, syncInboundDfe } from "../services/fiscal-inbound.js";
 import {
   buildOutboundInvoiceFromOrder,
   cancelOutboundInvoice,
@@ -46,6 +47,10 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
       nfeSeries: config.nfeSeries,
       nfeLastNumber: config.nfeLastNumber,
       autoStockOnInboundInvoice: config.autoStockOnInboundInvoice,
+      logo: {
+        uploaded: Boolean(config.danfeLogoBytes?.length),
+        mimeType: config.danfeLogoMimeType,
+      },
       certificate: {
         uploaded: Boolean(config.certificatePfxEncrypted),
         cnpj: config.certificateCnpj,
@@ -126,6 +131,65 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     });
 
     return { ok: true, certificate: meta };
+  });
+
+  app.get("/logo", async (req, reply) => {
+    const auth = req.auth!;
+    const config = await prisma.organizationFiscalConfig.findUnique({
+      where: { organizationId: auth.organizationId },
+      select: { danfeLogoBytes: true, danfeLogoMimeType: true },
+    });
+    if (!config?.danfeLogoBytes?.length) {
+      return reply.status(404).send({ error: "Logo não configurada" });
+    }
+    return reply
+      .header("Content-Type", config.danfeLogoMimeType ?? "image/png")
+      .header("Cache-Control", "private, max-age=300")
+      .send(Buffer.from(config.danfeLogoBytes));
+  });
+
+  app.post("/logo", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const body = z
+      .object({
+        imageBase64: z.string().min(1),
+        mimeType: z.string().min(1),
+      })
+      .safeParse(req.body);
+    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+
+    const parsed = parseLogoUpload(body.data.imageBase64, body.data.mimeType);
+    if (!parsed) {
+      return reply.status(400).send({
+        error: "Imagem inválida. Use PNG, JPEG, WebP ou GIF com até 512 KB.",
+      });
+    }
+
+    await prisma.organizationFiscalConfig.upsert({
+      where: { organizationId: auth.organizationId },
+      create: {
+        organizationId: auth.organizationId,
+        danfeLogoBytes: new Uint8Array(parsed.buffer),
+        danfeLogoMimeType: parsed.mimeType,
+      },
+      update: {
+        danfeLogoBytes: new Uint8Array(parsed.buffer),
+        danfeLogoMimeType: parsed.mimeType,
+      },
+    });
+
+    return { ok: true, mimeType: parsed.mimeType };
+  });
+
+  app.delete("/logo", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    await prisma.organizationFiscalConfig.updateMany({
+      where: { organizationId: auth.organizationId },
+      data: { danfeLogoBytes: null, danfeLogoMimeType: null },
+    });
+    return { ok: true };
   });
 
   app.get("/ncm", async (req) => {
@@ -211,6 +275,28 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     return prisma.fiscalOperation.create({
       data: { organizationId: auth.organizationId, ...body.data },
     });
+  });
+
+  app.patch("/operations/:id", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        description: z.string().optional(),
+        nature: z.string().nullable().optional(),
+        defaultCstIcms: z.string().nullable().optional(),
+        defaultCsosn: z.string().nullable().optional(),
+        movesStock: z.boolean().optional(),
+        active: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    const row = await prisma.fiscalOperation.findFirst({
+      where: { id, organizationId: auth.organizationId },
+    });
+    if (!row) return reply.status(404).send({ error: "Não encontrado" });
+    return prisma.fiscalOperation.update({ where: { id }, data: body.data });
   });
 
   app.get("/outbound/orders", async (req) => {
@@ -339,18 +425,33 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
   app.post("/inbound/sync", async (req, reply) => {
     const auth = req.auth!;
     if (!requireAdmin(reply, auth)) return;
-    const config = await prisma.organizationFiscalConfig.findUnique({
-      where: { organizationId: auth.organizationId },
-    });
-    if (!config?.certificatePfxEncrypted) {
-      return reply.status(400).send({ error: "Certificado A1 obrigatório para consulta DF-e" });
-    }
-    // Integração DF-e real pendente — retorna orientação
-    return {
-      ok: true,
-      message:
-        "Consulta DF-e na SEFAZ requer integração SOAP nacional. Use importação manual de XML por enquanto.",
-      pendingCount: 0,
-    };
+    const body = z.object({ ultNsu: z.string().optional() }).safeParse(req.body ?? {});
+    const result = await syncInboundDfe(
+      auth.organizationId,
+      body.success ? body.data.ultNsu : undefined,
+    );
+    if (!result.ok) return reply.status(400).send({ error: result.error, cStat: "cStat" in result ? result.cStat : undefined, ultNSU: "ultNSU" in result ? result.ultNSU : undefined });
+    return result;
+  });
+
+  app.post("/inbound/:accessKey/manifest", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { accessKey } = z.object({ accessKey: z.string().length(44) }).parse(req.params);
+    const body = z
+      .object({
+        type: z.enum(["CIENCIA", "CONFIRMACAO", "DESCONHECIMENTO", "NAO_REALIZADA"]),
+        justification: z.string().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success) return reply.status(400).send({ error: "Tipo de manifestação inválido" });
+    const result = await manifestInboundNfe(
+      auth.organizationId,
+      accessKey,
+      body.data.type,
+      body.data.justification,
+    );
+    if (!result.ok) return reply.status(400).send({ error: result.error });
+    return result;
   });
 };

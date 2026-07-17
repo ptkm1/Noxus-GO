@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { FormField, FormGrid, FormSection } from "@/components/forms";
 import { fieldControlClass } from "@/lib/field-styles";
 import { apiFetch } from "../lib/api";
+import { notifySuccess } from "../lib/app-notifications";
 
 type FiscalNcm = {
   id: string;
@@ -23,6 +24,7 @@ type FiscalOperation = {
   description: string;
   nature: string | null;
   defaultCsosn: string | null;
+  movesStock: boolean;
   active: boolean;
 };
 
@@ -38,6 +40,7 @@ export function FiscalCadastrosPanel() {
   const [opCfop, setOpCfop] = useState("");
   const [opDesc, setOpDesc] = useState("");
   const [opNature, setOpNature] = useState("");
+  const [opMovesStock, setOpMovesStock] = useState(false);
 
   const { data: ncms = [] } = useQuery({
     queryKey: ["admin", "fiscal", "ncm"],
@@ -63,8 +66,18 @@ export function FiscalCadastrosPanel() {
     onSuccess: () => {
       setNcmCode("");
       setNcmDesc("");
+      notifySuccess("NCM cadastrado.");
       void qc.invalidateQueries({ queryKey: ["admin", "fiscal", "ncm"] });
     },
+  });
+
+  const toggleNcm = useMutation({
+    mutationFn: ({ id, active }: { id: string; active: boolean }) =>
+      apiFetch(`/admin/fiscal/ncm/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ active }),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "fiscal", "ncm"] }),
   });
 
   const createOp = useMutation({
@@ -77,14 +90,26 @@ export function FiscalCadastrosPanel() {
           description: opDesc,
           nature: opNature || undefined,
           defaultCsosn: "102",
+          movesStock: opMovesStock,
         }),
       }),
     onSuccess: () => {
       setOpCfop("");
       setOpDesc("");
       setOpNature("");
+      setOpMovesStock(false);
+      notifySuccess("Operação fiscal cadastrada.");
       void qc.invalidateQueries({ queryKey: ["admin", "fiscal", "operations"] });
     },
+  });
+
+  const toggleOp = useMutation({
+    mutationFn: ({ id, active }: { id: string; active: boolean }) =>
+      apiFetch(`/admin/fiscal/operations/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ active }),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "fiscal", "operations"] }),
   });
 
   return (
@@ -114,6 +139,8 @@ export function FiscalCadastrosPanel() {
                 <th className="px-3 py-2 text-left">Código</th>
                 <th className="px-3 py-2 text-left">Descrição</th>
                 <th className="px-3 py-2">CSOSN</th>
+                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody>
@@ -122,6 +149,17 @@ export function FiscalCadastrosPanel() {
                   <td className="px-3 py-2 font-mono">{n.code}</td>
                   <td className="px-3 py-2">{n.description}</td>
                   <td className="px-3 py-2 text-center">{n.defaultCsosn ?? "—"}</td>
+                  <td className="px-3 py-2 text-center">{n.active ? "Ativo" : "Inativo"}</td>
+                  <td className="px-3 py-2 text-right">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={toggleNcm.isPending}
+                      onClick={() => toggleNcm.mutate({ id: n.id, active: !n.active })}
+                    >
+                      {n.active ? "Desativar" : "Ativar"}
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -150,6 +188,16 @@ export function FiscalCadastrosPanel() {
           <FormField label="Natureza" className="sm:col-span-2">
             <Input value={opNature} onChange={(e) => setOpNature(e.target.value)} placeholder="Venda de mercadoria" />
           </FormField>
+          <FormField label="Movimenta estoque">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={opMovesStock}
+                onChange={(e) => setOpMovesStock(e.target.checked)}
+              />
+              Sim
+            </label>
+          </FormField>
         </FormGrid>
         <Button className="mt-3" disabled={createOp.isPending} onClick={() => createOp.mutate()}>
           Adicionar operação
@@ -161,6 +209,8 @@ export function FiscalCadastrosPanel() {
                 <th className="px-3 py-2 text-left">Direção</th>
                 <th className="px-3 py-2">CFOP</th>
                 <th className="px-3 py-2 text-left">Descrição</th>
+                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody>
@@ -169,6 +219,17 @@ export function FiscalCadastrosPanel() {
                   <td className="px-3 py-2">{o.direction === "OUTBOUND" ? "Saída" : "Entrada"}</td>
                   <td className="px-3 py-2 text-center font-mono">{o.cfop}</td>
                   <td className="px-3 py-2">{o.description}</td>
+                  <td className="px-3 py-2 text-center">{o.active ? "Ativo" : "Inativo"}</td>
+                  <td className="px-3 py-2 text-right">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={toggleOp.isPending}
+                      onClick={() => toggleOp.mutate({ id: o.id, active: !o.active })}
+                    >
+                      {o.active ? "Desativar" : "Ativar"}
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>

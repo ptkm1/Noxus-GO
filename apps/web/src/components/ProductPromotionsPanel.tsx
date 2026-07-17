@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { FormActions, FormField, FormGrid } from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fieldControlClass } from "@/lib/field-styles";
 import { apiFetch } from "../lib/api";
+import { confirmAction } from "../lib/app-notifications";
 
 export type PromotionDto = {
   id: string;
@@ -152,6 +153,14 @@ export function ProductPromotionsPanel({ productId }: Props) {
       setHint("Valor inválido.");
       return;
     }
+    if (scope === "SELLER" && !sellerId) {
+      setHint("Selecione um vendedor.");
+      return;
+    }
+    if (scope === "CUSTOMER" && !customerId) {
+      setHint("Selecione um cliente.");
+      return;
+    }
 
     const body: Record<string, unknown> = {
       scope,
@@ -255,7 +264,14 @@ export function ProductPromotionsPanel({ productId }: Props) {
                     type="button"
                     className="rounded-lg px-2 py-1 text-xs font-medium text-destructive hover:bg-red-50"
                     onClick={() => {
-                      if (confirm("Remover esta promoção?")) remove.mutate(p.id);
+                      void confirmAction({
+                        title: "Remover promoção?",
+                        message: "Esta promoção será excluída.",
+                        confirmLabel: "Remover",
+                        variant: "destructive",
+                      }).then((ok) => {
+                        if (ok) remove.mutate(p.id);
+                      });
                     }}
                     disabled={remove.isPending}
                   >
@@ -273,65 +289,59 @@ export function ProductPromotionsPanel({ productId }: Props) {
 
         <FormGrid cols={2}>
           <FormField label="Escopo" htmlFor="promo-scope">
-            <select
+            <AppSelect
               id="promo-scope"
-              className={fieldControlClass}
               value={scope}
-              onChange={(e) => setScope(e.target.value as PromotionDto["scope"])}
-            >
-              <option value="PRODUCT_GLOBAL">Todos (produto em geral)</option>
-              <option value="SELLER">Só um vendedor</option>
-              <option value="CUSTOMER">Só um cliente</option>
-            </select>
+              options={[
+                { value: "PRODUCT_GLOBAL", label: "Todos (produto em geral)" },
+                { value: "SELLER", label: "Só um vendedor" },
+                { value: "CUSTOMER", label: "Só um cliente" },
+              ]}
+              onValueChange={(v) => setScope(v as PromotionDto["scope"])}
+            />
           </FormField>
           <FormField label="Tipo" htmlFor="promo-kind">
-            <select
+            <AppSelect
               id="promo-kind"
-              className={fieldControlClass}
               value={kind}
-              onChange={(e) => setKind(e.target.value as PromotionDto["kind"])}
-            >
-              <option value="PERCENT_OFF">Desconto percentual</option>
-              <option value="FIXED_AMOUNT_OFF">Desconto em R$ por unidade</option>
-              <option value="SALE_PRICE">Preço fixo (oferta)</option>
-            </select>
+              options={[
+                { value: "PERCENT_OFF", label: "Desconto percentual" },
+                { value: "FIXED_AMOUNT_OFF", label: "Desconto em R$ por unidade" },
+                { value: "SALE_PRICE", label: "Preço fixo (oferta)" },
+              ]}
+              onValueChange={(v) => setKind(v as PromotionDto["kind"])}
+            />
           </FormField>
 
           {scope === "SELLER" ? (
             <FormField label="Vendedor" htmlFor="promo-seller" className="sm:col-span-2">
-              <select
+              <AppSelect
                 id="promo-seller"
-                className={fieldControlClass}
                 value={sellerId}
-                onChange={(e) => setSellerId(e.target.value)}
-                required
-              >
-                <option value="">Selecione…</option>
-                {sellerOptions.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.user?.name ?? s.id} ({s.user?.email})
-                  </option>
-                ))}
-              </select>
+                emptyLabel="Selecione…"
+                placeholder="Selecione…"
+                options={sellerOptions.map((s) => ({
+                  value: s.id,
+                  label: `${s.user?.name ?? s.id} (${s.user?.email})`,
+                }))}
+                onValueChange={setSellerId}
+              />
             </FormField>
           ) : null}
 
           {scope === "CUSTOMER" ? (
             <FormField label="Cliente" htmlFor="promo-customer" className="sm:col-span-2">
-              <select
+              <AppSelect
                 id="promo-customer"
-                className={fieldControlClass}
                 value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-                required
-              >
-                <option value="">Selecione…</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                emptyLabel="Selecione…"
+                placeholder="Selecione…"
+                options={customers.map((c) => ({
+                  value: c.id,
+                  label: c.name,
+                }))}
+                onValueChange={setCustomerId}
+              />
             </FormField>
           ) : null}
 

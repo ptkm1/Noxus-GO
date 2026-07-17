@@ -12,6 +12,10 @@ import {
   validateOrganizationFiscalConfigForEmit,
   validateProductFiscal,
 } from "../fiscal/validation.js";
+import {
+  customerFiscalDocument,
+  customerFiscalRecipientSnapshot,
+} from "../fiscal/customer-fiscal.js";
 
 export async function buildOutboundInvoiceFromOrder(
   organizationId: string,
@@ -29,7 +33,7 @@ export async function buildOutboundInvoiceFromOrder(
     where: { id: orderId, organizationId, status: "CONFIRMED" },
     include: {
       customer: true,
-      items: { include: { product: { include: { ncm: true, outboundOperation: true } } } },
+      items: { include: { product: { include: { fiscalNcm: true, outboundOperation: true } } } },
       fiscalInvoices: {
         where: { direction: "OUTBOUND", status: "AUTHORIZED" },
         take: 1,
@@ -56,7 +60,7 @@ export async function buildOutboundInvoiceFromOrder(
   const regime = cfg.taxRegime;
 
   const invoiceItems = order.items.map((item, idx) => {
-    const ncm = item.product.ncm;
+    const ncm = item.product.fiscalNcm;
     const cfop = item.product.outboundOperation?.cfop ?? "5102";
     const taxes = computeItemTaxes({
       quantity: item.quantity,
@@ -70,9 +74,9 @@ export async function buildOutboundInvoiceFromOrder(
       lineNumber: idx + 1,
       productId: item.productId,
       description: item.product.fiscalDescription ?? item.productName,
-      ncm: ncm?.code ?? null,
+      ncm: ncm?.code ?? item.product.ncm ?? null,
       cfop,
-      unit: item.product.fiscalUnit ?? "UN",
+      unit: item.product.fiscalUnit ?? item.product.purchaseUnit ?? "UN",
       quantity: item.quantity,
       unitPrice: Number(item.unitPrice),
       totalPrice: item.quantity * Number(item.unitPrice),
@@ -292,26 +296,8 @@ function buildIssuerSnapshot(cfg: OrganizationFiscalConfig) {
   };
 }
 
-function buildRecipientSnapshot(customer: {
-  name: string;
-  document?: string | null;
-  stateRegistration?: string | null;
-  street?: string | null;
-  addressNumber?: string | null;
-  city?: string | null;
-  state?: string | null;
-  zipCode?: string | null;
-}) {
-  return {
-    name: customer.name,
-    document: customer.document,
-    ie: customer.stateRegistration,
-    street: customer.street,
-    number: customer.addressNumber,
-    city: customer.city,
-    state: customer.state,
-    zipCode: customer.zipCode,
-  };
+function buildRecipientSnapshot(customer: Parameters<typeof customerFiscalRecipientSnapshot>[0]) {
+  return customerFiscalRecipientSnapshot(customer);
 }
 
 export async function listEligibleOutboundOrders(organizationId: string) {
@@ -344,12 +330,18 @@ export async function listEligibleOutboundOrders(organizationId: string) {
     return {
       ...o,
       customer: o.customer
-        ? { id: o.customer.id, name: o.customer.name, document: o.customer.document }
+        ? {
+            id: o.customer.id,
+            name: o.customer.name,
+            document: customerFiscalDocument(o.customer),
+          }
         : null,
-      fiscalStatus: o.fiscalInvoices[0]?.status ?? "NONE",
+      fiscalStatus: (o.fiscalInvoices[0]?.status ?? "NONE") as
+        | import("@prisma/client").FiscalInvoiceStatus
+        | "NONE",
       fiscalInvoice: o.fiscalInvoices[0] ?? null,
       readinessIssues,
-      canEmit: readinessIssues.length === 0 && (o.fiscalInvoices[0]?.status ?? "NONE") === "NONE",
+      canEmit: readinessIssues.length === 0 && !o.fiscalInvoices[0],
     };
   });
 }

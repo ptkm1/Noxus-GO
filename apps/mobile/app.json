@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Pedidos",
+    "name": "commerce pro mobile",
     "slug": "pedidos-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -11,7 +11,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1a1b26"
+      "backgroundColor": "#8A3FFC"
     },
     "ios": {
       "supportsTablet": true,
@@ -20,7 +20,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1a1b26"
+        "backgroundColor": "#8A3FFC"
       },
       "package": "com.pedidos.app",
       "edgeToEdgeEnabled": true,
@@ -44,8 +44,8 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "O Pedidos usa a sua localização em segundo plano para o gestor acompanhar a rota da equipa (uso profissional).",
-          "locationWhenInUsePermission": "O Pedidos usa a sua localização para o mapa de rota, check-in de visitas e rastreio.",
+          "locationAlwaysAndWhenInUsePermission": "O commerce pro mobile usa a sua localização em segundo plano para o gestor acompanhar a rota da equipa (uso profissional).",
+          "locationWhenInUsePermission": "O commerce pro mobile usa a sua localização para o mapa de rota, check-in de visitas e rastreio.",
           "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true
         }

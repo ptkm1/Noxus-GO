@@ -1,6 +1,15 @@
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiFetch } from "../lib/api";
+import { confirmAction } from "../lib/app-notifications";
 
 type TitleRow = {
   id: string;
@@ -101,29 +110,29 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
       {isLoading ? (
         <p className="mt-3 text-xs text-muted-foreground">Carregando títulos…</p>
       ) : (
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[560px] text-xs">
-            <thead className="text-left text-muted-foreground">
-              <tr>
-                <th className="py-2 pr-2">Ref.</th>
-                <th className="py-2 pr-2">Valor</th>
-                <th className="py-2 pr-2">Pago</th>
-                <th className="py-2 pr-2">Vencimento</th>
-                <th className="py-2 pr-2">Status</th>
-                <th className="py-2" />
-              </tr>
-            </thead>
-            <tbody>
+        <div className="mt-3">
+          <Table className="min-w-[560px] text-xs">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="py-2 pr-2">Ref.</TableHead>
+                <TableHead className="py-2 pr-2">Valor</TableHead>
+                <TableHead className="py-2 pr-2">Pago</TableHead>
+                <TableHead className="py-2 pr-2">Vencimento</TableHead>
+                <TableHead className="py-2 pr-2">Status</TableHead>
+                <TableHead className="py-2" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {titles.map((t) => (
-                <tr key={t.id} className="border-t border-border">
-                  <td className="py-2 pr-2">{t.reference ?? "—"}</td>
-                  <td className="py-2 pr-2 tabular-nums">R$ {num(t.amount).toFixed(2)}</td>
-                  <td className="py-2 pr-2 tabular-nums">R$ {num(t.paidAmount).toFixed(2)}</td>
-                  <td className="py-2 pr-2 whitespace-nowrap">
+                <TableRow key={t.id}>
+                  <TableCell className="py-2 pr-2">{t.reference ?? "—"}</TableCell>
+                  <TableCell className="py-2 pr-2 tabular-nums">R$ {num(t.amount).toFixed(2)}</TableCell>
+                  <TableCell className="py-2 pr-2 tabular-nums">R$ {num(t.paidAmount).toFixed(2)}</TableCell>
+                  <TableCell className="py-2 pr-2 whitespace-nowrap">
                     {new Date(t.dueDate).toLocaleString("pt-BR")}
-                  </td>
-                  <td className="py-2 pr-2">{t.status}</td>
-                  <td className="py-2 text-right">
+                  </TableCell>
+                  <TableCell className="py-2 pr-2">{t.status}</TableCell>
+                  <TableCell className="py-2 text-right">
                     {t.status === "OPEN" ? (
                       <button
                         type="button"
@@ -138,16 +147,23 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
                       type="button"
                       className="text-destructive hover:underline"
                       onClick={() => {
-                        if (confirm("Remover este título do sistema?")) remove.mutate(t.id);
+                        void confirmAction({
+                          title: "Remover título?",
+                          message: "Este título será removido do sistema.",
+                          confirmLabel: "Remover",
+                          variant: "destructive",
+                        }).then((ok) => {
+                          if (ok) remove.mutate(t.id);
+                        });
                       }}
                     >
                       Excluir
                     </button>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
           {titles.length === 0 ? (
             <p className="mt-2 text-xs text-muted-foreground">Nenhum título cadastrado.</p>
           ) : null}

@@ -1,4 +1,8 @@
 import type { FiscalTaxRegime, OrganizationFiscalConfig, Product } from "@prisma/client";
+import {
+  customerFiscalDocument,
+  type CustomerFiscalFields,
+} from "./customer-fiscal.js";
 
 export type FiscalReadinessIssue = { code: string; message: string };
 
@@ -39,15 +43,11 @@ export function validateOrganizationFiscalCertificate(
   return issues;
 }
 
-export function validateCustomerFiscal(customer: {
-  document?: string | null;
-  street?: string | null;
-  city?: string | null;
-  state?: string | null;
-  zipCode?: string | null;
-}): FiscalReadinessIssue[] {
+export function validateCustomerFiscal(
+  customer: CustomerFiscalFields,
+): FiscalReadinessIssue[] {
   const issues: FiscalReadinessIssue[] = [];
-  if (!customer.document?.trim()) {
+  if (!customerFiscalDocument(customer)) {
     issues.push({ code: "NO_DOC", message: "Cliente sem CNPJ/CPF" });
   }
   if (!customer.street?.trim() || !customer.city?.trim() || !customer.state?.trim()) {
@@ -58,9 +58,16 @@ export function validateCustomerFiscal(customer: {
 
 export function validateProductFiscal(product: Product): FiscalReadinessIssue[] {
   const missing: string[] = [];
-  if (!product.ncmId) missing.push("NCM");
-  if (product.fiscalOrigin == null) missing.push("origem");
-  if (!product.fiscalUnit?.trim()) missing.push("unidade fiscal");
+  const hasNcm =
+    Boolean(product.ncmId) ||
+    Boolean(product.ncm && product.ncm.replace(/\D/g, "").length === 8);
+  if (!hasNcm) missing.push("NCM");
+  if (product.fiscalOrigin == null && product.nfeOrigin == null) {
+    missing.push("origem");
+  }
+  if (!product.fiscalUnit?.trim() && !product.purchaseUnit?.trim()) {
+    missing.push("unidade fiscal");
+  }
   if (!missing.length) return [];
   return [
     {

@@ -1,12 +1,20 @@
 import {
-  FormActions,
   FormField,
   FormGrid,
-  FormSection,
+  FormSheet,
+  FormSheetActions,
 } from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fieldControlClass } from "@/lib/field-styles";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
   SELLER_COMMISSION_TYPES,
@@ -30,6 +38,7 @@ type Seller = {
   managerUserId: string | null;
   user: { id: string; email: string; name: string };
   manager: Manager | null;
+  team: { id: string; name: string } | null;
 };
 
 export function SellersPage() {
@@ -49,12 +58,31 @@ export function SellersPage() {
     enabled: admin,
   });
 
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [commissionType, setCommissionType] =
     useState<SellerCommissionType>("FIXED");
   const [commission, setCommission] = useState("10");
+
+  function resetForm() {
+    setEmail("");
+    setPassword("");
+    setName("");
+    setCommissionType("FIXED");
+    setCommission("10");
+  }
+
+  function openCreate() {
+    resetForm();
+    setSheetOpen(true);
+  }
+
+  function closeSheet() {
+    setSheetOpen(false);
+    resetForm();
+  }
 
   const create = useMutation({
     mutationFn: () =>
@@ -72,11 +100,7 @@ export function SellersPage() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin", "sellers"] });
-      setEmail("");
-      setPassword("");
-      setName("");
-      setCommissionType("FIXED");
-      setCommission("10");
+      closeSheet();
     },
   });
 
@@ -101,6 +125,8 @@ export function SellersPage() {
       void qc.invalidateQueries({ queryKey: ["admin", "sellers"] }),
   });
 
+  const canSave = Boolean(email && password && name);
+
   if (!admin) {
     return (
       <p className="text-muted-foreground">
@@ -111,14 +137,33 @@ export function SellersPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Vendedores</h1>
+      <div className="flex items-start justify-between gap-4">
+        <h1 className="text-2xl font-semibold">Vendedores</h1>
+        <Button type="button" onClick={openCreate}>
+          Novo vendedor
+        </Button>
+      </div>
 
-      <FormSection
+      <FormSheet
+        open={sheetOpen}
+        onOpenChange={(open) => {
+          if (!open) closeSheet();
+          else setSheetOpen(true);
+        }}
         title="Novo vendedor"
         description="O admin define email e senha inicial (sem cadastro público)."
+        footer={
+          <FormSheetActions
+            onCancel={closeSheet}
+            onSubmit={() => create.mutate()}
+            submitLabel="Criar vendedor"
+            pending={create.isPending}
+            disabled={!canSave}
+          />
+        }
       >
-        <FormGrid cols={3}>
-          <FormField label="Nome" htmlFor="seller-name" required>
+        <FormGrid cols={2}>
+          <FormField label="Nome" htmlFor="seller-name" required className="sm:col-span-2">
             <Input
               id="seller-name"
               placeholder="Nome"
@@ -242,87 +287,78 @@ export function SellersPage() {
             .
           </p>
         ) : null}
-
-        <FormActions>
-          <Button
-            type="button"
-            disabled={!email || !password || !name || create.isPending}
-            onClick={() => create.mutate()}
-          >
-            Criar vendedor
-          </Button>
-        </FormActions>
-      </FormSection>
+      </FormSheet>
 
       {isLoading ? (
         <p className="text-muted-foreground">Carregando…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <table className="w-full text-sm">
-            <thead className="bg-background text-left text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3">Nome</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Gestor</th>
-                <th className="px-4 py-3">Tipo comissão</th>
-                <th className="px-4 py-3">Comissão %</th>
-                <th className="px-4 py-3">Ativo</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody>
+        <div className="rounded-xl border border-border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="px-4">Nome</TableHead>
+                <TableHead className="px-4">Email</TableHead>
+                <TableHead className="px-4">Gestor</TableHead>
+                <TableHead className="px-4">Equipe</TableHead>
+                <TableHead className="px-4">Tipo comissão</TableHead>
+                <TableHead className="px-4">Comissão %</TableHead>
+                <TableHead className="px-4">Ativo</TableHead>
+                <TableHead className="px-4" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {sellers.map((s) => {
                 const type = s.commissionType ?? "FIXED";
                 return (
-                  <tr key={s.id} className="border-t border-border">
-                    <td className="px-4 py-3">{s.user.name}</td>
-                    <td className="px-4 py-3">{s.user.email}</td>
-                    <td className="px-4 py-3">
-                      <select
-                        className="max-w-[180px] rounded border px-2 py-1 text-sm"
+                  <TableRow key={s.id}>
+                    <TableCell className="px-4 py-3">{s.user.name}</TableCell>
+                    <TableCell className="px-4 py-3">{s.user.email}</TableCell>
+                    <TableCell className="px-4 py-3">
+                      <AppSelect
                         value={s.managerUserId ?? ""}
-                        onChange={(e) => {
-                          const v = e.target.value;
+                        emptyLabel="— Sem gestor —"
+                        placeholder="— Sem gestor —"
+                        triggerClassName="max-w-[180px]"
+                        options={managers.map((m) => ({
+                          value: m.id,
+                          label: m.name,
+                        }))}
+                        onValueChange={(v) => {
                           patch.mutate({
                             id: s.id,
                             managerUserId: v === "" ? null : v,
                           });
                         }}
-                      >
-                        <option value="">— Sem gestor —</option>
-                        {managers.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-4 py-3">
-                      <select
-                        className={cn(
-                          fieldControlClass,
-                          "max-w-[200px] text-xs",
-                        )}
+                      />
+                    </TableCell>
+                    <TableCell className="px-4 py-3 text-muted-foreground">
+                      {s.team?.name ?? "—"}
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      <AppSelect
                         value={type}
-                        onChange={(e) => {
-                          const next = e.target.value as SellerCommissionType;
+                        triggerClassName="max-w-[200px] text-xs"
+                        options={[
+                          ...SELLER_COMMISSION_TYPES.filter((t) => !t.comingSoon).map(
+                            (t) => ({
+                              value: t.value,
+                              label: t.label,
+                            }),
+                          ),
+                          {
+                            value: "BY_SUPPLIER",
+                            label: `${sellerCommissionTypeLabel("BY_SUPPLIER")} (em breve)`,
+                            disabled: true,
+                          },
+                        ]}
+                        onValueChange={(v) => {
+                          const next = v as SellerCommissionType;
                           if (next === "BY_SUPPLIER") return;
                           patch.mutate({ id: s.id, commissionType: next });
                         }}
-                      >
-                        {SELLER_COMMISSION_TYPES.filter(
-                          (t) => !t.comingSoon,
-                        ).map((t) => (
-                          <option key={t.value} value={t.value}>
-                            {t.label}
-                          </option>
-                        ))}
-                        <option value="BY_SUPPLIER" disabled>
-                          {sellerCommissionTypeLabel("BY_SUPPLIER")} (em breve)
-                        </option>
-                      </select>
-                    </td>
-                    <td className="px-4 py-3">
+                      />
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
                       {type === "FIXED" ? (
                         <input
                           type="number"
@@ -342,8 +378,8 @@ export function SellersPage() {
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
                       <input
                         type="checkbox"
                         defaultChecked={s.active}
@@ -351,20 +387,20 @@ export function SellersPage() {
                           patch.mutate({ id: s.id, active: e.target.checked })
                         }
                       />
-                    </td>
-                    <td className="px-4 py-3 text-right">
+                    </TableCell>
+                    <TableCell className="px-4 py-3 text-right">
                       <Link
                         to={`/vendedores/${s.id}/produtos`}
                         className="text-primary hover:underline"
                       >
                         Liberar produtos
                       </Link>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>

@@ -11,7 +11,12 @@ const base = StyleSheet.create({
   },
 });
 
-export function ThemedTextInput({ style, placeholderTextColor, ...props }: TextInputProps) {
+export function ThemedTextInput({
+  style,
+  placeholderTextColor,
+  invalid,
+  ...props
+}: TextInputProps & { invalid?: boolean }) {
   const { colors } = useTheme();
 
   return (
@@ -22,7 +27,7 @@ export function ThemedTextInput({ style, placeholderTextColor, ...props }: TextI
         {
           color: colors.inputText,
           backgroundColor: colors.inputBackground,
-          borderColor: colors.inputBorder,
+          borderColor: invalid ? colors.danger : colors.inputBorder,
         },
         style,
       ]}

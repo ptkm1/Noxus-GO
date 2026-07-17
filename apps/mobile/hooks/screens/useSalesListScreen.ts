@@ -28,6 +28,6 @@ export function useSalesListScreen() {
     pending,
     dead,
     goQuickSale: () => router.push("/quick-sale"),
-    goOfflineQueue: () => router.push("/sales/offline-queue"),
+    goOfflineQueue: () => router.push("/(tabs)/vendas/offline-queue"),
   };
 }

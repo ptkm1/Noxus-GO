@@ -1,7 +1,7 @@
-import type { LucideIcon } from "lucide-react-native";
-import { View, StyleSheet } from "react-native";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
+import type { LucideIcon } from "lucide-react-native";
+import { StyleSheet, View } from "react-native";
 
 type Props = {
   Icon: LucideIcon;
@@ -19,7 +19,11 @@ export function TabBarIcon({ Icon, color, focused }: Props) {
         focused && { backgroundColor: colorWithAlpha(colors.primary, 0.12) },
       ]}
     >
-      <Icon color={focused ? colors.primary : color} size={24} strokeWidth={focused ? 2.25 : 2} />
+      <Icon
+        color={focused ? colors.primary : color}
+        size={20}
+        strokeWidth={1.5}
+      />
     </View>
   );
 }

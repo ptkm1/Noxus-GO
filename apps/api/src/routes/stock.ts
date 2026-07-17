@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { requireAdmin } from "../auth/org-roles.js";
 import { prisma } from "../db.js";
@@ -64,10 +65,10 @@ export const stockRoutes: FastifyPluginAsync = async (app) => {
       .safeParse(req.query);
     const page = q.success ? (q.data.page ?? 1) : 1;
     const pageSize = q.success ? (q.data.pageSize ?? 20) : 20;
-    const where = {
+    const where: Prisma.ProductWhereInput = {
       organizationId: auth.organizationId,
       name: q.success && q.data.search
-        ? { contains: q.data.search, mode: "insensitive" }
+        ? { contains: q.data.search, mode: Prisma.QueryMode.insensitive }
         : undefined,
     };
     const [total, products] = await Promise.all([

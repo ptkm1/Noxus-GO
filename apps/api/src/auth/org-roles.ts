@@ -1,8 +1,7 @@
+import type { Prisma, Role } from "@prisma/client";
 import type { FastifyReply } from "fastify";
-import type { Role } from "@prisma/client";
-import type { Prisma } from "@prisma/client";
-import type { AccessPayload } from "./jwt.js";
 import { prisma } from "../db.js";
+import type { AccessPayload } from "./jwt.js";
 
 const STAFF_ROLES: Role[] = ["ADMIN", "MANAGER"];
 
@@ -17,6 +16,32 @@ const MANAGER_GET_ALLOW = [
   /^\/sellers\/[^/]+\/location-history$/,
   /^\/orders$/,
   /^\/orders\/[^/]+$/,
+  /^\/orders\/[^/]+\/pdf$/,
+  /^\/reports\/sales-by-supplier$/,
+  /^\/reports\/scorecard$/,
+  /^\/reports\/margin$/,
+  /^\/reports\/commission-statement$/,
+  /^\/reports\/stock-health$/,
+  /^\/reports\/credit-aging$/,
+  /^\/reports\/fiscal-reconciliation$/,
+  /^\/reports\/visit-effectiveness$/,
+] as const;
+
+/** GET paths allowed for team leader (seller with led team). */
+const TEAM_LEADER_GET_ALLOW = [
+  /^\/$/,
+  /^\/sellers$/,
+  /^\/seller-locations$/,
+  /^\/seller-locations\/ws$/,
+  /^\/customer-visits$/,
+  /^\/sellers\/[^/]+\/location-history$/,
+  /^\/orders$/,
+  /^\/orders\/[^/]+$/,
+  /^\/orders\/[^/]+\/pdf$/,
+  /^\/reports\/team-summary$/,
+  /^\/reports\/sales-by-supplier$/,
+  /^\/reports\/scorecard$/,
+  /^\/reports\/visit-effectiveness$/,
 ] as const;
 
 export function isOrgStaff(role: Role): boolean {
@@ -27,10 +52,32 @@ export function isAdmin(role: Role): boolean {
   return role === "ADMIN";
 }
 
+export function isTeamLeaderAuth(auth: AccessPayload): boolean {
+  return auth.role === "SELLER" && !!auth.teamLeaderTeamId;
+}
+
+export function canAccessAdminPanel(auth: AccessPayload): boolean {
+  return isOrgStaff(auth.role) || isTeamLeaderAuth(auth);
+}
+
 export function sellerScopeWhere(auth: AccessPayload): Prisma.SellerWhereInput {
   const base: Prisma.SellerWhereInput = { organizationId: auth.organizationId };
   if (auth.role === "MANAGER") {
     return { ...base, managerUserId: auth.sub };
+  }
+  if (isTeamLeaderAuth(auth)) {
+    return { ...base, teamId: auth.teamLeaderTeamId! };
+  }
+  return base;
+}
+
+export function orderScopeWhere(auth: AccessPayload): Prisma.OrderWhereInput {
+  const base: Prisma.OrderWhereInput = { organizationId: auth.organizationId };
+  if (auth.role === "MANAGER") {
+    return { ...base, seller: { managerUserId: auth.sub } };
+  }
+  if (isTeamLeaderAuth(auth)) {
+    return { ...base, seller: { teamId: auth.teamLeaderTeamId! } };
   }
   return base;
 }
@@ -40,19 +87,32 @@ export function isManagerGetAllowed(routePath: string): boolean {
   return MANAGER_GET_ALLOW.some((re) => re.test(path));
 }
 
-export function requireOrgStaff(reply: FastifyReply, auth: AccessPayload | undefined): auth is AccessPayload {
+export function isTeamLeaderGetAllowed(routePath: string): boolean {
+  const path = routePath.split("?")[0] ?? routePath;
+  return TEAM_LEADER_GET_ALLOW.some((re) => re.test(path));
+}
+
+export function requireOrgStaff(
+  reply: FastifyReply,
+  auth: AccessPayload | undefined,
+): auth is AccessPayload {
   if (!auth) {
     void reply.status(401).send({ error: "Não autorizado" });
     return false;
   }
-  if (!isOrgStaff(auth.role)) {
-    void reply.status(403).send({ error: "Acesso restrito a administradores e gestores" });
+  if (!canAccessAdminPanel(auth)) {
+    void reply.status(403).send({
+      error: "Acesso restrito a administradores, gestores e líderes de equipe",
+    });
     return false;
   }
   return true;
 }
 
-export function requireAdmin(reply: FastifyReply, auth: AccessPayload): boolean {
+export function requireAdmin(
+  reply: FastifyReply,
+  auth: AccessPayload,
+): boolean {
   if (!isAdmin(auth.role)) {
     void reply.status(403).send({ error: "Apenas administradores" });
     return false;
@@ -85,6 +145,20 @@ export async function validateManagerAssignment(
     where: { id: managerUserId, organizationId, role: "MANAGER" },
     select: { id: true },
   });
-  if (!mgr) return { ok: false, error: "Gestor inválido (deve ser utilizador MANAGER da mesma organização)" };
+  if (!mgr) {
+    return {
+      ok: false,
+      error:
+        "Gestor inválido (deve ser utilizador MANAGER da mesma organização)",
+    };
+  }
   return { ok: true };
+}
+
+export async function teamMemberSellerIds(teamId: string): Promise<string[]> {
+  const rows = await prisma.seller.findMany({
+    where: { teamId },
+    select: { id: true },
+  });
+  return rows.map((r) => r.id);
 }

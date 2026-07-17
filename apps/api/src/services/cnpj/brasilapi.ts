@@ -1,4 +1,5 @@
 import type { CnpjCompanyData } from "@pedidos/shared";
+import { brasilApiHeaders } from "../brasilapi/headers.js";
 
 const BRASIL_API_CNPJ = "https://brasilapi.com.br/api/cnpj/v1";
 
@@ -52,7 +53,7 @@ export async function fetchCnpjFromBrasilApi(digits14: string): Promise<CnpjComp
   let res: Response;
   try {
     res = await fetch(url, {
-      headers: { Accept: "application/json" },
+      headers: brasilApiHeaders(),
       signal: ctrl.signal,
     });
   } finally {

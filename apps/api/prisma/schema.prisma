@@ -105,6 +105,20 @@ enum FiscalManifestationType {
   NAO_REALIZADA
 }
 
+enum CustomerDocumentType {
+  CNPJ
+  CPF
+}
+
+/// Classificação comercial do produto (cadastro).
+enum ProductClassification {
+  RESALE
+  RAW_MATERIAL
+  INTERNAL_USE
+  SERVICE
+  OTHER
+}
+
 model Organization {
   id               String             @id @default(cuid())
   name             String
@@ -138,6 +152,7 @@ model Organization {
   sellerCustomerVisits SellerCustomerVisit[]
   sellerLiveLocations  SellerLiveLocation[]
   sellerLocationHistory SellerLocationHistory[]
+  salesTeams            SalesTeam[]
   fiscalConfig          OrganizationFiscalConfig?
   fiscalNcms            FiscalNcm[]
   fiscalOperations      FiscalOperation[]
@@ -184,10 +199,28 @@ model Seller {
   sellerCustomerVisits SellerCustomerVisit[]
   liveLocation         SellerLiveLocation?
   locationHistory      SellerLocationHistory[]
+  teamId               String?
+  team                 SalesTeam?         @relation("TeamMembers", fields: [teamId], references: [id], onDelete: SetNull)
+  ledTeam              SalesTeam?         @relation("TeamLeader")
   createdAt         DateTime           @default(now())
   updatedAt         DateTime         @updatedAt
 
   @@index([organizationId, managerUserId])
+  @@index([organizationId, teamId])
+}
+
+model SalesTeam {
+  id             String       @id @default(cuid())
+  name           String
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leaderSellerId String       @unique
+  leaderSeller   Seller       @relation("TeamLeader", fields: [leaderSellerId], references: [id], onDelete: Restrict)
+  members        Seller[]     @relation("TeamMembers")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
 }
 
 /// Última posição reportada pelo app do vendedor (foreground).
@@ -276,10 +309,41 @@ model ProductCategory {
   @@map("product_categories")
 }
 
+model Supplier {
+  id                String          @id @default(cuid())
+  organizationId    String
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code              String
+  legalName         String
+  cnpj              String
+  tradeName         String
+  active            Boolean         @default(true)
+  stateRegistration String?
+  email             String?
+  phone             String?
+  street            String?
+  addressNumber     String?
+  complement        String?
+  district          String?
+  city              String?
+  state             String?
+  zipCode           String?
+  products          Product[]
+  fiscalInvoices    FiscalInvoice[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([organizationId, code])
+  @@unique([organizationId, cnpj])
+  @@index([organizationId])
+}
+
 model Product {
   id               String             @id @default(cuid())
   name             String
   sku              String?
+  /// Código de barras / EAN para leitura na venda rápida.
+  barcode          String?
   description      String?
   /// URL pública da foto (CDN, bucket, etc.) para catálogo no app do vendedor.
   imageUrl         String?
@@ -292,10 +356,45 @@ model Product {
   commissionPercent Decimal?           @db.Decimal(5, 2)
   /// JSON: valores dos campos definidos em `category.attributeSchema`.
   attributes       Json               @default("{}")
+  /// Quantidade em estoque (unidades vendáveis).
+  stockQty         Int                @default(0)
+  /// Se ativo, impede venda quando `stockQty` é insuficiente.
+  blockSaleWhenOutOfStock Boolean       @default(false)
+  /// Linha comercial (ex.: Linha 1).
+  productLine      String?
+  productClassification ProductClassification?
+  /// Unidade de compra (UN, CX, FD…).
+  purchaseUnit     String?
+  /// Quantidade por caixa padrão na compra.
+  standardPurchaseBoxQty Int?
+  grossWeightKg    Decimal?             @db.Decimal(10, 3)
+  netWeightKg      Decimal?             @db.Decimal(10, 3)
+  stockAddress     String?
+  minStockQty      Int                  @default(0)
+  maxStockQty      Int?
+  costPrice        Decimal?             @db.Decimal(12, 2)
+  factoryPrice     Decimal?             @db.Decimal(12, 2)
+  maxSalePrice     Decimal?             @db.Decimal(12, 2)
+  freightAmount    Decimal?             @db.Decimal(12, 2)
+  collectionCommissionPercent Decimal?  @db.Decimal(5, 2)
+  maxDailyQtyPerSeller Int?
+  maxDailyQtyPerCustomer Int?
+  ncm              String?
+  ncmException     String?
+  /// Origem da mercadoria na NF-e (0–8).
+  nfeOrigin        Int?
+  fiscalClass      String?
+  pisCofinsClassification String?
+  cstPis           String?
+  ipiPercent       Decimal?             @db.Decimal(5, 2)
+  icmsCostPercent  Decimal?           @db.Decimal(5, 2)
+  cbsIbsClassification String?
   organizationId   String
   organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   categoryId       String?
   category         ProductCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  supplierId       String?
+  supplier         Supplier?          @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   priceTableItems  PriceTableItem[]
   sellerProducts   SellerProduct[]
   promotions       ProductPromotion[]
@@ -307,16 +406,20 @@ model Product {
   fiscalInvoiceItems FiscalInvoiceItem[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
-  /// Cadastro fiscal para NF-e
-  ncmId            String?
-  ncm              FiscalNcm?         @relation(fields: [ncmId], references: [id], onDelete: SetNull)
-  fiscalOrigin     Int?
-  fiscalGtin       String?
-  fiscalUnit       String?
-  fiscalCest       String?
-  fiscalDescription String?
+  /// Cadastro fiscal para NF-e (tabela NCM da organização)
+  ncmId               String?
+  fiscalNcm           FiscalNcm?         @relation(fields: [ncmId], references: [id], onDelete: SetNull)
+  fiscalOrigin        Int?
+  fiscalGtin          String?
+  fiscalUnit          String?
+  fiscalCest          String?
+  fiscalDescription   String?
   outboundOperationId String?
-  outboundOperation   FiscalOperation? @relation("ProductOutboundOp", fields: [outboundOperationId], references: [id], onDelete: SetNull)
+  outboundOperation   FiscalOperation?   @relation("ProductOutboundOp", fields: [outboundOperationId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, barcode])
+  @@index([organizationId, supplierId])
+  @@index([organizationId, ncm])
 }
 
 model ProductPromotion {
@@ -480,20 +583,27 @@ model Customer {
   latitude       Decimal?           @db.Decimal(10, 8)
   longitude      Decimal?           @db.Decimal(11, 8)
   addressNote    String?
-  /// Dados fiscais para NF-e de saída
-  documentType   String?
-  document       String?
+  documentType      CustomerDocumentType?
+  cnpj              String?
+  cpf               String?
+  legalName         String?
+  tradeName         String?
+  cep               String?
+  street            String?
+  number            String?
+  neighborhood      String?
+  state             String?
+  city              String?
+  cityIbgeCode      String?
   stateRegistration String?
-  street         String?
-  addressNumber  String?
-  complement     String?
-  district       String?
-  city           String?
-  state          String?
-  zipCode        String?
-  cityIbge       String?
+  buyerName         String?
+  notes             String?
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
+
+  @@unique([organizationId, cnpj])
+  @@unique([organizationId, cpf])
+  @@index([organizationId, state, city])
 }
 
 model CustomerCreditTitle {
@@ -608,6 +718,9 @@ model OrganizationFiscalConfig {
   certificateExpiresAt      DateTime?
   certificateCnpj           String?
   autoStockOnInboundInvoice Boolean         @default(false)
+  /// Imagem da logo exibida no DANFE (PNG/JPEG/WebP).
+  danfeLogoBytes            Bytes?
+  danfeLogoMimeType         String?
   createdAt                 DateTime        @default(now())
   updatedAt                 DateTime        @updatedAt
 }
@@ -649,29 +762,6 @@ model FiscalOperation {
   updatedAt        DateTime                 @updatedAt
 
   @@unique([organizationId, direction, cfop])
-}
-
-model Supplier {
-  id               String          @id @default(cuid())
-  organizationId   String
-  organization     Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  name             String
-  document         String
-  stateRegistration String?
-  email            String?
-  phone            String?
-  street           String?
-  addressNumber    String?
-  complement       String?
-  district         String?
-  city             String?
-  state            String?
-  zipCode          String?
-  fiscalInvoices   FiscalInvoice[]
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-
-  @@unique([organizationId, document])
 }
 
 model FiscalInvoice {

@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
-import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
+import type { ReactNode } from "react";
 
 type FormGridProps = {
   children: ReactNode;
@@ -18,7 +18,9 @@ const colClass: Record<1 | 2 | 3 | 4, string> = {
 
 export function FormGrid({ children, className, cols = 2 }: FormGridProps) {
   return (
-    <div className={cn("grid gap-4", colClass[cols], className)}>{children}</div>
+    <div className={cn("grid gap-4", colClass[cols], className)}>
+      {children}
+    </div>
   );
 }
 
@@ -26,12 +28,21 @@ type FormFieldProps = {
   label: string;
   htmlFor?: string;
   hint?: ReactNode;
+  error?: string;
   required?: boolean;
   className?: string;
   children: ReactNode;
 };
 
-export function FormField({ label, htmlFor, hint, required, className, children }: FormFieldProps) {
+export function FormField({
+  label,
+  htmlFor,
+  hint,
+  error,
+  required,
+  className,
+  children,
+}: FormFieldProps) {
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       <Label htmlFor={htmlFor} className="text-foreground">
@@ -39,7 +50,11 @@ export function FormField({ label, htmlFor, hint, required, className, children 
         {required ? <span className="text-destructive"> *</span> : null}
       </Label>
       {children}
-      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+      {error ? (
+        <p className="text-xs text-destructive">{error}</p>
+      ) : hint ? (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      ) : null}
     </div>
   );
 }
@@ -51,7 +66,12 @@ type FormSectionProps = {
   className?: string;
 };
 
-export function FormSection({ title, description, children, className }: FormSectionProps) {
+export function FormSection({
+  title,
+  description,
+  children,
+  className,
+}: FormSectionProps) {
   return (
     <section className={cn("surface-card space-y-4 p-4 md:p-5", className)}>
       {title ? (
@@ -86,7 +106,13 @@ export function FormActions({ children, className }: FormActionsProps) {
 }
 
 /** Linha de filtros (datas, selects) em colunas alinhadas. */
-export function FilterBar({ children, className }: { children: ReactNode; className?: string }) {
+export function FilterBar({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return (
     <div
       className={cn(

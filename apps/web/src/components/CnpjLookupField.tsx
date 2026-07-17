@@ -1,3 +1,6 @@
+import { FormField } from "@/components/forms";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { CnpjCompanyData } from "@pedidos/shared";
 import {
   cnpjDigitsOnly,
@@ -8,23 +11,32 @@ import {
   suggestedTradeName,
 } from "@pedidos/shared";
 import { useCallback, useState } from "react";
-import { FormField } from "@/components/forms";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { apiFetch } from "../lib/api";
 
 type Props = {
   onApply: (data: CnpjCompanyData) => void;
   disabled?: boolean;
   buttonLabel?: string;
+  label?: string;
+  required?: boolean;
+  digits?: string;
+  onDigitsChange?: (digits: string) => void;
+  error?: string;
 };
 
 export function CnpjLookupField({
   onApply,
   disabled,
   buttonLabel = "Buscar na Receita",
+  label = "CNPJ",
+  required,
+  digits: controlledDigits,
+  onDigitsChange,
+  error,
 }: Props) {
-  const [digits, setDigits] = useState("");
+  const [internalDigits, setInternalDigits] = useState("");
+  const digits = controlledDigits ?? internalDigits;
+  const setDigits = onDigitsChange ?? setInternalDigits;
   const [loading, setLoading] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const [lastOk, setLastOk] = useState<string | null>(null);
@@ -59,7 +71,9 @@ export function CnpjLookupField({
         );
       }
     } catch (e) {
-      setHint(e instanceof Error ? e.message : "Não foi possível consultar o CNPJ.");
+      setHint(
+        e instanceof Error ? e.message : "Não foi possível consultar o CNPJ.",
+      );
     } finally {
       setLoading(false);
     }
@@ -67,21 +81,26 @@ export function CnpjLookupField({
 
   return (
     <FormField
-      label="CNPJ (opcional)"
+      label={label}
       htmlFor="cnpj-lookup"
+      required={required}
+      error={error ?? undefined}
       hint={
-        <>
-          Consulta pública via{" "}
-          <a
-            href="https://brasilapi.com.br/"
-            target="_blank"
-            rel="noreferrer"
-            className="text-primary underline"
-          >
-            BrasilAPI
-          </a>
-          . Os dados podem estar desatualizados — confira sempre na Receita Federal.
-        </>
+        error ? undefined : (
+          <>
+            Consulta pública via{" "}
+            <a
+              href="https://brasilapi.com.br/"
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary underline"
+            >
+              BrasilAPI
+            </a>
+            . Os dados podem estar desatualizados — confira sempre na Receita
+            Federal.
+          </>
+        )
       }
     >
       <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-start">
@@ -93,6 +112,7 @@ export function CnpjLookupField({
           placeholder="00.000.000/0001-00"
           disabled={disabled || loading}
           className="font-mono"
+          aria-invalid={error ? true : undefined}
           value={formatCnpjMask(digits)}
           onChange={(e) => setDigits(cnpjDigitsOnly(e.target.value))}
           onKeyDown={(e) => {
@@ -107,15 +127,22 @@ export function CnpjLookupField({
           variant="outline"
           className="shrink-0"
           disabled={
-            disabled || loading || !isCnpjComplete(digits) || !isValidCnpj(digits)
+            disabled ||
+            loading ||
+            !isCnpjComplete(digits) ||
+            !isValidCnpj(digits)
           }
           onClick={() => void lookup()}
         >
           {loading ? "A consultar…" : buttonLabel}
         </Button>
       </div>
-      {hint ? <p className="text-sm text-destructive">{hint}</p> : null}
-      {situacaoWarning ? <p className="text-sm text-amber-700">{situacaoWarning}</p> : null}
+      {hint && !error ? (
+        <p className="text-sm text-destructive">{hint}</p>
+      ) : null}
+      {situacaoWarning ? (
+        <p className="text-sm text-amber-700">{situacaoWarning}</p>
+      ) : null}
       {lastOk ? <p className="text-sm text-success">{lastOk}</p> : null}
     </FormField>
   );

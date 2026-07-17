@@ -25,6 +25,55 @@ export function buildCancelamentoEvento(input: {
   return { infEvento, idLote: "1" };
 }
 
+const MANIFEST_EVENTS: Record<
+  "CIENCIA" | "CONFIRMACAO" | "DESCONHECIMENTO" | "NAO_REALIZADA",
+  { tpEvento: string; descEvento: string; needsJust?: boolean }
+> = {
+  CIENCIA: { tpEvento: "210210", descEvento: "Ciencia da Operacao" },
+  CONFIRMACAO: { tpEvento: "210200", descEvento: "Confirmacao da Operacao" },
+  DESCONHECIMENTO: { tpEvento: "210220", descEvento: "Desconhecimento da Operacao" },
+  NAO_REALIZADA: {
+    tpEvento: "210240",
+    descEvento: "Operacao nao Realizada",
+    needsJust: true,
+  },
+};
+
+export function buildManifestacaoEvento(input: {
+  accessKey: string;
+  cnpj: string;
+  homologation: boolean;
+  type: keyof typeof MANIFEST_EVENTS;
+  justification?: string;
+  seqEvento?: number;
+}) {
+  const meta = MANIFEST_EVENTS[input.type];
+  if (meta.needsJust && (!input.justification || input.justification.trim().length < 15)) {
+    throw new Error("Justificativa obrigatória (mín. 15 caracteres) para Operação não realizada");
+  }
+  const chNFe = onlyDigits(input.accessKey);
+  const cnpj = onlyDigits(input.cnpj).padStart(14, "0").slice(0, 14);
+  const tpAmb = input.homologation ? "2" : "1";
+  const nSeq = String(input.seqEvento ?? 1).padStart(2, "0");
+  const id = `ID${meta.tpEvento}${chNFe}${nSeq}`;
+  const dhEvento = new Date().toISOString().replace(/\.\d{3}Z$/, "-03:00");
+  const justXml =
+    meta.needsJust && input.justification
+      ? `<xJust>${escapeXml(input.justification.trim())}</xJust>`
+      : "";
+
+  const infEvento =
+    `<infEvento Id="${id}" xmlns="http://www.portalfiscal.inf.br/nfe">` +
+    `<cOrgao>91</cOrgao><tpAmb>${tpAmb}</tpAmb><CNPJ>${cnpj}</CNPJ>` +
+    `<chNFe>${chNFe}</chNFe><dhEvento>${dhEvento}</dhEvento>` +
+    `<tpEvento>${meta.tpEvento}</tpEvento><nSeqEvento>${input.seqEvento ?? 1}</nSeqEvento>` +
+    `<verEvento>1.00</verEvento>` +
+    `<detEvento versao="1.00"><descEvento>${meta.descEvento}</descEvento>${justXml}</detEvento>` +
+    `</infEvento>`;
+
+  return { infEvento, tpEvento: meta.tpEvento };
+}
+
 export function wrapEnvEvento(signedEventoXml: string, idLote = "1"): string {
   return `<?xml version="1.0" encoding="UTF-8"?><envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"><idLote>${idLote}</idLote>${signedEventoXml}</envEvento>`;
 }

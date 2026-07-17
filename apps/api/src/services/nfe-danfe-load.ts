@@ -1,9 +1,22 @@
 import type { FastifyReply } from "fastify";
 import { prisma } from "../db.js";
+import { customerFiscalDocument } from "../fiscal/customer-fiscal.js";
 import { parseNfeXmlForDanfe, type DanfeNfeData } from "../fiscal/nfe-xml-danfe.js";
 import { buildDanfePdf, danfePdfFilename } from "./nfe-danfe-pdf.js";
 
 const DANFE_STATUSES = new Set(["AUTHORIZED", "IMPORTED", "CANCELLED"]);
+
+export async function loadFiscalDanfeLogo(organizationId: string) {
+  const config = await prisma.organizationFiscalConfig.findUnique({
+    where: { organizationId },
+    select: { danfeLogoBytes: true, danfeLogoMimeType: true },
+  });
+  if (!config?.danfeLogoBytes?.length) return null;
+  return {
+    buffer: Buffer.from(config.danfeLogoBytes),
+    mimeType: config.danfeLogoMimeType ?? "image/png",
+  };
+}
 
 export async function loadInvoiceForDanfe(organizationId: string, invoiceId: string) {
   return prisma.fiscalInvoice.findFirst({
@@ -34,8 +47,8 @@ function buildFallbackFromInvoice(
           state: issuerSnap?.uf,
         }
       : {
-          document: invoice.supplier?.document ?? issuerSnap?.cnpj ?? "",
-          name: invoice.supplier?.name ?? issuerSnap?.name ?? "Fornecedor",
+          document: invoice.supplier?.cnpj ?? issuerSnap?.cnpj ?? "",
+          name: invoice.supplier?.legalName ?? issuerSnap?.name ?? "Fornecedor",
           ie: invoice.supplier?.stateRegistration ?? issuerSnap?.ie,
           street: invoice.supplier?.street ?? issuerSnap?.street,
           city: invoice.supplier?.city ?? issuerSnap?.city,
@@ -46,7 +59,10 @@ function buildFallbackFromInvoice(
   const recipient =
     invoice.direction === "OUTBOUND"
       ? {
-          document: recipientSnap?.document ?? invoice.order?.customer?.document ?? "",
+          document:
+            recipientSnap?.document ??
+            customerFiscalDocument(invoice.order?.customer ?? {}) ??
+            "",
           name: recipientSnap?.name ?? invoice.order?.customer?.name ?? "",
           ie: recipientSnap?.stateRegistration,
           street: recipientSnap?.street,
@@ -103,6 +119,11 @@ export async function sendDanfePdfReply(
   const data = parsed ?? (fallback.accessKey ? (fallback as DanfeNfeData) : null);
   if (!data?.accessKey) {
     return reply.status(400).send({ error: "Não foi possível montar DANFE para esta nota" });
+  }
+
+  const logo = await loadFiscalDanfeLogo(invoice.organizationId);
+  if (logo) {
+    data.logo = logo;
   }
 
   const pdf = await buildDanfePdf(data as DanfeNfeData);

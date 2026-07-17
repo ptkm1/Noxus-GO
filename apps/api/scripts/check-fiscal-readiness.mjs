@@ -4,7 +4,7 @@ const order = await prisma.order.findFirst({
   where: { status: "CONFIRMED" },
   include: {
     customer: true,
-    items: { include: { product: { include: { ncm: true } } } },
+    items: { include: { product: { include: { fiscalNcm: true } } } },
   },
   orderBy: { createdAt: "desc" },
 });

@@ -89,7 +89,7 @@ export async function apiFetch<T>(path: string, opts: Opt = {}): Promise<T> {
 }
 
 export async function downloadPdf(pathWithQuery: string, filename: string) {
-  const blob = await fetchPdfBlob(pathWithQuery);
+  const blob = await fetchAuthenticatedBlob(pathWithQuery);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -98,7 +98,7 @@ export async function downloadPdf(pathWithQuery: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-async function fetchPdfBlob(pathWithQuery: string): Promise<Blob> {
+export async function fetchAuthenticatedBlob(pathWithQuery: string): Promise<Blob> {
   const h = new Headers();
   const t = getAccessToken();
   if (t) h.set("Authorization", `Bearer ${t}`);
@@ -111,7 +111,7 @@ async function fetchPdfBlob(pathWithQuery: string): Promise<Blob> {
 
 /** Abre o diálogo de impressão do navegador com o PDF do pedido. */
 export async function printPdf(pathWithQuery: string) {
-  const blob = await fetchPdfBlob(pathWithQuery);
+  const blob = await fetchAuthenticatedBlob(pathWithQuery);
   const url = URL.createObjectURL(blob);
   const iframe = document.createElement("iframe");
   iframe.style.position = "fixed";

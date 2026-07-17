@@ -10,6 +10,12 @@ import {
   evaluateOrderCredit,
   violationsToJson,
 } from "../services/credit.js";
+import {
+  customerBodySchema,
+  customerPatchSchema,
+  toCustomerPrismaData,
+  type CustomerBodyInput,
+} from "../services/customer-validation.js";
 import { isGoogleRoutesConfigured } from "../services/google-routes.js";
 import {
   loadOrderForPdf,
@@ -20,8 +26,14 @@ import {
   OrderPricingError,
 } from "../services/order-pricing.js";
 import { resolveEffectiveUnitPrice } from "../services/price-resolve.js";
+import {
+  applyStockOnStatusChange,
+  assertSufficientStock,
+  StockError,
+} from "../services/product-stock.js";
 import { buildRouteDirections } from "../services/route-directions.js";
 import { greedyNearestRoute, haversineKm } from "../services/route-plan.js";
+import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
 import { recordSellerLocation } from "../services/seller-location-write.js";
 import { decToNum } from "../util/money.js";
 
@@ -109,6 +121,25 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       auth.sellerId!,
       ref,
     );
+  });
+
+  app.get("/reports/sales-by-supplier", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(20).optional(),
+      })
+      .safeParse(req.query);
+
+    return buildSalesBySupplier({
+      organizationId: auth.organizationId,
+      sellerIds: [auth.sellerId!],
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      limit: q.success ? q.data.limit : undefined,
+    });
   });
 
   app.get("/sales", async (req) => {
@@ -250,6 +281,16 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         }
       }
 
+      if (orderStatus === "CONFIRMED") {
+        await assertSufficientStock(
+          auth.organizationId,
+          sale.lines.map((l) => ({
+            productId: l.productId,
+            quantity: l.quantity,
+          })),
+        );
+      }
+
       const order = await prisma.order.create({
         data: {
           organizationId: auth.organizationId,
@@ -288,9 +329,15 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         });
       }
 
+      if (order.status === "CONFIRMED") {
+        await applyStockOnStatusChange(order.id, "DRAFT", "CONFIRMED");
+      }
+
       return order;
     } catch (e) {
       if (e instanceof OrderPricingError)
+        return reply.status(400).send({ error: e.message });
+      if (e instanceof StockError)
         return reply.status(400).send({ error: e.message });
       throw e;
     }
@@ -309,6 +356,15 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         product: {
           include: {
             category: { select: { id: true, code: true, name: true } },
+            supplier: {
+              select: {
+                id: true,
+                code: true,
+                tradeName: true,
+                legalName: true,
+                cnpj: true,
+              },
+            },
           },
         },
       },
@@ -404,6 +460,20 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
+  app.get("/customers/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const customer = await prisma.customer.findFirst({
+      where: {
+        id,
+        organizationId: auth.organizationId,
+        OR: [{ sellerId: auth.sellerId }, { sellerId: null }],
+      },
+    });
+    if (!customer) return reply.status(404).send({ error: "Não encontrado" });
+    return customer;
+  });
+
   app.get("/customers/:id/credit", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
@@ -427,41 +497,41 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
   app.post("/customers", async (req, reply) => {
     const auth = req.auth!;
-    const body = z
-      .object({
-        name: z.string().min(1),
-        email: z.string().email().optional(),
-        phone: z.string().optional(),
-        addressNote: z.string().max(500).optional(),
-      })
-      .safeParse(req.body);
+    const body = customerBodySchema.safeParse(req.body);
     if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
 
-    return prisma.customer.create({
-      data: {
-        name: body.data.name,
-        email: body.data.email,
-        phone: body.data.phone,
-        addressNote: body.data.addressNote,
-        organizationId: auth.organizationId,
-        sellerId: auth.sellerId,
-      },
-    });
+    try {
+      return await prisma.customer.create({
+        data: {
+          organizationId: auth.organizationId,
+          sellerId: auth.sellerId,
+          ...toCustomerPrismaData(body.data),
+        } as Prisma.CustomerUncheckedCreateInput,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "CNPJ ou CPF já cadastrado nesta organização." });
+      }
+      throw e;
+    }
   });
 
   app.patch("/customers/:id", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
-    const body = z
-      .object({
-        name: z.string().min(1).optional(),
-        email: z.string().email().nullable().optional(),
-        phone: z.string().nullable().optional(),
-      })
-      .safeParse(req.body);
+    const body = customerPatchSchema.safeParse(req.body);
     if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
 
     const existing = await prisma.customer.findFirst({
       where: {
@@ -472,14 +542,72 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
 
-    return prisma.customer.update({
-      where: { id },
-      data: {
-        name: body.data.name,
-        email: body.data.email === undefined ? undefined : body.data.email,
-        phone: body.data.phone === undefined ? undefined : body.data.phone,
-      },
-    });
+    const merged: CustomerBodyInput = {
+      name: body.data.name ?? existing.name,
+      email: body.data.email !== undefined ? body.data.email : existing.email,
+      phone: body.data.phone !== undefined ? body.data.phone : existing.phone,
+      addressNote:
+        body.data.addressNote !== undefined
+          ? body.data.addressNote
+          : existing.addressNote,
+      documentType:
+        body.data.documentType !== undefined
+          ? body.data.documentType
+          : (existing.documentType as CustomerBodyInput["documentType"]),
+      cnpj: body.data.cnpj !== undefined ? body.data.cnpj : existing.cnpj,
+      cpf: body.data.cpf !== undefined ? body.data.cpf : existing.cpf,
+      legalName:
+        body.data.legalName !== undefined
+          ? body.data.legalName
+          : existing.legalName,
+      tradeName:
+        body.data.tradeName !== undefined
+          ? body.data.tradeName
+          : existing.tradeName,
+      cep: body.data.cep !== undefined ? body.data.cep : existing.cep,
+      street:
+        body.data.street !== undefined ? body.data.street : existing.street,
+      number:
+        body.data.number !== undefined ? body.data.number : existing.number,
+      neighborhood:
+        body.data.neighborhood !== undefined
+          ? body.data.neighborhood
+          : existing.neighborhood,
+      state: body.data.state !== undefined ? body.data.state : existing.state,
+      city: body.data.city !== undefined ? body.data.city : existing.city,
+      cityIbgeCode:
+        body.data.cityIbgeCode !== undefined
+          ? body.data.cityIbgeCode
+          : existing.cityIbgeCode,
+      stateRegistration:
+        body.data.stateRegistration !== undefined
+          ? body.data.stateRegistration
+          : existing.stateRegistration,
+      buyerName:
+        body.data.buyerName !== undefined
+          ? body.data.buyerName
+          : existing.buyerName,
+      notes: body.data.notes !== undefined ? body.data.notes : existing.notes,
+    };
+
+    try {
+      return await prisma.customer.update({
+        where: { id },
+        data: toCustomerPrismaData(
+          merged,
+        ) as Prisma.CustomerUncheckedUpdateInput,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "CNPJ ou CPF já cadastrado nesta organização." });
+      }
+      throw e;
+    }
   });
 
   type SellerVisitPayload = Prisma.SellerCustomerVisitGetPayload<{

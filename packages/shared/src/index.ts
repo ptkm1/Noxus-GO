@@ -16,6 +16,37 @@ export const ORDER_STATUSES: OrderStatus[] = [
   "PENDING_CREDIT_APPROVAL",
 ];
 
+const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  DRAFT: "Rascunho",
+  CONFIRMED: "Confirmado",
+  CANCELLED: "Cancelado",
+  PENDING_CREDIT_APPROVAL: "Aguardando crédito",
+};
+
+export function orderStatusLabel(status: string): string {
+  return ORDER_STATUS_LABELS[status as OrderStatus] ?? status;
+}
+
+export {
+  cepDigitsOnly,
+  formatCepMask,
+  formatStructuredAddress,
+  isCepComplete,
+} from "./address.js";
+export type {
+  CepAddressData,
+  CustomerAddressFields,
+  IbgeMunicipio,
+  IbgeUf,
+} from "./address.js";
+export {
+  APP_BRAND_LILAC,
+  APP_BRAND_NAME,
+  APP_BRAND_SHORT,
+  COMMERCE_PRO_ICON_ASPECT,
+  COMMERCE_PRO_ICON_PATH,
+  COMMERCE_PRO_ICON_VIEWBOX,
+} from "./brand.js";
 export {
   cnpjDigitsOnly,
   formatBrazilPhoneDigits,
@@ -34,6 +65,7 @@ export {
 export type { SellerCommissionType } from "./commission.js";
 export {
   FISCAL_INVOICE_STATUS_LABELS,
+  FISCAL_MANIFESTATION_LABELS,
   FISCAL_TAX_REGIME_LABELS,
   NFE_ENVIRONMENT_LABELS,
   isProductFiscalReady,
@@ -48,3 +80,55 @@ export type {
 } from "./fiscal.js";
 export { STOCK_MOVEMENT_TYPE_LABELS } from "./stock.js";
 export type { StockMovementType } from "./stock.js";
+export {
+  cpfDigitsOnly,
+  formatCpfMask,
+  isCpfComplete,
+  isValidCpf,
+} from "./cpf.js";
+export {
+  customerFormErrorStep,
+  customerToForm,
+  emptyCustomerForm,
+  formToCustomerPayload,
+  isCustomerFormValid,
+  validateCustomerForm,
+  validateCustomerFormStep,
+} from "./customer-form.js";
+export type {
+  CustomerDocumentType,
+  CustomerFormErrors,
+  CustomerFormValues,
+  CustomerRecord,
+} from "./customer-form.js";
+export {
+  formatRelativeSaleDate,
+  formatSaleItemCount,
+} from "./format-sale-date.js";
+export {
+  formatProductPriceWithUnit,
+  formatProductStockLabel,
+  formatProductUnitLabel,
+  isProductSaleBlockedByStock,
+} from "./product-display.js";
+export {
+  computeMarkupPercent,
+  emptyProductForm,
+  formToProductPayload,
+  isNcmComplete,
+  normalizeNcm,
+  PRODUCT_CLASSIFICATIONS,
+  productClassificationLabel,
+  productToForm,
+  PURCHASE_UNITS,
+  validateProductForm,
+} from "./product-form.js";
+export type {
+  ProductApiPayload,
+  ProductClassification,
+  ProductFormErrors,
+  ProductFormTab,
+  ProductFormValidation,
+  ProductFormValues,
+  ProductRecord,
+} from "./product-form.js";

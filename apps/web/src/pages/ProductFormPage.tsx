@@ -4,269 +4,94 @@ import {
   FormGrid,
   FormSection,
 } from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { fieldControlClass } from "@/lib/field-styles";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { FormEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useProductFormPage } from "@/hooks/useProductFormPage";
+import { cn } from "@/lib/utils";
 import {
-  DynamicCategoryAttributes,
-  type AttributeFieldDef,
-} from "../components/DynamicCategoryAttributes";
+  PRODUCT_CLASSIFICATIONS,
+  PURCHASE_UNITS,
+  productClassificationLabel,
+  type ProductClassification,
+  type ProductFormTab,
+} from "@pedidos/shared";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import { DynamicCategoryAttributes } from "../components/DynamicCategoryAttributes";
 import { ProductPromotionsPanel } from "../components/ProductPromotionsPanel";
 import { apiFetch } from "../lib/api";
-import { isProductFiscalReady } from "@pedidos/shared";
+import { fieldControlClass } from "@/lib/field-styles";
 
-type FiscalNcm = { id: string; code: string; description: string };
-
-type CategoryBrief = {
+type FiscalNcmOption = { id: string; code: string; description: string; active: boolean };
+type FiscalOpOption = {
   id: string;
-  code: string;
-  name: string;
-  attributeSchema?: unknown;
+  direction: string;
+  cfop: string;
+  description: string;
+  active: boolean;
 };
 
-type Product = {
-  id: string;
-  name: string;
-  sku: string | null;
-  description: string | null;
-  imageUrl?: string | null;
-  basePrice: unknown;
-  commissionPercent?: unknown | null;
-  categoryId?: string | null;
-  attributes?: Record<string, unknown>;
-  category?: CategoryBrief | null;
-  ncmId?: string | null;
-  fiscalOrigin?: number | null;
-  fiscalGtin?: string | null;
-  fiscalUnit?: string | null;
-  fiscalCest?: string | null;
-  fiscalDescription?: string | null;
-};
+const TABS: { id: ProductFormTab; label: string }[] = [
+  { id: "principal", label: "Principal" },
+  { id: "precos", label: "Preços" },
+  { id: "comissoes", label: "Comissões" },
+  { id: "estoque", label: "Estoque e logística" },
+  { id: "fiscal", label: "Fiscal" },
+  { id: "fornecedor", label: "Fornecedor" },
+  { id: "atributos", label: "Atributos do grupo" },
+];
 
-function coerceDefs(raw: unknown): AttributeFieldDef[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.filter(Boolean) as AttributeFieldDef[];
+function formatCnpj(digits: string): string {
+  const d = digits.replace(/\D/g, "");
+  if (d.length !== 14) return digits;
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
 }
 
-function pruneAttrs(
-  attrs: Record<string, unknown>,
-  defs: AttributeFieldDef[],
-): Record<string, unknown> {
-  const keys = new Set(defs.map((d) => d.key));
-  const next: Record<string, unknown> = {};
-  for (const k of keys) {
-    if (Object.prototype.hasOwnProperty.call(attrs, k)) next[k] = attrs[k];
-  }
-  return next;
-}
-
-function normalizeAttrsJson(raw: unknown): Record<string, unknown> {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-  return { ...(raw as Record<string, unknown>) };
+function formatDateBr(iso: string | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("pt-BR");
 }
 
 export function ProductFormPage() {
-  const { productId } = useParams<{ productId?: string }>();
-  const navigate = useNavigate();
-  const qc = useQueryClient();
-  const isEdit = Boolean(productId);
-
-  const [name, setName] = useState("");
-  const [sku, setSku] = useState("");
-  const [description, setDescription] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
-  const [basePrice, setBasePrice] = useState("");
-  const [commissionPercent, setCommissionPercent] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [attrs, setAttrs] = useState<Record<string, unknown>>({});
-  const [formError, setFormError] = useState<string | null>(null);
-  const [ncmId, setNcmId] = useState("");
-  const [fiscalOrigin, setFiscalOrigin] = useState("0");
-  const [fiscalGtin, setFiscalGtin] = useState("");
-  const [fiscalUnit, setFiscalUnit] = useState("UN");
-  const [fiscalCest, setFiscalCest] = useState("");
-  const [fiscalDescription, setFiscalDescription] = useState("");
+  const {
+    productId,
+    isEdit,
+    isLoading,
+    isError,
+    loadError,
+    product,
+    activeTab,
+    setActiveTab,
+    values,
+    setField,
+    attrs,
+    setAttrs,
+    formError,
+    fieldError,
+    categories,
+    suppliers,
+    selectedDefs,
+    selectedSupplier,
+    markupPercent,
+    handleSubmit,
+    onCategoryChange,
+    pending,
+  } = useProductFormPage();
 
   const { data: ncms = [] } = useQuery({
     queryKey: ["admin", "fiscal", "ncm"],
-    queryFn: () => apiFetch<FiscalNcm[]>("/admin/fiscal/ncm"),
+    queryFn: () => apiFetch<FiscalNcmOption[]>("/admin/fiscal/ncm"),
   });
 
-  const { data: categories = [] } = useQuery({
-    queryKey: ["admin", "product-categories"],
-    queryFn: () => apiFetch<CategoryBrief[]>("/admin/product-categories"),
+  const { data: outboundOps = [] } = useQuery({
+    queryKey: ["admin", "fiscal", "operations", "OUTBOUND"],
+    queryFn: () =>
+      apiFetch<FiscalOpOption[]>("/admin/fiscal/operations?direction=OUTBOUND"),
   });
-
-  const selectedDefs = useMemo(() => {
-    const cat = categories.find((c) => c.id === categoryId);
-    return coerceDefs(cat?.attributeSchema);
-  }, [categories, categoryId]);
-
-  const {
-    data: product,
-    isLoading,
-    isError,
-    error,
-  } = useQuery({
-    queryKey: ["admin", "product", productId],
-    queryFn: () => apiFetch<Product>(`/admin/products/${productId}`),
-    enabled: isEdit,
-  });
-
-  useEffect(() => {
-    if (product) {
-      setName(product.name);
-      setSku(product.sku ?? "");
-      setDescription(product.description ?? "");
-      setImageUrl(product.imageUrl ?? "");
-      setBasePrice(String(Number(product.basePrice)));
-      setCommissionPercent(
-        product.commissionPercent != null
-          ? String(Number(product.commissionPercent))
-          : "",
-      );
-      setCategoryId(product.categoryId ?? "");
-      setAttrs(normalizeAttrsJson(product.attributes));
-      setNcmId(product.ncmId ?? "");
-      setFiscalOrigin(
-        product.fiscalOrigin != null ? String(product.fiscalOrigin) : "0",
-      );
-      setFiscalGtin(product.fiscalGtin ?? "");
-      setFiscalUnit(product.fiscalUnit ?? "UN");
-      setFiscalCest(product.fiscalCest ?? "");
-      setFiscalDescription(product.fiscalDescription ?? "");
-    }
-  }, [product]);
-
-  const create = useMutation({
-    meta: { inlineError: true },
-    mutationFn: (body: {
-      name: string;
-      sku?: string;
-      description?: string;
-      imageUrl?: string | null;
-      basePrice: number;
-      categoryId?: string | null;
-      commissionPercent?: number | null;
-      attributes?: Record<string, unknown>;
-      ncmId?: string | null;
-      fiscalOrigin?: number | null;
-      fiscalGtin?: string | null;
-      fiscalUnit?: string | null;
-      fiscalCest?: string | null;
-      fiscalDescription?: string | null;
-    }) =>
-      apiFetch<Product>("/admin/products", {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["admin", "products"] });
-      navigate("/produtos");
-    },
-    onError: (e: Error) => setFormError(e.message),
-  });
-
-  const update = useMutation({
-    meta: { inlineError: true },
-    mutationFn: (body: {
-      name: string;
-      sku: string | null;
-      description: string | null;
-      imageUrl?: string | null;
-      basePrice: number;
-      categoryId?: string | null;
-      commissionPercent?: number | null;
-      attributes?: Record<string, unknown>;
-      ncmId?: string | null;
-      fiscalOrigin?: number | null;
-      fiscalGtin?: string | null;
-      fiscalUnit?: string | null;
-      fiscalCest?: string | null;
-      fiscalDescription?: string | null;
-    }) =>
-      apiFetch<Product>(`/admin/products/${productId}`, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-      }),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["admin", "products"] });
-      await qc.invalidateQueries({ queryKey: ["admin", "product", productId] });
-      navigate("/produtos");
-    },
-    onError: (e: Error) => setFormError(e.message),
-  });
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setFormError(null);
-
-    const n = name.trim();
-    const priceNum = Number(basePrice);
-    if (!n) {
-      setFormError("Informe o nome do produto.");
-      return;
-    }
-    if (basePrice.trim() === "" || Number.isNaN(priceNum) || priceNum < 0) {
-      setFormError("Informe um preço base válido (≥ 0).");
-      return;
-    }
-
-    const cid = categoryId.trim() ? categoryId : null;
-    const img = imageUrl.trim();
-    const commissionRaw = commissionPercent.trim();
-    const commissionNum = commissionRaw === "" ? null : Number(commissionRaw);
-    if (
-      commissionNum !== null &&
-      (Number.isNaN(commissionNum) || commissionNum < 0 || commissionNum > 100)
-    ) {
-      setFormError("Informe uma comissão entre 0 e 100 %, ou deixe em branco.");
-      return;
-    }
-
-    if (isEdit) {
-      update.mutate({
-        name: n,
-        sku: sku.trim() ? sku.trim() : null,
-        description: description.trim() ? description.trim() : null,
-        imageUrl: img.length ? img : null,
-        basePrice: priceNum,
-        categoryId: cid,
-        commissionPercent: commissionNum,
-        attributes: attrs,
-        ncmId: ncmId || null,
-        fiscalOrigin: Number(fiscalOrigin),
-        fiscalGtin: fiscalGtin.trim() || null,
-        fiscalUnit: fiscalUnit.trim() || null,
-        fiscalCest: fiscalCest.trim() || null,
-        fiscalDescription: fiscalDescription.trim() || null,
-      });
-    } else {
-      create.mutate({
-        name: n,
-        sku: sku.trim() || undefined,
-        description: description.trim() || undefined,
-        ...(img.length ? { imageUrl: img } : {}),
-        basePrice: priceNum,
-        categoryId: cid ?? undefined,
-        ...(commissionNum !== null ? { commissionPercent: commissionNum } : {}),
-        attributes: attrs,
-        ncmId: ncmId || undefined,
-        fiscalOrigin: Number(fiscalOrigin),
-        fiscalGtin: fiscalGtin.trim() || undefined,
-        fiscalUnit: fiscalUnit.trim() || undefined,
-        fiscalCest: fiscalCest.trim() || undefined,
-        fiscalDescription: fiscalDescription.trim() || undefined,
-      });
-    }
-  }
-
-  const pending = create.isPending || update.isPending;
 
   if (isEdit && isLoading) {
     return (
@@ -281,7 +106,9 @@ export function ProductFormPage() {
 
   if (isEdit && (isError || !product)) {
     const msg =
-      error instanceof Error ? error.message : "Produto não encontrado.";
+      loadError instanceof Error
+        ? loadError.message
+        : "Produto não encontrado.";
     return (
       <div className="space-y-4">
         <Link to="/produtos" className="text-sm text-primary hover:underline">
@@ -306,215 +133,868 @@ export function ProductFormPage() {
         ) : null}
       </div>
 
+      <div className="flex flex-wrap gap-1 border-b border-border">
+        {TABS.map((tab) => {
+          if (tab.id === "atributos" && selectedDefs.length === 0) return null;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              className={cn(
+                "border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+                activeTab === tab.id
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+              {tab.id === "fornecedor" && selectedSupplier ? (
+                <span className="ml-1 text-xs text-muted-foreground">
+                  ({selectedSupplier.tradeName})
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+
       <form onSubmit={(e) => void handleSubmit(e)}>
-        <FormSection
-          title="Dados do produto"
-          description="Informação principal e categoria."
-        >
-          <FormGrid cols={2}>
-            <FormField
-              label="Nome"
-              htmlFor="prod-name"
-              required
-              className="sm:col-span-2"
-            >
-              <Input
-                id="prod-name"
-                placeholder="Ex.: Óleo 5W30"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                autoComplete="off"
-              />
-            </FormField>
+        {activeTab === "principal" ? (
+          <FormSection
+            title="Dados principais"
+            description="Identificação, classificação e descrição do produto."
+          >
+            {isEdit && product ? (
+              <FormGrid cols={2} className="mb-4">
+                <FormField label="Código interno" htmlFor="prod-id">
+                  <Input id="prod-id" value={product.id} readOnly disabled />
+                </FormField>
+                <FormField label="Data de cadastro" htmlFor="prod-created">
+                  <Input
+                    id="prod-created"
+                    value={formatDateBr(product.createdAt)}
+                    readOnly
+                    disabled
+                  />
+                </FormField>
+              </FormGrid>
+            ) : null}
 
-            <FormField
-              label="Categoria"
-              htmlFor="prod-category"
-              className="sm:col-span-2"
-              hint={
-                <>
-                  O formulário abaixo adapta-se ao schema da categoria.
-                  Configure em{" "}
-                  <Link
-                    to="/produtos/categorias"
-                    className="text-primary hover:underline"
-                  >
-                    categorias de produto
-                  </Link>
-                  .
-                </>
-              }
-            >
-              <select
-                id="prod-category"
-                className={fieldControlClass}
-                value={categoryId}
-                onChange={(e) => {
-                  const nextId = e.target.value;
-                  const defs = coerceDefs(
-                    categories.find((c) => c.id === nextId)?.attributeSchema,
-                  );
-                  setCategoryId(nextId);
-                  setAttrs((prev) => pruneAttrs(prev, defs));
-                }}
+            <FormGrid cols={2}>
+              <FormField
+                label="Nome"
+                htmlFor="prod-name"
+                required
+                className="sm:col-span-2"
+                error={fieldError("name")}
               >
-                <option value="">Sem categoria</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.code})
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label="SKU" htmlFor="prod-sku">
-              <Input
-                id="prod-sku"
-                placeholder="Código opcional"
-                value={sku}
-                onChange={(e) => setSku(e.target.value)}
-                autoComplete="off"
-              />
-            </FormField>
-
-            <FormField
-              label="Preço base (R$)"
-              htmlFor="prod-price"
-              required
-              hint="Usado quando não há preço em tabela de preços."
-            >
-              <Input
-                id="prod-price"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0,00"
-                value={basePrice}
-                onChange={(e) => setBasePrice(e.target.value)}
-              />
-            </FormField>
-
-            <FormField
-              label="Comissão do vendedor (%)"
-              htmlFor="prod-commission"
-              hint="Usado quando o vendedor é comissionado por produto. Deixe em branco se não aplicável."
-            >
-              <Input
-                id="prod-commission"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                placeholder="Ex.: 8"
-                value={commissionPercent}
-                onChange={(e) => setCommissionPercent(e.target.value)}
-              />
-            </FormField>
-
-            <FormField
-              label="Descrição"
-              htmlFor="prod-desc"
-              className="sm:col-span-2"
-            >
-              <Textarea
-                id="prod-desc"
-                rows={4}
-                placeholder="Detalhes do produto (opcional)"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </FormField>
-
-            <FormField
-              label="URL da foto (catálogo no app)"
-              htmlFor="prod-image-url"
-              className="sm:col-span-2"
-              hint="Link público HTTPS — o vendedor vê esta foto no catálogo."
-            >
-              <Input
-                id="prod-image-url"
-                type="url"
-                placeholder="https://… (opcional)"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                autoComplete="off"
-              />
-            </FormField>
-          </FormGrid>
-
-          <div className="border-t border-border/60 pt-4">
-            <p className="mb-3 text-sm font-semibold">Cadastro fiscal (NF-e)</p>
-            <FormGrid cols={3}>
-              <FormField label="NCM" className="sm:col-span-2">
-                <select
-                  className={fieldControlClass}
-                  value={ncmId}
-                  onChange={(e) => setNcmId(e.target.value)}
-                >
-                  <option value="">Selecione…</option>
-                  {ncms.map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {n.code} — {n.description}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-              <FormField label="Origem">
-                <Input value={fiscalOrigin} onChange={(e) => setFiscalOrigin(e.target.value)} />
-              </FormField>
-              <FormField label="Unidade fiscal">
-                <Input value={fiscalUnit} onChange={(e) => setFiscalUnit(e.target.value)} />
-              </FormField>
-              <FormField label="GTIN">
-                <Input value={fiscalGtin} onChange={(e) => setFiscalGtin(e.target.value)} />
-              </FormField>
-              <FormField label="CEST">
-                <Input value={fiscalCest} onChange={(e) => setFiscalCest(e.target.value)} />
-              </FormField>
-              <FormField label="Descrição na nota" className="sm:col-span-2">
                 <Input
-                  value={fiscalDescription}
-                  onChange={(e) => setFiscalDescription(e.target.value)}
-                  placeholder="Opcional — usa nome do produto se vazio"
+                  id="prod-name"
+                  placeholder="Ex.: Pimentinha Saltbits"
+                  value={values.name}
+                  onChange={(e) => setField("name", e.target.value)}
+                  autoComplete="off"
+                />
+              </FormField>
+
+              <FormField
+                label="Grupo de produtos"
+                htmlFor="prod-category"
+                required
+                className="sm:col-span-2"
+                error={fieldError("categoryId")}
+                hint={
+                  <>
+                    Configure schemas em{" "}
+                    <Link
+                      to="/produtos/categorias"
+                      className="text-primary hover:underline"
+                    >
+                      grupos de produto
+                    </Link>
+                    .
+                  </>
+                }
+              >
+                <AppSelect
+                  id="prod-category"
+                  value={values.categoryId}
+                  emptyLabel="Selecione um grupo…"
+                  placeholder="Selecione um grupo…"
+                  options={categories.map((c) => ({
+                    value: c.id,
+                    label: `${c.name} (${c.code})`,
+                  }))}
+                  onValueChange={onCategoryChange}
+                />
+              </FormField>
+
+              <FormField label="Linha" htmlFor="prod-line">
+                <Input
+                  id="prod-line"
+                  placeholder="Ex.: Linha 1"
+                  value={values.productLine}
+                  onChange={(e) => setField("productLine", e.target.value)}
+                />
+              </FormField>
+
+              <FormField label="Classificação" htmlFor="prod-classification">
+                <AppSelect
+                  id="prod-classification"
+                  value={values.productClassification}
+                  emptyLabel="Selecione…"
+                  placeholder="Selecione…"
+                  options={PRODUCT_CLASSIFICATIONS.map((c) => ({
+                    value: c,
+                    label: productClassificationLabel(c),
+                  }))}
+                  onValueChange={(v) =>
+                    setField(
+                      "productClassification",
+                      (v as ProductClassification) || "",
+                    )
+                  }
+                />
+              </FormField>
+
+              <FormField
+                label="SKU"
+                htmlFor="prod-sku"
+                error={fieldError("sku")}
+              >
+                <Input
+                  id="prod-sku"
+                  placeholder="Código interno opcional"
+                  value={values.sku}
+                  onChange={(e) => setField("sku", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Código de barras"
+                htmlFor="prod-barcode"
+                hint="EAN/GTIN usado pelo leitor na venda rápida."
+                error={fieldError("barcode")}
+              >
+                <Input
+                  id="prod-barcode"
+                  placeholder="7891234567890"
+                  value={values.barcode}
+                  onChange={(e) => setField("barcode", e.target.value)}
+                  inputMode="numeric"
+                />
+              </FormField>
+
+              <FormField
+                label="Descrição"
+                htmlFor="prod-desc"
+                className="sm:col-span-2"
+              >
+                <Textarea
+                  id="prod-desc"
+                  rows={4}
+                  value={values.description}
+                  onChange={(e) => setField("description", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="URL da foto (catálogo no app)"
+                htmlFor="prod-image-url"
+                className="sm:col-span-2"
+                error={fieldError("imageUrl")}
+              >
+                <Input
+                  id="prod-image-url"
+                  type="url"
+                  placeholder="https://… (opcional)"
+                  value={values.imageUrl}
+                  onChange={(e) => setField("imageUrl", e.target.value)}
                 />
               </FormField>
             </FormGrid>
-            <p className="mt-2 text-xs text-muted-foreground">
-              {isProductFiscalReady({
-                ncmId: ncmId || null,
-                fiscalOrigin: fiscalOrigin ? Number(fiscalOrigin) : null,
-                fiscalUnit,
-              })
-                ? "Pronto para NF-e"
-                : "Cadastro fiscal incompleto para emissão de nota"}
-            </p>
-          </div>
+          </FormSection>
+        ) : null}
 
-          <div className="border-t border-border/60 pt-4">
+        {activeTab === "precos" ? (
+          <FormSection
+            title="Preços"
+            description="Valores de custo, venda e limites comerciais."
+          >
+            <FormGrid cols={2}>
+              <FormField
+                label="Preço custo (R$)"
+                htmlFor="prod-cost"
+                error={fieldError("costPrice")}
+              >
+                <Input
+                  id="prod-cost"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={values.costPrice}
+                  onChange={(e) => setField("costPrice", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Preço fábrica (R$)"
+                htmlFor="prod-factory"
+                error={fieldError("factoryPrice")}
+              >
+                <Input
+                  id="prod-factory"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={values.factoryPrice}
+                  onChange={(e) => setField("factoryPrice", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Preço venda (R$)"
+                htmlFor="prod-price"
+                required
+                error={fieldError("basePrice")}
+                hint="Usado quando não há preço em tabela de preços."
+              >
+                <Input
+                  id="prod-price"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={values.basePrice}
+                  onChange={(e) => setField("basePrice", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Preço máximo (R$)"
+                htmlFor="prod-max-sale"
+                error={fieldError("maxSalePrice")}
+              >
+                <Input
+                  id="prod-max-sale"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={values.maxSalePrice}
+                  onChange={(e) => setField("maxSalePrice", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Preço mínimo de venda (R$)"
+                htmlFor="prod-min-sale"
+                error={fieldError("minSaleUnitPrice")}
+                hint="Piso por unidade após promoções e desconto do vendedor."
+              >
+                <Input
+                  id="prod-min-sale"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={values.minSaleUnitPrice}
+                  onChange={(e) => setField("minSaleUnitPrice", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Desconto máx. vendedor (%)"
+                htmlFor="prod-max-disc"
+                error={fieldError("maxSellerDiscountPercent")}
+              >
+                <Input
+                  id="prod-max-disc"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={values.maxSellerDiscountPercent}
+                  onChange={(e) =>
+                    setField("maxSellerDiscountPercent", e.target.value)
+                  }
+                />
+              </FormField>
+
+              <FormField
+                label="Frete (R$)"
+                htmlFor="prod-freight"
+                error={fieldError("freightAmount")}
+              >
+                <Input
+                  id="prod-freight"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={values.freightAmount}
+                  onChange={(e) => setField("freightAmount", e.target.value)}
+                />
+              </FormField>
+
+              <FormField label="Mark-up (%)" htmlFor="prod-markup">
+                <Input
+                  id="prod-markup"
+                  value={
+                    markupPercent != null
+                      ? markupPercent.toFixed(2).replace(".", ",")
+                      : "—"
+                  }
+                  readOnly
+                  disabled
+                  className="bg-muted/50"
+                />
+              </FormField>
+            </FormGrid>
+          </FormSection>
+        ) : null}
+
+        {activeTab === "comissoes" ? (
+          <FormSection
+            title="Comissões"
+            description="Percentuais quando o vendedor usa comissão por produto."
+          >
+            <FormGrid cols={2}>
+              <FormField
+                label="Comissão venda (%)"
+                htmlFor="prod-commission"
+                error={fieldError("commissionPercent")}
+              >
+                <Input
+                  id="prod-commission"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={values.commissionPercent}
+                  onChange={(e) =>
+                    setField("commissionPercent", e.target.value)
+                  }
+                />
+              </FormField>
+
+              <FormField
+                label="Comissão cobrança (%)"
+                htmlFor="prod-collection-commission"
+                error={fieldError("collectionCommissionPercent")}
+              >
+                <Input
+                  id="prod-collection-commission"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={values.collectionCommissionPercent}
+                  onChange={(e) =>
+                    setField("collectionCommissionPercent", e.target.value)
+                  }
+                />
+              </FormField>
+            </FormGrid>
+          </FormSection>
+        ) : null}
+
+        {activeTab === "estoque" ? (
+          <FormSection
+            title="Estoque e logística"
+            description="Quantidades, limites e dados de embalagem."
+          >
+            <FormGrid cols={2}>
+              <FormField
+                label="Estoque atual"
+                htmlFor="prod-stock"
+                required
+                error={fieldError("stockQty")}
+              >
+                <Input
+                  id="prod-stock"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={values.stockQty}
+                  onChange={(e) => setField("stockQty", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Estoque mínimo"
+                htmlFor="prod-min-stock"
+                error={fieldError("minStockQty")}
+              >
+                <Input
+                  id="prod-min-stock"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={values.minStockQty}
+                  onChange={(e) => setField("minStockQty", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Qtd. máxima"
+                htmlFor="prod-max-stock"
+                error={fieldError("maxStockQty")}
+              >
+                <Input
+                  id="prod-max-stock"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={values.maxStockQty}
+                  onChange={(e) => setField("maxStockQty", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Endereço no estoque"
+                htmlFor="prod-stock-addr"
+                className="sm:col-span-2"
+              >
+                <Input
+                  id="prod-stock-addr"
+                  placeholder="Corredor, prateleira, posição…"
+                  value={values.stockAddress}
+                  onChange={(e) => setField("stockAddress", e.target.value)}
+                />
+              </FormField>
+
+              <FormField label="Und. compra" htmlFor="prod-purchase-unit">
+                <AppSelect
+                  id="prod-purchase-unit"
+                  value={values.purchaseUnit}
+                  emptyLabel="Selecione…"
+                  placeholder="Selecione…"
+                  options={PURCHASE_UNITS.map((u) => ({
+                    value: u.value,
+                    label: u.label,
+                  }))}
+                  onValueChange={(v) => setField("purchaseUnit", v)}
+                />
+              </FormField>
+
+              <FormField
+                label="Caixa padrão compra"
+                htmlFor="prod-purchase-box"
+                error={fieldError("standardPurchaseBoxQty")}
+              >
+                <Input
+                  id="prod-purchase-box"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={values.standardPurchaseBoxQty}
+                  onChange={(e) =>
+                    setField("standardPurchaseBoxQty", e.target.value)
+                  }
+                />
+              </FormField>
+
+              <FormField
+                label="Peso bruto (kg)"
+                htmlFor="prod-gross-weight"
+                error={fieldError("grossWeightKg")}
+              >
+                <Input
+                  id="prod-gross-weight"
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  value={values.grossWeightKg}
+                  onChange={(e) => setField("grossWeightKg", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Peso líquido (kg)"
+                htmlFor="prod-net-weight"
+                error={fieldError("netWeightKg")}
+              >
+                <Input
+                  id="prod-net-weight"
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  value={values.netWeightKg}
+                  onChange={(e) => setField("netWeightKg", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Qtd. máx./dia vendedor"
+                htmlFor="prod-max-seller-day"
+                error={fieldError("maxDailyQtyPerSeller")}
+              >
+                <Input
+                  id="prod-max-seller-day"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={values.maxDailyQtyPerSeller}
+                  onChange={(e) =>
+                    setField("maxDailyQtyPerSeller", e.target.value)
+                  }
+                />
+              </FormField>
+
+              <FormField
+                label="Qtd. máx./dia cliente"
+                htmlFor="prod-max-customer-day"
+                error={fieldError("maxDailyQtyPerCustomer")}
+              >
+                <Input
+                  id="prod-max-customer-day"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={values.maxDailyQtyPerCustomer}
+                  onChange={(e) =>
+                    setField("maxDailyQtyPerCustomer", e.target.value)
+                  }
+                />
+              </FormField>
+
+              <FormField
+                label="Bloqueio de venda"
+                htmlFor="prod-block-stock"
+                className="sm:col-span-2"
+              >
+                <label className="flex items-center gap-2 text-sm text-foreground">
+                  <input
+                    id="prod-block-stock"
+                    type="checkbox"
+                    checked={values.blockSaleWhenOutOfStock}
+                    onChange={(e) =>
+                      setField("blockSaleWhenOutOfStock", e.target.checked)
+                    }
+                  />
+                  Bloquear venda quando estoque = 0
+                </label>
+              </FormField>
+            </FormGrid>
+          </FormSection>
+        ) : null}
+
+        {activeTab === "fiscal" ? (
+          <FormSection
+            title="Dados fiscais para NF-e"
+            description="Campos usados na emissão. Cadastre NCM/CFOP em Faturamento → NCM/CFOP."
+          >
+            <FormGrid cols={2}>
+              <FormField
+                label="NCM (cadastro fiscal)"
+                htmlFor="prod-ncm-id"
+                hint="Obrigatório para emitir NF-e."
+              >
+                <select
+                  id="prod-ncm-id"
+                  className={fieldControlClass}
+                  value={values.ncmId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setField("ncmId", id);
+                    const selected = ncms.find((n) => n.id === id);
+                    if (selected) setField("ncm", selected.code);
+                  }}
+                >
+                  <option value="">Selecione o NCM…</option>
+                  {ncms
+                    .filter((n) => n.active)
+                    .map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {n.code} — {n.description}
+                      </option>
+                    ))}
+                </select>
+              </FormField>
+
+              <FormField
+                label="NCM (código)"
+                htmlFor="prod-ncm"
+                error={fieldError("ncm")}
+                hint="8 dígitos. Preenchido ao selecionar o NCM."
+              >
+                <Input
+                  id="prod-ncm"
+                  placeholder="27101932"
+                  value={values.ncm}
+                  onChange={(e) => setField("ncm", e.target.value)}
+                  inputMode="numeric"
+                />
+              </FormField>
+
+              <FormField label="Exceção NCM" htmlFor="prod-ncm-exc">
+                <Input
+                  id="prod-ncm-exc"
+                  value={values.ncmException}
+                  onChange={(e) => setField("ncmException", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Origem da mercadoria"
+                htmlFor="prod-nfe-origin"
+                error={fieldError("nfeOrigin")}
+                hint="0 = Nacional. Obrigatório para NF-e."
+              >
+                <Input
+                  id="prod-nfe-origin"
+                  type="number"
+                  min="0"
+                  max="8"
+                  step="1"
+                  value={values.nfeOrigin}
+                  onChange={(e) => setField("nfeOrigin", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Unidade fiscal"
+                htmlFor="prod-fiscal-unit"
+                hint="Ex.: UN, CX, KG. Obrigatório para NF-e."
+              >
+                <select
+                  id="prod-fiscal-unit"
+                  className={fieldControlClass}
+                  value={values.fiscalUnit}
+                  onChange={(e) => setField("fiscalUnit", e.target.value)}
+                >
+                  {PURCHASE_UNITS.map((u) => (
+                    <option key={u.value} value={u.value}>
+                      {u.label}
+                    </option>
+                  ))}
+                  {!PURCHASE_UNITS.some((u) => u.value === values.fiscalUnit) &&
+                  values.fiscalUnit ? (
+                    <option value={values.fiscalUnit}>{values.fiscalUnit}</option>
+                  ) : null}
+                </select>
+              </FormField>
+
+              <FormField label="CFOP padrão de saída" htmlFor="prod-outbound-op">
+                <select
+                  id="prod-outbound-op"
+                  className={fieldControlClass}
+                  value={values.outboundOperationId}
+                  onChange={(e) => setField("outboundOperationId", e.target.value)}
+                >
+                  <option value="">Usar padrão (5102)</option>
+                  {outboundOps
+                    .filter((o) => o.active)
+                    .map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.cfop} — {o.description}
+                      </option>
+                    ))}
+                </select>
+              </FormField>
+
+              <FormField label="GTIN / EAN" htmlFor="prod-fiscal-gtin">
+                <Input
+                  id="prod-fiscal-gtin"
+                  value={values.fiscalGtin}
+                  onChange={(e) => setField("fiscalGtin", e.target.value)}
+                />
+              </FormField>
+
+              <FormField label="CEST" htmlFor="prod-fiscal-cest">
+                <Input
+                  id="prod-fiscal-cest"
+                  value={values.fiscalCest}
+                  onChange={(e) => setField("fiscalCest", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Descrição na NF-e"
+                htmlFor="prod-fiscal-desc"
+                className="sm:col-span-2"
+                hint="Se vazio, usa o nome comercial do produto."
+              >
+                <Input
+                  id="prod-fiscal-desc"
+                  value={values.fiscalDescription}
+                  onChange={(e) => setField("fiscalDescription", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Classificação fiscal"
+                htmlFor="prod-fiscal-class"
+              >
+                <Input
+                  id="prod-fiscal-class"
+                  value={values.fiscalClass}
+                  onChange={(e) => setField("fiscalClass", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Classificação PIS/COFINS"
+                htmlFor="prod-pis-cofins"
+              >
+                <Input
+                  id="prod-pis-cofins"
+                  value={values.pisCofinsClassification}
+                  onChange={(e) =>
+                    setField("pisCofinsClassification", e.target.value)
+                  }
+                />
+              </FormField>
+
+              <FormField label="CST PIS" htmlFor="prod-cst-pis">
+                <Input
+                  id="prod-cst-pis"
+                  value={values.cstPis}
+                  onChange={(e) => setField("cstPis", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="IPI (%)"
+                htmlFor="prod-ipi"
+                error={fieldError("ipiPercent")}
+              >
+                <Input
+                  id="prod-ipi"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={values.ipiPercent}
+                  onChange={(e) => setField("ipiPercent", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="Custo ICMS (%)"
+                htmlFor="prod-icms"
+                error={fieldError("icmsCostPercent")}
+              >
+                <Input
+                  id="prod-icms"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  value={values.icmsCostPercent}
+                  onChange={(e) => setField("icmsCostPercent", e.target.value)}
+                />
+              </FormField>
+
+              <FormField
+                label="CBS/IBS"
+                htmlFor="prod-cbs-ibs"
+                className="sm:col-span-2"
+              >
+                <Input
+                  id="prod-cbs-ibs"
+                  value={values.cbsIbsClassification}
+                  onChange={(e) =>
+                    setField("cbsIbsClassification", e.target.value)
+                  }
+                />
+              </FormField>
+            </FormGrid>
+            {values.ncmId && values.nfeOrigin !== "" && values.fiscalUnit ? (
+              <p className="mt-3 text-sm text-green-700">Pronto para NF-e</p>
+            ) : (
+              <p className="mt-3 text-sm text-amber-700">
+                Cadastro fiscal incompleto — selecione NCM, origem e unidade
+                fiscal.
+              </p>
+            )}
+          </FormSection>
+        ) : null}
+
+        {activeTab === "fornecedor" ? (
+          <FormSection
+            title="Fornecedor do produto"
+            description="Selecione quem fornece este item. É obrigatório para salvar."
+          >
+            {fieldError("supplierId") ? (
+              <p className="mb-3 text-sm text-destructive">
+                {fieldError("supplierId")}
+              </p>
+            ) : null}
+            <p className="text-sm text-muted-foreground">
+              Não encontrou?{" "}
+              <Link to="/fornecedores" className="text-primary hover:underline">
+                Cadastrar fornecedor
+              </Link>
+            </p>
+
+            {suppliers.length === 0 ? (
+              <p className="mt-4 rounded-xl border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
+                Nenhum fornecedor cadastrado.
+              </p>
+            ) : (
+              <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+                {suppliers.map((s) => {
+                  const selected = s.id === values.supplierId;
+                  return (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        onClick={() => setField("supplierId", s.id)}
+                        className={cn(
+                          "w-full rounded-xl border p-4 text-left transition-colors",
+                          selected
+                            ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                            : "border-border bg-card hover:border-primary/30",
+                        )}
+                      >
+                        <p className="font-semibold text-foreground">
+                          {s.tradeName}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {s.legalName}
+                        </p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Código: <span className="font-mono">{s.code}</span>
+                          {" · "}
+                          CNPJ: {formatCnpj(s.cnpj)}
+                        </p>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </FormSection>
+        ) : null}
+
+        {activeTab === "atributos" && selectedDefs.length > 0 ? (
+          <FormSection
+            title="Atributos do grupo"
+            description="Campos dinâmicos definidos no schema da categoria (ex.: unidade de venda)."
+          >
             <DynamicCategoryAttributes
               defs={selectedDefs}
               values={attrs}
               onChange={setAttrs}
             />
-          </div>
+          </FormSection>
+        ) : null}
 
-          {formError ? (
-            <p className="text-sm text-destructive">{formError}</p>
-          ) : null}
+        {formError ? (
+          <p className="mt-4 text-sm text-destructive">{formError}</p>
+        ) : null}
 
-          <FormActions>
-            <Button type="submit" disabled={pending}>
-              {pending
-                ? "Salvando…"
-                : isEdit
-                  ? "Salvar alterações"
-                  : "Criar produto"}
-            </Button>
-            <Button variant="outline" asChild>
-              <Link to="/produtos">Cancelar</Link>
-            </Button>
-          </FormActions>
-        </FormSection>
+        <FormActions className="mt-6">
+          <Button type="submit" disabled={pending}>
+            {pending
+              ? "Salvando…"
+              : isEdit
+                ? "Salvar alterações"
+                : "Criar produto"}
+          </Button>
+          <Button variant="outline" asChild>
+            <Link to="/produtos">Cancelar</Link>
+          </Button>
+        </FormActions>
       </form>
 
       {isEdit && productId ? (

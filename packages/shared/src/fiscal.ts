@@ -45,12 +45,23 @@ export const NFE_ENVIRONMENT_LABELS: Record<NfeEnvironment, string> = {
 
 export function isProductFiscalReady(product: {
   ncmId?: string | null;
+  ncm?: string | null;
   fiscalOrigin?: number | null;
+  nfeOrigin?: number | null;
   fiscalUnit?: string | null;
+  purchaseUnit?: string | null;
 }): boolean {
-  return Boolean(
-    product.ncmId &&
-      product.fiscalOrigin != null &&
-      product.fiscalUnit?.trim(),
-  );
+  const hasNcm =
+    Boolean(product.ncmId) ||
+    Boolean(product.ncm && String(product.ncm).replace(/\D/g, "").length === 8);
+  const hasOrigin = product.fiscalOrigin != null || product.nfeOrigin != null;
+  const hasUnit = Boolean(product.fiscalUnit?.trim() || product.purchaseUnit?.trim());
+  return hasNcm && hasOrigin && hasUnit;
 }
+
+export const FISCAL_MANIFESTATION_LABELS: Record<FiscalManifestationType, string> = {
+  CIENCIA: "Ciência da Operação",
+  CONFIRMACAO: "Confirmação da Operação",
+  DESCONHECIMENTO: "Desconhecimento",
+  NAO_REALIZADA: "Operação não realizada",
+};

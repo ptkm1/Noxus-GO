@@ -1,9 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
-import { Package } from "lucide-react";
 import { ProductCard, type ProductCardItem } from "@/components/ProductCard";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
+import { confirmAction } from "@/lib/app-notifications";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Package } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export function ProductsPage() {
   const qc = useQueryClient();
@@ -13,8 +14,10 @@ export function ProductsPage() {
   });
 
   const remove = useMutation({
-    mutationFn: (id: string) => apiFetch(`/admin/products/${id}`, { method: "DELETE" }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "products"] }),
+    mutationFn: (id: string) =>
+      apiFetch(`/admin/products/${id}`, { method: "DELETE" }),
+    onSuccess: () =>
+      void qc.invalidateQueries({ queryKey: ["admin", "products"] }),
   });
 
   return (
@@ -23,12 +26,17 @@ export function ProductsPage() {
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Produtos</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {isLoading ? "Carregando…" : `${products.length} produto(s) no catálogo`}
+            {isLoading
+              ? "Carregando…"
+              : `${products.length} produto(s) no catálogo`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" asChild>
-            <Link to="/produtos/categorias">Categorias</Link>
+            <Link to="/produtos/categorias">Grupos</Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link to="/fornecedores">Fornecedores</Link>
           </Button>
           <Button asChild>
             <Link to="/produtos/novo">Novo produto</Link>
@@ -39,7 +47,10 @@ export function ProductsPage() {
       {isLoading ? (
         <div className="grid gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {Array.from({ length: 12 }).map((_, i) => (
-            <div key={i} className="surface-card h-44 animate-pulse bg-muted/50" />
+            <div
+              key={i}
+              className="surface-card h-44 animate-pulse bg-muted/50"
+            />
           ))}
         </div>
       ) : products.length === 0 ? (
@@ -57,9 +68,14 @@ export function ProductsPage() {
               key={p.id}
               product={p}
               onDelete={() => {
-                if (confirm("Excluir este produto? Esta ação não pode ser desfeita.")) {
-                  remove.mutate(p.id);
-                }
+                void confirmAction({
+                  title: "Excluir produto?",
+                  message: "Esta ação não pode ser desfeita.",
+                  confirmLabel: "Excluir",
+                  variant: "destructive",
+                }).then((ok) => {
+                  if (ok) remove.mutate(p.id);
+                });
               }}
             />
           ))}

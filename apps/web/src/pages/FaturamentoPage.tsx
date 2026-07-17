@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FISCAL_INVOICE_STATUS_LABELS,
   FISCAL_TAX_REGIME_LABELS,
@@ -10,9 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FormField, FormGrid, FormSection } from "@/components/forms";
 import { fieldControlClass } from "@/lib/field-styles";
-import { apiFetch, downloadPdf, printPdf } from "../lib/api";
+import { apiFetch, downloadPdf, fetchAuthenticatedBlob, printPdf } from "../lib/api";
 import { getErrorMessage } from "../lib/api-error";
-import { notifyError, notifySuccess } from "../lib/app-notifications";
+import { notifyError, notifySuccess, promptAction } from "../lib/app-notifications";
+import { cn } from "@/lib/utils";
 import { FiscalCadastrosPanel } from "../components/FiscalCadastrosPanel";
 
 type Tab = "saida" | "entrada" | "cadastros" | "config";
@@ -40,7 +41,7 @@ type FiscalInvoice = {
   totalAmount: unknown;
   issuedAt: string | null;
   stockApplied: boolean;
-  supplier?: { name: string; document: string } | null;
+  supplier?: { tradeName?: string; legalName?: string; cnpj?: string } | null;
   order?: { customer: { name: string } | null } | null;
   items: { id: string; description: string; quantity: unknown; productId: string | null }[];
 };
@@ -58,6 +59,10 @@ type FiscalSettings = {
   nfeEnvironment?: NfeEnvironment;
   nfeSeries?: number;
   autoStockOnInboundInvoice?: boolean;
+  logo?: {
+    uploaded: boolean;
+    mimeType?: string | null;
+  };
   certificate?: {
     uploaded: boolean;
     valid: boolean;
@@ -71,12 +76,27 @@ export function FaturamentoPage() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("saida");
   const [xmlPaste, setXmlPaste] = useState("");
+  const [xmlFileName, setXmlFileName] = useState<string | null>(null);
+  const [xmlDragActive, setXmlDragActive] = useState(false);
+  const xmlFileInputRef = useRef<HTMLInputElement>(null);
+  const xmlDragDepthRef = useRef(0);
   const [certPassword, setCertPassword] = useState("");
   const [certFile, setCertFile] = useState<File | null>(null);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [mappingInvoiceId, setMappingInvoiceId] = useState<string | null>(null);
+  const [productMappings, setProductMappings] = useState<Record<string, string>>({});
 
   const { data: settings, refetch: refetchSettings } = useQuery({
     queryKey: ["admin", "fiscal", "settings"],
     queryFn: () => apiFetch<FiscalSettings>("/admin/fiscal/settings"),
+  });
+
+  const { data: products = [] } = useQuery({
+    queryKey: ["admin", "products", "fiscal-map"],
+    queryFn: () =>
+      apiFetch<{ id: string; name: string; sku?: string | null }[]>("/admin/products"),
+    enabled: tab === "entrada",
   });
 
   const { data: eligibleOrders = [], isLoading: loadingOrders } = useQuery({
@@ -139,14 +159,18 @@ export function FaturamentoPage() {
     },
   });
 
-  function promptCancel(onConfirm: (justification: string) => void) {
-    const justification = window.prompt("Justificativa do cancelamento (mín. 15 caracteres):");
+  async function promptCancel(onConfirm: (justification: string) => void) {
+    const justification = await promptAction({
+      title: "Cancelar NF-e",
+      message: "Informe a justificativa do cancelamento (mínimo 15 caracteres).",
+      placeholder: "Motivo do cancelamento…",
+      multiline: true,
+      minLength: 15,
+      confirmLabel: "Cancelar NF-e",
+      variant: "destructive",
+    });
     if (!justification) return;
-    if (justification.trim().length < 15) {
-      notifyError("A justificativa deve ter no mínimo 15 caracteres.");
-      return;
-    }
-    onConfirm(justification.trim());
+    onConfirm(justification);
   }
 
   function canShowDanfe(status: FiscalInvoiceStatus) {
@@ -166,16 +190,124 @@ export function FaturamentoPage() {
 
   const importXml = useMutation({
     mutationFn: () =>
-      apiFetch("/admin/fiscal/inbound/import-xml", {
+      apiFetch<{ id: string }>("/admin/fiscal/inbound/import-xml", {
         method: "POST",
         body: JSON.stringify({ xml: xmlPaste }),
       }),
-    onSuccess: () => {
+    onSuccess: (inv) => {
       setXmlPaste("");
+      setXmlFileName(null);
+      if (xmlFileInputRef.current) xmlFileInputRef.current.value = "";
       notifySuccess("NF-e de entrada importada com sucesso.");
+      void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
+      if (inv?.id) {
+        setMappingInvoiceId(inv.id);
+        setProductMappings({});
+      }
+    },
+    onError: (e) => notifyError(getErrorMessage(e), "Falha ao importar NF-e"),
+  });
+
+  const syncDfe = useMutation({
+    mutationFn: () =>
+      apiFetch<{ message: string; imported?: number }>("/admin/fiscal/inbound/sync", {
+        method: "POST",
+      }),
+    onSuccess: (res) => {
+      notifySuccess(res.message ?? "Consulta DF-e concluída.");
       void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
     },
   });
+
+  const confirmImport = useMutation({
+    mutationFn: () =>
+      apiFetch("/admin/fiscal/inbound/invoices/" + mappingInvoiceId + "/confirm-import", {
+        method: "POST",
+        body: JSON.stringify({ productMappings }),
+      }),
+    onSuccess: () => {
+      notifySuccess("Importação confirmada (de-para e estoque, se configurado).");
+      setMappingInvoiceId(null);
+      setProductMappings({});
+      void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
+    },
+  });
+
+  const manifest = useMutation({
+    mutationFn: ({
+      accessKey,
+      type,
+    }: {
+      accessKey: string;
+      type: "CIENCIA" | "CONFIRMACAO" | "DESCONHECIMENTO" | "NAO_REALIZADA";
+    }) =>
+      apiFetch(`/admin/fiscal/inbound/${accessKey}/manifest`, {
+        method: "POST",
+        body: JSON.stringify({ type }),
+      }),
+    onSuccess: () => {
+      notifySuccess("Manifestação enviada à SEFAZ.");
+      void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
+    },
+  });
+
+  async function loadXmlFromFile(file: File) {
+    const lower = file.name.toLowerCase();
+    if (!lower.endsWith(".xml")) {
+      notifyError("Selecione um arquivo com extensão .xml");
+      return;
+    }
+    try {
+      const text = await file.text();
+      if (!text.trim()) {
+        notifyError("O arquivo XML está vazio.");
+        return;
+      }
+      setXmlPaste(text);
+      setXmlFileName(file.name);
+      notifySuccess(`Arquivo "${file.name}" carregado. Clique em Importar NF-e para concluir.`);
+    } catch {
+      notifyError("Não foi possível ler o arquivo XML.");
+    }
+  }
+
+  function onXmlDragEnter(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    xmlDragDepthRef.current += 1;
+    if (e.dataTransfer.types.includes("Files")) setXmlDragActive(true);
+  }
+
+  function onXmlDragLeave(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    xmlDragDepthRef.current -= 1;
+    if (xmlDragDepthRef.current <= 0) {
+      xmlDragDepthRef.current = 0;
+      setXmlDragActive(false);
+    }
+  }
+
+  function onXmlDragOver(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+  }
+
+  function onXmlDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    xmlDragDepthRef.current = 0;
+    setXmlDragActive(false);
+    const file = Array.from(e.dataTransfer.files).find((f) =>
+      f.name.toLowerCase().endsWith(".xml"),
+    );
+    if (!file) {
+      notifyError("Solte um arquivo .xml");
+      return;
+    }
+    void loadXmlFromFile(file);
+  }
 
   const saveSettings = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
@@ -204,6 +336,34 @@ export function FaturamentoPage() {
     },
   });
 
+  const uploadLogo = useMutation({
+    mutationFn: async () => {
+      if (!logoFile) throw new Error("Selecione uma imagem");
+      const buf = await logoFile.arrayBuffer();
+      const imageBase64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+      return apiFetch("/admin/fiscal/logo", {
+        method: "POST",
+        body: JSON.stringify({ imageBase64, mimeType: logoFile.type || "image/png" }),
+      });
+    },
+    onSuccess: () => {
+      setLogoFile(null);
+      notifySuccess("Logo salva. Ela aparecerá nos DANFE gerados pelo sistema.");
+      void refetchSettings();
+    },
+    onError: (e) => notifyError(getErrorMessage(e), "Falha ao enviar logo"),
+  });
+
+  const removeLogo = useMutation({
+    mutationFn: () => apiFetch("/admin/fiscal/logo", { method: "DELETE" }),
+    onSuccess: () => {
+      setLogoFile(null);
+      notifySuccess("Logo removida.");
+      void refetchSettings();
+    },
+    onError: (e) => notifyError(getErrorMessage(e), "Falha ao remover logo"),
+  });
+
   const [form, setForm] = useState({
     cnpj: "",
     stateRegistration: "",
@@ -217,6 +377,28 @@ export function FaturamentoPage() {
     nfeSeries: "1",
     autoStockOnInboundInvoice: false,
   });
+
+  useEffect(() => {
+    if (!settings?.logo?.uploaded) {
+      setLogoPreview(null);
+      return;
+    }
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    void fetchAuthenticatedBlob("/admin/fiscal/logo")
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setLogoPreview(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setLogoPreview(null);
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [settings?.logo?.uploaded, settings?.logo?.mimeType]);
 
   useEffect(() => {
     if (!settings?.configured) return;
@@ -398,41 +580,113 @@ export function FaturamentoPage() {
 
       {tab === "entrada" && (
         <div className="space-y-6">
+          <FormSection title="Consultar SEFAZ (DF-e)">
+            <p className="mb-3 text-sm text-muted-foreground">
+              Busca notas emitidas contra o CNPJ da empresa (Distribuição DF-e). Requer certificado A1.
+            </p>
+            <Button disabled={syncDfe.isPending} onClick={() => syncDfe.mutate()}>
+              {syncDfe.isPending ? "Consultando…" : "Consultar DF-e na SEFAZ"}
+            </Button>
+          </FormSection>
+
           <FormSection title="Importar XML manualmente">
             <p className="mb-3 text-sm text-muted-foreground">
-              O padrão fiscal é o <strong>XML da NF-e</strong> (arquivo .xml), não o PDF do DANFE. Cole o XML ou envie o
-              arquivo — após importar, o sistema gera o DANFE no layout oficial.
+              O padrão fiscal é o <strong>XML da NF-e</strong> (arquivo .xml), não o PDF do DANFE. Arraste o arquivo,
+              selecione no computador ou cole o conteúdo — após importar, o sistema gera o DANFE no layout oficial.
             </p>
+
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label="Área para arrastar ou selecionar arquivo XML da NF-e"
+              className={cn(
+                "mb-4 cursor-pointer rounded-xl border border-dashed p-6 text-center transition-colors",
+                xmlDragActive
+                  ? "border-primary bg-primary/5"
+                  : "border-border bg-background hover:border-primary/50 hover:bg-muted/30",
+              )}
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest("button")) return;
+                xmlFileInputRef.current?.click();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  xmlFileInputRef.current?.click();
+                }
+              }}
+              onDragEnter={onXmlDragEnter}
+              onDragLeave={onXmlDragLeave}
+              onDragOver={onXmlDragOver}
+              onDrop={onXmlDrop}
+            >
+              <input
+                ref={xmlFileInputRef}
+                type="file"
+                accept=".xml,text/xml,application/xml"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void loadXmlFromFile(file);
+                }}
+              />
+              <p className="text-sm font-medium">
+                {xmlDragActive ? "Solte o arquivo XML aqui" : "Arraste o arquivo .xml para esta área"}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">ou</p>
+              <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    xmlFileInputRef.current?.click();
+                  }}
+                >
+                  Escolher arquivo…
+                </Button>
+                {xmlFileName ? (
+                  <span className="text-sm text-muted-foreground">
+                    Selecionado: <span className="font-medium text-foreground">{xmlFileName}</span>
+                  </span>
+                ) : (
+                  <span className="text-sm text-muted-foreground">Nenhum arquivo selecionado</span>
+                )}
+              </div>
+            </div>
+
+            <p className="mb-2 text-sm font-medium">Ou cole o XML abaixo</p>
             <textarea
               className={`${fieldControlClass} min-h-[120px] w-full font-mono text-xs`}
               placeholder="Cole o XML da NF-e de entrada aqui…"
               value={xmlPaste}
-              onChange={(e) => setXmlPaste(e.target.value)}
+              onChange={(e) => {
+                setXmlPaste(e.target.value);
+                if (e.target.value.trim() && !xmlFileName) return;
+                if (!e.target.value.trim()) {
+                  setXmlFileName(null);
+                  if (xmlFileInputRef.current) xmlFileInputRef.current.value = "";
+                }
+              }}
             />
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <label className="cursor-pointer text-sm text-primary underline-offset-4 hover:underline">
-                Selecionar arquivo .xml
-                <input
-                  type="file"
-                  accept=".xml,text/xml,application/xml"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      const text = typeof reader.result === "string" ? reader.result : "";
-                      setXmlPaste(text);
-                    };
-                    reader.onerror = () => notifyError("Não foi possível ler o arquivo XML.");
-                    reader.readAsText(file, "UTF-8");
-                    e.target.value = "";
-                  }}
-                />
-              </label>
               <Button disabled={importXml.isPending || !xmlPaste.trim()} onClick={() => importXml.mutate()}>
                 {importXml.isPending ? "Importando…" : "Importar NF-e"}
               </Button>
+              {xmlPaste.trim() ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={importXml.isPending}
+                  onClick={() => {
+                    setXmlPaste("");
+                    setXmlFileName(null);
+                    if (xmlFileInputRef.current) xmlFileInputRef.current.value = "";
+                  }}
+                >
+                  Limpar
+                </Button>
+              ) : null}
             </div>
             {settings?.autoStockOnInboundInvoice ? (
               <p className="mt-2 text-sm text-muted-foreground">
@@ -444,6 +698,45 @@ export function FaturamentoPage() {
               </p>
             )}
           </FormSection>
+
+          {mappingInvoiceId ? (
+            <FormSection title="De-para de produtos (confirmação)">
+              <p className="mb-3 text-sm text-muted-foreground">
+                Vincule cada item da NF-e a um produto interno. Necessário para estoque automático.
+              </p>
+              {(inboundInvoices.find((i) => i.id === mappingInvoiceId)?.items ?? []).map((item) => (
+                <div key={item.id} className="mb-3 grid gap-2 sm:grid-cols-2">
+                  <div className="text-sm">
+                    <p className="font-medium">{item.description}</p>
+                    <p className="text-muted-foreground">Qtd: {String(item.quantity)}</p>
+                  </div>
+                  <select
+                    className={fieldControlClass}
+                    value={productMappings[item.id] ?? item.productId ?? ""}
+                    onChange={(e) =>
+                      setProductMappings((prev) => ({ ...prev, [item.id]: e.target.value }))
+                    }
+                  >
+                    <option value="">Sem vínculo</option>
+                    {products.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                        {p.sku ? ` (${p.sku})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+              <div className="mt-3 flex gap-2">
+                <Button disabled={confirmImport.isPending} onClick={() => confirmImport.mutate()}>
+                  {confirmImport.isPending ? "Confirmando…" : "Confirmar importação"}
+                </Button>
+                <Button variant="ghost" onClick={() => setMappingInvoiceId(null)}>
+                  Fechar
+                </Button>
+              </div>
+            </FormSection>
+          ) : null}
 
           <section>
             <h2 className="mb-3 text-lg font-medium">Notas de entrada registradas</h2>
@@ -462,7 +755,9 @@ export function FaturamentoPage() {
                 <tbody>
                   {inboundInvoices.map((inv) => (
                     <tr key={inv.id} className="border-t border-border">
-                      <td className="px-4 py-3">{inv.supplier?.name ?? "—"}</td>
+                      <td className="px-4 py-3">
+                        {inv.supplier?.tradeName ?? inv.supplier?.legalName ?? "—"}
+                      </td>
                       <td className="px-4 py-3">
                         {inv.series}/{inv.number}
                       </td>
@@ -489,6 +784,36 @@ export function FaturamentoPage() {
                               </Button>
                             </>
                           )}
+                          {(inv.status === "IMPORTED" || inv.status === "AUTHORIZED") &&
+                            !inv.stockApplied && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setMappingInvoiceId(inv.id);
+                                  const initial: Record<string, string> = {};
+                                  for (const it of inv.items) {
+                                    if (it.productId) initial[it.id] = it.productId;
+                                  }
+                                  setProductMappings(initial);
+                                }}
+                              >
+                                De-para
+                              </Button>
+                            )}
+                          {inv.accessKey &&
+                            (inv.status === "IMPORTED" || inv.status === "DRAFT") && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={manifest.isPending}
+                                onClick={() =>
+                                  manifest.mutate({ accessKey: inv.accessKey!, type: "CIENCIA" })
+                                }
+                              >
+                                Ciência
+                              </Button>
+                            )}
                           {(inv.status === "IMPORTED" || inv.status === "AUTHORIZED") && (
                             <Button
                               size="sm"
@@ -574,6 +899,47 @@ export function FaturamentoPage() {
               >
                 Salvar configurações
               </Button>
+            </div>
+          </FormSection>
+
+          <FormSection title="Logo no DANFE">
+            <p className="mb-3 text-sm text-muted-foreground">
+              Imagem exibida no <strong>canto superior esquerdo</strong> do DANFE, em área dedicada apenas à logo da
+              empresa. PNG ou JPEG recomendado (também aceita WebP e GIF). Tamanho máximo: 512 KB.
+            </p>
+            <div className="flex flex-wrap items-start gap-6">
+              <div className="flex h-24 w-40 items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 p-2">
+                {logoPreview ? (
+                  <img src={logoPreview} alt="Logo da empresa" className="max-h-full max-w-full object-contain" />
+                ) : (
+                  <span className="text-center text-xs text-muted-foreground">Sem logo</span>
+                )}
+              </div>
+              <div className="flex min-w-[220px] flex-1 flex-col gap-3">
+                <FormField label="Arquivo de imagem">
+                  <Input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif"
+                    onChange={(e) => setLogoFile(e.target.files?.[0] ?? null)}
+                  />
+                </FormField>
+                <div className="flex flex-wrap gap-2">
+                  <Button disabled={uploadLogo.isPending || !logoFile} onClick={() => uploadLogo.mutate()}>
+                    {uploadLogo.isPending ? "Enviando…" : "Salvar logo"}
+                  </Button>
+                  {settings?.logo?.uploaded ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-destructive"
+                      disabled={removeLogo.isPending}
+                      onClick={() => removeLogo.mutate()}
+                    >
+                      Remover logo
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
             </div>
           </FormSection>
 

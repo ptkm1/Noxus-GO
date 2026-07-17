@@ -1,37 +1,34 @@
-import { useQuery } from "@tanstack/react-query";
-import { Link, useRouter } from "expo-router";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  View,
-} from "react-native";
-import {
-  Bell,
-  ClipboardList,
-  DollarSign,
-  Plus,
-  ShoppingCart,
-  TrendingUp,
-  Users,
-} from "lucide-react-native";
 import { fmtMoney } from "@/components/atoms/formatMoney";
 import { ThemedText } from "@/components/atoms/ThemedText";
 import { MobileHeader, MobileScreen } from "@/components/layout";
 import { HeaderIconButton } from "@/components/molecules/HeaderIconButton";
 import { QuickAction } from "@/components/molecules/QuickAction";
+import { RecentSalesBlock } from "@/components/molecules/RecentSalesBlock";
 import { ProgressStat, StatCard } from "@/components/molecules/StatCard";
 import { SyncStatusBanner } from "@/components/molecules/SyncStatusBanner";
+import { TopSuppliersBlock } from "@/components/molecules/TopSuppliersBlock";
 import { useAuth } from "@/context/AuthContext";
-import { useSalesListScreen } from "@/hooks/screens/useSalesListScreen";
 import type { CommissionDashboard } from "@/hooks/screens/useCommissionScreen";
+import { useSalesListScreen } from "@/hooks/screens/useSalesListScreen";
 import { apiFetch } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
-import { orderStatusBadgeLabel } from "@/lib/utils/order-status";
 import { radiiPx } from "@pedidos/design-tokens";
+import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
+import {
+  Bell,
+  ClipboardList,
+  DollarSign,
+  Package,
+  Plus,
+  ShoppingCart,
+  TrendingUp,
+  Users,
+} from "lucide-react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 
-export default function SalesListScreen() {
+export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { colors } = useTheme();
@@ -46,18 +43,27 @@ export default function SalesListScreen() {
     goOfflineQueue,
   } = useSalesListScreen();
 
-  const { data: commission } = useQuery({
+  const { data: commission, isLoading: commissionLoading } = useQuery({
     queryKey: ["seller", "commission-dashboard"],
-    queryFn: () => apiFetch<CommissionDashboard>("/seller/commission-dashboard"),
+    queryFn: () =>
+      apiFetch<CommissionDashboard>("/seller/commission-dashboard"),
   });
 
   const { data: notifications = [] } = useQuery({
     queryKey: ["seller", "notifications"],
-    queryFn: () => apiFetch<{ id: string; read: boolean }[]>("/seller/notifications"),
+    queryFn: () =>
+      apiFetch<{ id: string; read: boolean }[]>("/seller/notifications"),
   });
 
   const unread = notifications.filter((n) => !n.read).length;
   const firstName = user?.name?.split(" ")[0] ?? "Vendedor";
+  const initials =
+    user?.name
+      ?.split(" ")
+      .map((n) => n[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() ?? "?";
   const today = new Date().toLocaleDateString("pt-BR", {
     weekday: "long",
     day: "numeric",
@@ -81,8 +87,29 @@ export default function SalesListScreen() {
       <MobileHeader
         title={`Olá, ${firstName}`}
         subtitle={today}
+        leftAction={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Meu perfil"
+            onPress={() => router.push("/(tabs)/profile")}
+            style={[
+              styles.avatarBtn,
+              { backgroundColor: colorWithAlpha(colors.primary, 0.15) },
+            ]}
+          >
+            <ThemedText
+              variant="caption"
+              style={{ color: colors.primary, fontWeight: "700" }}
+            >
+              {initials}
+            </ThemedText>
+          </Pressable>
+        }
         rightAction={
-          <HeaderIconButton badge={unread} onPress={() => router.push("/(tabs)/notifications")}>
+          <HeaderIconButton
+            badge={unread}
+            onPress={() => router.push("/(tabs)/notifications")}
+          >
             <Bell color={colors.text} size={20} />
           </HeaderIconButton>
         }
@@ -92,10 +119,7 @@ export default function SalesListScreen() {
         onRefresh={() => void refetch()}
         contentContainerStyle={{ gap: 20 }}
       >
-        <SyncStatusBanner
-          isOnline
-          pendingItems={pending + dead}
-        />
+        <SyncStatusBanner isOnline pendingItems={pending + dead} />
 
         {goalTarget > 0 ? (
           <ProgressStat
@@ -117,13 +141,22 @@ export default function SalesListScreen() {
           <View style={styles.statCell}>
             <StatCard
               title="Comissão MTD"
-              value={`R$ ${fmtMoney(commission?.mtd.commissionRecorded ?? 0)}`}
+              value={
+                commissionLoading
+                  ? "…"
+                  : `R$ ${fmtMoney(commission?.mtd.commissionRecorded ?? 0)}`
+              }
               icon={TrendingUp}
               onPress={() => router.push("/(tabs)/commission")}
             />
           </View>
           <View style={styles.statCell}>
-            <StatCard title="Pedidos" value={orders.length} icon={ShoppingCart} />
+            <StatCard
+              title="Pedidos"
+              value={orders.length}
+              icon={ShoppingCart}
+              onPress={() => router.push("/(tabs)/vendas")}
+            />
           </View>
           <View style={styles.statCell}>
             <StatCard
@@ -135,6 +168,8 @@ export default function SalesListScreen() {
           </View>
         </View>
 
+        <TopSuppliersBlock />
+
         <View style={{ gap: 10 }}>
           <ThemedText variant="titleSm">Ações rápidas</ThemedText>
           <QuickAction
@@ -143,6 +178,18 @@ export default function SalesListScreen() {
             description="Montar pedido com cliente e carrinho"
             variant="primary"
             onPress={goQuickSale}
+          />
+          <QuickAction
+            icon={Package}
+            label="Catálogo"
+            description="Consultar produtos e preços"
+            onPress={() => router.push("/(tabs)/products")}
+          />
+          <QuickAction
+            icon={TrendingUp}
+            label="Comissão"
+            description="Meta, ranking e extrato do mês"
+            onPress={() => router.push("/(tabs)/commission")}
           />
           {(pending > 0 || dead > 0) && (
             <QuickAction
@@ -156,66 +203,24 @@ export default function SalesListScreen() {
           )}
         </View>
 
-        <View style={{ gap: 10 }}>
-          <ThemedText variant="titleSm">Vendas recentes</ThemedText>
-          {isLoading ? (
-            <ActivityIndicator color={colors.primary} />
-          ) : orders.length === 0 ? (
-            <ThemedText variant="bodySm" muted style={{ textAlign: "center", marginTop: 16 }}>
-              Nenhuma venda ainda.
-            </ThemedText>
-          ) : (
-            orders.slice(0, 8).map((item) => (
-              <Link key={item.id} href={`/(tabs)/sales/${item.id}`} asChild>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.orderCard,
-                    {
-                      backgroundColor: colors.card,
-                      borderColor: colors.border,
-                      opacity: pressed ? 0.9 : 1,
-                    },
-                  ]}
-                >
-                  <View style={styles.orderRow}>
-                    <ThemedText variant="caption" muted>
-                      {new Date(item.createdAt).toLocaleString("pt-BR")}
-                    </ThemedText>
-                    <View
-                      style={[
-                        styles.badge,
-                        {
-                          backgroundColor:
-                            item.status === "CONFIRMED"
-                              ? colorWithAlpha(colors.success, 0.15)
-                              : item.status === "CANCELLED"
-                                ? colorWithAlpha(colors.danger, 0.15)
-                                : colorWithAlpha(colors.warning, 0.15),
-                        },
-                      ]}
-                    >
-                      <ThemedText variant="caption" style={{ fontWeight: "600", fontSize: 10 }}>
-                        {orderStatusBadgeLabel(item.status)}
-                      </ThemedText>
-                    </View>
-                  </View>
-                  <ThemedText variant="body" style={{ fontWeight: "600", marginTop: 6 }}>
-                    {item.customer?.name ?? "Sem cliente"}
-                  </ThemedText>
-                  <ThemedText variant="bodySm" muted>
-                    {item.items.length} item(ns) · R$ {fmtMoney(Number(item.totalAmount))}
-                  </ThemedText>
-                </Pressable>
-              </Link>
-            ))
-          )}
-        </View>
+        <RecentSalesBlock
+          orders={orders}
+          isLoading={isLoading}
+          isRefetching={isRefetching && !isLoading}
+        />
       </MobileScreen>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  avatarBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: radiiPx.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   statGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -223,20 +228,5 @@ const styles = StyleSheet.create({
   },
   statCell: {
     width: "47%",
-  },
-  orderCard: {
-    borderRadius: radiiPx.lg,
-    borderWidth: 1,
-    padding: 14,
-  },
-  orderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
   },
 });

@@ -1,3 +1,4 @@
+import { APP_BRAND_LILAC } from "@pedidos/shared";
 import { useEffect, useState, type ReactNode } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { bootstrapApiBaseOverride } from "../lib/devtools/api-base-override";
@@ -16,8 +17,15 @@ export function DevToolsBootstrap({ children }: Props) {
 
   if (!ready) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#f8fafc" }}>
-        <ActivityIndicator color="#0284c7" />
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "#f8fafc",
+        }}
+      >
+        <ActivityIndicator color={APP_BRAND_LILAC} />
       </View>
     );
   }

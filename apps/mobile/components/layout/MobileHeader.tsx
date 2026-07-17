@@ -1,20 +1,28 @@
+import { ThemedText } from "@/components/atoms/ThemedText";
+import { useTheme } from "@/lib/theme";
+import { useRouter } from "expo-router";
+import { ChevronLeft } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
-import { ChevronLeft } from "lucide-react-native";
-import { ThemedText } from "@/components/atoms/ThemedText";
-import { useTheme } from "@/lib/theme";
 
 type Props = {
   title: string;
   subtitle?: string;
   showBack?: boolean;
   onBack?: () => void;
+  leftAction?: ReactNode;
   rightAction?: ReactNode;
 };
 
-export function MobileHeader({ title, subtitle, showBack, onBack, rightAction }: Props) {
+export function MobileHeader({
+  title,
+  subtitle,
+  showBack,
+  onBack,
+  leftAction,
+  rightAction,
+}: Props) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { colors } = useTheme();
@@ -37,7 +45,9 @@ export function MobileHeader({ title, subtitle, showBack, onBack, rightAction }:
     >
       <View style={styles.row}>
         <View style={styles.titleBlock}>
-          {showBack ? (
+          {leftAction ? (
+            <View style={styles.side}>{leftAction}</View>
+          ) : showBack ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Voltar"
@@ -91,6 +101,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   right: {
+    flexShrink: 0,
+  },
+  side: {
     flexShrink: 0,
   },
 });

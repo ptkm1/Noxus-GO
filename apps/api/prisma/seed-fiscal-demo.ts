@@ -95,8 +95,8 @@ export async function upsertFiscalDemoData(organizationId: string) {
     where: {
       organizationId,
       OR: [
-        { document: null },
-        { document: "" },
+        { cnpj: null },
+        { cnpj: "" },
         { street: null },
         { city: null },
         { state: null },
@@ -104,15 +104,17 @@ export async function upsertFiscalDemoData(organizationId: string) {
     },
     data: {
       documentType: "CNPJ",
-      document: "11444777000161",
+      cnpj: "11444777000161",
+      legalName: "Cliente Demo NF-e",
+      tradeName: "Cliente Demo",
       stateRegistration: "ISENTO",
       street: "Av. Paulista",
-      addressNumber: "1000",
-      district: "Bela Vista",
+      number: "1000",
+      neighborhood: "Bela Vista",
       city: "São Paulo",
       state: "SP",
-      zipCode: "01310100",
-      cityIbge: "3550308",
+      cep: "01310100",
+      cityIbgeCode: "3550308",
     },
   });
 

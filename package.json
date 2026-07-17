@@ -8,8 +8,8 @@
     "build:shared": "node scripts/build-package.mjs packages/shared",
     "build:design-tokens": "node scripts/build-package.mjs packages/design-tokens",
     "dev:web": "pnpm --filter @pedidos/web dev",
-    "dev:mobile": "pnpm --filter @pedidos/mobile start",
-    "dev:mobile:client": "pnpm --filter @pedidos/mobile start:dev",
+    "dev:mobile": "pnpm build:design-tokens && pnpm --filter @pedidos/mobile start",
+    "dev:mobile:client": "pnpm build:design-tokens && pnpm --filter @pedidos/mobile start:dev",
     "build:mobile:android": "pnpm --filter @pedidos/mobile build:preview:android",
     "build:mobile:dev:android": "pnpm --filter @pedidos/mobile build:dev:android",
     "build:mobile:ios": "pnpm --filter @pedidos/mobile build:preview:ios",
@@ -21,6 +21,7 @@
     "db:push": "dotenv -e apps/api/.env -- prisma db push --config apps/api/prisma.config.ts",
     "db:seed": "dotenv -e apps/api/.env -- prisma db seed --config apps/api/prisma.config.ts",
     "db:seed:route": "dotenv -e apps/api/.env -- tsx apps/api/prisma/seed-route-customer.ts",
+    "db:seed:sales-chart": "dotenv -e apps/api/.env -- tsx apps/api/prisma/seed-sales-chart-demo.ts",
     "predb:seed": "pnpm db:generate",
     "db:generate": "dotenv -e apps/api/.env -- prisma generate --config apps/api/prisma.config.ts",
     "db:studio": "dotenv -e apps/api/.env -- prisma studio --config apps/api/prisma.config.ts"

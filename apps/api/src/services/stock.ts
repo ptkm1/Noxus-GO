@@ -42,6 +42,12 @@ export async function applyStockMovement(input: {
       data: { quantityOnHand: next },
     });
 
+    // Mantém Product.stockQty sincronizado para vendas/catálogo.
+    await tx.product.update({
+      where: { id: input.productId },
+      data: { stockQty: Math.max(0, Math.floor(next)) },
+    });
+
     return tx.stockMovement.create({
       data: {
         organizationId: input.organizationId,

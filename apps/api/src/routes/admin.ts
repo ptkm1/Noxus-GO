@@ -11,18 +11,34 @@ import { verifyAccessToken } from "../auth/jwt.js";
 import {
   isManagerGetAllowed,
   isOrgStaff,
+  isTeamLeaderAuth,
+  isTeamLeaderGetAllowed,
+  orderScopeWhere,
   requireAdmin,
   requireOrgStaff,
   sellerScopeWhere,
+  teamMemberSellerIds,
   validateManagerAssignment,
 } from "../auth/org-roles.js";
 import { hashPassword } from "../auth/password.js";
 import { prisma } from "../db.js";
+import {
+  customerBodySchema,
+  customerPatchSchema,
+  toCustomerPrismaData,
+  type CustomerBodyInput,
+} from "../services/customer-validation.js";
 import { buildDistributorInsights } from "../services/distributor-insights.js";
 import {
-  loadOrderForPdf,
-  sendOrderPdfReply,
-} from "../services/order-pdf-load.js";
+  buildCommissionStatement,
+  buildCreditAgingReport,
+  buildFiscalReconciliation,
+  buildMarginReport,
+  buildSalesScorecard,
+  buildStockHealthReport,
+  buildVisitEffectiveness,
+} from "../services/management-reports.js";
+import { sendOrderPdfReply } from "../services/order-pdf-load.js";
 import {
   computeSaleOrder,
   OrderPricingError,
@@ -32,9 +48,40 @@ import {
   parseCategoryAttributeSchema,
   validateProductAttributes,
 } from "../services/product-attributes.js";
+import {
+  mapProductCadastroPrisma,
+  normalizeProductNcm,
+  productCadastroFieldsSchema,
+  syncProductAttributesNcm,
+} from "../services/product-cadastro-schema.js";
+import {
+  applyStockOnStatusChange,
+  assertSufficientStock,
+  StockError,
+} from "../services/product-stock.js";
+import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
+import {
+  createSalesTeam,
+  deleteSalesTeam,
+  getSalesTeam,
+  listSalesTeams,
+  SalesTeamError,
+  serializeSalesTeam,
+  updateSalesTeam,
+} from "../services/sales-teams.js";
 import { getSellerLocationHistory } from "../services/seller-location-history.js";
 import { registerSellerLocationClient } from "../services/seller-location-ws.js";
 import { listAdminSellerLocations } from "../services/seller-locations-admin.js";
+import {
+  assertSupplierInOrg,
+  createSupplier,
+  deleteSupplier,
+  getSupplier,
+  listSuppliers,
+  SupplierError,
+  updateSupplier,
+} from "../services/suppliers.js";
+import { buildTeamSalesSummary } from "../services/team-sales-summary.js";
 import { decToNum } from "../util/money.js";
 import { fiscalRoutes } from "./fiscal.js";
 import { stockRoutes } from "./stock.js";
@@ -89,6 +136,15 @@ function normalizeRegionCode(raw: string): string {
     .toUpperCase()
     .replace(/\s+/g, "_")
     .replace(/[^A-Z0-9_]/g, "");
+}
+
+function normalizeProductBarcode(
+  raw: string | undefined | null,
+): string | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null) return null;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 async function loadCategoryDefs(
@@ -209,6 +265,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         return reply
           .status(403)
           .send({ error: "Gestores não têm acesso a este recurso" });
+      }
+
+      if (
+        isTeamLeaderAuth(auth) &&
+        method === "GET" &&
+        !isTeamLeaderGetAllowed(routePath)
+      ) {
+        return reply
+          .status(403)
+          .send({ error: "Líderes de equipe não têm acesso a este recurso" });
       }
     },
   );
@@ -779,18 +845,106 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   });
 
   /* --- Produtos --- */
-  const productCategoryInclude = {
+  const productRelationsInclude = {
     category: {
       select: { id: true, code: true, name: true, attributeSchema: true },
     },
+    supplier: {
+      select: {
+        id: true,
+        code: true,
+        tradeName: true,
+        legalName: true,
+        cnpj: true,
+      },
+    },
   } as const;
+
+  /* --- Fornecedores --- */
+  app.get("/suppliers", async (req) => {
+    const auth = req.auth!;
+    return listSuppliers(auth.organizationId);
+  });
+
+  app.get("/suppliers/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const supplier = await getSupplier(auth.organizationId, id);
+    if (!supplier)
+      return reply.status(404).send({ error: "Fornecedor não encontrado" });
+    return supplier;
+  });
+
+  app.post("/suppliers", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        code: z.string().min(1),
+        legalName: z.string().min(1),
+        cnpj: z.string().min(1),
+        tradeName: z.string().min(1),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    try {
+      return await createSupplier(auth.organizationId, body.data);
+    } catch (e) {
+      if (e instanceof SupplierError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.patch("/suppliers/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        code: z.string().min(1).optional(),
+        legalName: z.string().min(1).optional(),
+        cnpj: z.string().min(1).optional(),
+        tradeName: z.string().min(1).optional(),
+        active: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    try {
+      const supplier = await updateSupplier(auth.organizationId, id, body.data);
+      if (!supplier)
+        return reply.status(404).send({ error: "Fornecedor não encontrado" });
+      return supplier;
+    } catch (e) {
+      if (e instanceof SupplierError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.delete("/suppliers/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    try {
+      const ok = await deleteSupplier(auth.organizationId, id);
+      if (!ok)
+        return reply.status(404).send({ error: "Fornecedor não encontrado" });
+      return reply.status(204).send();
+    } catch (e) {
+      if (e instanceof SupplierError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
 
   app.get("/products", async (req) => {
     const auth = req.auth!;
     return prisma.product.findMany({
       where: { organizationId: auth.organizationId },
       orderBy: { name: "asc" },
-      include: productCategoryInclude,
+      include: productRelationsInclude,
     });
   });
 
@@ -799,7 +953,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(req.params);
     const p = await prisma.product.findFirst({
       where: { id, organizationId: auth.organizationId },
-      include: productCategoryInclude,
+      include: productRelationsInclude,
     });
     if (!p) return reply.status(404).send({ error: "Não encontrado" });
     return p;
@@ -811,10 +965,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       .object({
         name: z.string().min(1),
         sku: z.string().optional(),
+        barcode: z.string().max(80).optional(),
         description: z.string().optional(),
         imageUrl: z.union([z.string().max(2048), z.literal("")]).optional(),
         basePrice: z.number().nonnegative(),
-        categoryId: z.string().nullable().optional(),
+        categoryId: z.string().min(1),
+        supplierId: z.string().min(1),
         attributes: z.record(z.string(), z.unknown()).optional(),
         maxSellerDiscountPercent: z
           .number()
@@ -831,19 +987,28 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         fiscalCest: z.string().nullable().optional(),
         fiscalDescription: z.string().nullable().optional(),
         outboundOperationId: z.string().nullable().optional(),
+        stockQty: z.number().int().min(0).optional(),
+        blockSaleWhenOutOfStock: z.boolean().optional(),
+        ...productCadastroFieldsSchema,
       })
       .safeParse(req.body);
     if (!body.success)
       return reply.status(400).send({ error: "Dados inválidos" });
 
-    const resolvedCatId = body.data.categoryId ?? null;
+    const resolvedCatId = body.data.categoryId;
 
-    if (resolvedCatId != null) {
-      const ok = await prisma.productCategory.findFirst({
-        where: { id: resolvedCatId, organizationId: auth.organizationId },
-      });
-      if (!ok) return reply.status(400).send({ error: "Categoria inválida" });
-    }
+    const categoryOk = await prisma.productCategory.findFirst({
+      where: { id: resolvedCatId, organizationId: auth.organizationId },
+    });
+    if (!categoryOk)
+      return reply.status(400).send({ error: "Grupo de produtos inválido" });
+
+    const supplierOk = await assertSupplierInOrg(
+      auth.organizationId,
+      body.data.supplierId,
+    );
+    if (!supplierOk)
+      return reply.status(400).send({ error: "Fornecedor inválido" });
 
     const defs = await loadCategoryDefs(resolvedCatId, auth.organizationId);
     const attrsRaw = body.data.attributes ?? {};
@@ -851,46 +1016,79 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!validated.ok)
       return reply.status(400).send({ error: validated.error });
 
-    return prisma.product.create({
-      data: {
-        name: body.data.name,
-        sku: body.data.sku,
-        description: body.data.description,
-        imageUrl:
-          body.data.imageUrl === undefined || body.data.imageUrl === ""
-            ? undefined
-            : body.data.imageUrl.trim() || undefined,
-        basePrice: body.data.basePrice,
-        organizationId: auth.organizationId,
-        categoryId: body.data.categoryId ?? undefined,
-        attributes: validated.value as Prisma.InputJsonValue,
-        maxSellerDiscountPercent:
-          body.data.maxSellerDiscountPercent === undefined
-            ? undefined
-            : body.data.maxSellerDiscountPercent,
-        minSaleUnitPrice:
-          body.data.minSaleUnitPrice === undefined
-            ? undefined
-            : body.data.minSaleUnitPrice,
-        commissionPercent:
-          body.data.commissionPercent === undefined
-            ? undefined
-            : body.data.commissionPercent,
-        ncmId: body.data.ncmId === undefined ? undefined : body.data.ncmId,
-        fiscalOrigin:
-          body.data.fiscalOrigin === undefined ? undefined : body.data.fiscalOrigin,
-        fiscalGtin: body.data.fiscalGtin === undefined ? undefined : body.data.fiscalGtin,
-        fiscalUnit: body.data.fiscalUnit === undefined ? undefined : body.data.fiscalUnit,
-        fiscalCest: body.data.fiscalCest === undefined ? undefined : body.data.fiscalCest,
-        fiscalDescription:
-          body.data.fiscalDescription === undefined ? undefined : body.data.fiscalDescription,
-        outboundOperationId:
-          body.data.outboundOperationId === undefined
-            ? undefined
-            : body.data.outboundOperationId,
-      },
-      include: productCategoryInclude,
-    });
+    const ncmCol =
+      body.data.ncm === undefined
+        ? undefined
+        : normalizeProductNcm(body.data.ncm);
+    const attrsSynced = syncProductAttributesNcm(
+      validated.value,
+      ncmCol ?? null,
+    );
+
+    try {
+      return await prisma.product.create({
+        data: {
+          name: body.data.name,
+          sku: body.data.sku,
+          barcode: normalizeProductBarcode(body.data.barcode) ?? undefined,
+          description: body.data.description,
+          imageUrl:
+            body.data.imageUrl === undefined || body.data.imageUrl === ""
+              ? undefined
+              : body.data.imageUrl.trim() || undefined,
+          basePrice: body.data.basePrice,
+          organizationId: auth.organizationId,
+          categoryId: body.data.categoryId,
+          supplierId: body.data.supplierId,
+          attributes: attrsSynced as Prisma.InputJsonValue,
+          maxSellerDiscountPercent:
+            body.data.maxSellerDiscountPercent === undefined
+              ? undefined
+              : body.data.maxSellerDiscountPercent,
+          minSaleUnitPrice:
+            body.data.minSaleUnitPrice === undefined
+              ? undefined
+              : body.data.minSaleUnitPrice,
+          commissionPercent:
+            body.data.commissionPercent === undefined
+              ? undefined
+              : body.data.commissionPercent,
+          stockQty: body.data.stockQty ?? 0,
+          blockSaleWhenOutOfStock: body.data.blockSaleWhenOutOfStock ?? false,
+          ...mapProductCadastroPrisma(body.data),
+          ncmId: body.data.ncmId === undefined ? undefined : body.data.ncmId,
+          fiscalOrigin:
+            body.data.fiscalOrigin === undefined
+              ? undefined
+              : body.data.fiscalOrigin,
+          fiscalGtin:
+            body.data.fiscalGtin === undefined ? undefined : body.data.fiscalGtin,
+          fiscalUnit:
+            body.data.fiscalUnit === undefined ? undefined : body.data.fiscalUnit,
+          fiscalCest:
+            body.data.fiscalCest === undefined ? undefined : body.data.fiscalCest,
+          fiscalDescription:
+            body.data.fiscalDescription === undefined
+              ? undefined
+              : body.data.fiscalDescription,
+          outboundOperationId:
+            body.data.outboundOperationId === undefined
+              ? undefined
+              : body.data.outboundOperationId,
+        },
+        include: productRelationsInclude,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(400)
+          .send({ error: "Código de barras já cadastrado nesta empresa." });
+      }
+      throw e;
+    }
   });
 
   app.patch("/products/:id", async (req, reply) => {
@@ -900,6 +1098,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       .object({
         name: z.string().min(1).optional(),
         sku: z.string().nullable().optional(),
+        barcode: z.string().max(80).nullable().optional(),
         description: z.string().nullable().optional(),
         imageUrl: z
           .union([z.string().max(2048), z.literal("")])
@@ -907,6 +1106,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .optional(),
         basePrice: z.number().nonnegative().optional(),
         categoryId: z.string().nullable().optional(),
+        supplierId: z.string().nullable().optional(),
         attributes: z.record(z.string(), z.unknown()).optional(),
         maxSellerDiscountPercent: z
           .number()
@@ -923,6 +1123,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         fiscalCest: z.string().nullable().optional(),
         fiscalDescription: z.string().nullable().optional(),
         outboundOperationId: z.string().nullable().optional(),
+        stockQty: z.number().int().min(0).optional(),
+        blockSaleWhenOutOfStock: z.boolean().optional(),
+        ...productCadastroFieldsSchema,
       })
       .safeParse(req.body);
     if (!body.success)
@@ -933,6 +1136,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
 
+    if (body.data.categoryId === null) {
+      return reply
+        .status(400)
+        .send({ error: "Grupo de produtos é obrigatório" });
+    }
+    if (body.data.supplierId === null) {
+      return reply.status(400).send({ error: "Fornecedor é obrigatório" });
+    }
+
     if (body.data.categoryId !== undefined && body.data.categoryId !== null) {
       const ok = await prisma.productCategory.findFirst({
         where: {
@@ -940,7 +1152,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           organizationId: auth.organizationId,
         },
       });
-      if (!ok) return reply.status(400).send({ error: "Categoria inválida" });
+      if (!ok)
+        return reply.status(400).send({ error: "Grupo de produtos inválido" });
+    }
+
+    if (body.data.supplierId !== undefined && body.data.supplierId !== null) {
+      const ok = await assertSupplierInOrg(
+        auth.organizationId,
+        body.data.supplierId,
+      );
+      if (!ok) return reply.status(400).send({ error: "Fornecedor inválido" });
     }
 
     const resolvedCatId =
@@ -969,56 +1190,98 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       validatedAttrs = validated.value;
     }
 
-    return prisma.product.update({
-      where: { id },
-      data: {
-        name: body.data.name,
-        sku: body.data.sku === undefined ? undefined : body.data.sku,
-        description:
-          body.data.description === undefined
-            ? undefined
-            : body.data.description,
-        basePrice: body.data.basePrice,
-        ...(body.data.imageUrl !== undefined
-          ? {
-              imageUrl:
-                body.data.imageUrl === null || body.data.imageUrl === ""
-                  ? null
-                  : body.data.imageUrl.trim() || null,
-            }
-          : {}),
-        categoryId:
-          body.data.categoryId === undefined ? undefined : body.data.categoryId,
-        ...(validatedAttrs !== undefined
-          ? { attributes: validatedAttrs as Prisma.InputJsonValue }
-          : {}),
-        maxSellerDiscountPercent:
-          body.data.maxSellerDiscountPercent === undefined
-            ? undefined
-            : body.data.maxSellerDiscountPercent,
-        minSaleUnitPrice:
-          body.data.minSaleUnitPrice === undefined
-            ? undefined
-            : body.data.minSaleUnitPrice,
-        commissionPercent:
-          body.data.commissionPercent === undefined
-            ? undefined
-            : body.data.commissionPercent,
-        ncmId: body.data.ncmId === undefined ? undefined : body.data.ncmId,
-        fiscalOrigin:
-          body.data.fiscalOrigin === undefined ? undefined : body.data.fiscalOrigin,
-        fiscalGtin: body.data.fiscalGtin === undefined ? undefined : body.data.fiscalGtin,
-        fiscalUnit: body.data.fiscalUnit === undefined ? undefined : body.data.fiscalUnit,
-        fiscalCest: body.data.fiscalCest === undefined ? undefined : body.data.fiscalCest,
-        fiscalDescription:
-          body.data.fiscalDescription === undefined ? undefined : body.data.fiscalDescription,
-        outboundOperationId:
-          body.data.outboundOperationId === undefined
-            ? undefined
-            : body.data.outboundOperationId,
-      },
-      include: productCategoryInclude,
-    });
+    const ncmProvided = body.data.ncm !== undefined;
+    if (ncmProvided || validatedAttrs !== undefined) {
+      const baseAttrs =
+        validatedAttrs ?? (existing.attributes as Record<string, unknown>);
+      const ncmCol = ncmProvided
+        ? normalizeProductNcm(body.data.ncm)
+        : existing.ncm;
+      validatedAttrs = syncProductAttributesNcm(baseAttrs, ncmCol ?? null);
+    }
+
+    try {
+      return await prisma.product.update({
+        where: { id },
+        data: {
+          name: body.data.name,
+          sku: body.data.sku === undefined ? undefined : body.data.sku,
+          barcode:
+            body.data.barcode === undefined
+              ? undefined
+              : normalizeProductBarcode(body.data.barcode),
+          description:
+            body.data.description === undefined
+              ? undefined
+              : body.data.description,
+          basePrice: body.data.basePrice,
+          ...(body.data.imageUrl !== undefined
+            ? {
+                imageUrl:
+                  body.data.imageUrl === null || body.data.imageUrl === ""
+                    ? null
+                    : body.data.imageUrl.trim() || null,
+              }
+            : {}),
+          categoryId:
+            body.data.categoryId === undefined
+              ? undefined
+              : body.data.categoryId,
+          supplierId:
+            body.data.supplierId === undefined
+              ? undefined
+              : body.data.supplierId,
+          ...(validatedAttrs !== undefined
+            ? { attributes: validatedAttrs as Prisma.InputJsonValue }
+            : {}),
+          maxSellerDiscountPercent:
+            body.data.maxSellerDiscountPercent === undefined
+              ? undefined
+              : body.data.maxSellerDiscountPercent,
+          minSaleUnitPrice:
+            body.data.minSaleUnitPrice === undefined
+              ? undefined
+              : body.data.minSaleUnitPrice,
+          commissionPercent:
+            body.data.commissionPercent === undefined
+              ? undefined
+              : body.data.commissionPercent,
+          stockQty: body.data.stockQty,
+          blockSaleWhenOutOfStock: body.data.blockSaleWhenOutOfStock,
+          ...mapProductCadastroPrisma(body.data),
+          ncmId: body.data.ncmId === undefined ? undefined : body.data.ncmId,
+          fiscalOrigin:
+            body.data.fiscalOrigin === undefined
+              ? undefined
+              : body.data.fiscalOrigin,
+          fiscalGtin:
+            body.data.fiscalGtin === undefined ? undefined : body.data.fiscalGtin,
+          fiscalUnit:
+            body.data.fiscalUnit === undefined ? undefined : body.data.fiscalUnit,
+          fiscalCest:
+            body.data.fiscalCest === undefined ? undefined : body.data.fiscalCest,
+          fiscalDescription:
+            body.data.fiscalDescription === undefined
+              ? undefined
+              : body.data.fiscalDescription,
+          outboundOperationId:
+            body.data.outboundOperationId === undefined
+              ? undefined
+              : body.data.outboundOperationId,
+        },
+        include: productRelationsInclude,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(400)
+          .send({ error: "Código de barras já cadastrado nesta empresa." });
+      }
+      throw e;
+    }
   });
 
   app.delete("/products/:id", async (req, reply) => {
@@ -1280,6 +1543,77 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
+  /* --- Equipes de vendas (admin) --- */
+  app.get("/teams", async (req) => {
+    const auth = req.auth!;
+    const teams = await listSalesTeams(auth.organizationId);
+    return teams.map(serializeSalesTeam);
+  });
+
+  app.get("/teams/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const team = await getSalesTeam(auth.organizationId, id);
+    if (!team)
+      return reply.status(404).send({ error: "Equipe não encontrada" });
+    return serializeSalesTeam(team);
+  });
+
+  app.post("/teams", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        name: z.string().min(1),
+        leaderSellerId: z.string().min(1),
+        memberSellerIds: z.array(z.string().min(1)).min(1),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    try {
+      const team = await createSalesTeam(auth.organizationId, body.data);
+      return serializeSalesTeam(team);
+    } catch (e) {
+      if (e instanceof SalesTeamError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.patch("/teams/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        name: z.string().min(1).optional(),
+        leaderSellerId: z.string().min(1).optional(),
+        memberSellerIds: z.array(z.string().min(1)).min(1).optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    try {
+      const team = await updateSalesTeam(auth.organizationId, id, body.data);
+      if (!team)
+        return reply.status(404).send({ error: "Equipe não encontrada" });
+      return serializeSalesTeam(team);
+    } catch (e) {
+      if (e instanceof SalesTeamError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.delete("/teams/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const ok = await deleteSalesTeam(auth.organizationId, id);
+    if (!ok) return reply.status(404).send({ error: "Equipe não encontrada" });
+    return reply.status(204).send();
+  });
+
   app.get("/sellers", async (req) => {
     const auth = req.auth!;
     return prisma.seller.findMany({
@@ -1287,6 +1621,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       include: {
         user: { select: { id: true, email: true, name: true, role: true } },
         manager: { select: { id: true, name: true, email: true } },
+        team: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -1301,6 +1636,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         name: z.string().min(1),
         commissionType: sellerCommissionTypeSchema.default("FIXED"),
         commissionPercent: z.number().min(0).max(100).optional(),
+        teamId: z.string().min(1).nullable().optional(),
       })
       .safeParse(req.body);
     if (!body.success)
@@ -1319,6 +1655,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (exists) return reply.status(409).send({ error: "Email já cadastrado" });
 
     const passwordHash = await hashPassword(body.data.password);
+
+    if (body.data.teamId) {
+      const team = await prisma.salesTeam.findFirst({
+        where: { id: body.data.teamId, organizationId: auth.organizationId },
+        select: { id: true },
+      });
+      if (!team) return reply.status(400).send({ error: "Equipe inválida" });
+    }
+
     const user = await prisma.user.create({
       data: {
         email,
@@ -1332,6 +1677,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
             commissionType,
             commissionPercent,
             active: true,
+            ...(body.data.teamId ? { teamId: body.data.teamId } : {}),
           },
         },
       },
@@ -1484,31 +1830,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.post("/customers", async (req, reply) => {
     const auth = req.auth!;
-    const body = z
-      .object({
-        name: z.string().min(1),
-        email: z.string().email().optional(),
-        phone: z.string().optional(),
-        sellerId: z.string().optional(),
-        regionId: z.string().nullable().optional(),
-        latitude: z.number().gte(-90).lte(90).nullable().optional(),
-        longitude: z.number().gte(-180).lte(180).nullable().optional(),
-        addressNote: z.string().max(500).nullable().optional(),
-        documentType: z.enum(["CNPJ", "CPF"]).optional(),
-        document: z.string().optional(),
-        stateRegistration: z.string().optional(),
-        street: z.string().optional(),
-        addressNumber: z.string().optional(),
-        complement: z.string().optional(),
-        district: z.string().optional(),
-        city: z.string().optional(),
-        state: z.string().max(2).optional(),
-        zipCode: z.string().optional(),
-        cityIbge: z.string().optional(),
-      })
-      .safeParse(req.body);
+    const body = customerBodySchema.safeParse(req.body);
     if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
 
     if (body.data.sellerId) {
       const s = await prisma.seller.findFirst({
@@ -1524,78 +1850,34 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       if (!r) return reply.status(400).send({ error: "Região inválida" });
     }
 
-    return prisma.customer.create({
-      data: {
-        name: body.data.name,
-        email: body.data.email,
-        phone: body.data.phone,
-        organizationId: auth.organizationId,
-        sellerId: body.data.sellerId,
-        regionId:
-          body.data.regionId === undefined ? undefined : body.data.regionId,
-        latitude:
-          body.data.latitude === undefined
-            ? undefined
-            : body.data.latitude === null
-              ? null
-              : body.data.latitude,
-        longitude:
-          body.data.longitude === undefined
-            ? undefined
-            : body.data.longitude === null
-              ? null
-              : body.data.longitude,
-        addressNote:
-          body.data.addressNote === undefined
-            ? undefined
-            : body.data.addressNote === null
-              ? null
-              : body.data.addressNote,
-        documentType: body.data.documentType,
-        document: body.data.document,
-        stateRegistration: body.data.stateRegistration,
-        street: body.data.street,
-        addressNumber: body.data.addressNumber,
-        complement: body.data.complement,
-        district: body.data.district,
-        city: body.data.city,
-        state: body.data.state,
-        zipCode: body.data.zipCode,
-        cityIbge: body.data.cityIbge,
-      },
-    });
+    try {
+      return await prisma.customer.create({
+        data: {
+          organizationId: auth.organizationId,
+          ...toCustomerPrismaData(body.data, { includeCredit: true }),
+        } as Prisma.CustomerUncheckedCreateInput,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "CNPJ ou CPF já cadastrado nesta organização." });
+      }
+      throw e;
+    }
   });
 
   app.patch("/customers/:id", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
-    const body = z
-      .object({
-        name: z.string().min(1).optional(),
-        email: z.string().email().nullable().optional(),
-        phone: z.string().nullable().optional(),
-        sellerId: z.string().nullable().optional(),
-        regionId: z.string().nullable().optional(),
-        creditLimit: z.number().positive().nullable().optional(),
-        creditBlocked: z.boolean().optional(),
-        latitude: z.number().gte(-90).lte(90).nullable().optional(),
-        longitude: z.number().gte(-180).lte(180).nullable().optional(),
-        addressNote: z.string().max(500).nullable().optional(),
-        documentType: z.enum(["CNPJ", "CPF"]).optional(),
-        document: z.string().optional(),
-        stateRegistration: z.string().optional(),
-        street: z.string().optional(),
-        addressNumber: z.string().optional(),
-        complement: z.string().optional(),
-        district: z.string().optional(),
-        city: z.string().optional(),
-        state: z.string().max(2).optional(),
-        zipCode: z.string().optional(),
-        cityIbge: z.string().optional(),
-      })
-      .safeParse(req.body);
+    const body = customerPatchSchema.safeParse(req.body);
     if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
 
     const existing = await prisma.customer.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -1609,57 +1891,102 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       if (!r) return reply.status(400).send({ error: "Região inválida" });
     }
 
-    return prisma.customer.update({
-      where: { id },
-      data: {
-        name: body.data.name,
-        email: body.data.email === undefined ? undefined : body.data.email,
-        phone: body.data.phone === undefined ? undefined : body.data.phone,
-        sellerId:
-          body.data.sellerId === undefined ? undefined : body.data.sellerId,
-        regionId:
-          body.data.regionId === undefined ? undefined : body.data.regionId,
-        creditLimit:
-          body.data.creditLimit === undefined
-            ? undefined
-            : body.data.creditLimit === null
-              ? null
-              : body.data.creditLimit,
-        creditBlocked:
-          body.data.creditBlocked === undefined
-            ? undefined
-            : body.data.creditBlocked,
-        latitude:
-          body.data.latitude === undefined
-            ? undefined
-            : body.data.latitude === null
-              ? null
-              : body.data.latitude,
-        longitude:
-          body.data.longitude === undefined
-            ? undefined
-            : body.data.longitude === null
-              ? null
-              : body.data.longitude,
-        addressNote:
-          body.data.addressNote === undefined
-            ? undefined
-            : body.data.addressNote === null
-              ? null
-              : body.data.addressNote,
-        documentType: body.data.documentType,
-        document: body.data.document,
-        stateRegistration: body.data.stateRegistration,
-        street: body.data.street,
-        addressNumber: body.data.addressNumber,
-        complement: body.data.complement,
-        district: body.data.district,
-        city: body.data.city,
-        state: body.data.state,
-        zipCode: body.data.zipCode,
-        cityIbge: body.data.cityIbge,
-      },
-    });
+    const merged: CustomerBodyInput = {
+      name: body.data.name ?? existing.name,
+      email: body.data.email !== undefined ? body.data.email : existing.email,
+      phone: body.data.phone !== undefined ? body.data.phone : existing.phone,
+      sellerId:
+        body.data.sellerId !== undefined
+          ? body.data.sellerId
+          : existing.sellerId,
+      regionId:
+        body.data.regionId !== undefined
+          ? body.data.regionId
+          : existing.regionId,
+      latitude:
+        body.data.latitude !== undefined
+          ? body.data.latitude
+          : existing.latitude != null
+            ? decToNum(existing.latitude)
+            : null,
+      longitude:
+        body.data.longitude !== undefined
+          ? body.data.longitude
+          : existing.longitude != null
+            ? decToNum(existing.longitude)
+            : null,
+      addressNote:
+        body.data.addressNote !== undefined
+          ? body.data.addressNote
+          : existing.addressNote,
+      documentType:
+        body.data.documentType !== undefined
+          ? body.data.documentType
+          : (existing.documentType as CustomerBodyInput["documentType"]),
+      cnpj: body.data.cnpj !== undefined ? body.data.cnpj : existing.cnpj,
+      cpf: body.data.cpf !== undefined ? body.data.cpf : existing.cpf,
+      legalName:
+        body.data.legalName !== undefined
+          ? body.data.legalName
+          : existing.legalName,
+      tradeName:
+        body.data.tradeName !== undefined
+          ? body.data.tradeName
+          : existing.tradeName,
+      cep: body.data.cep !== undefined ? body.data.cep : existing.cep,
+      street:
+        body.data.street !== undefined ? body.data.street : existing.street,
+      number:
+        body.data.number !== undefined ? body.data.number : existing.number,
+      neighborhood:
+        body.data.neighborhood !== undefined
+          ? body.data.neighborhood
+          : existing.neighborhood,
+      state: body.data.state !== undefined ? body.data.state : existing.state,
+      city: body.data.city !== undefined ? body.data.city : existing.city,
+      cityIbgeCode:
+        body.data.cityIbgeCode !== undefined
+          ? body.data.cityIbgeCode
+          : existing.cityIbgeCode,
+      stateRegistration:
+        body.data.stateRegistration !== undefined
+          ? body.data.stateRegistration
+          : existing.stateRegistration,
+      buyerName:
+        body.data.buyerName !== undefined
+          ? body.data.buyerName
+          : existing.buyerName,
+      notes: body.data.notes !== undefined ? body.data.notes : existing.notes,
+      creditLimit:
+        body.data.creditLimit !== undefined
+          ? body.data.creditLimit
+          : existing.creditLimit != null
+            ? decToNum(existing.creditLimit)
+            : null,
+      creditBlocked:
+        body.data.creditBlocked !== undefined
+          ? body.data.creditBlocked
+          : existing.creditBlocked,
+    };
+
+    try {
+      return await prisma.customer.update({
+        where: { id },
+        data: toCustomerPrismaData(merged, {
+          includeCredit: true,
+        }) as Prisma.CustomerUncheckedUpdateInput,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "CNPJ ou CPF já cadastrado nesta organização." });
+      }
+      throw e;
+    }
   });
 
   app.delete("/customers/:id", async (req, reply) => {
@@ -2012,7 +2339,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       .safeParse(req.query);
 
     const where: Prisma.OrderWhereInput = {
-      organizationId: auth.organizationId,
+      ...orderScopeWhere(auth),
     };
     if (q.success) {
       if (q.data.sellerId) where.sellerId = q.data.sellerId;
@@ -2026,6 +2353,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         seller: { include: { user: { select: { name: true, email: true } } } },
         customer: true,
         items: { include: { product: true } },
+        fiscalInvoices: {
+          where: { direction: "OUTBOUND" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { id: true, status: true, number: true, series: true },
+        },
       },
     });
   });
@@ -2034,7 +2367,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const count = await prisma.order.count({
       where: {
-        organizationId: auth.organizationId,
+        ...orderScopeWhere(auth),
         status: "PENDING_CREDIT_APPROVAL",
       },
     });
@@ -2045,7 +2378,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
     const order = await prisma.order.findFirst({
-      where: { id, organizationId: auth.organizationId },
+      where: { id, ...orderScopeWhere(auth) },
       include: {
         seller: { include: { user: { select: { name: true, email: true } } } },
         customer: true,
@@ -2059,9 +2392,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.get("/orders/:id/pdf", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
-    const order = await loadOrderForPdf({
-      id,
-      organizationId: auth.organizationId,
+    const scoped = orderScopeWhere(auth);
+    const order = await prisma.order.findFirst({
+      where: { id, ...scoped },
+      include: {
+        seller: { include: { user: { select: { name: true, email: true } } } },
+        customer: true,
+        items: { include: { product: { select: { sku: true } } } },
+        organization: { select: { name: true, displayName: true } },
+      },
     });
     if (!order) return reply.status(404).send({ error: "Não encontrado" });
     return sendOrderPdfReply(reply, order);
@@ -2087,6 +2426,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       where: { id, organizationId: auth.organizationId },
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+
+    try {
+      await applyStockOnStatusChange(id, existing.status, body.data.status);
+    } catch (e) {
+      if (e instanceof StockError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
 
     return prisma.order.update({
       where: { id },
@@ -2143,12 +2490,24 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         })),
       });
 
+      const orderStatus = body.data.status ?? "CONFIRMED";
+
+      if (orderStatus === "CONFIRMED") {
+        await assertSufficientStock(
+          auth.organizationId,
+          sale.lines.map((l) => ({
+            productId: l.productId,
+            quantity: l.quantity,
+          })),
+        );
+      }
+
       const order = await prisma.order.create({
         data: {
           organizationId: auth.organizationId,
           sellerId: body.data.sellerId,
           customerId: body.data.customerId,
-          status: body.data.status ?? "CONFIRMED",
+          status: orderStatus,
           totalAmount: sale.netTotal,
           comboDiscountTotal: sale.comboDiscountTotal,
           notes: body.data.notes,
@@ -2170,9 +2529,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         },
       });
 
+      if (order.status === "CONFIRMED") {
+        await applyStockOnStatusChange(order.id, "DRAFT", "CONFIRMED");
+      }
+
       return order;
     } catch (e) {
       if (e instanceof OrderPricingError)
+        return reply.status(400).send({ error: e.message });
+      if (e instanceof StockError)
         return reply.status(400).send({ error: e.message });
       throw e;
     }
@@ -2713,9 +3078,205 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   });
 
   /** Painel simples — vendas do dia, carteira “parada”, produtos sem giro, clientes sem compra. */
-  app.get("/reports/insights", async (req) => {
+  app.get("/reports/insights", async (req, reply) => {
     const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({
+        error: "Relatórios avançados não disponíveis para líderes de equipe",
+      });
+    }
     return buildDistributorInsights(auth.organizationId);
+  });
+
+  app.get("/reports/scorecard", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({ from: z.string().optional(), to: z.string().optional() })
+      .safeParse(req.query);
+    let sellerIds: string[] | undefined;
+    if (isTeamLeaderAuth(auth)) {
+      sellerIds = await teamMemberSellerIds(auth.teamLeaderTeamId!);
+    } else if (auth.role === "MANAGER") {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+    return buildSalesScorecard({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerIds,
+    });
+  });
+
+  app.get("/reports/margin", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({ error: "Relatório de margem disponível apenas para admin/gestor" });
+    }
+    const q = z
+      .object({ from: z.string().optional(), to: z.string().optional() })
+      .safeParse(req.query);
+    let sellerIds: string[] | undefined;
+    if (auth.role === "MANAGER") {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+    return buildMarginReport({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerIds,
+    });
+  });
+
+  app.get("/reports/commission-statement", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({ error: "Extrato de comissão disponível apenas para admin" });
+    }
+    const q = z
+      .object({
+        year: z.coerce.number().int().optional(),
+        month: z.coerce.number().int().min(1).max(12).optional(),
+      })
+      .safeParse(req.query);
+    return buildCommissionStatement({
+      organizationId: auth.organizationId,
+      year: q.success ? q.data.year : undefined,
+      month: q.success ? q.data.month : undefined,
+    });
+  });
+
+  app.get("/reports/stock-health", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({ error: "Relatório de estoque disponível apenas para admin" });
+    }
+    return buildStockHealthReport(auth.organizationId);
+  });
+
+  app.get("/reports/credit-aging", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({ error: "Aging de crédito disponível apenas para admin" });
+    }
+    return buildCreditAgingReport(auth.organizationId);
+  });
+
+  app.get("/reports/fiscal-reconciliation", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({ error: "Conciliação fiscal disponível apenas para admin" });
+    }
+    const q = z
+      .object({ from: z.string().optional(), to: z.string().optional() })
+      .safeParse(req.query);
+    return buildFiscalReconciliation({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+    });
+  });
+
+  app.get("/reports/visit-effectiveness", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        conversionWindowDays: z.coerce.number().int().min(1).max(30).optional(),
+      })
+      .safeParse(req.query);
+    let sellerIds: string[] | undefined;
+    if (isTeamLeaderAuth(auth)) {
+      sellerIds = await teamMemberSellerIds(auth.teamLeaderTeamId!);
+    } else if (auth.role === "MANAGER") {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+    return buildVisitEffectiveness({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      conversionWindowDays: q.success ? q.data.conversionWindowDays : undefined,
+      sellerIds,
+    });
+  });
+
+  app.get("/reports/team-summary", async (req, reply) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        teamId: z.string().optional(),
+      })
+      .safeParse(req.query);
+
+    let sellerIds: string[];
+    let teamName: string | null = null;
+
+    if (isTeamLeaderAuth(auth)) {
+      const teamId = auth.teamLeaderTeamId!;
+      sellerIds = await teamMemberSellerIds(teamId);
+      const team = await getSalesTeam(auth.organizationId, teamId);
+      teamName = team?.name ?? null;
+    } else if (q.success && q.data.teamId) {
+      const team = await getSalesTeam(auth.organizationId, q.data.teamId);
+      if (!team)
+        return reply.status(404).send({ error: "Equipe não encontrada" });
+      sellerIds = team.members.map((m) => m.id);
+      teamName = team.name;
+    } else {
+      return reply
+        .status(400)
+        .send({ error: "Informe teamId ou acesse como líder de equipe" });
+    }
+
+    return buildTeamSalesSummary({
+      organizationId: auth.organizationId,
+      sellerIds,
+      teamName,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+    });
+  });
+
+  app.get("/reports/sales-by-supplier", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(20).optional(),
+      })
+      .safeParse(req.query);
+
+    let sellerIds: string[] | undefined;
+    if (auth.role === "MANAGER" || isTeamLeaderAuth(auth)) {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+
+    return buildSalesBySupplier({
+      organizationId: auth.organizationId,
+      sellerIds,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      limit: q.success ? q.data.limit : undefined,
+    });
   });
 
   /* --- Relatório PDF --- */

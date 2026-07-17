@@ -1,10 +1,10 @@
-import type { LucideIcon } from "lucide-react-native";
-import { Pressable, StyleSheet, View } from "react-native";
-import { TrendingDown, TrendingUp } from "lucide-react-native";
 import { ThemedText } from "@/components/atoms/ThemedText";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
 import { radiiPx } from "@pedidos/design-tokens";
+import type { LucideIcon } from "lucide-react-native";
+import { TrendingDown, TrendingUp } from "lucide-react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 
 type Props = {
   title: string;
@@ -16,7 +16,15 @@ type Props = {
   style?: object;
 };
 
-export function StatCard({ title, value, subtitle, icon: Icon, trend, onPress, style }: Props) {
+export function StatCard({
+  title,
+  value,
+  subtitle,
+  icon: Icon,
+  trend,
+  onPress,
+  style,
+}: Props) {
   const { colors } = useTheme();
   const isPositive = trend ? trend.value >= 0 : true;
   return (
@@ -38,7 +46,10 @@ export function StatCard({ title, value, subtitle, icon: Icon, trend, onPress, s
           <ThemedText variant="bodySm" muted>
             {title}
           </ThemedText>
-          <ThemedText variant="display" style={{ marginTop: 8, fontSize: 28, lineHeight: 32 }}>
+          <ThemedText
+            variant="display"
+            style={{ marginTop: 8, fontSize: 28, lineHeight: 32 }}
+          >
             {value}
           </ThemedText>
           {subtitle ? (
@@ -55,7 +66,10 @@ export function StatCard({ title, value, subtitle, icon: Icon, trend, onPress, s
               )}
               <ThemedText
                 variant="bodySm"
-                style={{ color: isPositive ? colors.primary : colors.danger, fontWeight: "600" }}
+                style={{
+                  color: isPositive ? colors.primary : colors.danger,
+                  fontWeight: "600",
+                }}
               >
                 {isPositive ? "+" : ""}
                 {trend.value}%
@@ -70,9 +84,12 @@ export function StatCard({ title, value, subtitle, icon: Icon, trend, onPress, s
         </View>
         {Icon ? (
           <View
-            style={[styles.iconWrap, { backgroundColor: colorWithAlpha(colors.primary, 0.12) }]}
+            style={[
+              styles.iconWrap,
+              { backgroundColor: colorWithAlpha(colors.primary, 0.12) },
+            ]}
           >
-            <Icon color={colors.primary} size={24} />
+            <Icon color={colors.primary} size={16} />
           </View>
         ) : null}
       </View>
@@ -97,12 +114,20 @@ export function ProgressStat({
   const pct = target > 0 ? Math.min((current / target) * 100, 100) : 0;
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <View
+      style={[
+        styles.card,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
+    >
       <View style={styles.progressHead}>
         <ThemedText variant="bodySm" muted>
           {title}
         </ThemedText>
-        <ThemedText variant="bodySm" style={{ color: colors.primary, fontWeight: "600" }}>
+        <ThemedText
+          variant="bodySm"
+          style={{ color: colors.primary, fontWeight: "600" }}
+        >
           {pct.toFixed(1)}%
         </ThemedText>
       </View>
@@ -134,17 +159,30 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  row: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
+  row: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  },
   body: { flex: 1, minWidth: 0 },
   iconWrap: {
-    width: 48,
-    height: 48,
+    width: 30,
+    height: 30,
     borderRadius: radiiPx.md,
     alignItems: "center",
     justifyContent: "center",
   },
-  trendRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 8 },
-  progressHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  trendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 8,
+  },
+  progressHead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   progressValues: {
     flexDirection: "row",
     alignItems: "flex-end",

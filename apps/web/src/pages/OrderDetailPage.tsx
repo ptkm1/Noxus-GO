@@ -1,3 +1,13 @@
+import { AppSelect } from "@/components/ui/app-select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ORDER_STATUSES, orderStatusLabel } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -119,19 +129,16 @@ export function OrderDetailPage() {
                 Baixar PDF
               </button>
               <span className="text-sm text-muted-foreground">Status:</span>
-              <select
-                className="rounded border px-2 py-1 text-sm"
+              <AppSelect
                 value={order.status}
-                onChange={(e) => patchStatus.mutate(e.target.value)}
                 disabled={patchStatus.isPending}
-              >
-                <option value="DRAFT">DRAFT</option>
-                <option value="CONFIRMED">CONFIRMED</option>
-                <option value="PENDING_CREDIT_APPROVAL">
-                  Aguardando crédito
-                </option>
-                <option value="CANCELLED">CANCELLED</option>
-              </select>
+                triggerClassName="w-auto min-w-[10rem]"
+                options={ORDER_STATUSES.map((s) => ({
+                  value: s,
+                  label: orderStatusLabel(s),
+                }))}
+                onValueChange={(v) => patchStatus.mutate(v)}
+              />
             </div>
           </div>
 
@@ -167,26 +174,28 @@ export function OrderDetailPage() {
           </dl>
 
           <h2 className="mt-8 font-medium">Itens</h2>
-          <table className="mt-2 w-full text-sm">
-            <thead className="text-left text-muted-foreground">
-              <tr>
-                <th className="pb-2">Produto</th>
-                <th className="pb-2">Qtd</th>
-                <th className="pb-2">Preço unit.</th>
-                <th className="pb-2">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="mt-2">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="pb-2">Produto</TableHead>
+                <TableHead className="pb-2">Qtd</TableHead>
+                <TableHead className="pb-2">Preço unit.</TableHead>
+                <TableHead className="pb-2">Subtotal</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {order.items.map((it) => (
-                <tr key={it.id} className="border-t border-border">
-                  <td className="py-2">{it.productName}</td>
-                  <td>{it.quantity}</td>
-                  <td>R$ {Number(it.unitPrice).toFixed(2)}</td>
-                  <td>R$ {(Number(it.unitPrice) * it.quantity).toFixed(2)}</td>
-                </tr>
+                <TableRow key={it.id}>
+                  <TableCell className="py-2">{it.productName}</TableCell>
+                  <TableCell>{it.quantity}</TableCell>
+                  <TableCell>R$ {Number(it.unitPrice).toFixed(2)}</TableCell>
+                  <TableCell>
+                    R$ {(Number(it.unitPrice) * it.quantity).toFixed(2)}
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
           <p className="mt-4 text-right text-lg font-semibold">
             Total: R$ {Number(order.totalAmount).toFixed(2)}
           </p>

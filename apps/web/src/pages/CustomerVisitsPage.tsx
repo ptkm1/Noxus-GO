@@ -1,9 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { FilterBar, FormField } from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { fieldControlClass } from "@/lib/field-styles";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { apiFetch } from "../lib/api";
 import { fmtCoord, googleMapsSearchUrl } from "../lib/maps-links";
 
@@ -185,19 +193,17 @@ export function CustomerVisitsPage() {
           <Input id="visits-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </FormField>
         <FormField label="Vendedor" htmlFor="visits-seller">
-          <select
+          <AppSelect
             id="visits-seller"
-            className={fieldControlClass}
             value={sellerId}
-            onChange={(e) => setSellerId(e.target.value)}
-          >
-            <option value="">Todos</option>
-            {sellers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.user.name}
-              </option>
-            ))}
-          </select>
+            emptyLabel="Todos"
+            placeholder="Todos"
+            options={sellers.map((s) => ({
+              value: s.id,
+              label: s.user.name,
+            }))}
+            onValueChange={setSellerId}
+          />
         </FormField>
         <div className="flex items-end">
           <Button
@@ -246,41 +252,41 @@ export function CustomerVisitsPage() {
       {visitsQ.isLoading ? (
         <p className="text-muted-foreground">Carregando…</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <table className="w-full min-w-[1100px] text-sm">
-            <thead className="bg-background text-left text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3">Entrada</th>
-                <th className="px-4 py-3">Saída</th>
-                <th className="px-4 py-3">Tempo</th>
-                <th className="px-4 py-3">Vendedor</th>
-                <th className="px-4 py-3">Cliente</th>
-                <th className="px-4 py-3">Localização</th>
-                <th className="px-4 py-3">Estado</th>
-                <th className="px-4 py-3">Notas</th>
-              </tr>
-            </thead>
-            <tbody>
+        <div className="rounded-xl border border-border bg-card">
+          <Table className="min-w-[1100px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="px-4">Entrada</TableHead>
+                <TableHead className="px-4">Saída</TableHead>
+                <TableHead className="px-4">Tempo</TableHead>
+                <TableHead className="px-4">Vendedor</TableHead>
+                <TableHead className="px-4">Cliente</TableHead>
+                <TableHead className="px-4">Localização</TableHead>
+                <TableHead className="px-4">Estado</TableHead>
+                <TableHead className="px-4">Notas</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {visits.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-8 text-center text-muted-foreground" colSpan={8}>
+                <TableRow>
+                  <TableCell className="px-4 py-8 text-center text-muted-foreground" colSpan={8}>
                     Nenhuma visita neste período.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : (
                 visits.map((v) => (
-                  <tr key={v.id} className="border-t border-border align-top">
-                    <td className="whitespace-nowrap px-4 py-3">{fmtDateTime(v.checkedInAt)}</td>
-                    <td className="whitespace-nowrap px-4 py-3">
+                  <TableRow key={v.id} className="align-top">
+                    <TableCell className="whitespace-nowrap px-4 py-3">{fmtDateTime(v.checkedInAt)}</TableCell>
+                    <TableCell className="whitespace-nowrap px-4 py-3">
                       {v.checkedOutAt ? fmtDateTime(v.checkedOutAt) : "—"}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3">{fmtDuration(v.durationSeconds, v.openVisit)}</td>
-                    <td className="px-4 py-3">{v.sellerName}</td>
-                    <td className="px-4 py-3">{v.customerName}</td>
-                    <td className="px-4 py-3">
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap px-4 py-3">{fmtDuration(v.durationSeconds, v.openVisit)}</TableCell>
+                    <TableCell className="px-4 py-3">{v.sellerName}</TableCell>
+                    <TableCell className="px-4 py-3">{v.customerName}</TableCell>
+                    <TableCell className="px-4 py-3">
                       <VisitLocationsCell v={v} />
-                    </td>
-                    <td className="px-4 py-3">
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
                       {v.openVisit ? (
                         <span className="rounded-md bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">
                           Em aberto
@@ -290,15 +296,15 @@ export function CustomerVisitsPage() {
                           Concluída
                         </span>
                       )}
-                    </td>
-                    <td className="max-w-[240px] px-4 py-3 text-muted-foreground" title={v.notes ?? undefined}>
+                    </TableCell>
+                    <TableCell className="max-w-[240px] px-4 py-3 text-muted-foreground" title={v.notes ?? undefined}>
                       <span className="line-clamp-3">{v.notes?.trim() ? v.notes : "—"}</span>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>

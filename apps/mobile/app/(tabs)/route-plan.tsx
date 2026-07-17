@@ -1,17 +1,24 @@
-import * as Location from "expo-location";
-import { Link } from "expo-router";
-import { ActivityIndicator, FlatList, Pressable, ScrollView, Text, View } from "react-native";
-import { Clock, MapPin, Navigation, Users } from "lucide-react-native";
 import { MobileHeader } from "@/components/layout";
 import { MOBILE_TAB_SCROLL_BOTTOM } from "@/components/layout/MobileScreen";
 import { StatCard } from "@/components/molecules/StatCard";
+import * as Location from "expo-location";
+import { Link } from "expo-router";
+import { Clock, MapPin, Navigation, Users } from "lucide-react-native";
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import { RoutePlanMap } from "../../components/RoutePlanMap";
 import { RouteCustomerListItem } from "../../components/molecules/RouteCustomerListItem";
 import { VisitNotesModal } from "../../components/molecules/VisitNotesModal";
-import { useThemedStyles } from "../../hooks/useThemedStyles";
 import { useRoutePlanScreen } from "../../hooks/screens/useRoutePlanScreen";
+import { useThemedStyles } from "../../hooks/useThemedStyles";
 import { useTheme } from "../../lib/theme";
-import { createRoutePlanStyles } from "./route-plan.styles";
+import { createRoutePlanStyles } from "./_route-plan.styles";
 
 export default function RoutePlanScreen() {
   const styles = useThemedStyles(createRoutePlanStyles);
@@ -20,20 +27,26 @@ export default function RoutePlanScreen() {
 
   return (
     <View style={styles.root}>
-      <MobileHeader title="Rota" subtitle={`Raio ${s.radiusKm} km · clientes no mapa`} />
+      <MobileHeader
+        title="Rota"
+        subtitle={`Raio ${s.radiusKm} km · clientes no mapa`}
+      />
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: MOBILE_TAB_SCROLL_BOTTOM }]}
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingBottom: MOBILE_TAB_SCROLL_BOTTOM },
+        ]}
       >
-        <View style={{ flexDirection: "row", gap: 10 }}>
-          <View style={{ flex: 1 }}>
-            <StatCard title="Próximos" value={s.filteredCustomers.length} icon={Users} />
-          </View>
+        <View style={{ flexDirection: "row", gap: 6, padding: 10 }}>
           <View style={{ flex: 1 }}>
             <StatCard
-              title="Raio"
-              value={`${s.radiusKm} km`}
-              icon={MapPin}
+              title="Próximos"
+              value={s.filteredCustomers.length}
+              icon={Users}
             />
+          </View>
+          <View style={{ flex: 1 }}>
+            <StatCard title="Raio" value={`${s.radiusKm} km`} icon={MapPin} />
           </View>
           <View style={{ flex: 1 }}>
             <StatCard
@@ -46,12 +59,14 @@ export default function RoutePlanScreen() {
 
         <Text style={styles.lead}>
           Clientes com GPS cadastrado pelo escritório aparecem no mapa. Toque{" "}
-          <Text style={styles.leadStrong}>Rota por estrada</Text> para traçar pelas vias (Google Routes).
+          <Text style={styles.leadStrong}>Rota por estrada</Text> para traçar
+          pelas vias (Google Routes).
         </Text>
 
         {s.nearbyQuery.data?.roadRoutingConfigured === false ? (
           <Text style={styles.warn}>
-            Servidor sem GOOGLE_MAPS_SERVER_API_KEY — configure em apps/api/.env e reinicie a API para rotas por pista.
+            Servidor sem GOOGLE_MAPS_SERVER_API_KEY — configure em apps/api/.env
+            e reinicie a API para rotas por pista.
           </Text>
         ) : null}
 
@@ -69,7 +84,11 @@ export default function RoutePlanScreen() {
             <Text
               style={[
                 styles.filterChipTxt,
-                { color: s.myClientsOnly ? colors.chipTextActive : colors.chipText },
+                {
+                  color: s.myClientsOnly
+                    ? colors.chipTextActive
+                    : colors.chipText,
+                },
               ]}
             >
               Só meus clientes
@@ -89,7 +108,12 @@ export default function RoutePlanScreen() {
                 ]}
                 onPress={() => s.setRadiusKm(km)}
               >
-                <Text style={[styles.filterChipTxt, { color: on ? colors.chipTextActive : colors.chipText }]}>
+                <Text
+                  style={[
+                    styles.filterChipTxt,
+                    { color: on ? colors.chipTextActive : colors.chipText },
+                  ]}
+                >
                   {km} km
                 </Text>
               </Pressable>
@@ -102,13 +126,20 @@ export default function RoutePlanScreen() {
             <View style={styles.visitRow}>
               <Clock color={colors.warning} size={22} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.visitTitle}>Visita em curso · {s.activeVisit.customerName}</Text>
-                <Text style={styles.visitSub}>Tempo no cliente: {s.displayElapsed ?? "…"}</Text>
+                <Text style={styles.visitTitle}>
+                  Visita em curso · {s.activeVisit.customerName}
+                </Text>
+                <Text style={styles.visitSub}>
+                  Tempo no cliente: {s.displayElapsed ?? "…"}
+                </Text>
               </View>
             </View>
             <View style={styles.visitActions}>
               <Pressable
-                style={[styles.checkOutBtn, s.checkOut.isPending && styles.btnDis]}
+                style={[
+                  styles.checkOutBtn,
+                  s.checkOut.isPending && styles.btnDis,
+                ]}
                 disabled={s.checkOut.isPending}
                 onPress={s.requestCheckOut}
               >
@@ -116,7 +147,9 @@ export default function RoutePlanScreen() {
               </Pressable>
               <Pressable
                 style={styles.saleBtn}
-                onPress={() => s.goQuickSaleWithCustomer(s.activeVisit!.customerId)}
+                onPress={() =>
+                  s.goQuickSaleWithCustomer(s.activeVisit!.customerId)
+                }
               >
                 <Text style={styles.saleBtnTxt}>Venda rápida</Text>
               </Pressable>
@@ -125,13 +158,23 @@ export default function RoutePlanScreen() {
         ) : null}
 
         <View style={styles.toolbar}>
-          <Pressable style={styles.toolBtn} onPress={() => void s.refreshLocation()}>
+          <Pressable
+            style={styles.toolBtn}
+            onPress={() => void s.refreshLocation()}
+          >
             <Navigation color={colors.link} size={20} />
             <Text style={styles.toolBtnTxt}>Atualizar GPS</Text>
           </Pressable>
           <Pressable
-            style={[styles.toolBtnPrimary, s.optimizeMutation.isPending && styles.btnDis]}
-            disabled={s.optimizeMutation.isPending || s.myLat == null || s.filteredCustomers.length === 0}
+            style={[
+              styles.toolBtnPrimary,
+              s.optimizeMutation.isPending && styles.btnDis,
+            ]}
+            disabled={
+              s.optimizeMutation.isPending ||
+              s.myLat == null ||
+              s.filteredCustomers.length === 0
+            }
             onPress={() => s.optimizeMutation.mutate()}
           >
             <Text style={styles.toolBtnPrimaryTxt}>
@@ -142,7 +185,9 @@ export default function RoutePlanScreen() {
 
         {s.locErr ? <Text style={styles.err}>{s.locErr}</Text> : null}
         {s.perm === Location.PermissionStatus.DENIED ? (
-          <Text style={styles.warn}>Ative a localização nas definições do telemóvel para usar o mapa.</Text>
+          <Text style={styles.warn}>
+            Ative a localização nas definições do telemóvel para usar o mapa.
+          </Text>
         ) : null}
 
         <RoutePlanMap
@@ -156,12 +201,15 @@ export default function RoutePlanScreen() {
           onMarkerPress={(c) => s.openCustomerFromMap(c)}
         />
 
-        <Text style={styles.mapHint}>Toque num marcador para Maps, Waze ou check-in.</Text>
+        <Text style={styles.mapHint}>
+          Toque num marcador para Maps, Waze ou check-in.
+        </Text>
 
         {s.optimized ? (
           <View style={styles.routeBox}>
             <Text style={styles.routeTitle}>
-              Ordem sugerida · {s.optimized.totalKm.toFixed(1)} km · ~{s.optimized.totalMinutes} min
+              Ordem sugerida · {s.optimized.totalKm.toFixed(1)} km · ~
+              {s.optimized.totalMinutes} min
             </Text>
             <Text style={styles.routeDisclaimer}>
               {s.optimized.source === "google_routes"
@@ -179,7 +227,9 @@ export default function RoutePlanScreen() {
                   {legI >= 0 && route.legKm[legI] != null ? (
                     <Text style={styles.routeLegMeta}>
                       Perna {idx}: {route.legKm[legI]!.toFixed(1)} km
-                      {route.legMinutes[legI] != null ? ` · ~${route.legMinutes[legI]} min` : ""}
+                      {route.legMinutes[legI] != null
+                        ? ` · ~${route.legMinutes[legI]} min`
+                        : ""}
                     </Text>
                   ) : null}
                   <RouteCustomerListItem
@@ -190,8 +240,12 @@ export default function RoutePlanScreen() {
                     checkInPending={s.checkIn.isPending}
                     onPressCustomer={() => s.openCustomer(c.id)}
                     onCheckIn={() => s.requestCheckIn(full)}
-                    onNavigateGoogle={() => void s.navigateToCustomer(full, "google")}
-                    onNavigateWaze={() => void s.navigateToCustomer(full, "waze")}
+                    onNavigateGoogle={() =>
+                      void s.navigateToCustomer(full, "google")
+                    }
+                    onNavigateWaze={() =>
+                      void s.navigateToCustomer(full, "waze")
+                    }
                   />
                 </View>
               );
@@ -206,10 +260,13 @@ export default function RoutePlanScreen() {
           Próximos ({s.filteredCustomers.length}
           {s.myClientsOnly ? " · meus" : ""} · {s.radiusKm} km)
         </Text>
-        {s.nearbyQuery.isFetching ? <ActivityIndicator color={colors.primary} style={{ marginTop: 8 }} /> : null}
+        {s.nearbyQuery.isFetching ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 8 }} />
+        ) : null}
         {s.filteredCustomers.length === 0 && s.nearbyQuery.isFetched ? (
           <Text style={styles.empty}>
-            Sem clientes com coordenadas neste raio. Peça ao escritório para registar GPS ou aumente o raio.
+            Sem clientes com coordenadas neste raio. Peça ao escritório para
+            registar GPS ou aumente o raio.
           </Text>
         ) : (
           <FlatList
@@ -220,12 +277,18 @@ export default function RoutePlanScreen() {
               <RouteCustomerListItem
                 customer={item}
                 routeIndex={s.routeOrderIndex.get(item.id)}
-                isActiveVisit={s.activeVisit?.customerId === item.id && s.hasOpenVisit}
+                isActiveVisit={
+                  s.activeVisit?.customerId === item.id && s.hasOpenVisit
+                }
                 canCheckIn={!s.hasOpenVisit}
-                checkInPending={s.checkIn.isPending && s.checkInModal?.id === item.id}
+                checkInPending={
+                  s.checkIn.isPending && s.checkInModal?.id === item.id
+                }
                 onPressCustomer={() => s.openCustomer(item.id)}
                 onCheckIn={() => s.requestCheckIn(item)}
-                onNavigateGoogle={() => void s.navigateToCustomer(item, "google")}
+                onNavigateGoogle={() =>
+                  void s.navigateToCustomer(item, "google")
+                }
                 onNavigateWaze={() => void s.navigateToCustomer(item, "waze")}
               />
             )}
@@ -238,7 +301,9 @@ export default function RoutePlanScreen() {
             <Text style={styles.visitHistName}>{v.customerName}</Text>
             <Text style={styles.visitHistMeta}>
               {new Date(v.checkedInAt).toLocaleString("pt-BR")}
-              {v.durationSeconds != null ? ` · ${s.formatVisitDuration(v.durationSeconds)}` : ""}
+              {v.durationSeconds != null
+                ? ` · ${s.formatVisitDuration(v.durationSeconds)}`
+                : ""}
             </Text>
           </View>
         ))}
