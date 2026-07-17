@@ -22,6 +22,7 @@ export async function applyStockMovement(input: {
   referenceId?: string;
   notes?: string;
   createdByUserId?: string;
+  tx?: Prisma.TransactionClient;
 }) {
   if (input.type === "MANUAL_ADJUST") {
     if (input.quantity < 0) throw new Error("Novo saldo não pode ser negativo");
@@ -29,7 +30,7 @@ export async function applyStockMovement(input: {
     throw new Error("Quantidade deve ser positiva");
   }
 
-  return prisma.$transaction(async (tx) => {
+  const run = async (tx: Prisma.TransactionClient) => {
     const stock = await getOrCreateProductStock(
       input.organizationId,
       input.productId,
@@ -75,7 +76,13 @@ export async function applyStockMovement(input: {
         reason: reasonParts.length > 0 ? reasonParts.join(" — ") : null,
       },
     });
-  });
+  };
+
+  if (input.tx) {
+    return run(input.tx);
+  }
+
+  return prisma.$transaction(run);
 }
 
 export async function applyInboundInvoiceStock(
@@ -84,19 +91,22 @@ export async function applyInboundInvoiceStock(
   items: { productId: string; quantity: number }[],
   userId?: string,
 ) {
-  for (const item of items) {
-    if (!item.productId || item.quantity <= 0) continue;
-    await applyStockMovement({
-      organizationId,
-      productId: item.productId,
-      type: "INBOUND_INVOICE",
-      quantity: item.quantity,
-      referenceType: "FiscalInvoice",
-      referenceId: fiscalInvoiceId,
-      notes: "Entrada automática via NF-e",
-      createdByUserId: userId,
-    });
-  }
+  await prisma.$transaction(async (tx) => {
+    for (const item of items) {
+      if (!item.productId || item.quantity <= 0) continue;
+      await applyStockMovement({
+        organizationId,
+        productId: item.productId,
+        type: "INBOUND_INVOICE",
+        quantity: item.quantity,
+        referenceType: "FiscalInvoice",
+        referenceId: fiscalInvoiceId,
+        notes: "Entrada automática via NF-e",
+        createdByUserId: userId,
+        tx,
+      });
+    }
+  });
 }
 
 export async function reverseInboundInvoiceStock(
@@ -105,17 +115,20 @@ export async function reverseInboundInvoiceStock(
   items: { productId: string; quantity: number }[],
   userId?: string,
 ) {
-  for (const item of items) {
-    if (!item.productId || item.quantity <= 0) continue;
-    await applyStockMovement({
-      organizationId,
-      productId: item.productId,
-      type: "MANUAL_OUT",
-      quantity: item.quantity,
-      referenceType: "FiscalInvoice",
-      referenceId: fiscalInvoiceId,
-      notes: "Estorno por cancelamento de NF-e de entrada",
-      createdByUserId: userId,
-    });
-  }
+  await prisma.$transaction(async (tx) => {
+    for (const item of items) {
+      if (!item.productId || item.quantity <= 0) continue;
+      await applyStockMovement({
+        organizationId,
+        productId: item.productId,
+        type: "MANUAL_OUT",
+        quantity: item.quantity,
+        referenceType: "FiscalInvoice",
+        referenceId: fiscalInvoiceId,
+        notes: "Estorno por cancelamento de NF-e de entrada",
+        createdByUserId: userId,
+        tx,
+      });
+    }
+  });
 }
