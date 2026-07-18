@@ -1,4 +1,7 @@
 node_modules
+# Monorepo usa pnpm — evita confusão na Vercel (deteta yarn se yarn.lock existir)
+yarn.lock
+package-lock.json
 dist
 # Não usar "build" solto — ignora apps/mobile/.eas/build/ (workflows EAS).
 /build
@@ -16,3 +19,4 @@ apps/mobile/android
 **/*-firebase-adminsdk-*.json
 coverage
 .prisma
+.vercel

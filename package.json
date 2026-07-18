@@ -1,6 +1,7 @@
 {
   "name": "pedidos",
   "private": true,
+  "packageManager": "pnpm@10.22.0",
   "scripts": {
     "dev:api": "pnpm --filter @pedidos/api dev",
     "dev:api:win": "pnpm --filter @pedidos/api dev:win",
