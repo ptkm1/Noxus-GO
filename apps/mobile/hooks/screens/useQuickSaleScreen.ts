@@ -3,10 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Crypto from "expo-crypto";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert } from "react-native";
-import { useWindowDimensions } from "react-native";
+import { Alert, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fmtMoney } from "../../components/atoms/formatMoney";
+import { useAppToast } from "../../context/ToastContext";
 import { apiFetch } from "../../lib/api";
 import { enqueueOfflineSale } from "../../lib/offline-outbox";
 import { postSellerSale } from "../../lib/offline-sale-sync";
@@ -18,30 +18,48 @@ import {
   PRODUCT_DOUBLE_TAP_MS,
   syncCartLinesWithProducts,
 } from "../../lib/sale/cart";
-import type { CartLine, CreditOverview, SaleCustomer, SaleProduct } from "../../lib/sale/types";
-import { computeCatalogTileWidths } from "../../lib/utils/catalog-layout";
+import { getProductStockBlockMessage } from "../../lib/sale/stock";
+import type {
+  CartLine,
+  CreditOverview,
+  SaleCustomer,
+  SaleProduct,
+} from "../../lib/sale/types";
+import {
+  fetchSellerCustomers,
+  sellerOfflineStaleTime,
+} from "../../lib/seller-offline-queries";
 import { findProductByBarcode } from "../../lib/utils/barcode";
-import { filterCustomersByName } from "../../lib/utils/product-search";
+import { computeCatalogTileWidths } from "../../lib/utils/catalog-layout";
+import { useNetInfoOnline } from "../useNetInfoOnline";
 import { useSellerProductCatalog } from "../useSellerProductCatalog";
 
-type SubmitSaleResult = { mode: "online"; status?: string } | { mode: "offlineQueued" };
+type SubmitSaleResult =
+  | { mode: "online"; status?: string }
+  | { mode: "offlineQueued" };
 
 export function useQuickSaleScreen() {
   const router = useRouter();
-  const { customerId: customerIdParam } = useLocalSearchParams<{ customerId?: string }>();
+  const { showToast } = useAppToast();
+  const { customerId: customerIdParam } = useLocalSearchParams<{
+    customerId?: string;
+  }>();
   const qc = useQueryClient();
   const insets = useSafeAreaInsets();
   const layout = computeCatalogTileWidths(useWindowDimensions().width);
 
   const [customerId, setCustomerId] = useState<string | undefined>();
-  const [customerQuery, setCustomerQuery] = useState("");
   const [cart, setCart] = useState<Record<string, CartLine>>({});
   const [barcodeOpen, setBarcodeOpen] = useState(false);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
+  const [scanMsgOk, setScanMsgOk] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [lastCustomerId, setLastCustomerId] = useState<string | null>(null);
-  const productTapTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const productTapTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
 
+  const isOnline = useNetInfoOnline();
   const catalog = useSellerProductCatalog({ customerId });
   const { products } = catalog;
 
@@ -53,7 +71,8 @@ export function useQuickSaleScreen() {
 
   const { data: customers = [] } = useQuery({
     queryKey: ["seller", "customers"],
-    queryFn: () => apiFetch<SaleCustomer[]>("/seller/customers"),
+    staleTime: sellerOfflineStaleTime,
+    queryFn: () => fetchSellerCustomers() as Promise<SaleCustomer[]>,
   });
 
   useEffect(() => {
@@ -79,7 +98,10 @@ export function useQuickSaleScreen() {
 
   useEffect(() => {
     if (!scanMsg) return;
-    const t = setTimeout(() => setScanMsg(null), 3800);
+    const t = setTimeout(() => {
+      setScanMsg(null);
+      setScanMsgOk(false);
+    }, 3800);
     return () => clearTimeout(t);
   }, [scanMsg]);
 
@@ -88,11 +110,6 @@ export function useQuickSaleScreen() {
     void AsyncStorage.setItem(LAST_CUSTOMER_STORAGE_KEY, customerId);
     setLastCustomerId(customerId);
   }, [customerId]);
-
-  const filteredCustomers = useMemo(
-    () => filterCustomersByName(customers, customerQuery),
-    [customers, customerQuery],
-  );
 
   const lastCustomerEntity = useMemo(() => {
     if (!lastCustomerId) return null;
@@ -106,7 +123,10 @@ export function useQuickSaleScreen() {
   }, [cart]);
 
   const cartLines = useMemo(() => Object.values(cart), [cart]);
-  const cartTotal = useMemo(() => cartLines.reduce((s, l) => s + cartLineTotal(l), 0), [cartLines]);
+  const cartTotal = useMemo(
+    () => cartLines.reduce((s, l) => s + cartLineTotal(l), 0),
+    [cartLines],
+  );
 
   const { data: creditInfo, isFetching: creditLoading } = useQuery({
     queryKey: ["seller", "customer-credit", customerId ?? "", cartTotal],
@@ -117,10 +137,20 @@ export function useQuickSaleScreen() {
     enabled: !!customerId,
   });
 
-  const creditBlockedCheckout = !!customerId && creditInfo?.effectiveAction === "BLOCK";
+  const creditBlockedCheckout =
+    !!customerId && creditInfo?.effectiveAction === "BLOCK";
 
   const bumpQty = useCallback((p: SaleProduct, delta: number) => {
-    setCart((prev) => bumpCartQty(prev, p, delta));
+    setCart((prev) => {
+      const currentQty = prev[p.id]?.qty ?? 0;
+      const blockMsg = getProductStockBlockMessage(p, currentQty, delta);
+      if (blockMsg) {
+        setErr(blockMsg);
+        return prev;
+      }
+      setErr(null);
+      return bumpCartQty(prev, p, delta);
+    });
   }, []);
 
   const scheduleProductTap = useCallback(
@@ -149,13 +179,16 @@ export function useQuickSaleScreen() {
 
   const onBarcode = useCallback(
     (raw: string) => {
+      const codeLabel = raw.trim() || "(vazio)";
       const p = findProductByBarcode(products, raw);
+      setBarcodeOpen(false);
       if (p && typeof p.effectiveUnitPrice === "number") {
         bumpQty(p, 1);
-        setBarcodeOpen(false);
-        setScanMsg(null);
+        setScanMsgOk(true);
+        setScanMsg(`Produto adicionado: ${p.name}`);
       } else {
-        setScanMsg("Nenhum produto com este código.");
+        setScanMsgOk(false);
+        setScanMsg(`Não existe produto com o código ${codeLabel} no sistema.`);
       }
     },
     [products, bumpQty],
@@ -186,20 +219,27 @@ export function useQuickSaleScreen() {
         items: lines.map((l) => ({
           productId: l.productId,
           quantity: l.qty,
-          ...(l.discountPercent > 0 ? { discountPercent: l.discountPercent } : {}),
+          ...(l.discountPercent > 0
+            ? { discountPercent: l.discountPercent }
+            : {}),
         })),
         clientMutationId,
       };
 
       const result = await postSellerSale(payload);
-      if (result.kind === "success") return { mode: "online", status: result.status };
+      if (result.kind === "success")
+        return { mode: "online", status: result.status };
       if (result.kind === "dead") throw new Error(result.reason);
       if (result.kind === "auth") throw new Error(result.reason);
 
-      const customerLabel = customerId ? customers.find((c) => c.id === customerId)?.name : undefined;
+      const customerLabel = customerId
+        ? customers.find((c) => c.id === customerId)?.name
+        : undefined;
       const snapshot = {
         customerLabel,
-        lineSummaries: lines.map((l) => `${l.name} × ${l.qty} · R$ ${fmtMoney(cartLineTotal(l))}`),
+        lineSummaries: lines.map(
+          (l) => `${l.name} × ${l.qty} · R$ ${fmtMoney(cartLineTotal(l))}`,
+        ),
         cartTotalApprox: cartTotal,
       };
 
@@ -213,12 +253,15 @@ export function useQuickSaleScreen() {
     },
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ["seller", "sales"] });
-      void qc.invalidateQueries({ queryKey: ["seller", "commission-dashboard"] });
+      void qc.invalidateQueries({ queryKey: ["seller", "products"] });
+      void qc.invalidateQueries({
+        queryKey: ["seller", "commission-dashboard"],
+      });
       void qc.invalidateQueries({ queryKey: ["seller", "customer-credit"] });
       if (data.mode === "offlineQueued") {
         Alert.alert(
           "Pedido na fila offline",
-          "Assim que houver internet, enviamos automaticamente. Veja em Vendas → Fila offline.",
+          "Assim que houver internet, enviamos automaticamente. Veja em Início → Fila offline.",
           [{ text: "OK", onPress: () => router.back() }],
         );
         setCart({});
@@ -232,6 +275,10 @@ export function useQuickSaleScreen() {
         );
         return;
       }
+      showToast({
+        message: "Venda realizada com sucesso!",
+        tone: "success",
+      });
       router.back();
     },
   });
@@ -247,10 +294,16 @@ export function useQuickSaleScreen() {
     if (customerId) router.push(`/customer/${customerId}`);
   }, [customerId, router]);
 
-  const footerPad = Math.max(insets.bottom, 12) + 72;
+  const clearScanMsg = useCallback(() => {
+    setScanMsg(null);
+    setScanMsgOk(false);
+  }, []);
+
   const emptyCatalogMessage =
     products.length === 0
-      ? "Nenhum produto liberado pelo admin."
+      ? !isOnline
+        ? "Sem catálogo em cache. Liga a internet uma vez para sincronizar."
+        : "Nenhum produto liberado pelo admin."
       : "Nenhum resultado para esta pesquisa ou categoria.";
 
   return {
@@ -258,9 +311,7 @@ export function useQuickSaleScreen() {
     layout,
     customerId,
     setCustomerId,
-    customerQuery,
-    setCustomerQuery,
-    filteredCustomers,
+    customers,
     lastCustomerEntity,
     catalog,
     cartLines,
@@ -277,12 +328,13 @@ export function useQuickSaleScreen() {
     barcodeOpen,
     setBarcodeOpen,
     scanMsg,
+    scanMsgOk,
+    clearScanMsg,
     onBarcode,
     err,
     create,
     finalize,
     openCustomerCredit,
-    footerPad,
     emptyCatalogMessage,
   };
 }

@@ -1,6 +1,6 @@
 import "./load-env.js";
-import { prisma } from "./db.js";
 import { buildApp } from "./app.js";
+import { prisma } from "./db.js";
 
 const port = Number(process.env.API_PORT ?? 4000);
 const host = process.env.API_HOST ?? "0.0.0.0";
@@ -15,7 +15,9 @@ function requireJwtEnv() {
     process.exit(1);
   }
   if (a.length < 16 || r.length < 16) {
-    console.error("[pedidos-api] Cada segredo JWT deve ter pelo menos 16 caracteres.");
+    console.error(
+      "[pedidos-api] Cada segredo JWT deve ter pelo menos 16 caracteres.",
+    );
     process.exit(1);
   }
 }

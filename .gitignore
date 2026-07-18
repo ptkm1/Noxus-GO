@@ -1,4 +1,7 @@
 node_modules
+# Monorepo usa pnpm — evita confusão na Vercel (deteta yarn se yarn.lock existir)
+yarn.lock
+package-lock.json
 dist
 # Não usar "build" solto — ignora apps/mobile/.eas/build/ (workflows EAS).
 /build
@@ -11,5 +14,9 @@ dist
 .DS_Store
 apps/mobile/ios
 apps/mobile/android
+# Chave privada FCM V1 (NÃO o google-services.json)
+**/firebase-adminsdk-*.json
+**/*-firebase-adminsdk-*.json
 coverage
 .prisma
+.vercel

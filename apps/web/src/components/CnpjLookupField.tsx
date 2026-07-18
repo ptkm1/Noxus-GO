@@ -1,8 +1,13 @@
+import { FormField } from "@/components/forms";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import type { CnpjCompanyData } from "@pedidos/shared";
 import {
   cnpjDigitsOnly,
   formatCnpjMask,
   isCnpjComplete,
+  isCnpjSituacaoAtiva,
+  isValidCnpj,
   suggestedTradeName,
 } from "@pedidos/shared";
 import { useCallback, useState } from "react";
@@ -12,24 +17,42 @@ type Props = {
   onApply: (data: CnpjCompanyData) => void;
   disabled?: boolean;
   buttonLabel?: string;
+  label?: string;
+  required?: boolean;
+  digits?: string;
+  onDigitsChange?: (digits: string) => void;
+  error?: string;
 };
 
 export function CnpjLookupField({
   onApply,
   disabled,
   buttonLabel = "Buscar na Receita",
+  label = "CNPJ",
+  required,
+  digits: controlledDigits,
+  onDigitsChange,
+  error,
 }: Props) {
-  const [digits, setDigits] = useState("");
+  const [internalDigits, setInternalDigits] = useState("");
+  const digits = controlledDigits ?? internalDigits;
+  const setDigits = onDigitsChange ?? setInternalDigits;
   const [loading, setLoading] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const [lastOk, setLastOk] = useState<string | null>(null);
+  const [situacaoWarning, setSituacaoWarning] = useState<string | null>(null);
 
   const lookup = useCallback(async () => {
     const d = cnpjDigitsOnly(digits);
     setHint(null);
     setLastOk(null);
+    setSituacaoWarning(null);
     if (d.length !== 14) {
       setHint("Informe os 14 dígitos do CNPJ.");
+      return;
+    }
+    if (!isValidCnpj(d)) {
+      setHint("CNPJ inválido (dígitos verificadores incorretos).");
       return;
     }
     setLoading(true);
@@ -42,24 +65,54 @@ export function CnpjLookupField({
       setLastOk(
         `${trade}${data.situacaoCadastral ? ` · ${data.situacaoCadastral}` : ""}`,
       );
+      if (!isCnpjSituacaoAtiva(data.situacaoCadastral)) {
+        setSituacaoWarning(
+          `Atenção: situação cadastral «${data.situacaoCadastral}» — confira na Receita Federal antes de prosseguir.`,
+        );
+      }
     } catch (e) {
-      setHint(e instanceof Error ? e.message : "Não foi possível consultar o CNPJ.");
+      setHint(
+        e instanceof Error ? e.message : "Não foi possível consultar o CNPJ.",
+      );
     } finally {
       setLoading(false);
     }
   }, [digits, onApply]);
 
   return (
-    <div className="space-y-2">
-      <label className="block text-sm font-medium text-slate-700">CNPJ (opcional)</label>
-      <div className="flex flex-wrap gap-2">
-        <input
+    <FormField
+      label={label}
+      htmlFor="cnpj-lookup"
+      required={required}
+      error={error ?? undefined}
+      hint={
+        error ? undefined : (
+          <>
+            Consulta pública via{" "}
+            <a
+              href="https://brasilapi.com.br/"
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary underline"
+            >
+              BrasilAPI
+            </a>
+            . Os dados podem estar desatualizados — confira sempre na Receita
+            Federal.
+          </>
+        )
+      }
+    >
+      <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-start">
+        <Input
+          id="cnpj-lookup"
           type="text"
           inputMode="numeric"
           autoComplete="off"
           placeholder="00.000.000/0001-00"
           disabled={disabled || loading}
-          className="min-w-[200px] flex-1 rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-brand-500 disabled:bg-slate-100"
+          className="font-mono"
+          aria-invalid={error ? true : undefined}
           value={formatCnpjMask(digits)}
           onChange={(e) => setDigits(cnpjDigitsOnly(e.target.value))}
           onKeyDown={(e) => {
@@ -69,29 +122,28 @@ export function CnpjLookupField({
             }
           }}
         />
-        <button
+        <Button
           type="button"
-          disabled={disabled || loading || !isCnpjComplete(digits)}
+          variant="outline"
+          className="shrink-0"
+          disabled={
+            disabled ||
+            loading ||
+            !isCnpjComplete(digits) ||
+            !isValidCnpj(digits)
+          }
           onClick={() => void lookup()}
-          className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-800 hover:bg-brand-100 disabled:opacity-50"
         >
           {loading ? "A consultar…" : buttonLabel}
-        </button>
+        </Button>
       </div>
-      <p className="text-xs text-slate-500">
-        Consulta pública via{" "}
-        <a
-          href="https://brasilapi.com.br/"
-          target="_blank"
-          rel="noreferrer"
-          className="text-brand-600 underline"
-        >
-          BrasilAPI
-        </a>
-        . Os dados podem estar desatualizados — confira sempre na Receita Federal.
-      </p>
-      {hint ? <p className="text-sm text-red-600">{hint}</p> : null}
-      {lastOk ? <p className="text-sm text-emerald-700">{lastOk}</p> : null}
-    </div>
+      {hint && !error ? (
+        <p className="text-sm text-destructive">{hint}</p>
+      ) : null}
+      {situacaoWarning ? (
+        <p className="text-sm text-amber-700">{situacaoWarning}</p>
+      ) : null}
+      {lastOk ? <p className="text-sm text-success">{lastOk}</p> : null}
+    </FormField>
   );
 }

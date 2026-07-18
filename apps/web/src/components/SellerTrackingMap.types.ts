@@ -15,4 +15,6 @@ export type SellerTrackingMapProps = {
   selectedSellerId: string | null;
   onSelectSeller: (sellerId: string | null) => void;
   trail?: TrailPoint[];
+  /** Trajeto GPS acumulado via WebSocket (flag VITE_LIVE_TRACK_WS_POLYLINE_ENABLED). */
+  liveTrail?: TrailPoint[];
 };

@@ -1,6 +1,6 @@
+import { API_PREFIX } from "@pedidos/shared";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
-import { API_PREFIX } from "@pedidos/shared";
 import { apiBase } from "./api";
 
 export const SELLER_LOCATION_BG_TASK = "seller-location-background";
@@ -35,7 +35,9 @@ function ensureTaskDefined(): boolean {
 
   TaskManager.defineTask(SELLER_LOCATION_BG_TASK, async ({ data, error }) => {
     if (error) return;
-    const payload = data as { locations?: Location.LocationObject[] } | undefined;
+    const payload = data as
+      | { locations?: Location.LocationObject[] }
+      | undefined;
     const loc = payload?.locations?.[payload.locations.length - 1];
     if (!loc) return;
 
@@ -91,7 +93,9 @@ export async function startSellerBackgroundLocation(): Promise<boolean> {
     if (reqBg.status !== Location.PermissionStatus.GRANTED) return false;
   }
 
-  const started = await Location.hasStartedLocationUpdatesAsync(SELLER_LOCATION_BG_TASK);
+  const started = await Location.hasStartedLocationUpdatesAsync(
+    SELLER_LOCATION_BG_TASK,
+  );
   if (started) return true;
 
   await Location.startLocationUpdatesAsync(SELLER_LOCATION_BG_TASK, {
@@ -100,9 +104,9 @@ export async function startSellerBackgroundLocation(): Promise<boolean> {
     timeInterval: 60_000,
     showsBackgroundLocationIndicator: true,
     foregroundService: {
-      notificationTitle: "Pedidos",
+      notificationTitle: "CommercePro",
       notificationBody: "Rastreio de rota ativo",
-      notificationColor: "#0284c7",
+      notificationColor: "#8A3FFC",
     },
   });
   return true;
@@ -112,7 +116,9 @@ export async function stopSellerBackgroundLocation(): Promise<void> {
   if (!getTaskManager()) return;
 
   try {
-    const started = await Location.hasStartedLocationUpdatesAsync(SELLER_LOCATION_BG_TASK);
+    const started = await Location.hasStartedLocationUpdatesAsync(
+      SELLER_LOCATION_BG_TASK,
+    );
     if (started) {
       await Location.stopLocationUpdatesAsync(SELLER_LOCATION_BG_TASK);
     }

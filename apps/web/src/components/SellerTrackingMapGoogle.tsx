@@ -11,17 +11,20 @@ import { getGoogleMapsApiKey } from "../lib/google-maps-config";
 import { googleMapsSearchUrl } from "../lib/maps-links";
 import type { SellerMapMarker, SellerTrackingMapProps } from "./SellerTrackingMap.types";
 
-const ONLINE_COLOR = "#16a34a";
-const OFFLINE_COLOR = "#64748b";
-const TRAIL_COLOR = "#0284c7";
+const ONLINE_COLOR = "#5ee9a8";
+const OFFLINE_COLOR = "#9ca3af";
+const TRAIL_COLOR = "#6b9ee8";
+const LIVE_TRAIL_COLOR = "#7c3aed";
 const MAP_PADDING = 48;
 
 function MapFitBounds({
   markers,
   trail,
+  liveTrail,
 }: {
   markers: SellerMapMarker[];
   trail: { lat: number; lng: number }[];
+  liveTrail: { lat: number; lng: number }[];
 }) {
   const map = useMap();
 
@@ -39,6 +42,10 @@ function MapFitBounds({
       bounds.extend({ lat: p.lat, lng: p.lng });
       hasPoint = true;
     }
+    for (const p of liveTrail) {
+      bounds.extend({ lat: p.lat, lng: p.lng });
+      hasPoint = true;
+    }
 
     if (!hasPoint) return;
 
@@ -50,7 +57,7 @@ function MapFitBounds({
     }
 
     map.fitBounds(bounds, MAP_PADDING);
-  }, [map, markers, trail]);
+  }, [map, markers, trail, liveTrail]);
 
   return null;
 }
@@ -103,13 +110,13 @@ function SelectedInfoWindow({
       position={{ lat: marker.latitude, lng: marker.longitude }}
       onCloseClick={onClose}
     >
-      <div className="max-w-[220px] text-sm text-slate-800">
+      <div className="max-w-[220px] text-sm text-foreground">
         <p className="font-semibold">{marker.sellerName}</p>
         <p className="mt-1">
           {marker.isOnline ? "Online" : "Offline"} · {when}
         </p>
         {marker.activeVisitCustomerName ? (
-          <p className="mt-1 text-amber-800">Visita: {marker.activeVisitCustomerName}</p>
+          <p className="mt-1 text-warning">Visita: {marker.activeVisitCustomerName}</p>
         ) : null}
         <p className="mt-2">
           <a
@@ -126,8 +133,38 @@ function SelectedInfoWindow({
   );
 }
 
+function DashedLivePolyline({ path }: { path: { lat: number; lng: number }[] }) {
+  const icons = useMemo(() => {
+    if (typeof google === "undefined") return undefined;
+    return [
+      {
+        icon: {
+          path: "M 0,-1 0,1",
+          strokeOpacity: 1,
+          scale: 3,
+          strokeColor: LIVE_TRAIL_COLOR,
+        },
+        offset: "0",
+        repeat: "14px",
+      },
+    ];
+  }, []);
+
+  if (path.length < 2) return null;
+
+  return (
+    <Polyline
+      path={path}
+      strokeColor={LIVE_TRAIL_COLOR}
+      strokeOpacity={0}
+      strokeWeight={4}
+      icons={icons}
+    />
+  );
+}
+
 export function SellerTrackingMapGoogle(props: SellerTrackingMapProps) {
-  const { markers, selectedSellerId, onSelectSeller, trail = [] } = props;
+  const { markers, selectedSellerId, onSelectSeller, trail = [], liveTrail = [] } = props;
   const apiKey = getGoogleMapsApiKey()!;
 
   const defaultCenter = useMemo(() => {
@@ -144,9 +181,14 @@ export function SellerTrackingMapGoogle(props: SellerTrackingMapProps) {
     [trail],
   );
 
+  const liveTrailPath = useMemo(
+    () => liveTrail.map((p) => ({ lat: p.lat, lng: p.lng })),
+    [liveTrail],
+  );
+
   return (
     <APIProvider apiKey={apiKey} language="pt-BR" region="BR">
-      <div className="h-[min(520px,60vh)] w-full overflow-hidden rounded-xl border border-slate-200">
+      <div className="h-[min(520px,60vh)] w-full overflow-hidden rounded-xl border border-border">
         <Map
           defaultCenter={defaultCenter}
           defaultZoom={markers.length ? 10 : 4}
@@ -156,7 +198,9 @@ export function SellerTrackingMapGoogle(props: SellerTrackingMapProps) {
           fullscreenControl
           style={{ width: "100%", height: "100%" }}
         >
-          <MapFitBounds markers={markers} trail={trail} />
+          <MapFitBounds markers={markers} trail={trail} liveTrail={liveTrail} />
+
+          {liveTrailPath.length >= 2 ? <DashedLivePolyline path={liveTrailPath} /> : null}
 
           {trailPath.length >= 2 ? (
             <Polyline

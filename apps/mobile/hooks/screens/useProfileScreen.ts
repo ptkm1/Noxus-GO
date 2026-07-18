@@ -25,7 +25,11 @@ export function useProfileScreen() {
   }, [me]);
 
   const patch = useMutation({
-    mutationFn: () => apiFetch("/seller/me", { method: "PATCH", body: JSON.stringify({ name }) }),
+    mutationFn: () =>
+      apiFetch("/seller/me", {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["seller", "me"] }),
   });
 
@@ -34,6 +38,7 @@ export function useProfileScreen() {
     name,
     setName,
     saveName: () => patch.mutate(),
+    savePending: patch.isPending,
     goSettings: () => router.push("/settings"),
   };
 }

@@ -4,6 +4,9 @@ import type { CnpjCompanyData } from "@pedidos/shared";
 import { suggestedTradeName } from "@pedidos/shared";
 import { useAuth } from "../auth/AuthContext";
 import { CnpjLookupField } from "../components/CnpjLookupField";
+import { FormField, FormGrid } from "@/components/forms";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export function RegisterPage() {
   const { register } = useAuth();
@@ -35,10 +38,10 @@ export function RegisterPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center p-4 pb-10">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl">
-        <h1 className="text-2xl font-semibold text-slate-900">Criar conta</h1>
-        <p className="mt-1 text-sm text-slate-500">Nova empresa e administrador</p>
+    <div className="relative z-10 flex flex-1 flex-col items-center justify-center p-4 pb-10">
+      <div className="glass glow-primary w-full max-w-md rounded-2xl border border-border/50 p-8 shadow-2xl">
+        <h1 className="text-2xl font-semibold text-foreground">Criar conta</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Nova empresa e administrador</p>
         <form className="mt-8 space-y-4" onSubmit={onSubmit}>
           <CnpjLookupField
             disabled={pending}
@@ -46,76 +49,68 @@ export function RegisterPage() {
               setOrganizationName(suggestedTradeName(d));
             }}
           />
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Nome da empresa</label>
-            <input
-              type="text"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-brand-500"
-              value={organizationName}
-              onChange={(e) => setOrganizationName(e.target.value)}
-              autoComplete="organization"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700">O teu nome</label>
-            <input
-              type="text"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-brand-500"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              autoComplete="name"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Email</label>
-            <input
-              type="email"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-brand-500"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Senha</label>
-            <input
-              type="password"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-brand-500"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password"
-              minLength={6}
-              required
-            />
-            <p className="mt-1 text-xs text-slate-500">Mínimo 6 caracteres</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Confirmar senha</label>
-            <input
-              type="password"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-brand-500"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              autoComplete="new-password"
-              minLength={6}
-              required
-            />
-          </div>
-          {err && <p className="text-sm text-red-600">{err}</p>}
-          <button
-            type="submit"
-            disabled={pending}
-            className="w-full rounded-lg bg-brand-600 py-2.5 font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-          >
+          <FormGrid cols={1} className="gap-4">
+            <FormField label="Nome da empresa" htmlFor="reg-org" required>
+              <Input
+                id="reg-org"
+                type="text"
+                value={organizationName}
+                onChange={(e) => setOrganizationName(e.target.value)}
+                autoComplete="organization"
+                required
+              />
+            </FormField>
+            <FormField label="O teu nome" htmlFor="reg-name" required>
+              <Input
+                id="reg-name"
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoComplete="name"
+                required
+              />
+            </FormField>
+            <FormField label="Email" htmlFor="reg-email" required>
+              <Input
+                id="reg-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                required
+              />
+            </FormField>
+            <FormField label="Senha" htmlFor="reg-password" required hint="Mínimo 6 caracteres">
+              <Input
+                id="reg-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+                minLength={6}
+                required
+              />
+            </FormField>
+            <FormField label="Confirmar senha" htmlFor="reg-confirm" required>
+              <Input
+                id="reg-confirm"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
+                minLength={6}
+                required
+              />
+            </FormField>
+          </FormGrid>
+          {err && <p className="text-sm text-destructive">{err}</p>}
+          <Button type="submit" disabled={pending} className="w-full">
             {pending ? "A criar conta…" : "Criar conta"}
-          </button>
+          </Button>
         </form>
-        <p className="mt-6 text-center text-sm text-slate-600">
+        <p className="mt-6 text-center text-sm text-muted-foreground">
           Já tens conta?{" "}
-          <Link to="/login" className="font-medium text-brand-600 hover:text-brand-700">
+          <Link to="/login" className="font-medium text-primary hover:text-primary">
             Entrar
           </Link>
         </p>

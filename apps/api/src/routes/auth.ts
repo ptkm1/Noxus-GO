@@ -1,9 +1,74 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { prisma } from "../db.js";
+import {
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+} from "../auth/jwt.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
-import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../auth/jwt.js";
+import { prisma } from "../db.js";
+import {
+  resolveTeamLeaderContext,
+  resolveTeamLeaderTeamId,
+} from "../services/sales-teams.js";
+import {
+  ensureOrgRolePermissions,
+  getRolePermissionsMap,
+} from "../services/role-permissions.js";
 import { getAuth } from "../util/guards.js";
+
+async function accessPayloadForUser(user: {
+  id: string;
+  role: import("@prisma/client").Role;
+  organizationId: string;
+  seller: { id: string } | null;
+}) {
+  const teamLeaderTeamId = await resolveTeamLeaderTeamId(
+    user.seller?.id ?? null,
+  );
+  return {
+    sub: user.id,
+    role: user.role,
+    organizationId: user.organizationId,
+    sellerId: user.seller?.id ?? null,
+    teamLeaderTeamId,
+  };
+}
+
+async function userResponseForMe(user: {
+  id: string;
+  email: string;
+  name: string;
+  matricula: string | null;
+  role: import("@prisma/client").Role;
+  organizationId: string;
+  seller: {
+    id: string;
+    commissionPercent: import("@prisma/client").Prisma.Decimal;
+  } | null;
+}) {
+  const leader = await resolveTeamLeaderContext(user.seller?.id ?? null);
+  const permissions = await getRolePermissionsMap(
+    user.organizationId,
+    user.role,
+  );
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    matricula: user.matricula,
+    role: user.role,
+    organizationId: user.organizationId,
+    sellerId: user.seller?.id ?? null,
+    commissionPercent: user.seller
+      ? Number(user.seller.commissionPercent)
+      : null,
+    isTeamLeader: !!leader,
+    teamId: leader?.teamId ?? null,
+    teamName: leader?.teamName ?? null,
+    permissions,
+  };
+}
 
 const loginBody = z.object({
   email: z
@@ -34,7 +99,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   app.post("/register", async (req, reply) => {
     const parsed = registerBody.safeParse(req.body);
     if (!parsed.success) {
-      return reply.status(400).send({ error: "Dados inválidos", details: parsed.error.flatten() });
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: parsed.error.flatten() });
     }
 
     const { organizationName, name, email, password } = parsed.data;
@@ -58,25 +125,16 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       });
     });
 
-    const accessToken = signAccessToken({
-      sub: user.id,
-      role: user.role,
-      organizationId: user.organizationId,
-      sellerId: user.seller?.id ?? null,
-    });
+    await ensureOrgRolePermissions(user.organizationId);
+
+    const accessToken = signAccessToken(await accessPayloadForUser(user));
     const refreshToken = signRefreshToken(user.id);
+    const me = await userResponseForMe(user);
 
     return {
       accessToken,
       refreshToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        organizationId: user.organizationId,
-        sellerId: user.seller?.id ?? null,
-      },
+      user: me,
     };
   });
 
@@ -88,11 +146,16 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         {
           zod: parsed.error.flatten(),
           bodyType: body === null ? "null" : typeof body,
-          bodyKeys: body && typeof body === "object" && !Array.isArray(body) ? Object.keys(body as object) : [],
+          bodyKeys:
+            body && typeof body === "object" && !Array.isArray(body)
+              ? Object.keys(body as object)
+              : [],
         },
         "login: JSON inválido ou campos em falta (esperado email + password)",
       );
-      return reply.status(400).send({ error: "Dados inválidos", details: parsed.error.flatten() });
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: parsed.error.flatten() });
     }
 
     const emailNorm = parsed.data.email;
@@ -103,7 +166,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       include: { seller: true },
     });
 
-    const passwordOk = user ? await verifyPassword(plainPassword, user.passwordHash) : false;
+    const passwordOk = user
+      ? await verifyPassword(plainPassword, user.passwordHash)
+      : false;
 
     if (!user || !passwordOk) {
       app.log.warn(
@@ -120,31 +185,21 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(401).send({ error: "Email ou senha incorretos" });
     }
 
-    const accessToken = signAccessToken({
-      sub: user.id,
-      role: user.role,
-      organizationId: user.organizationId,
-      sellerId: user.seller?.id ?? null,
-    });
+    const accessToken = signAccessToken(await accessPayloadForUser(user));
     const refreshToken = signRefreshToken(user.id);
+    const me = await userResponseForMe(user);
 
     return {
       accessToken,
       refreshToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        organizationId: user.organizationId,
-        sellerId: user.seller?.id ?? null,
-      },
+      user: me,
     };
   });
 
   app.post("/refresh", async (req, reply) => {
     const parsed = refreshBody.safeParse(req.body);
-    if (!parsed.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!parsed.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     let payload;
     try {
@@ -157,14 +212,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       where: { id: payload.sub },
       include: { seller: true },
     });
-    if (!user) return reply.status(401).send({ error: "Usuário não encontrado" });
+    if (!user)
+      return reply.status(401).send({ error: "Usuário não encontrado" });
 
-    const accessToken = signAccessToken({
-      sub: user.id,
-      role: user.role,
-      organizationId: user.organizationId,
-      sellerId: user.seller?.id ?? null,
-    });
+    const accessToken = signAccessToken(await accessPayloadForUser(user));
 
     return { accessToken };
   });
@@ -177,16 +228,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       where: { id: auth.sub },
       include: { seller: true },
     });
-    if (!user) return reply.status(404).send({ error: "Usuário não encontrado" });
+    if (!user)
+      return reply.status(404).send({ error: "Usuário não encontrado" });
 
-    return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      organizationId: user.organizationId,
-      sellerId: user.seller?.id ?? null,
-      commissionPercent: user.seller ? Number(user.seller.commissionPercent) : null,
-    };
+    return userResponseForMe(user);
   });
 };

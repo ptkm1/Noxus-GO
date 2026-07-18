@@ -2,7 +2,31 @@
 
 export const CATEGORY_SCHEMA_BY_CODE = {
   GENERAL: [
-    { key: "brand", label: "Marca", type: "text", section: "Identidade", placeholder: "Fabricante ou marca própria" },
+    {
+      key: "sale_unit",
+      label: "Unidade de venda",
+      type: "select",
+      section: "Embalagem",
+      options: [
+        { value: "UN", label: "Unidade" },
+        { value: "CX", label: "Caixa" },
+        { value: "FD", label: "Fardo" },
+      ],
+    },
+    {
+      key: "net_content",
+      label: "Conteúdo / medida",
+      type: "text",
+      section: "Embalagem",
+      placeholder: "ex.: 500 ml, 1 kg, 2 L",
+    },
+    {
+      key: "brand",
+      label: "Marca",
+      type: "text",
+      section: "Identidade",
+      placeholder: "Fabricante ou marca própria",
+    },
     {
       key: "gtin",
       label: "GTIN/EAN",

@@ -1,3 +1,4 @@
+import { APP_BRAND_LILAC } from "@pedidos/shared";
 import { useMemo } from "react";
 import { StyleSheet } from "react-native";
 
@@ -5,8 +6,10 @@ export type SellerSalesToolbarFabStylesParams = {
   fabBackgroundColor?: string;
 };
 
-export function useSellerSalesToolbarFabStyles(params: SellerSalesToolbarFabStylesParams = {}) {
-  const { fabBackgroundColor = "#0284c7" } = params;
+export function useSellerSalesToolbarFabStyles(
+  params: SellerSalesToolbarFabStylesParams = {},
+) {
+  const { fabBackgroundColor = APP_BRAND_LILAC } = params;
 
   return useMemo(
     () =>

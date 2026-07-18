@@ -5,4 +5,7 @@ export type CatalogTileProduct = {
   imageUrl?: string | null;
   category?: { id: string; name: string } | null;
   effectiveUnitPrice?: number;
+  stockQty?: number;
+  blockSaleWhenOutOfStock?: boolean;
+  attributes?: Record<string, unknown>;
 };

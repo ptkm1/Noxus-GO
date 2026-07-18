@@ -1,35 +1,64 @@
-import type { FastifyPluginAsync } from "fastify";
-import { z } from "zod";
-import { prisma } from "../db.js";
-import type { FastifyReply, FastifyRequest } from "fastify";
 import type { OrderStatus } from "@prisma/client";
 import { Prisma } from "@prisma/client";
-import { decToNum } from "../util/money.js";
-import { resolveEffectiveUnitPrice } from "../services/price-resolve.js";
-import { computeSaleOrder, OrderPricingError } from "../services/order-pricing.js";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import { z } from "zod";
+import { prisma } from "../db.js";
+import {
+  notifyAdminsCreditPending,
+  notifySaleConfirmed,
+} from "../services/admin-notifications.js";
 import { buildSellerCommissionDashboard } from "../services/commission-dashboard.js";
 import {
   buildSellerCustomerCreditSnapshot,
   evaluateOrderCredit,
   violationsToJson,
 } from "../services/credit.js";
-import { notifyAdminsCreditPending } from "../services/admin-notifications.js";
+import {
+  customerBodySchema,
+  customerPatchSchema,
+  toCustomerPrismaData,
+  type CustomerBodyInput,
+} from "../services/customer-validation.js";
 import { isGoogleRoutesConfigured } from "../services/google-routes.js";
+import { getWebPushPublicKey } from "../services/notify.js";
+import {
+  loadOrderForPdf,
+  sendOrderPdfReply,
+} from "../services/order-pdf-load.js";
+import {
+  computeSaleOrder,
+  OrderPricingError,
+} from "../services/order-pricing.js";
+import { resolveEffectiveUnitPrice } from "../services/price-resolve.js";
+import {
+  applyStockOnStatusChange,
+  assertSufficientStock,
+  StockError,
+} from "../services/product-stock.js";
+import {
+  handleRegisterPushDevice,
+  handleUnregisterPushDevice,
+} from "../services/push-device-routes.js";
 import { buildRouteDirections } from "../services/route-directions.js";
 import { greedyNearestRoute, haversineKm } from "../services/route-plan.js";
+import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
 import { recordSellerLocation } from "../services/seller-location-write.js";
+import { decToNum } from "../util/money.js";
 
 const idParam = z.object({ id: z.string().min(1) });
 
 export const sellerRoutes: FastifyPluginAsync = async (app) => {
-  app.addHook("preHandler", async (req: FastifyRequest, reply: FastifyReply) => {
-    if (!req.auth) {
-      return reply.status(401).send({ error: "Não autorizado" });
-    }
-    if (req.auth.role !== "SELLER" || !req.auth.sellerId) {
-      return reply.status(403).send({ error: "Apenas vendedores" });
-    }
-  });
+  app.addHook(
+    "preHandler",
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      if (!req.auth) {
+        return reply.status(401).send({ error: "Não autorizado" });
+      }
+      if (req.auth.role !== "SELLER" || !req.auth.sellerId) {
+        return reply.status(403).send({ error: "Apenas vendedores" });
+      }
+    },
+  );
 
   app.get("/", async () => ({ ok: true, scope: "seller" as const }));
 
@@ -38,9 +67,15 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const org = await prisma.organization.findFirst({
       where: { id: auth.organizationId },
-      select: { name: true, displayName: true, logoUrl: true, primaryColor: true },
+      select: {
+        name: true,
+        displayName: true,
+        logoUrl: true,
+        primaryColor: true,
+      },
     });
-    if (!org) return reply.status(404).send({ error: "Organização não encontrada" });
+    if (!org)
+      return reply.status(404).send({ error: "Organização não encontrada" });
     return {
       displayName: org.displayName ?? org.name,
       logoUrl: org.logoUrl,
@@ -59,15 +94,21 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       email: user!.email,
       name: user!.name,
       sellerId: auth.sellerId,
-      commissionPercent: user!.seller ? decToNum(user!.seller.commissionPercent) : null,
+      commissionPercent: user!.seller
+        ? decToNum(user!.seller.commissionPercent)
+        : null,
     };
   });
 
   app.patch("/me", async (req, reply) => {
     const auth = req.auth!;
     const body = z.object({ name: z.string().min(1) }).safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
-    await prisma.user.update({ where: { id: auth.sub }, data: { name: body.data.name } });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    await prisma.user.update({
+      where: { id: auth.sub },
+      data: { name: body.data.name },
+    });
     return { ok: true };
   });
 
@@ -83,7 +124,30 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       q.success && q.data.year != null && q.data.month != null
         ? new Date(q.data.year, q.data.month - 1, 12)
         : new Date();
-    return buildSellerCommissionDashboard(auth.organizationId, auth.sellerId!, ref);
+    return buildSellerCommissionDashboard(
+      auth.organizationId,
+      auth.sellerId!,
+      ref,
+    );
+  });
+
+  app.get("/reports/sales-by-supplier", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(20).optional(),
+      })
+      .safeParse(req.query);
+
+    return buildSalesBySupplier({
+      organizationId: auth.organizationId,
+      sellerIds: [auth.sellerId!],
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      limit: q.success ? q.data.limit : undefined,
+    });
   });
 
   app.get("/sales", async (req) => {
@@ -102,11 +166,27 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
     const order = await prisma.order.findFirst({
-      where: { id, sellerId: auth.sellerId!, organizationId: auth.organizationId },
+      where: {
+        id,
+        sellerId: auth.sellerId!,
+        organizationId: auth.organizationId,
+      },
       include: { customer: true, items: { include: { product: true } } },
     });
     if (!order) return reply.status(404).send({ error: "Não encontrado" });
     return order;
+  });
+
+  app.get("/sales/:id/pdf", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const order = await loadOrderForPdf({
+      id,
+      organizationId: auth.organizationId,
+      sellerId: auth.sellerId!,
+    });
+    if (!order) return reply.status(404).send({ error: "Não encontrado" });
+    return sendOrderPdfReply(reply, order);
   });
 
   app.post("/sales", async (req, reply) => {
@@ -130,7 +210,11 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
           .min(1),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({
+        error: "Dados inválidos",
+        details: body.error.flatten(),
+      });
 
     const clientMutationId = body.data.clientMutationId?.trim();
     if (clientMutationId) {
@@ -143,8 +227,13 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         },
       });
       if (dup) {
-        if (dup.sellerId !== auth.sellerId || dup.organizationId !== auth.organizationId) {
-          return reply.status(403).send({ error: "Pedido já registado por outra conta." });
+        if (
+          dup.sellerId !== auth.sellerId ||
+          dup.organizationId !== auth.organizationId
+        ) {
+          return reply
+            .status(403)
+            .send({ error: "Pedido já registado por outra conta." });
         }
         return dup;
       }
@@ -180,7 +269,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         allowedProductIds: allowedSet,
       });
 
-      let orderStatus: OrderStatus = (body.data.status ?? "CONFIRMED") as OrderStatus;
+      let orderStatus: OrderStatus = (body.data.status ??
+        "CONFIRMED") as OrderStatus;
       let creditHoldPayload: Prisma.InputJsonValue | undefined;
 
       if (orderStatus === "CONFIRMED" && body.data.customerId) {
@@ -202,6 +292,16 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         }
       }
 
+      if (orderStatus === "CONFIRMED") {
+        await assertSufficientStock(
+          auth.organizationId,
+          sale.lines.map((l) => ({
+            productId: l.productId,
+            quantity: l.quantity,
+          })),
+        );
+      }
+
       const order = await prisma.order.create({
         data: {
           organizationId: auth.organizationId,
@@ -211,7 +311,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
           totalAmount: sale.netTotal,
           comboDiscountTotal: sale.comboDiscountTotal,
           notes: body.data.notes,
-          ...(creditHoldPayload !== undefined ? { creditHoldReasons: creditHoldPayload } : {}),
+          ...(creditHoldPayload !== undefined
+            ? { creditHoldReasons: creditHoldPayload }
+            : {}),
           ...(clientMutationId ? { clientMutationId } : {}),
           items: {
             create: sale.lines.map((l) => ({
@@ -227,27 +329,67 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         include: {
           items: true,
           customer: true,
-          seller: { include: { user: { select: { name: true } } } },
+          seller: {
+            include: {
+              user: { select: { name: true } },
+            },
+          },
         },
       });
 
       if (order.status === "PENDING_CREDIT_APPROVAL") {
         await notifyAdminsCreditPending({
           organizationId: auth.organizationId,
-          order,
+          order: {
+            id: order.id,
+            totalAmount: order.totalAmount,
+            sellerId: order.sellerId,
+            seller: {
+              user: order.seller.user,
+              managerUserId: order.seller.managerUserId,
+            },
+            customer: order.customer,
+          },
+        });
+      }
+
+      if (order.status === "CONFIRMED") {
+        await applyStockOnStatusChange(
+          order.id,
+          "DRAFT",
+          "CONFIRMED",
+          auth.sub,
+        );
+        void notifySaleConfirmed({
+          organizationId: auth.organizationId,
+          order: {
+            id: order.id,
+            totalAmount: order.totalAmount,
+            sellerId: order.sellerId,
+            seller: {
+              user: order.seller.user,
+              managerUserId: order.seller.managerUserId,
+            },
+            customer: order.customer,
+          },
         });
       }
 
       return order;
     } catch (e) {
-      if (e instanceof OrderPricingError) return reply.status(400).send({ error: e.message });
+      if (e instanceof OrderPricingError)
+        return reply.status(400).send({ error: e.message });
+      if (e instanceof StockError)
+        return reply.status(400).send({ error: e.message });
       throw e;
     }
   });
 
   app.get("/products", async (req) => {
     const auth = req.auth!;
-    const q = z.object({ customerId: z.string().optional() }).safeParse(req.query);
+    const q = z
+      .object({ customerId: z.string().optional() })
+      .safeParse(req.query);
     const customerId = q.success ? q.data.customerId : undefined;
 
     const links = await prisma.sellerProduct.findMany({
@@ -256,6 +398,15 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         product: {
           include: {
             category: { select: { id: true, code: true, name: true } },
+            supplier: {
+              select: {
+                id: true,
+                code: true,
+                tradeName: true,
+                legalName: true,
+                cnpj: true,
+              },
+            },
           },
         },
       },
@@ -265,7 +416,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       where: { id: auth.organizationId },
       select: { defaultMaxSellerDiscountPercent: true },
     });
-    const defaultMaxSellerDisc = org ? decToNum(org.defaultMaxSellerDiscountPercent) : 50;
+    const defaultMaxSellerDisc = org
+      ? decToNum(org.defaultMaxSellerDiscountPercent)
+      : 50;
 
     let regionId: string | null = null;
     if (customerId) {
@@ -299,13 +452,17 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     const out = [];
     for (const l of links) {
       const p = l.product;
-      const priced = await resolveEffectiveUnitPrice(auth.organizationId, p.id, {
-        sellerId: auth.sellerId!,
-        customerId: customerId ?? null,
-        regionId,
-        quantity: 1,
-        at,
-      });
+      const priced = await resolveEffectiveUnitPrice(
+        auth.organizationId,
+        p.id,
+        {
+          sellerId: auth.sellerId!,
+          customerId: customerId ?? null,
+          regionId,
+          quantity: 1,
+          at,
+        },
+      );
       out.push({
         ...p,
         catalogUnitPrice: priced.catalogUnitPrice,
@@ -313,10 +470,15 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         promotionLabel: priced.promotionLabel,
         soldQty: soldQtyMap.get(p.id) ?? 0,
         maxSellerDiscountPercent:
-          p.maxSellerDiscountPercent != null ? decToNum(p.maxSellerDiscountPercent) : null,
-        minSaleUnitPrice: p.minSaleUnitPrice != null ? decToNum(p.minSaleUnitPrice) : null,
+          p.maxSellerDiscountPercent != null
+            ? decToNum(p.maxSellerDiscountPercent)
+            : null,
+        minSaleUnitPrice:
+          p.minSaleUnitPrice != null ? decToNum(p.minSaleUnitPrice) : null,
         maxSellerDiscountPercentEffective:
-          p.maxSellerDiscountPercent != null ? decToNum(p.maxSellerDiscountPercent) : defaultMaxSellerDisc,
+          p.maxSellerDiscountPercent != null
+            ? decToNum(p.maxSellerDiscountPercent)
+            : defaultMaxSellerDisc,
       });
     }
 
@@ -338,6 +500,20 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       },
       orderBy: { name: "asc" },
     });
+  });
+
+  app.get("/customers/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const customer = await prisma.customer.findFirst({
+      where: {
+        id,
+        organizationId: auth.organizationId,
+        OR: [{ sellerId: auth.sellerId }, { sellerId: null }],
+      },
+    });
+    if (!customer) return reply.status(404).send({ error: "Não encontrado" });
+    return customer;
   });
 
   app.get("/customers/:id/credit", async (req, reply) => {
@@ -363,37 +539,41 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
   app.post("/customers", async (req, reply) => {
     const auth = req.auth!;
-    const body = z
-      .object({
-        name: z.string().min(1),
-        email: z.string().email().optional(),
-        phone: z.string().optional(),
-      })
-      .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    const body = customerBodySchema.safeParse(req.body);
+    if (!body.success)
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
 
-    return prisma.customer.create({
-      data: {
-        name: body.data.name,
-        email: body.data.email,
-        phone: body.data.phone,
-        organizationId: auth.organizationId,
-        sellerId: auth.sellerId,
-      },
-    });
+    try {
+      return await prisma.customer.create({
+        data: {
+          organizationId: auth.organizationId,
+          sellerId: auth.sellerId,
+          ...toCustomerPrismaData(body.data),
+        } as Prisma.CustomerUncheckedCreateInput,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "CNPJ ou CPF já cadastrado nesta organização." });
+      }
+      throw e;
+    }
   });
 
   app.patch("/customers/:id", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
-    const body = z
-      .object({
-        name: z.string().min(1).optional(),
-        email: z.string().email().nullable().optional(),
-        phone: z.string().nullable().optional(),
-      })
-      .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    const body = customerPatchSchema.safeParse(req.body);
+    if (!body.success)
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
 
     const existing = await prisma.customer.findFirst({
       where: {
@@ -404,14 +584,72 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
 
-    return prisma.customer.update({
-      where: { id },
-      data: {
-        name: body.data.name,
-        email: body.data.email === undefined ? undefined : body.data.email,
-        phone: body.data.phone === undefined ? undefined : body.data.phone,
-      },
-    });
+    const merged: CustomerBodyInput = {
+      name: body.data.name ?? existing.name,
+      email: body.data.email !== undefined ? body.data.email : existing.email,
+      phone: body.data.phone !== undefined ? body.data.phone : existing.phone,
+      addressNote:
+        body.data.addressNote !== undefined
+          ? body.data.addressNote
+          : existing.addressNote,
+      documentType:
+        body.data.documentType !== undefined
+          ? body.data.documentType
+          : (existing.documentType as CustomerBodyInput["documentType"]),
+      cnpj: body.data.cnpj !== undefined ? body.data.cnpj : existing.cnpj,
+      cpf: body.data.cpf !== undefined ? body.data.cpf : existing.cpf,
+      legalName:
+        body.data.legalName !== undefined
+          ? body.data.legalName
+          : existing.legalName,
+      tradeName:
+        body.data.tradeName !== undefined
+          ? body.data.tradeName
+          : existing.tradeName,
+      cep: body.data.cep !== undefined ? body.data.cep : existing.cep,
+      street:
+        body.data.street !== undefined ? body.data.street : existing.street,
+      number:
+        body.data.number !== undefined ? body.data.number : existing.number,
+      neighborhood:
+        body.data.neighborhood !== undefined
+          ? body.data.neighborhood
+          : existing.neighborhood,
+      state: body.data.state !== undefined ? body.data.state : existing.state,
+      city: body.data.city !== undefined ? body.data.city : existing.city,
+      cityIbgeCode:
+        body.data.cityIbgeCode !== undefined
+          ? body.data.cityIbgeCode
+          : existing.cityIbgeCode,
+      stateRegistration:
+        body.data.stateRegistration !== undefined
+          ? body.data.stateRegistration
+          : existing.stateRegistration,
+      buyerName:
+        body.data.buyerName !== undefined
+          ? body.data.buyerName
+          : existing.buyerName,
+      notes: body.data.notes !== undefined ? body.data.notes : existing.notes,
+    };
+
+    try {
+      return await prisma.customer.update({
+        where: { id },
+        data: toCustomerPrismaData(
+          merged,
+        ) as Prisma.CustomerUncheckedUpdateInput,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "CNPJ ou CPF já cadastrado nesta organização." });
+      }
+      throw e;
+    }
   });
 
   type SellerVisitPayload = Prisma.SellerCustomerVisitGetPayload<{
@@ -421,7 +659,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
   function serializeSellerVisit(v: SellerVisitPayload) {
     const durationSeconds =
       v.checkedOutAt != null
-        ? Math.round((v.checkedOutAt.getTime() - v.checkedInAt.getTime()) / 1000)
+        ? Math.round(
+            (v.checkedOutAt.getTime() - v.checkedInAt.getTime()) / 1000,
+          )
         : null;
     return {
       id: v.id,
@@ -451,7 +691,10 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         radiusKm: z.coerce.number().positive().max(500).optional(),
       })
       .safeParse(req.query);
-    if (!q.success) return reply.status(400).send({ error: "Informe lat e lng válidos na query" });
+    if (!q.success)
+      return reply
+        .status(400)
+        .send({ error: "Informe lat e lng válidos na query" });
 
     const radiusKm = q.data.radiusKm ?? 80;
 
@@ -509,7 +752,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         customerIds: z.array(z.string()).min(1).max(24),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const rows = await prisma.customer.findMany({
       where: {
@@ -527,7 +771,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     );
     if (missingCoords.length > 0) {
       return reply.status(400).send({
-        error: "Todos os clientes precisam existir e ter latitude/longitude cadastradas.",
+        error:
+          "Todos os clientes precisam existir e ter latitude/longitude cadastradas.",
         missingCustomerIds: missingCoords,
       });
     }
@@ -538,7 +783,11 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       lng: decToNum(r.longitude),
     }));
 
-    const route = greedyNearestRoute(body.data.originLat, body.data.originLng, stops);
+    const route = greedyNearestRoute(
+      body.data.originLat,
+      body.data.originLng,
+      stops,
+    );
 
     const orderedCustomers = route.orderedIds.map((oid) => {
       const r = rows.find((x) => x.id === oid)!;
@@ -568,7 +817,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         customerIds: z.array(z.string()).min(1).max(24),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const rows = await prisma.customer.findMany({
       where: {
@@ -586,7 +836,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     );
     if (missingCoords.length > 0) {
       return reply.status(400).send({
-        error: "Todos os clientes precisam existir e ter latitude/longitude cadastradas.",
+        error:
+          "Todos os clientes precisam existir e ter latitude/longitude cadastradas.",
         missingCustomerIds: missingCoords,
       });
     }
@@ -599,6 +850,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     }));
 
     const result = await buildRouteDirections(
+      auth.organizationId,
       body.data.originLat,
       body.data.originLng,
       customers,
@@ -645,14 +897,16 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         notes: z.string().max(1000).optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const existingOpen = await prisma.sellerCustomerVisit.findFirst({
       where: { sellerId: auth.sellerId!, checkedOutAt: null },
     });
     if (existingOpen) {
       return reply.status(409).send({
-        error: "Já existe uma visita em aberto. Faça check-out antes de iniciar outra.",
+        error:
+          "Já existe uma visita em aberto. Faça check-out antes de iniciar outra.",
         activeVisitId: existingOpen.id,
       });
     }
@@ -665,7 +919,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       },
       select: { id: true },
     });
-    if (!cust) return reply.status(404).send({ error: "Cliente não encontrado" });
+    if (!cust)
+      return reply.status(404).send({ error: "Cliente não encontrado" });
 
     const visit = await prisma.sellerCustomerVisit.create({
       data: {
@@ -692,14 +947,20 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         notes: z.string().max(1000).optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const visit = await prisma.sellerCustomerVisit.findFirst({
-      where: { id, sellerId: auth.sellerId!, organizationId: auth.organizationId },
+      where: {
+        id,
+        sellerId: auth.sellerId!,
+        organizationId: auth.organizationId,
+      },
       include: { customer: { select: { id: true, name: true } } },
     });
     if (!visit) return reply.status(404).send({ error: "Não encontrado" });
-    if (visit.checkedOutAt) return reply.status(400).send({ error: "Esta visita já foi encerrada" });
+    if (visit.checkedOutAt)
+      return reply.status(400).send({ error: "Esta visita já foi encerrada" });
 
     const updated = await prisma.sellerCustomerVisit.update({
       where: { id },
@@ -709,7 +970,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         checkOutLng: body.data.longitude,
         ...(body.data.notes !== undefined
           ? {
-              notes: visit.notes ? `${visit.notes}\n---\n${body.data.notes}` : body.data.notes,
+              notes: visit.notes
+                ? `${visit.notes}\n---\n${body.data.notes}`
+                : body.data.notes,
             }
           : {}),
       },
@@ -728,7 +991,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         accuracyMeters: z.number().positive().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const result = await recordSellerLocation({
       sellerId: auth.sellerId!,
@@ -766,5 +1030,26 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       data: { read: true },
     });
     return { ok: true };
+  });
+
+  app.get("/push-vapid-public-key", async () => {
+    const publicKey = getWebPushPublicKey();
+    return { publicKey };
+  });
+
+  app.post("/push-devices", async (req, reply) => {
+    const auth = req.auth!;
+    const result = await handleRegisterPushDevice(auth.sub, req.body);
+    if ("error" in result)
+      return reply.status(result.status).send({ error: result.error });
+    return result;
+  });
+
+  app.delete("/push-devices", async (req, reply) => {
+    const auth = req.auth!;
+    const result = await handleUnregisterPushDevice(auth.sub, req.body);
+    if ("error" in result)
+      return reply.status(result.status).send({ error: result.error });
+    return result;
   });
 };

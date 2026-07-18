@@ -2,6 +2,7 @@ import { prisma } from "../db.js";
 import { decToNum } from "../util/money.js";
 import type { AccessPayload } from "../auth/jwt.js";
 import { assertSellerInScope } from "../auth/org-roles.js";
+import { buildMapsFeaturesPayload } from "./google-routes-rate-limit.js";
 import { isGoogleRoutesConfigured } from "./google-routes.js";
 import { buildTrailRoadPolyline } from "./seller-trail-routes.js";
 import type { FastifyReply } from "fastify";
@@ -45,6 +46,7 @@ export async function getSellerLocationHistory(
       distanceMeters: number;
       roadDistanceMeters: number | null;
       roadRoutingConfigured: boolean;
+      mapsFeatures: ReturnType<typeof buildMapsFeaturesPayload>;
     }
   | undefined
 > {
@@ -91,7 +93,7 @@ export async function getSellerLocationHistory(
     );
   }
 
-  const trail = await buildTrailRoadPolyline(points);
+  const trail = await buildTrailRoadPolyline(auth.organizationId, points);
 
   return {
     date: dayStart.toISOString().slice(0, 10),
@@ -101,6 +103,7 @@ export async function getSellerLocationHistory(
     simplified,
     distanceMeters: Math.round(distanceMeters),
     roadDistanceMeters: trail.roadDistanceMeters,
-    roadRoutingConfigured: isGoogleRoutesConfigured(),
+    roadRoutingConfigured: isGoogleRoutesConfigured(auth.organizationId),
+    mapsFeatures: buildMapsFeaturesPayload(auth.organizationId),
   };
 }

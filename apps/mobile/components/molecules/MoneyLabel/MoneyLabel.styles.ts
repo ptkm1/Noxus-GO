@@ -8,7 +8,7 @@ export type MoneyLabelStylesParams = {
 };
 
 export function useMoneyLabelStyles(params: MoneyLabelStylesParams = {}) {
-  const { color = "#0f172a", fontSize = 16, fontWeight = "600" } = params;
+  const { color = "#9762fd", fontSize = 16, fontWeight = "600" } = params;
 
   return useMemo(
     () =>

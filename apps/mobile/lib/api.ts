@@ -1,8 +1,11 @@
+import { API_PREFIX } from "@pedidos/shared";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
-import { API_PREFIX } from "@pedidos/shared";
-import { getCachedApiBaseOverride, normalizeApiBaseInput } from "./devtools/api-base-override";
+import {
+  getCachedApiBaseOverride,
+  normalizeApiBaseInput,
+} from "./devtools/api-base-override";
 
 const ACCESS = "pedidos_access";
 const REFRESH = "pedidos_refresh";
@@ -113,4 +116,33 @@ export async function apiFetch<T>(path: string, opts: Opt = {}): Promise<T> {
 
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+/** Baixa PDF autenticado e abre o sheet de compartilhar / impressão do SO. */
+export async function sharePdf(path: string, filename: string) {
+  const FileSystem = await import("expo-file-system/legacy");
+  const Sharing = await import("expo-sharing");
+
+  const token = await getAccessToken();
+  const url = apiUrl(path);
+  const dest = `${FileSystem.cacheDirectory ?? ""}${filename}`;
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (/ngrok(-free)?\.app/i.test(url)) {
+    headers["ngrok-skip-browser-warning"] = "true";
+  }
+
+  const download = FileSystem.createDownloadResumable(url, dest, { headers });
+  const result = await download.downloadAsync();
+  if (!result?.uri) throw new Error("Falha ao gerar PDF");
+
+  if (!(await Sharing.isAvailableAsync())) {
+    throw new Error("Compartilhamento não disponível neste dispositivo.");
+  }
+
+  await Sharing.shareAsync(result.uri, {
+    mimeType: "application/pdf",
+    dialogTitle: filename,
+    UTI: "com.adobe.pdf",
+  });
 }

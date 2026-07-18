@@ -1,7 +1,10 @@
+import { useQuery } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useQuery } from "@tanstack/react-query";
-import { apiFetch } from "../../lib/api";
+import {
+  fetchSellerCommissionDashboard,
+  sellerOfflineStaleTime,
+} from "../../lib/seller-offline-queries";
 
 export type CommissionTierRow = {
   id: string;
@@ -39,7 +42,12 @@ export type CommissionDashboard = {
     position: number | null;
     totalSellers: number;
     myAmount: number;
-    top: Array<{ rank: number; name: string; totalAmount: number; isMe: boolean }>;
+    top: Array<{
+      rank: number;
+      name: string;
+      totalAmount: number;
+      isMe: boolean;
+    }>;
   };
 };
 
@@ -47,7 +55,8 @@ export function useCommissionScreen() {
   const insets = useSafeAreaInsets();
   const query = useQuery({
     queryKey: ["seller", "commission-dashboard"],
-    queryFn: () => apiFetch<CommissionDashboard>("/seller/commission-dashboard"),
+    staleTime: sellerOfflineStaleTime,
+    queryFn: fetchSellerCommissionDashboard,
   });
 
   const onRefresh = useCallback(() => {

@@ -16,7 +16,7 @@ export function SellerTrackingMap(props: SellerTrackingMapProps) {
 
   return (
     <div className="space-y-2">
-      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+      <p className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
         Mapa OpenStreetMap (sem chave Google). Defina{" "}
         <code className="rounded bg-amber-100 px-1">VITE_GOOGLE_MAPS_API_KEY</code> ou use a mesma{" "}
         <code className="rounded bg-amber-100 px-1">EXPO_PUBLIC_GOOGLE_MAPS_API_KEY</code> no{" "}

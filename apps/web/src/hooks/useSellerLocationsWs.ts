@@ -26,14 +26,17 @@ type Payload = {
   sellers: SellerLocationRow[];
 };
 
-type WsMessage = {
-  type: "seller_location";
+export type SellerLocationWsEvent = {
   sellerId: string;
   latitude: number;
   longitude: number;
   accuracyMeters: number | null;
   recordedAt: string;
 };
+
+type WsMessage = {
+  type: "seller_location";
+} & SellerLocationWsEvent;
 
 function wsUrl(accessToken: string): string {
   const env = import.meta.env.VITE_API_URL;
@@ -44,7 +47,10 @@ function wsUrl(accessToken: string): string {
   return `${proto}://${host}${path}?access_token=${encodeURIComponent(accessToken)}`;
 }
 
-export function useSellerLocationsWs(enabled: boolean): { connected: boolean } {
+export function useSellerLocationsWs(
+  enabled: boolean,
+  options?: { onSellerLocation?: (msg: SellerLocationWsEvent) => void },
+): { connected: boolean } {
   const qc = useQueryClient();
   const [connected, setConnected] = useState(false);
 
@@ -77,6 +83,14 @@ export function useSellerLocationsWs(enabled: boolean): { connected: boolean } {
         try {
           const msg = JSON.parse(String(ev.data)) as WsMessage;
           if (msg.type !== "seller_location") return;
+
+          options?.onSellerLocation?.({
+            sellerId: msg.sellerId,
+            latitude: msg.latitude,
+            longitude: msg.longitude,
+            accuracyMeters: msg.accuracyMeters,
+            recordedAt: msg.recordedAt,
+          });
 
           qc.setQueryData<Payload>(["admin", "seller-locations"], (prev) => {
             if (!prev) return prev;
@@ -111,7 +125,7 @@ export function useSellerLocationsWs(enabled: boolean): { connected: boolean } {
       ws?.close();
       setConnected(false);
     };
-  }, [enabled, qc]);
+  }, [enabled, qc, options?.onSellerLocation]);
 
   return { connected };
 }

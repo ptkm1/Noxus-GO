@@ -1,35 +1,68 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { canRead } from "@pedidos/shared";
+import { QueryClientProvider } from "@tanstack/react-query";
+import {
+  BrowserRouter,
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
+import { ConfirmProvider } from "./components/confirm";
 import { AppLogo } from "./components/layout/AppLogo";
+import { resourceForPath } from "./components/layout/navConfig";
 import { PublicAuthLayout } from "./components/layout/PublicAuthLayout";
+import { AppNotificationsProvider } from "./lib/app-notifications";
+import { createAppQueryClient } from "./lib/query-client";
+import { isWebStaff, isWebTeamLeader } from "./lib/staff";
+import { ThemeProvider } from "./lib/theme";
+import { BroadcastNotificationsPage } from "./pages/BroadcastNotificationsPage";
+import { CommissionGoalsPage } from "./pages/CommissionGoalsPage";
+import { CommissionHubPage } from "./pages/CommissionHubPage";
+import { CommissionTiersPage } from "./pages/CommissionTiersPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { CustomerVisitsPage } from "./pages/CustomerVisitsPage";
-import { CommissionAdminPage } from "./pages/CommissionAdminPage";
 import { DashboardHome } from "./pages/DashboardHome";
 import { DashboardLayout } from "./pages/DashboardLayout";
+import { FaturamentoPage } from "./pages/FaturamentoPage";
+import { FiscalAccountsPayablePage } from "./pages/FiscalAccountsPayablePage";
+import { FiscalFixedExpensesPage } from "./pages/FiscalFixedExpensesPage";
+import { FiscalHubPage } from "./pages/FiscalHubPage";
+import { FiscalXmlPage } from "./pages/FiscalXmlPage";
+import { InsightsPage } from "./pages/InsightsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { OrderDetailPage } from "./pages/OrderDetailPage";
 import { OrdersPage } from "./pages/OrdersPage";
+import { PermissionsPage } from "./pages/PermissionsPage";
 import { PriceTablesPage } from "./pages/PriceTablesPage";
 import { ProductCategoriesPage } from "./pages/ProductCategoriesPage";
 import { ProductFormPage } from "./pages/ProductFormPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { RegisterPage } from "./pages/RegisterPage";
+import { ReportCustomersPage } from "./pages/ReportCustomersPage";
+import { ReportOrderItemsPage } from "./pages/ReportOrderItemsPage";
+import { ReportOrdersPage } from "./pages/ReportOrdersPage";
+import { ReportsHubPage } from "./pages/ReportsHubPage";
 import { ReportsPage } from "./pages/ReportsPage";
+import { ReportStockPage } from "./pages/ReportStockPage";
 import { SellerProductsPage } from "./pages/SellerProductsPage";
 import { SellersPage } from "./pages/SellersPage";
 import { SellerTrackingPage } from "./pages/SellerTrackingPage";
-import { isWebStaff } from "./lib/staff";
+import { StockMovementsPage } from "./pages/StockMovementsPage";
+import { StockPage } from "./pages/StockPage";
+import { SuppliersPage } from "./pages/SuppliersPage";
+import { TeamsPage } from "./pages/TeamsPage";
+import { UsersPage } from "./pages/UsersPage";
 
-const qc = new QueryClient();
+const qc = createAppQueryClient();
 
 function SellerNotice() {
   const { logout } = useAuth();
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm">
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="sticky top-0 z-40 border-b border-border bg-card shadow-sm">
         <div className="mx-auto flex h-14 max-w-[1600px] items-center justify-between px-4 md:h-16 md:px-6">
           <AppLogo to="/login" />
           <button
@@ -38,45 +71,65 @@ function SellerNotice() {
               logout();
               window.location.href = "/login";
             }}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+            className="rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:bg-background"
           >
             Sair
           </button>
         </div>
       </header>
       <div className="flex flex-1 flex-col items-center justify-center p-6">
-        <p className="max-w-md text-center text-slate-700">
-          O painel web é para administradores e gestores. Vendedores devem usar o aplicativo mobile.
+        <p className="max-w-md text-center text-foreground">
+          O painel web é para administradores, gestores e líderes de equipe.
+          Vendedores devem usar o aplicativo mobile.
         </p>
       </div>
     </div>
   );
 }
 
-const MANAGER_ROUTE_PREFIXES = ["/", "/rastreio", "/visitas", "/vendas"];
+const TEAM_LEADER_ROUTE_PREFIXES = [
+  "/",
+  "/rastreio",
+  "/visitas",
+  "/vendas",
+  "/insights",
+  "/relatorios",
+];
 
-function ManagerRouteGuard() {
+function TeamLeaderRouteGuard() {
   const { user } = useAuth();
   const { pathname } = useLocation();
-  if (user?.role !== "MANAGER") return <Outlet />;
-  const allowed = MANAGER_ROUTE_PREFIXES.some(
+  if (!isWebTeamLeader(user)) return <Outlet />;
+  const allowed = TEAM_LEADER_ROUTE_PREFIXES.some(
     (p) => pathname === p || (p !== "/" && pathname.startsWith(`${p}/`)),
   );
   if (!allowed) return <Navigate to="/" replace />;
   return <Outlet />;
 }
 
+/** ADMIN/MANAGER: rota visível se canRead efetivo do recurso. */
+function PermissionRouteGuard() {
+  const { user } = useAuth();
+  const { pathname } = useLocation();
+  if (isWebTeamLeader(user) && user?.role === "SELLER") return <Outlet />;
+  if (!user) return <Navigate to="/login" replace />;
+  const resource = resourceForPath(pathname);
+  if (!resource) return <Outlet />;
+  if (canRead(user.role, resource, user.permissions)) return <Outlet />;
+  return <Navigate to="/" replace />;
+}
+
 function StaffGate({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-slate-600">
+      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
         Carregando…
       </div>
     );
   }
   if (!user) return <Navigate to="/login" replace />;
-  if (!isWebStaff(user.role)) {
+  if (!isWebStaff(user)) {
     return <SellerNotice />;
   }
   return <>{children}</>;
@@ -89,7 +142,7 @@ function AppRoutes() {
       <Route
         path="/login"
         element={
-          !loading && isWebStaff(user?.role) ? (
+          !loading && isWebStaff(user) ? (
             <Navigate to="/" replace />
           ) : (
             <PublicAuthLayout variant="login">
@@ -118,23 +171,70 @@ function AppRoutes() {
           </StaffGate>
         }
       >
-        <Route element={<ManagerRouteGuard />}>
-        <Route index element={<DashboardHome />} />
-        <Route path="tabelas-preco" element={<PriceTablesPage />} />
-        <Route path="produtos/categorias" element={<ProductCategoriesPage />} />
-        <Route path="produtos/novo" element={<ProductFormPage />} />
-        <Route path="produtos/:productId/editar" element={<ProductFormPage />} />
-        <Route path="produtos" element={<ProductsPage />} />
-        <Route path="comissao" element={<CommissionAdminPage />} />
-        <Route path="vendedores" element={<SellersPage />} />
-        <Route path="vendedores/:sellerId/produtos" element={<SellerProductsPage />} />
-        <Route path="clientes" element={<CustomersPage />} />
-        <Route path="visitas" element={<CustomerVisitsPage />} />
-        <Route path="rastreio" element={<SellerTrackingPage />} />
-        <Route path="vendas" element={<OrdersPage />} />
-        <Route path="vendas/:orderId" element={<OrderDetailPage />} />
-        <Route path="notificacoes" element={<NotificationsPage />} />
-        <Route path="relatorios" element={<ReportsPage />} />
+        <Route element={<TeamLeaderRouteGuard />}>
+          <Route element={<PermissionRouteGuard />}>
+            <Route index element={<DashboardHome />} />
+            <Route path="tabelas-preco" element={<PriceTablesPage />} />
+            <Route
+              path="produtos/categorias"
+              element={<ProductCategoriesPage />}
+            />
+            <Route path="produtos/novo" element={<ProductFormPage />} />
+            <Route
+              path="produtos/:productId/editar"
+              element={<ProductFormPage />}
+            />
+            <Route path="produtos" element={<ProductsPage />} />
+            <Route path="estoque" element={<StockPage />} />
+            <Route path="estoque/movimentos" element={<StockMovementsPage />} />
+            <Route path="fornecedores" element={<SuppliersPage />} />
+            <Route path="fiscal" element={<FiscalHubPage />} />
+            <Route
+              path="fiscal/despesas-fixas"
+              element={<FiscalFixedExpensesPage />}
+            />
+            <Route
+              path="fiscal/contas-a-pagar"
+              element={<FiscalAccountsPayablePage />}
+            />
+            <Route path="fiscal/xml" element={<FiscalXmlPage />} />
+            <Route path="faturamento" element={<FaturamentoPage />} />
+            <Route path="comissao" element={<CommissionHubPage />} />
+            <Route path="comissao/faixas" element={<CommissionTiersPage />} />
+            <Route path="comissao/metas" element={<CommissionGoalsPage />} />
+            <Route path="vendedores" element={<SellersPage />} />
+            <Route
+              path="vendedores/:sellerId/produtos"
+              element={<SellerProductsPage />}
+            />
+            <Route
+              path="notificar-vendedores"
+              element={<BroadcastNotificationsPage />}
+            />
+            <Route path="usuarios" element={<UsersPage />} />
+            <Route path="equipes" element={<TeamsPage />} />
+            <Route path="clientes" element={<CustomersPage />} />
+            <Route path="notificacoes" element={<NotificationsPage />} />
+            <Route path="permissoes" element={<PermissionsPage />} />
+            <Route path="relatorios" element={<ReportsHubPage />} />
+            <Route
+              path="relatorios/clientes"
+              element={<ReportCustomersPage />}
+            />
+            <Route path="relatorios/pedidos" element={<ReportOrdersPage />} />
+            <Route path="relatorios/itens" element={<ReportOrderItemsPage />} />
+            <Route path="relatorios/estoque" element={<ReportStockPage />} />
+            <Route path="relatorios/gestao" element={<ReportsPage />} />
+            <Route path="visitas" element={<CustomerVisitsPage />} />
+            <Route path="rastreio" element={<SellerTrackingPage />} />
+            <Route path="vendas" element={<OrdersPage />} />
+            <Route path="vendas/:orderId" element={<OrderDetailPage />} />
+            <Route path="insights" element={<InsightsPage />} />
+            <Route
+              path="indicadores"
+              element={<Navigate to="/insights" replace />}
+            />
+          </Route>
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -144,12 +244,18 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={qc}>
-      <BrowserRouter>
-        <AuthProvider>
-          <AppRoutes />
-        </AuthProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={qc}>
+        <AppNotificationsProvider>
+          <BrowserRouter>
+            <AuthProvider>
+              <ConfirmProvider>
+                <AppRoutes />
+              </ConfirmProvider>
+            </AuthProvider>
+          </BrowserRouter>
+        </AppNotificationsProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }

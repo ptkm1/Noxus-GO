@@ -1,4 +1,6 @@
+import { getMapsFeaturesConfig } from "../config/maps-features.js";
 import { decodeEncodedPolyline } from "../lib/polyline.js";
+import { peekRoutesQuota, tryConsumeRoutesQuota } from "./google-routes-rate-limit.js";
 
 const ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes";
 
@@ -32,21 +34,32 @@ function getServerApiKey(): string | undefined {
   return key || undefined;
 }
 
-/** Indica se a API pode pedir rotas por estrada (chave no apps/api/.env). */
-export function isGoogleRoutesConfigured(): boolean {
-  return !!getServerApiKey();
+/** Pode usar Routes agora: flag + chave + cota diária restante. */
+export function isGoogleRoutesConfigured(organizationId?: string): boolean {
+  const cfg = getMapsFeaturesConfig();
+  if (!cfg.googleRoutesEnabled || !cfg.googleRoutesHasApiKey) return false;
+  if (organizationId) {
+    return peekRoutesQuota(organizationId).allowed;
+  }
+  return cfg.googleRoutesDailyMaxPerOrg > 0;
 }
 
 /**
  * Rota de condução com paradas na ordem dada (sem reordenar waypoints).
- * Retorna null se chave em falta ou erro da API.
+ * Retorna null se desativado, sem cota ou erro da API.
  */
 export async function computeGoogleDrivingRoute(
+  organizationId: string,
   origin: LatLng,
   orderedStops: LatLng[],
 ): Promise<GoogleDrivingRoute | null> {
   const apiKey = getServerApiKey();
   if (!apiKey || orderedStops.length === 0) return null;
+
+  const quota = tryConsumeRoutesQuota(organizationId);
+  if (!quota.allowed) {
+    return null;
+  }
 
   const destination = orderedStops[orderedStops.length - 1]!;
   const intermediates = orderedStops.slice(0, -1).map((s) => ({

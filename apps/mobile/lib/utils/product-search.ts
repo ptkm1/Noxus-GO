@@ -1,6 +1,7 @@
 export type ProductSearchable = {
   name: string;
   sku?: string | null;
+  barcode?: string | null;
   category?: { name: string } | null;
 };
 
@@ -10,10 +11,15 @@ export function matchesProductSearch(p: ProductSearchable, q: string): boolean {
   if (p.name.toLowerCase().includes(s)) return true;
   const sku = (p.sku ?? "").toLowerCase();
   if (sku.includes(s)) return true;
+  const barcode = (p.barcode ?? "").toLowerCase();
+  if (barcode.includes(s)) return true;
   return (p.category?.name ?? "").toLowerCase().includes(s);
 }
 
-export function filterCustomersByName<T extends { name: string }>(customers: T[], q: string): T[] {
+export function filterCustomersByName<T extends { name: string }>(
+  customers: T[],
+  q: string,
+): T[] {
   const s = q.trim().toLowerCase();
   if (!s) return customers;
   return customers.filter((c) => c.name.toLowerCase().includes(s));

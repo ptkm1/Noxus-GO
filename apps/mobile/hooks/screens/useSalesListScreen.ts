@@ -1,6 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { apiFetch } from "../../lib/api";
+import {
+  fetchSellerSales,
+  sellerOfflineStaleTime,
+} from "../../lib/seller-offline-queries";
 import { useOfflineOutboxCounts } from "../../lib/useOfflineOutboxCounts";
 
 export type SellerOrderListItem = {
@@ -17,7 +20,8 @@ export function useSalesListScreen() {
   const { pending, dead } = useOfflineOutboxCounts();
   const query = useQuery({
     queryKey: ["seller", "sales"],
-    queryFn: () => apiFetch<SellerOrderListItem[]>("/seller/sales"),
+    staleTime: sellerOfflineStaleTime,
+    queryFn: fetchSellerSales,
   });
 
   return {
@@ -28,6 +32,6 @@ export function useSalesListScreen() {
     pending,
     dead,
     goQuickSale: () => router.push("/quick-sale"),
-    goOfflineQueue: () => router.push("/sales/offline-queue"),
+    goOfflineQueue: () => router.push("/(tabs)/vendas/offline-queue"),
   };
 }

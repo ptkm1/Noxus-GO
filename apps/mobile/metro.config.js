@@ -6,6 +6,16 @@ const workspaceRoot = path.resolve(projectRoot, "../..");
 
 const config = getDefaultConfig(projectRoot);
 
+// expo-sqlite na web precisa de .wasm + headers COEP/COOP (SharedArrayBuffer)
+config.resolver.assetExts.push("wasm");
+config.server.enhanceMiddleware = (middleware) => {
+  return (req, res, next) => {
+    res.setHeader("Cross-Origin-Embedder-Policy", "credentialless");
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+    return middleware(req, res, next);
+  };
+};
+
 config.watchFolders = [workspaceRoot];
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, "node_modules"),

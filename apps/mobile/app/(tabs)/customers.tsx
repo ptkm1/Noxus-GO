@@ -1,168 +1,189 @@
-import { formatCnpjMask, isCnpjComplete } from "@pedidos/shared";
-import { UserPlus } from "lucide-react-native";
+import { ThemedButton } from "@/components/atoms/ThemedButton";
+import { ThemedText } from "@/components/atoms/ThemedText";
+import { ThemedTextInput } from "@/components/atoms/ThemedTextInput";
 import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
-import { ThemedTextInput } from "../../components/atoms/ThemedTextInput";
-import { useThemedStyles } from "../../hooks/useThemedStyles";
-import { useCustomersScreen } from "../../hooks/screens/useCustomersScreen";
-import { useTheme } from "../../lib/theme";
-import type { AppColors } from "../../lib/theme/types";
+  KeyboardAvoidingScreen,
+  MobileHeader,
+  SafeScreen,
+} from "@/components/layout";
+import { MOBILE_TAB_SCROLL_BOTTOM } from "@/components/layout/MobileScreen";
+import { ClienteCard } from "@/components/molecules/QuickAction";
+import { useCustomersScreen } from "@/hooks/screens/useCustomersScreen";
+import { useTheme } from "@/lib/theme";
+import {
+  formatCnpjMask,
+  formatCpfMask,
+  formatStructuredAddress,
+} from "@pedidos/shared";
+import { Search, UserPlus } from "lucide-react-native";
+import { useMemo, useState } from "react";
+import { ActivityIndicator, FlatList, StyleSheet, View } from "react-native";
+
+function customerSubtitle(item: {
+  city?: string | null;
+  state?: string | null;
+  street?: string | null;
+  number?: string | null;
+  neighborhood?: string | null;
+  cep?: string | null;
+  addressNote?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  cnpj?: string | null;
+  cpf?: string | null;
+}): string {
+  const place =
+    formatStructuredAddress(item) ??
+    ([item.city, item.state].filter(Boolean).join("/") || null);
+  const doc = item.cnpj
+    ? formatCnpjMask(item.cnpj)
+    : item.cpf
+      ? formatCpfMask(item.cpf)
+      : null;
+  if (place && doc) return `${place} · ${doc}`;
+  return place ?? doc ?? item.phone ?? item.email ?? "Sem dados de contato";
+}
 
 export default function CustomersScreen() {
-  const styles = useThemedStyles(createCustomersStyles);
   const { colors } = useTheme();
+  const [search, setSearch] = useState("");
+
   const {
     customers,
     isLoading,
     isRefetching,
     refetch,
-    name,
-    setName,
-    email,
-    setEmail,
-    phone,
-    setPhone,
-    cnpjDigits,
-    onCnpjChange,
-    cnpjLoading,
-    cnpjErr,
-    cnpjOk,
-    lookupCnpj,
-    create,
     openCustomer,
-    canSubmit,
+    openNewCustomer,
   } = useCustomersScreen();
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.form}>
-        <Text style={styles.formTitle}>Novo cliente</Text>
-        <Text style={styles.label}>CNPJ (opcional · PJ)</Text>
-        <View style={styles.cnpjRow}>
-          <ThemedTextInput
-            style={[styles.cnpjInput]}
-            placeholder="00.000.000/0001-00"
-            keyboardType="number-pad"
-            value={formatCnpjMask(cnpjDigits)}
-            editable={!cnpjLoading}
-            onChangeText={onCnpjChange}
-          />
-          <Pressable
-            style={[styles.cnpjBtn, (!isCnpjComplete(cnpjDigits) || cnpjLoading) && styles.btnOff]}
-            disabled={!isCnpjComplete(cnpjDigits) || cnpjLoading}
-            onPress={() => void lookupCnpj()}
-          >
-            {cnpjLoading ? (
-              <ActivityIndicator color={colors.link} />
-            ) : (
-              <Text style={styles.cnpjBtnText}>Buscar</Text>
-            )}
-          </Pressable>
-        </View>
-        {cnpjErr ? <Text style={styles.err}>{cnpjErr}</Text> : null}
-        {cnpjOk ? <Text style={styles.ok}>{cnpjOk}</Text> : null}
-        <Text style={styles.hint}>Dados públicos via BrasilAPI — pode editar antes de gravar.</Text>
-        <ThemedTextInput placeholder="Nome" value={name} onChangeText={setName} />
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return customers;
+    return customers.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        (c.email?.toLowerCase().includes(q) ?? false) ||
+        (c.phone?.includes(q) ?? false) ||
+        (c.city?.toLowerCase().includes(q) ?? false) ||
+        (c.cnpj?.includes(q) ?? false) ||
+        (c.cpf?.includes(q) ?? false),
+    );
+  }, [customers, search]);
+
+  const listHeader = (
+    <View style={styles.header}>
+      <View
+        style={[
+          styles.searchRow,
+          {
+            backgroundColor: colors.searchBackground,
+            borderColor: colors.inputBorder,
+          },
+        ]}
+      >
+        <Search size={20} color={colors.iconMuted} style={{ marginRight: 8 }} />
         <ThemedTextInput
-          placeholder="Email"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          value={email}
-          onChangeText={setEmail}
+          style={styles.searchInput}
+          placeholder="Buscar por nome, documento, cidade…"
+          value={search}
+          onChangeText={setSearch}
         />
-        <ThemedTextInput placeholder="Telefone" value={phone} onChangeText={setPhone} />
-        <Pressable
-          style={[styles.btn, !canSubmit && styles.btnOff]}
-          disabled={!canSubmit}
-          onPress={() => create.mutate()}
-        >
-          <View style={styles.btnInner}>
-            <UserPlus color={colors.primaryForeground} size={18} strokeWidth={2} />
-            <Text style={styles.btnText}>Adicionar</Text>
-          </View>
-        </Pressable>
       </View>
-      {isLoading ? (
-        <ActivityIndicator style={{ marginTop: 16 }} color={colors.primary} />
-      ) : (
-        <FlatList
-          data={customers}
-          keyExtractor={(c) => c.id}
-          refreshing={isRefetching}
-          onRefresh={() => void refetch()}
-          contentContainerStyle={styles.list}
-          ListEmptyComponent={<Text style={styles.empty}>Nenhum cliente.</Text>}
-          renderItem={({ item }) => (
-            <Pressable style={styles.card} onPress={() => openCustomer(item.id)}>
-              <Text style={styles.name}>{item.name}</Text>
-              {item.email ? <Text style={styles.meta}>{item.email}</Text> : null}
-              {item.phone ? <Text style={styles.meta}>{item.phone}</Text> : null}
-              <Text style={styles.finHint}>Toque para ver limite e títulos</Text>
-            </Pressable>
-          )}
-        />
-      )}
+
+      <ThemedButton onPress={openNewCustomer} style={styles.newBtn}>
+        <View style={styles.newBtnInner}>
+          <UserPlus color={colors.primaryForeground} size={18} />
+          <ThemedText
+            style={{ color: colors.primaryForeground, fontWeight: "700" }}
+          >
+            Novo cliente
+          </ThemedText>
+        </View>
+      </ThemedButton>
     </View>
+  );
+
+  return (
+    <SafeScreen variant="tab">
+      <MobileHeader
+        title="Clientes"
+        subtitle={`${customers.length} cadastrado${customers.length === 1 ? "" : "s"}`}
+      />
+      {isLoading ? (
+        <ActivityIndicator style={{ marginTop: 24 }} color={colors.primary} />
+      ) : (
+        <KeyboardAvoidingScreen>
+          <FlatList
+            data={filtered}
+            keyExtractor={(c) => c.id}
+            refreshing={isRefetching}
+            onRefresh={() => void refetch()}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            ListHeaderComponent={listHeader}
+            contentContainerStyle={styles.list}
+            ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+            ListEmptyComponent={
+              <View style={styles.empty}>
+                <ThemedText variant="body" style={{ fontWeight: "600" }}>
+                  {search.trim() ? "Nenhum resultado" : "Nenhum cliente ainda"}
+                </ThemedText>
+                <ThemedText
+                  variant="bodySm"
+                  muted
+                  style={{ textAlign: "center", marginTop: 6 }}
+                >
+                  {search.trim()
+                    ? "Tente outro termo de busca."
+                    : "Cadastre o primeiro cliente para começar a vender."}
+                </ThemedText>
+              </View>
+            }
+            renderItem={({ item }) => (
+              <ClienteCard
+                nome={item.name}
+                endereco={customerSubtitle(item)}
+                inadimplente={Boolean(item.creditBlocked)}
+                onPress={() => openCustomer(item.id)}
+              />
+            )}
+          />
+        </KeyboardAvoidingScreen>
+      )}
+    </SafeScreen>
   );
 }
 
-function createCustomersStyles(c: AppColors) {
-  return StyleSheet.create({
-    container: { flex: 1, backgroundColor: c.background },
-    form: {
-      padding: 16,
-      backgroundColor: c.surface,
-      borderBottomWidth: 1,
-      borderBottomColor: c.border,
-      gap: 8,
-    },
-    formTitle: { fontWeight: "600", color: c.text, marginBottom: 4 },
-    label: { fontSize: 13, fontWeight: "600", color: c.textSecondary, marginTop: 4 },
-    hint: { fontSize: 11, color: c.textMuted, marginBottom: 4 },
-    err: { fontSize: 12, color: c.danger },
-    ok: { fontSize: 12, color: c.success, fontWeight: "600" },
-    cnpjRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-    cnpjInput: { flex: 1, fontFamily: "monospace", fontSize: 14 },
-    cnpjBtn: {
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      backgroundColor: c.primaryMuted,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: c.primary,
-      minWidth: 88,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    cnpjBtnText: { fontWeight: "700", color: c.link, fontSize: 14 },
-    btn: {
-      marginTop: 4,
-      backgroundColor: c.primary,
-      paddingVertical: 12,
-      borderRadius: 10,
-      alignItems: "center",
-    },
-    btnOff: { opacity: 0.5 },
-    btnInner: { flexDirection: "row", alignItems: "center", gap: 8 },
-    btnText: { color: c.primaryForeground, fontWeight: "600" },
-    list: { padding: 12, paddingBottom: 32 },
-    card: {
-      padding: 14,
-      backgroundColor: c.card,
-      borderRadius: 12,
-      marginBottom: 10,
-      borderWidth: 1,
-      borderColor: c.border,
-    },
-    name: { fontSize: 16, fontWeight: "600", color: c.text },
-    meta: { fontSize: 14, color: c.textSecondary, marginTop: 4 },
-    finHint: { marginTop: 10, fontSize: 12, fontWeight: "600", color: c.link },
-    empty: { textAlign: "center", color: c.textMuted, marginTop: 24 },
-  });
-}
+const styles = StyleSheet.create({
+  header: { gap: 12, paddingBottom: 10 },
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+  },
+  searchInput: {
+    flex: 1,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    minHeight: 48,
+  },
+  newBtn: { minHeight: 48 },
+  newBtnInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  list: {
+    paddingHorizontal: 16,
+    paddingBottom: MOBILE_TAB_SCROLL_BOTTOM,
+    paddingTop: 10,
+  },
+  empty: {
+    alignItems: "center",
+    paddingTop: 40,
+    paddingHorizontal: 24,
+  },
+});

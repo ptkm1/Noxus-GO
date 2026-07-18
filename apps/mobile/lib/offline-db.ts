@@ -32,6 +32,26 @@ CREATE TABLE IF NOT EXISTS offline_sale_outbox (
   updated_at_ms INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_offbox_state_retry ON offline_sale_outbox(state, next_retry_at_ms);
+CREATE TABLE IF NOT EXISTS cache_products (
+  id TEXT PRIMARY KEY NOT NULL,
+  payload TEXT NOT NULL,
+  updated_at_ms INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cache_customers (
+  id TEXT PRIMARY KEY NOT NULL,
+  payload TEXT NOT NULL,
+  updated_at_ms INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cache_sales (
+  id TEXT PRIMARY KEY NOT NULL,
+  payload TEXT NOT NULL,
+  updated_at_ms INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cache_meta (
+  key TEXT PRIMARY KEY NOT NULL,
+  value TEXT NOT NULL,
+  updated_at_ms INTEGER NOT NULL
+);
 `);
         return db;
       } catch {
@@ -53,7 +73,10 @@ function resetOfflineDb(): void {
 /**
  * Executa uma operação SQLite de cada vez. Em falha nativa, reinicia a conexão na próxima chamada.
  */
-export function runOfflineDb<T>(fn: (db: SQLiteDatabase) => Promise<T>, fallback: T): Promise<T> {
+export function runOfflineDb<T>(
+  fn: (db: SQLiteDatabase) => Promise<T>,
+  fallback: T,
+): Promise<T> {
   const task = async (): Promise<T> => {
     const db = await openOfflineDb();
     if (!db) return fallback;

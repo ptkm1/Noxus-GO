@@ -1,3 +1,13 @@
+import { useConfirm } from "@/components/confirm";
+import { DateTimePicker } from "@/components/ui/date-picker";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiFetch } from "../lib/api";
@@ -21,9 +31,11 @@ function num(v: unknown): number {
 
 export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
   const qc = useQueryClient();
+  const { confirm } = useConfirm();
   const { data: titles = [], isLoading } = useQuery({
     queryKey: ["admin", "credit-titles", customerId],
-    queryFn: () => apiFetch<TitleRow[]>(`/admin/customers/${customerId}/credit-titles`),
+    queryFn: () =>
+      apiFetch<TitleRow[]>(`/admin/customers/${customerId}/credit-titles`),
   });
 
   const [amount, setAmount] = useState("");
@@ -41,7 +53,9 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
         }),
       }),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["admin", "credit-titles", customerId] });
+      void qc.invalidateQueries({
+        queryKey: ["admin", "credit-titles", customerId],
+      });
       setAmount("");
       setDue("");
       setRef("");
@@ -54,19 +68,29 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
         method: "PATCH",
         body: JSON.stringify({ status: "PAID" }),
       }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "credit-titles", customerId] }),
+    onSuccess: () =>
+      void qc.invalidateQueries({
+        queryKey: ["admin", "credit-titles", customerId],
+      }),
   });
 
   const remove = useMutation({
-    mutationFn: (id: string) => apiFetch(`/admin/credit-titles/${id}`, { method: "DELETE" }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "credit-titles", customerId] }),
+    mutationFn: (id: string) =>
+      apiFetch(`/admin/credit-titles/${id}`, { method: "DELETE" }),
+    onSuccess: () =>
+      void qc.invalidateQueries({
+        queryKey: ["admin", "credit-titles", customerId],
+      }),
   });
 
   return (
-    <div className="mt-6 rounded-lg border border-slate-100 bg-slate-50/80 p-4">
-      <h3 className="text-sm font-semibold text-slate-800">Títulos em aberto / histórico recente</h3>
-      <p className="mt-1 text-xs text-slate-500">
-        Cadastre duplicatas ou carnês; vencidos bloqueiam ou pedem aprovação conforme a política da empresa.
+    <div className="mt-6 rounded-lg border border-border bg-background/80 p-4">
+      <h3 className="text-sm font-semibold text-foreground">
+        Títulos em aberto / histórico recente
+      </h3>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Cadastre duplicatas ou carnês; vencidos bloqueiam ou pedem aprovação
+        conforme a política da empresa.
       </p>
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -82,15 +106,15 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
         />
-        <input
-          type="datetime-local"
-          className="rounded border px-2 py-1 text-xs"
+        <DateTimePicker
           value={due}
-          onChange={(e) => setDue(e.target.value)}
+          onChange={setDue}
+          placeholder="Vencimento"
+          className="min-w-[16rem]"
         />
         <button
           type="button"
-          className="rounded bg-slate-800 px-3 py-1 text-xs text-white disabled:opacity-50"
+          className="rounded bg-primary px-3 py-1 text-xs text-primary-foreground disabled:opacity-50"
           disabled={!amount || !due || create.isPending}
           onClick={() => create.mutate()}
         >
@@ -99,35 +123,43 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
       </div>
 
       {isLoading ? (
-        <p className="mt-3 text-xs text-slate-500">Carregando títulos…</p>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Carregando títulos…
+        </p>
       ) : (
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[560px] text-xs">
-            <thead className="text-left text-slate-500">
-              <tr>
-                <th className="py-2 pr-2">Ref.</th>
-                <th className="py-2 pr-2">Valor</th>
-                <th className="py-2 pr-2">Pago</th>
-                <th className="py-2 pr-2">Vencimento</th>
-                <th className="py-2 pr-2">Status</th>
-                <th className="py-2" />
-              </tr>
-            </thead>
-            <tbody>
+        <div className="mt-3">
+          <Table className="min-w-[560px] text-xs">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="py-2 pr-2">Ref.</TableHead>
+                <TableHead className="py-2 pr-2">Valor</TableHead>
+                <TableHead className="py-2 pr-2">Pago</TableHead>
+                <TableHead className="py-2 pr-2">Vencimento</TableHead>
+                <TableHead className="py-2 pr-2">Status</TableHead>
+                <TableHead className="py-2" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {titles.map((t) => (
-                <tr key={t.id} className="border-t border-slate-200">
-                  <td className="py-2 pr-2">{t.reference ?? "—"}</td>
-                  <td className="py-2 pr-2 tabular-nums">R$ {num(t.amount).toFixed(2)}</td>
-                  <td className="py-2 pr-2 tabular-nums">R$ {num(t.paidAmount).toFixed(2)}</td>
-                  <td className="py-2 pr-2 whitespace-nowrap">
+                <TableRow key={t.id}>
+                  <TableCell className="py-2 pr-2">
+                    {t.reference ?? "—"}
+                  </TableCell>
+                  <TableCell className="py-2 pr-2 tabular-nums">
+                    R$ {num(t.amount).toFixed(2)}
+                  </TableCell>
+                  <TableCell className="py-2 pr-2 tabular-nums">
+                    R$ {num(t.paidAmount).toFixed(2)}
+                  </TableCell>
+                  <TableCell className="py-2 pr-2 whitespace-nowrap">
                     {new Date(t.dueDate).toLocaleString("pt-BR")}
-                  </td>
-                  <td className="py-2 pr-2">{t.status}</td>
-                  <td className="py-2 text-right">
+                  </TableCell>
+                  <TableCell className="py-2 pr-2">{t.status}</TableCell>
+                  <TableCell className="py-2 text-right">
                     {t.status === "OPEN" ? (
                       <button
                         type="button"
-                        className="text-brand-600 hover:underline"
+                        className="text-primary hover:underline"
                         disabled={markPaid.isPending}
                         onClick={() => markPaid.mutate(t.id)}
                       >
@@ -136,20 +168,30 @@ export function CustomerTitlesPanel({ customerId }: { customerId: string }) {
                     ) : null}{" "}
                     <button
                       type="button"
-                      className="text-red-600 hover:underline"
+                      className="text-destructive hover:underline"
                       onClick={() => {
-                        if (confirm("Remover este título do sistema?")) remove.mutate(t.id);
+                        void confirm({
+                          title: "Remover título?",
+                          description:
+                            "Este título de crédito será removido do sistema.",
+                          confirmLabel: "Remover",
+                          tone: "destructive",
+                        }).then((ok) => {
+                          if (ok) remove.mutate(t.id);
+                        });
                       }}
                     >
                       Excluir
                     </button>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
           {titles.length === 0 ? (
-            <p className="mt-2 text-xs text-slate-400">Nenhum título cadastrado.</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Nenhum título cadastrado.
+            </p>
           ) : null}
         </div>
       )}

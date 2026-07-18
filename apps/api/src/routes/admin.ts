@@ -1,32 +1,170 @@
-import type { FastifyPluginAsync } from "fastify";
-import { z } from "zod";
+import {
+  Prisma,
+  type OrderStatus,
+  type PromotionKind,
+  type PromotionScope,
+} from "@prisma/client";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import PDFDocument from "pdfkit";
-import { prisma } from "../db.js";
-import type { FastifyReply, FastifyRequest } from "fastify";
-import { hashPassword } from "../auth/password.js";
-import { decToNum } from "../util/money.js";
-import { computeSaleOrder, OrderPricingError } from "../services/order-pricing.js";
-import { buildDistributorInsights } from "../services/distributor-insights.js";
+import { z } from "zod";
+import { verifyAccessToken } from "../auth/jwt.js";
 import {
   isManagerGetAllowed,
+  isManagerWriteAllowed,
+  isOrgStaff,
+  isTeamLeaderAuth,
+  isTeamLeaderGetAllowed,
+  orderScopeWhere,
   requireAdmin,
   requireOrgStaff,
   sellerScopeWhere,
+  teamMemberSellerIds,
   validateManagerAssignment,
 } from "../auth/org-roles.js";
-import { listAdminSellerLocations } from "../services/seller-locations-admin.js";
-import { getSellerLocationHistory } from "../services/seller-location-history.js";
-import { verifyAccessToken } from "../auth/jwt.js";
-import { isOrgStaff } from "../auth/org-roles.js";
-import { registerSellerLocationClient } from "../services/seller-location-ws.js";
+import { hashPassword, verifyPassword } from "../auth/password.js";
+import { isPermissionResource } from "../auth/permissions.js";
+import { prisma } from "../db.js";
+import {
+  notifySaleConfirmed,
+  notifySellerGoalUpdated,
+} from "../services/admin-notifications.js";
+import { writeAuditLog } from "../services/audit-log.js";
+import {
+  customerBodySchema,
+  customerPatchSchema,
+  toCustomerPrismaData,
+  type CustomerBodyInput,
+} from "../services/customer-validation.js";
+import { buildDistributorInsights } from "../services/distributor-insights.js";
+import {
+  AccountsPayableError,
+  createAccountsPayable,
+  deleteAccountsPayable,
+  listAccountsPayable,
+  updateAccountsPayable,
+} from "../services/fiscal/accounts-payable.js";
+import {
+  createCostCenter,
+  createExpenseHistory,
+  deleteCostCenter,
+  deleteExpenseHistory,
+  FiscalLookupError,
+  listCostCenters,
+  listExpenseHistories,
+  updateCostCenter,
+  updateExpenseHistory,
+} from "../services/fiscal/fiscal-lookups.js";
+import {
+  createFixedExpense,
+  deleteFixedExpense,
+  FixedExpenseError,
+  listFixedExpenses,
+  updateFixedExpense,
+} from "../services/fiscal/fixed-expenses.js";
+import {
+  buildNfeXml,
+  listFiscalOrders,
+  NfeXmlError,
+} from "../services/fiscal/nfe-xml.js";
+import {
+  buildCommissionStatement,
+  buildCreditAgingReport,
+  buildFiscalReconciliation,
+  buildMarginReport,
+  buildSalesScorecard,
+  buildStockHealthReport,
+  buildVisitEffectiveness,
+} from "../services/management-reports.js";
+import { getWebPushPublicKey, notifyUsers } from "../services/notify.js";
+import { sendOrderPdfReply } from "../services/order-pdf-load.js";
+import {
+  computeSaleOrder,
+  OrderPricingError,
+} from "../services/order-pricing.js";
 import type { AttributeFieldDef } from "../services/product-attributes.js";
-import { parseCategoryAttributeSchema, validateProductAttributes } from "../services/product-attributes.js";
-import { Prisma, type OrderStatus, type PromotionKind, type PromotionScope } from "@prisma/client";
-
+import {
+  parseCategoryAttributeSchema,
+  validateProductAttributes,
+} from "../services/product-attributes.js";
+import {
+  mapProductCadastroPrisma,
+  normalizeProductNcm,
+  productCadastroFieldsSchema,
+  syncProductAttributesNcm,
+} from "../services/product-cadastro-schema.js";
+import {
+  applyStockOnStatusChange,
+  assertSufficientStock,
+  StockError,
+} from "../services/product-stock.js";
+import {
+  handleRegisterPushDevice,
+  handleUnregisterPushDevice,
+} from "../services/push-device-routes.js";
+import { buildCustomersPdf } from "../services/reports/customers-pdf.js";
+import { readExtraParams } from "../services/reports/extra-filters.js";
+import { buildOrderItemsPdf } from "../services/reports/order-items-pdf.js";
+import { buildOrdersPdf } from "../services/reports/orders-pdf.js";
+import { buildStockPdf } from "../services/reports/stock-pdf.js";
+import {
+  adminPathToResource,
+  buildEffectivePermissionsMatrix,
+  canReadEffective,
+  canWriteEffective,
+  updateOrgRolePermissions,
+} from "../services/role-permissions.js";
+import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
+import {
+  createSalesTeam,
+  deleteSalesTeam,
+  getSalesTeam,
+  listSalesTeams,
+  SalesTeamError,
+  serializeSalesTeam,
+  updateSalesTeam,
+} from "../services/sales-teams.js";
+import { getSellerLocationHistory } from "../services/seller-location-history.js";
+import { registerSellerLocationClient } from "../services/seller-location-ws.js";
+import { listAdminSellerLocations } from "../services/seller-locations-admin.js";
+import {
+  applyManualStockEntry,
+  listExpiringLots,
+  listStockMovements,
+  listStockProducts,
+} from "../services/stock-ledger.js";
+import {
+  assertSupplierInOrg,
+  createSupplier,
+  deleteSupplier,
+  getSupplier,
+  listSuppliers,
+  SupplierError,
+  updateSupplier,
+} from "../services/suppliers.js";
+import { buildTeamSalesSummary } from "../services/team-sales-summary.js";
+import { decToNum } from "../util/money.js";
+import { fiscalRoutes } from "./fiscal.js";
 const idParam = z.object({ id: z.string().min(1) });
 
+const sellerCommissionTypeSchema = z.enum([
+  "FIXED",
+  "BY_PRODUCT",
+  "BY_CATEGORY",
+  "BY_SUPPLIER",
+]);
+
+const optionalCommissionPercentSchema = z
+  .number()
+  .min(0)
+  .max(100)
+  .nullable()
+  .optional();
+
 /** Aceita `YYYY-MM-DD` (UTC) ou ISO completo; `start` = início do dia, `end` = fim do dia. */
-function parseVisitPeriodDate(raw: string | undefined, kind: "start" | "end"): Date | null {
+function parseVisitPeriodDate(
+  raw: string | undefined,
+  kind: "start" | "end",
+): Date | null {
   const s = raw?.trim();
   if (!s) return null;
   const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
@@ -58,6 +196,15 @@ function normalizeRegionCode(raw: string): string {
     .replace(/[^A-Z0-9_]/g, "");
 }
 
+function normalizeProductBarcode(
+  raw: string | undefined | null,
+): string | null | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === null) return null;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 async function loadCategoryDefs(
   categoryId: string | null,
   organizationId: string,
@@ -73,11 +220,15 @@ async function loadCategoryDefs(
 }
 
 const promotionRelationInclude = {
-  seller: { include: { user: { select: { id: true, name: true, email: true } } } },
+  seller: {
+    include: { user: { select: { id: true, name: true, email: true } } },
+  },
   customer: { select: { id: true, name: true, email: true } },
 } as const;
 
-type PromotionRow = Prisma.ProductPromotionGetPayload<{ include: typeof promotionRelationInclude }>;
+type PromotionRow = Prisma.ProductPromotionGetPayload<{
+  include: typeof promotionRelationInclude;
+}>;
 
 function serializeProductPromotion(row: PromotionRow) {
   return {
@@ -98,10 +249,18 @@ function serializeProductPromotion(row: PromotionRow) {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     seller: row.seller
-      ? { id: row.seller.id, name: row.seller.user.name, email: row.seller.user.email }
+      ? {
+          id: row.seller.id,
+          name: row.seller.user.name,
+          email: row.seller.user.email,
+        }
       : null,
     customer: row.customer
-      ? { id: row.customer.id, name: row.customer.name, email: row.customer.email ?? null }
+      ? {
+          id: row.customer.id,
+          name: row.customer.name,
+          email: row.customer.email ?? null,
+        }
       : null,
   };
 }
@@ -129,31 +288,67 @@ function assertPromotionCoherence(p: {
   if (p.kind === "PERCENT_OFF" && (p.value < 0 || p.value > 100)) {
     return "Percentual deve estar entre 0 e 100.";
   }
-  if ((p.kind === "FIXED_AMOUNT_OFF" || p.kind === "SALE_PRICE") && p.value < 0) {
+  if (
+    (p.kind === "FIXED_AMOUNT_OFF" || p.kind === "SALE_PRICE") &&
+    p.value < 0
+  ) {
     return "Valor deve ser maior ou igual a zero.";
   }
   return null;
 }
 
 export const adminRoutes: FastifyPluginAsync = async (app) => {
-  app.addHook("preHandler", async (req: FastifyRequest, reply: FastifyReply) => {
-    if (!requireOrgStaff(reply, req.auth)) return;
+  app.addHook(
+    "preHandler",
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      if (!requireOrgStaff(reply, req.auth)) return;
 
-    const auth = req.auth!;
-    const method = req.method.toUpperCase();
-    const routePath = req.routeOptions?.url ?? req.url.split("?")[0] ?? req.url;
+      const auth = req.auth!;
+      const method = req.method.toUpperCase();
+      const routePath =
+        req.routeOptions?.url ?? req.url.split("?")[0] ?? req.url;
 
-    if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
-      if (!requireAdmin(reply, auth)) return;
-      return;
-    }
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        if (auth.role === "MANAGER" && isManagerWriteAllowed(routePath)) {
+          return;
+        }
+        if (!requireAdmin(reply, auth)) return;
+        return;
+      }
 
-    if (routePath === "/seller-locations/ws") return;
+      if (routePath === "/seller-locations/ws") return;
 
-    if (auth.role === "MANAGER" && method === "GET" && !isManagerGetAllowed(routePath)) {
-      return reply.status(403).send({ error: "Gestores não têm acesso a este recurso" });
-    }
-  });
+      if (auth.role === "MANAGER" && method === "GET") {
+        const resource = adminPathToResource(routePath);
+        if (resource) {
+          const allowed = await canReadEffective(
+            auth.organizationId,
+            auth.role,
+            resource,
+          );
+          if (!allowed) {
+            return reply
+              .status(403)
+              .send({ error: "Gestores não têm acesso a este recurso" });
+          }
+        } else if (!isManagerGetAllowed(routePath)) {
+          return reply
+            .status(403)
+            .send({ error: "Gestores não têm acesso a este recurso" });
+        }
+      }
+
+      if (
+        isTeamLeaderAuth(auth) &&
+        method === "GET" &&
+        !isTeamLeaderGetAllowed(routePath)
+      ) {
+        return reply
+          .status(403)
+          .send({ error: "Líderes de equipe não têm acesso a este recurso" });
+      }
+    },
+  );
 
   /** Raiz do prefixo `/api/v1/admin` — útil para testar URL base (sem isto, GET aqui dava 404). */
   app.get("/", async () => ({ ok: true, scope: "admin" as const }));
@@ -164,9 +359,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       where: { id: auth.organizationId },
       select: { defaultMaxSellerDiscountPercent: true, creditPolicy: true },
     });
-    if (!org) return { defaultMaxSellerDiscountPercent: 50, creditPolicy: "WARN_ONLY" as const };
+    if (!org)
+      return {
+        defaultMaxSellerDiscountPercent: 50,
+        creditPolicy: "WARN_ONLY" as const,
+      };
     return {
-      defaultMaxSellerDiscountPercent: decToNum(org.defaultMaxSellerDiscountPercent),
+      defaultMaxSellerDiscountPercent: decToNum(
+        org.defaultMaxSellerDiscountPercent,
+      ),
       creditPolicy: org.creditPolicy,
     };
   });
@@ -176,14 +377,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({
         defaultMaxSellerDiscountPercent: z.number().min(0).max(100).optional(),
-        creditPolicy: z.enum(["WARN_ONLY", "BLOCK_ORDER", "REQUIRE_APPROVAL"]).optional(),
+        creditPolicy: z
+          .enum(["WARN_ONLY", "BLOCK_ORDER", "REQUIRE_APPROVAL"])
+          .optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const data: Prisma.OrganizationUpdateInput = {};
     if (body.data.defaultMaxSellerDiscountPercent !== undefined) {
-      data.defaultMaxSellerDiscountPercent = body.data.defaultMaxSellerDiscountPercent;
+      data.defaultMaxSellerDiscountPercent =
+        body.data.defaultMaxSellerDiscountPercent;
     }
     if (body.data.creditPolicy !== undefined) {
       data.creditPolicy = body.data.creditPolicy;
@@ -208,7 +413,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({
         displayName: z.string().trim().min(1).max(160).optional(),
-        logoUrl: z.union([z.string().url(), z.literal(""), z.null()]).optional(),
+        logoUrl: z
+          .union([z.string().url(), z.literal(""), z.null()])
+          .optional(),
         primaryColor: z
           .union([
             z.string().regex(/^#([0-9A-Fa-f]{6})$/),
@@ -226,7 +433,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .nullable(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const data: Prisma.OrganizationUpdateInput = {};
     if (body.data.displayName !== undefined) {
@@ -236,7 +444,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       data.logoUrl = body.data.logoUrl === "" ? null : body.data.logoUrl;
     }
     if (body.data.primaryColor !== undefined) {
-      data.primaryColor = body.data.primaryColor === "" ? null : body.data.primaryColor;
+      data.primaryColor =
+        body.data.primaryColor === "" ? null : body.data.primaryColor;
     }
     if (body.data.slug !== undefined) {
       data.slug = body.data.slug;
@@ -251,8 +460,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         data,
       });
     } catch (e: unknown) {
-      if (e && typeof e === "object" && "code" in e && (e as { code?: string }).code === "P2002") {
-        return reply.status(409).send({ error: "Slug já em uso por outra organização" });
+      if (
+        e &&
+        typeof e === "object" &&
+        "code" in e &&
+        (e as { code?: string }).code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "Slug já em uso por outra organização" });
       }
       throw e;
     }
@@ -273,9 +489,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({ code: z.string().min(1), name: z.string().min(1) })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
     const code = normalizeRegionCode(body.data.code);
-    if (!code.length) return reply.status(400).send({ error: "Código de região inválido" });
+    if (!code.length)
+      return reply.status(400).send({ error: "Código de região inválido" });
     try {
       return await prisma.region.create({
         data: {
@@ -285,7 +503,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         },
       });
     } catch {
-      return reply.status(409).send({ error: "Já existe região com esse código" });
+      return reply
+        .status(409)
+        .send({ error: "Já existe região com esse código" });
     }
   });
 
@@ -293,15 +513,21 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
     const body = z
-      .object({ code: z.string().min(1).optional(), name: z.string().min(1).optional() })
+      .object({
+        code: z.string().min(1).optional(),
+        name: z.string().min(1).optional(),
+      })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
     const existing = await prisma.region.findFirst({
       where: { id, organizationId: auth.organizationId },
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
     const code =
-      body.data.code !== undefined ? normalizeRegionCode(body.data.code) : undefined;
+      body.data.code !== undefined
+        ? normalizeRegionCode(body.data.code)
+        : undefined;
     if (code !== undefined && !code.length) {
       return reply.status(400).send({ error: "Código de região inválido" });
     }
@@ -314,7 +540,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         },
       });
     } catch {
-      return reply.status(409).send({ error: "Já existe região com esse código" });
+      return reply
+        .status(409)
+        .send({ error: "Já existe região com esse código" });
     }
   });
 
@@ -357,26 +585,36 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         regionId: z.string().nullable().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const d = body.data;
     if (d.customerId) {
       const c = await prisma.customer.findFirst({
         where: { id: d.customerId, organizationId: auth.organizationId },
       });
-      if (!c) return reply.status(400).send({ error: "Cliente inválido para escopo da tabela" });
+      if (!c)
+        return reply
+          .status(400)
+          .send({ error: "Cliente inválido para escopo da tabela" });
     }
     if (d.sellerId) {
       const s = await prisma.seller.findFirst({
         where: { id: d.sellerId, organizationId: auth.organizationId },
       });
-      if (!s) return reply.status(400).send({ error: "Vendedor inválido para escopo da tabela" });
+      if (!s)
+        return reply
+          .status(400)
+          .send({ error: "Vendedor inválido para escopo da tabela" });
     }
     if (d.regionId) {
       const r = await prisma.region.findFirst({
         where: { id: d.regionId, organizationId: auth.organizationId },
       });
-      if (!r) return reply.status(400).send({ error: "Região inválida para escopo da tabela" });
+      if (!r)
+        return reply
+          .status(400)
+          .send({ error: "Região inválida para escopo da tabela" });
     }
 
     return prisma.priceTable.create({
@@ -407,7 +645,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         regionId: z.string().nullable().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const existing = await prisma.priceTable.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -419,19 +658,28 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       const c = await prisma.customer.findFirst({
         where: { id: d.customerId, organizationId: auth.organizationId },
       });
-      if (!c) return reply.status(400).send({ error: "Cliente inválido para escopo da tabela" });
+      if (!c)
+        return reply
+          .status(400)
+          .send({ error: "Cliente inválido para escopo da tabela" });
     }
     if (d.sellerId) {
       const s = await prisma.seller.findFirst({
         where: { id: d.sellerId, organizationId: auth.organizationId },
       });
-      if (!s) return reply.status(400).send({ error: "Vendedor inválido para escopo da tabela" });
+      if (!s)
+        return reply
+          .status(400)
+          .send({ error: "Vendedor inválido para escopo da tabela" });
     }
     if (d.regionId) {
       const r = await prisma.region.findFirst({
         where: { id: d.regionId, organizationId: auth.organizationId },
       });
-      if (!r) return reply.status(400).send({ error: "Região inválida para escopo da tabela" });
+      if (!r)
+        return reply
+          .status(400)
+          .send({ error: "Região inválida para escopo da tabela" });
     }
 
     return prisma.priceTable.update({
@@ -439,8 +687,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       data: {
         name: d.name ?? undefined,
         validFrom:
-          d.validFrom === undefined ? undefined : d.validFrom ? new Date(d.validFrom) : null,
-        validTo: d.validTo === undefined ? undefined : d.validTo ? new Date(d.validTo) : null,
+          d.validFrom === undefined
+            ? undefined
+            : d.validFrom
+              ? new Date(d.validFrom)
+              : null,
+        validTo:
+          d.validTo === undefined
+            ? undefined
+            : d.validTo
+              ? new Date(d.validTo)
+              : null,
         priority: d.priority ?? undefined,
         customerId: d.customerId === undefined ? undefined : d.customerId,
         sellerId: d.sellerId === undefined ? undefined : d.sellerId,
@@ -469,7 +726,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         price: z.number().positive(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const pt = await prisma.priceTable.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -482,7 +740,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
     return prisma.priceTableItem.upsert({
       where: {
-        priceTableId_productId: { priceTableId: id, productId: body.data.productId },
+        priceTableId_productId: {
+          priceTableId: id,
+          productId: body.data.productId,
+        },
       },
       create: {
         priceTableId: id,
@@ -495,7 +756,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.delete("/price-tables/:tableId/items/:productId", async (req, reply) => {
     const auth = req.auth!;
-    const p = z.object({ tableId: z.string(), productId: z.string() }).parse(req.params);
+    const p = z
+      .object({ tableId: z.string(), productId: z.string() })
+      .parse(req.params);
     const pt = await prisma.priceTable.findFirst({
       where: { id: p.tableId, organizationId: auth.organizationId },
     });
@@ -522,19 +785,26 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         code: z.string().min(1),
         name: z.string().min(1),
         attributeSchema: z.any().optional(),
+        commissionPercent: optionalCommissionPercentSchema,
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const code = normalizeCategoryCode(body.data.code);
-    if (!code.length) return reply.status(400).send({ error: "Código inválido (use letras, números e _)" });
+    if (!code.length)
+      return reply
+        .status(400)
+        .send({ error: "Código inválido (use letras, números e _)" });
 
     let schemaValue: Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined;
     if (body.data.attributeSchema !== undefined) {
       const parsed = parseCategoryAttributeSchema(body.data.attributeSchema);
       if (!parsed.ok) return reply.status(400).send({ error: parsed.error });
       schemaValue =
-        parsed.defs.length > 0 ? (parsed.defs as unknown as Prisma.InputJsonValue) : Prisma.JsonNull;
+        parsed.defs.length > 0
+          ? (parsed.defs as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull;
     }
 
     try {
@@ -543,11 +813,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           organizationId: auth.organizationId,
           code,
           name: body.data.name.trim(),
-          ...(schemaValue !== undefined ? { attributeSchema: schemaValue } : {}),
+          ...(body.data.commissionPercent !== undefined
+            ? { commissionPercent: body.data.commissionPercent }
+            : {}),
+          ...(schemaValue !== undefined
+            ? { attributeSchema: schemaValue }
+            : {}),
         },
       });
     } catch {
-      return reply.status(409).send({ error: "Já existe categoria com esse código" });
+      return reply
+        .status(409)
+        .send({ error: "Já existe categoria com esse código" });
     }
   });
 
@@ -559,9 +836,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         name: z.string().min(1).optional(),
         code: z.string().min(1).optional(),
         attributeSchema: z.any().nullable().optional(),
+        commissionPercent: optionalCommissionPercentSchema,
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const existing = await prisma.productCategory.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -571,15 +850,23 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (
       body.data.name === undefined &&
       body.data.code === undefined &&
-      body.data.attributeSchema === undefined
+      body.data.attributeSchema === undefined &&
+      body.data.commissionPercent === undefined
     ) {
-      return reply.status(400).send({ error: "Informe nome, código ou campos dinâmicos para atualizar" });
+      return reply.status(400).send({
+        error:
+          "Informe nome, código, comissão ou campos dinâmicos para atualizar",
+      });
     }
 
     const code =
-      body.data.code !== undefined ? normalizeCategoryCode(body.data.code) : undefined;
+      body.data.code !== undefined
+        ? normalizeCategoryCode(body.data.code)
+        : undefined;
     if (code !== undefined && !code.length) {
-      return reply.status(400).send({ error: "Código inválido (use letras, números e _)" });
+      return reply
+        .status(400)
+        .send({ error: "Código inválido (use letras, números e _)" });
     }
 
     let schemaPatch: Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined;
@@ -590,7 +877,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         const parsed = parseCategoryAttributeSchema(body.data.attributeSchema);
         if (!parsed.ok) return reply.status(400).send({ error: parsed.error });
         schemaPatch =
-          parsed.defs.length > 0 ? (parsed.defs as unknown as Prisma.InputJsonValue) : Prisma.JsonNull;
+          parsed.defs.length > 0
+            ? (parsed.defs as unknown as Prisma.InputJsonValue)
+            : Prisma.JsonNull;
       }
     }
 
@@ -600,11 +889,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         data: {
           name: body.data.name?.trim(),
           ...(code !== undefined ? { code } : {}),
-          ...(schemaPatch !== undefined ? { attributeSchema: schemaPatch } : {}),
+          ...(body.data.commissionPercent !== undefined
+            ? { commissionPercent: body.data.commissionPercent }
+            : {}),
+          ...(schemaPatch !== undefined
+            ? { attributeSchema: schemaPatch }
+            : {}),
         },
       });
     } catch {
-      return reply.status(409).send({ error: "Já existe categoria com esse código" });
+      return reply
+        .status(409)
+        .send({ error: "Já existe categoria com esse código" });
     }
   });
 
@@ -620,17 +916,603 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   });
 
   /* --- Produtos --- */
-  const productCategoryInclude = {
-    category: { select: { id: true, code: true, name: true, attributeSchema: true } },
+  const productRelationsInclude = {
+    category: {
+      select: { id: true, code: true, name: true, attributeSchema: true },
+    },
+    supplier: {
+      select: {
+        id: true,
+        code: true,
+        tradeName: true,
+        legalName: true,
+        cnpj: true,
+      },
+    },
   } as const;
+
+  /* --- Fornecedores --- */
+  app.get("/suppliers", async (req) => {
+    const auth = req.auth!;
+    return listSuppliers(auth.organizationId);
+  });
+
+  app.get("/suppliers/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const supplier = await getSupplier(auth.organizationId, id);
+    if (!supplier)
+      return reply.status(404).send({ error: "Fornecedor não encontrado" });
+    return supplier;
+  });
+
+  app.post("/suppliers", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        code: z.string().min(1),
+        legalName: z.string().min(1),
+        cnpj: z.string().min(1),
+        tradeName: z.string().min(1),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    try {
+      return await createSupplier(auth.organizationId, body.data);
+    } catch (e) {
+      if (e instanceof SupplierError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.patch("/suppliers/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        code: z.string().min(1).optional(),
+        legalName: z.string().min(1).optional(),
+        cnpj: z.string().min(1).optional(),
+        tradeName: z.string().min(1).optional(),
+        active: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    try {
+      const supplier = await updateSupplier(auth.organizationId, id, body.data);
+      if (!supplier)
+        return reply.status(404).send({ error: "Fornecedor não encontrado" });
+      return supplier;
+    } catch (e) {
+      if (e instanceof SupplierError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.delete("/suppliers/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    try {
+      const ok = await deleteSupplier(auth.organizationId, id);
+      if (!ok)
+        return reply.status(404).send({ error: "Fornecedor não encontrado" });
+      return reply.status(204).send();
+    } catch (e) {
+      if (e instanceof SupplierError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  /* --- Fiscal: centros de custo, históricos, despesas fixas, AP, XML --- */
+  app.get("/cost-centers", async (req) => {
+    return listCostCenters(req.auth!.organizationId);
+  });
+
+  app.post("/cost-centers", async (req, reply) => {
+    const body = z
+      .object({ code: z.string().min(1), name: z.string().min(1) })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      return await createCostCenter(req.auth!.organizationId, body.data);
+    } catch (e) {
+      if (e instanceof FiscalLookupError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.patch("/cost-centers/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        code: z.string().min(1).optional(),
+        name: z.string().min(1).optional(),
+        active: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      const row = await updateCostCenter(
+        req.auth!.organizationId,
+        id,
+        body.data,
+      );
+      if (!row)
+        return reply
+          .status(404)
+          .send({ error: "Centro de custo não encontrado" });
+      return row;
+    } catch (e) {
+      if (e instanceof FiscalLookupError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.delete("/cost-centers/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const ok = await deleteCostCenter(req.auth!.organizationId, id);
+    if (!ok)
+      return reply
+        .status(404)
+        .send({ error: "Centro de custo não encontrado" });
+    return reply.status(204).send();
+  });
+
+  app.get("/expense-histories", async (req) => {
+    return listExpenseHistories(req.auth!.organizationId);
+  });
+
+  app.post("/expense-histories", async (req, reply) => {
+    const body = z
+      .object({ code: z.string().min(1), description: z.string().min(1) })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      return await createExpenseHistory(req.auth!.organizationId, body.data);
+    } catch (e) {
+      if (e instanceof FiscalLookupError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.patch("/expense-histories/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        code: z.string().min(1).optional(),
+        description: z.string().min(1).optional(),
+        active: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      const row = await updateExpenseHistory(
+        req.auth!.organizationId,
+        id,
+        body.data,
+      );
+      if (!row)
+        return reply.status(404).send({ error: "Histórico não encontrado" });
+      return row;
+    } catch (e) {
+      if (e instanceof FiscalLookupError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.delete("/expense-histories/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const ok = await deleteExpenseHistory(req.auth!.organizationId, id);
+    if (!ok)
+      return reply.status(404).send({ error: "Histórico não encontrado" });
+    return reply.status(204).send();
+  });
+
+  app.get("/fixed-expenses", async (req) => {
+    return listFixedExpenses(req.auth!.organizationId);
+  });
+
+  app.post("/fixed-expenses", async (req, reply) => {
+    const body = z
+      .object({
+        name: z.string().min(1),
+        amount: z.number().positive(),
+        dayOfMonth: z.number().int().min(1).max(28),
+        supplierId: z.string().nullable().optional(),
+        costCenterId: z.string().nullable().optional(),
+        historyId: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+        competenceLabel: z.string().nullable().optional(),
+        active: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      return await createFixedExpense(req.auth!.organizationId, body.data);
+    } catch (e) {
+      if (e instanceof FixedExpenseError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.patch("/fixed-expenses/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        name: z.string().min(1).optional(),
+        amount: z.number().positive().optional(),
+        dayOfMonth: z.number().int().min(1).max(28).optional(),
+        supplierId: z.string().nullable().optional(),
+        costCenterId: z.string().nullable().optional(),
+        historyId: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+        competenceLabel: z.string().nullable().optional(),
+        active: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      const row = await updateFixedExpense(
+        req.auth!.organizationId,
+        id,
+        body.data,
+      );
+      if (!row)
+        return reply.status(404).send({ error: "Despesa fixa não encontrada" });
+      return row;
+    } catch (e) {
+      if (e instanceof FixedExpenseError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.delete("/fixed-expenses/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const ok = await deleteFixedExpense(req.auth!.organizationId, id);
+    if (!ok)
+      return reply.status(404).send({ error: "Despesa fixa não encontrada" });
+    return reply.status(204).send();
+  });
+
+  const apStatusSchema = z.enum(["AUTHORIZED", "PENDING", "PAID", "CANCELLED"]);
+
+  app.get("/accounts-payable", async (req, reply) => {
+    const q = z
+      .object({
+        status: apStatusSchema.optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        supplierId: z.string().optional(),
+      })
+      .safeParse(req.query);
+    if (!q.success)
+      return reply.status(400).send({ error: "Filtros inválidos" });
+    try {
+      return await listAccountsPayable(req.auth!.organizationId, q.data);
+    } catch (e) {
+      if (e instanceof AccountsPayableError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  const accountsPayableBody = z.object({
+    docNumber: z.string().min(1),
+    supplierId: z.string().min(1),
+    issueDate: z.string().min(1),
+    dueDate: z.string().min(1),
+    competence: z.string().min(1),
+    amount: z.number().positive(),
+    status: apStatusSchema.optional(),
+    historyId: z.string().nullable().optional(),
+    costCenterId: z.string().nullable().optional(),
+    notes: z.string().nullable().optional(),
+  });
+
+  app.post("/accounts-payable", async (req, reply) => {
+    const body = accountsPayableBody.safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      return await createAccountsPayable(req.auth!.organizationId, body.data);
+    } catch (e) {
+      if (e instanceof AccountsPayableError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.patch("/accounts-payable/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const body = accountsPayableBody.partial().safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+    try {
+      const row = await updateAccountsPayable(
+        req.auth!.organizationId,
+        id,
+        body.data,
+      );
+      if (!row)
+        return reply.status(404).send({ error: "Lançamento não encontrado" });
+      return row;
+    } catch (e) {
+      if (e instanceof AccountsPayableError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.delete("/accounts-payable/:id", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    const ok = await deleteAccountsPayable(req.auth!.organizationId, id);
+    if (!ok)
+      return reply.status(404).send({ error: "Lançamento não encontrado" });
+    return reply.status(204).send();
+  });
+
+  app.get("/fiscal/orders", async (req, reply) => {
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+      })
+      .safeParse(req.query);
+    if (!q.success)
+      return reply.status(400).send({ error: "Filtros inválidos" });
+    return listFiscalOrders(req.auth!.organizationId, q.data);
+  });
+
+  app.get("/orders/:id/nfe.xml", async (req, reply) => {
+    const { id } = idParam.parse(req.params);
+    try {
+      const { xml, filename } = await buildNfeXml(req.auth!.organizationId, id);
+      return reply
+        .header("Content-Type", "application/xml; charset=utf-8")
+        .header("Content-Disposition", `attachment; filename="${filename}"`)
+        .send(xml);
+    } catch (e) {
+      if (e instanceof NfeXmlError) {
+        const status = e.message.includes("não encontrado") ? 404 : 400;
+        return reply.status(status).send({ error: e.message });
+      }
+      throw e;
+    }
+  });
 
   app.get("/products", async (req) => {
     const auth = req.auth!;
+    const q = z
+      .object({
+        supplierId: z.string().optional(),
+        categoryId: z.string().optional(),
+        q: z.string().optional(),
+      })
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    const where: Prisma.ProductWhereInput = {
+      organizationId: auth.organizationId,
+    };
+    if (filters.supplierId) where.supplierId = filters.supplierId;
+    if (filters.categoryId) where.categoryId = filters.categoryId;
+    if (filters.q?.trim()) {
+      const text = filters.q.trim();
+      where.OR = [
+        { name: { contains: text, mode: "insensitive" } },
+        { sku: { contains: text, mode: "insensitive" } },
+        { barcode: { contains: text, mode: "insensitive" } },
+      ];
+    }
     return prisma.product.findMany({
-      where: { organizationId: auth.organizationId },
+      where,
       orderBy: { name: "asc" },
-      include: productCategoryInclude,
+      include: productRelationsInclude,
     });
+  });
+
+  /* --- Estoque --- */
+  app.get("/stock", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        supplierId: z.string().optional(),
+        categoryId: z.string().optional(),
+        q: z.string().optional(),
+      })
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    return listStockProducts({
+      organizationId: auth.organizationId,
+      supplierId: filters.supplierId,
+      categoryId: filters.categoryId,
+      q: filters.q,
+    });
+  });
+
+  app.get("/stock/expiring", async (req) => {
+    const auth = req.auth!;
+    return listExpiringLots(auth.organizationId);
+  });
+
+  app.get("/stock/movements", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        productId: z.string().optional(),
+        type: z
+          .enum(["MANUAL_IN", "MANUAL_OUT", "ADJUST", "SALE", "SALE_REVERSAL"])
+          .optional(),
+        take: z.coerce.number().int().positive().optional(),
+        skip: z.coerce.number().int().nonnegative().optional(),
+      })
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    return listStockMovements({
+      organizationId: auth.organizationId,
+      productId: filters.productId,
+      type: filters.type,
+      take: filters.take,
+      skip: filters.skip,
+    });
+  });
+
+  app.post("/stock/entries", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        productId: z.string().min(1),
+        type: z.enum(["MANUAL_IN", "MANUAL_OUT", "ADJUST"]),
+        qty: z.number().int().positive(),
+        lotCode: z.string().min(1).max(80),
+        expiresAt: z.string().min(1),
+        reason: z.string().max(500).optional(),
+        password: z.string().min(1),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const user = await prisma.user.findUnique({
+      where: { id: auth.sub },
+      select: { passwordHash: true, matricula: true },
+    });
+    if (!user) return reply.status(401).send({ error: "Não autorizado" });
+
+    const ok = await verifyPassword(body.data.password, user.passwordHash);
+    if (!ok) return reply.status(401).send({ error: "Senha incorreta" });
+
+    const expiresAt = new Date(body.data.expiresAt);
+    if (Number.isNaN(expiresAt.getTime())) {
+      return reply.status(400).send({ error: "Validade inválida" });
+    }
+
+    try {
+      const result = await applyManualStockEntry({
+        organizationId: auth.organizationId,
+        userId: auth.sub,
+        userMatricula: user.matricula,
+        productId: body.data.productId,
+        type: body.data.type,
+        qty: body.data.qty,
+        lotCode: body.data.lotCode,
+        expiresAt,
+        reason: body.data.reason,
+      });
+      return result;
+    } catch (e) {
+      if (e instanceof StockError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.get("/permissions", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    return buildEffectivePermissionsMatrix(auth.organizationId);
+  });
+
+  app.put("/permissions", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+
+    const body = z
+      .object({
+        updates: z
+          .array(
+            z.object({
+              role: z.enum(["MANAGER", "SELLER", "SUPERVISOR", "ADMIN"]),
+              resource: z.string().min(1),
+              level: z.enum(["none", "read", "write"]),
+            }),
+          )
+          .min(1),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
+    }
+
+    const updates = body.data.updates.filter((u) =>
+      isPermissionResource(u.resource),
+    );
+    if (updates.length === 0) {
+      return reply.status(400).send({ error: "Nenhum recurso válido" });
+    }
+
+    const matrix = await updateOrgRolePermissions(
+      auth.organizationId,
+      updates.map((u) => ({
+        role: u.role,
+        resource:
+          u.resource as import("../auth/permissions.js").PermissionResource,
+        level: u.level,
+      })),
+    );
+
+    await writeAuditLog({
+      organizationId: auth.organizationId,
+      userId: auth.sub,
+      action: "PERMISSIONS_MATRIX_UPDATE",
+      entityType: "OrganizationRolePermission",
+      entityId: auth.organizationId,
+      metadata: { updateCount: updates.length },
+    });
+
+    return matrix;
+  });
+
+  app.get("/audit-logs", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        take: z.coerce.number().int().positive().optional(),
+        skip: z.coerce.number().int().nonnegative().optional(),
+        entityType: z.string().optional(),
+      })
+      .safeParse(req.query);
+    const take = Math.min(q.success ? (q.data.take ?? 50) : 50, 200);
+    const skip = q.success ? (q.data.skip ?? 0) : 0;
+    const where: Prisma.AuditLogWhereInput = {
+      organizationId: auth.organizationId,
+    };
+    if (q.success && q.data.entityType) where.entityType = q.data.entityType;
+    const [items, total] = await Promise.all([
+      prisma.auditLog.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take,
+        skip,
+        include: {
+          user: {
+            select: { id: true, name: true, email: true, matricula: true },
+          },
+        },
+      }),
+      prisma.auditLog.count({ where }),
+    ]);
+    return { items, total, take, skip };
   });
 
   app.get("/products/:id", async (req, reply) => {
@@ -638,7 +1520,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(req.params);
     const p = await prisma.product.findFirst({
       where: { id, organizationId: auth.organizationId },
-      include: productCategoryInclude,
+      include: productRelationsInclude,
     });
     if (!p) return reply.status(404).send({ error: "Não encontrado" });
     return p;
@@ -650,53 +1532,166 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       .object({
         name: z.string().min(1),
         sku: z.string().optional(),
+        barcode: z.string().max(80).optional(),
         description: z.string().optional(),
         imageUrl: z.union([z.string().max(2048), z.literal("")]).optional(),
         basePrice: z.number().nonnegative(),
-        categoryId: z.string().nullable().optional(),
+        categoryId: z.string().min(1),
+        supplierId: z.string().min(1),
         attributes: z.record(z.string(), z.unknown()).optional(),
-        maxSellerDiscountPercent: z.number().min(0).max(100).nullable().optional(),
+        maxSellerDiscountPercent: z
+          .number()
+          .min(0)
+          .max(100)
+          .nullable()
+          .optional(),
         minSaleUnitPrice: z.number().nonnegative().nullable().optional(),
+        commissionPercent: optionalCommissionPercentSchema,
+        ncmId: z.string().nullable().optional(),
+        fiscalOrigin: z.number().int().min(0).max(8).nullable().optional(),
+        fiscalGtin: z.string().nullable().optional(),
+        fiscalUnit: z.string().nullable().optional(),
+        fiscalCest: z.string().nullable().optional(),
+        fiscalDescription: z.string().nullable().optional(),
+        outboundOperationId: z.string().nullable().optional(),
+        stockQty: z.number().int().min(0).optional(),
+        blockSaleWhenOutOfStock: z.boolean().optional(),
+        ...productCadastroFieldsSchema,
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
-    const resolvedCatId = body.data.categoryId ?? null;
+    const resolvedCatId = body.data.categoryId;
 
-    if (resolvedCatId != null) {
-      const ok = await prisma.productCategory.findFirst({
-        where: { id: resolvedCatId, organizationId: auth.organizationId },
-      });
-      if (!ok) return reply.status(400).send({ error: "Categoria inválida" });
-    }
+    const categoryOk = await prisma.productCategory.findFirst({
+      where: { id: resolvedCatId, organizationId: auth.organizationId },
+    });
+    if (!categoryOk)
+      return reply.status(400).send({ error: "Grupo de produtos inválido" });
+
+    const supplierOk = await assertSupplierInOrg(
+      auth.organizationId,
+      body.data.supplierId,
+    );
+    if (!supplierOk)
+      return reply.status(400).send({ error: "Fornecedor inválido" });
 
     const defs = await loadCategoryDefs(resolvedCatId, auth.organizationId);
     const attrsRaw = body.data.attributes ?? {};
     const validated = validateProductAttributes(attrsRaw, defs);
-    if (!validated.ok) return reply.status(400).send({ error: validated.error });
+    if (!validated.ok)
+      return reply.status(400).send({ error: validated.error });
 
-    return prisma.product.create({
-      data: {
-        name: body.data.name,
-        sku: body.data.sku,
-        description: body.data.description,
-        imageUrl:
-          body.data.imageUrl === undefined || body.data.imageUrl === ""
-            ? undefined
-            : body.data.imageUrl.trim() || undefined,
-        basePrice: body.data.basePrice,
+    const ncmCol =
+      body.data.ncm === undefined
+        ? undefined
+        : normalizeProductNcm(body.data.ncm);
+    const attrsSynced = syncProductAttributesNcm(
+      validated.value,
+      ncmCol ?? null,
+    );
+
+    try {
+      const created = await prisma.product.create({
+        data: {
+          name: body.data.name,
+          sku: body.data.sku,
+          barcode: normalizeProductBarcode(body.data.barcode) ?? undefined,
+          description: body.data.description,
+          imageUrl:
+            body.data.imageUrl === undefined || body.data.imageUrl === ""
+              ? undefined
+              : body.data.imageUrl.trim() || undefined,
+          basePrice: body.data.basePrice,
+          organizationId: auth.organizationId,
+          categoryId: body.data.categoryId,
+          supplierId: body.data.supplierId,
+          attributes: attrsSynced as Prisma.InputJsonValue,
+          maxSellerDiscountPercent:
+            body.data.maxSellerDiscountPercent === undefined
+              ? undefined
+              : body.data.maxSellerDiscountPercent,
+          minSaleUnitPrice:
+            body.data.minSaleUnitPrice === undefined
+              ? undefined
+              : body.data.minSaleUnitPrice,
+          commissionPercent:
+            body.data.commissionPercent === undefined
+              ? undefined
+              : body.data.commissionPercent,
+          stockQty: body.data.stockQty ?? 0,
+          blockSaleWhenOutOfStock: body.data.blockSaleWhenOutOfStock ?? false,
+          ...mapProductCadastroPrisma(body.data),
+          ncmId: body.data.ncmId === undefined ? undefined : body.data.ncmId,
+          fiscalOrigin:
+            body.data.fiscalOrigin === undefined
+              ? undefined
+              : body.data.fiscalOrigin,
+          fiscalGtin:
+            body.data.fiscalGtin === undefined
+              ? undefined
+              : body.data.fiscalGtin,
+          fiscalUnit:
+            body.data.fiscalUnit === undefined
+              ? undefined
+              : body.data.fiscalUnit,
+          fiscalCest:
+            body.data.fiscalCest === undefined
+              ? undefined
+              : body.data.fiscalCest,
+          fiscalDescription:
+            body.data.fiscalDescription === undefined
+              ? undefined
+              : body.data.fiscalDescription,
+          outboundOperationId:
+            body.data.outboundOperationId === undefined
+              ? undefined
+              : body.data.outboundOperationId,
+        },
+        include: productRelationsInclude,
+      });
+
+      const actor = await prisma.user.findUnique({
+        where: { id: auth.sub },
+        select: { matricula: true },
+      });
+      const initialQty = body.data.stockQty ?? 0;
+      if (initialQty > 0) {
+        await prisma.stockMovement.create({
+          data: {
+            organizationId: auth.organizationId,
+            productId: created.id,
+            type: "ADJUST",
+            qtyDelta: initialQty,
+            balanceAfter: initialQty,
+            userId: auth.sub,
+            reason: "Estoque inicial no cadastro",
+          },
+        });
+      }
+      await writeAuditLog({
         organizationId: auth.organizationId,
-        categoryId: body.data.categoryId ?? undefined,
-        attributes: validated.value as Prisma.InputJsonValue,
-        maxSellerDiscountPercent:
-          body.data.maxSellerDiscountPercent === undefined
-            ? undefined
-            : body.data.maxSellerDiscountPercent,
-        minSaleUnitPrice:
-          body.data.minSaleUnitPrice === undefined ? undefined : body.data.minSaleUnitPrice,
-      },
-      include: productCategoryInclude,
-    });
+        userId: auth.sub,
+        userMatricula: actor?.matricula ?? null,
+        action: "product.create",
+        entityType: "Product",
+        entityId: created.id,
+        metadata: { name: created.name, stockQty: initialQty },
+      });
+
+      return created;
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(400)
+          .send({ error: "Código de barras já cadastrado nesta empresa." });
+      }
+      throw e;
+    }
   });
 
   app.patch("/products/:id", async (req, reply) => {
@@ -706,34 +1701,86 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       .object({
         name: z.string().min(1).optional(),
         sku: z.string().nullable().optional(),
+        barcode: z.string().max(80).nullable().optional(),
         description: z.string().nullable().optional(),
-        imageUrl: z.union([z.string().max(2048), z.literal("")]).nullable().optional(),
+        imageUrl: z
+          .union([z.string().max(2048), z.literal("")])
+          .nullable()
+          .optional(),
         basePrice: z.number().nonnegative().optional(),
         categoryId: z.string().nullable().optional(),
+        supplierId: z.string().nullable().optional(),
         attributes: z.record(z.string(), z.unknown()).optional(),
-        maxSellerDiscountPercent: z.number().min(0).max(100).nullable().optional(),
+        maxSellerDiscountPercent: z
+          .number()
+          .min(0)
+          .max(100)
+          .nullable()
+          .optional(),
         minSaleUnitPrice: z.number().nonnegative().nullable().optional(),
+        commissionPercent: optionalCommissionPercentSchema,
+        ncmId: z.string().nullable().optional(),
+        fiscalOrigin: z.number().int().min(0).max(8).nullable().optional(),
+        fiscalGtin: z.string().nullable().optional(),
+        fiscalUnit: z.string().nullable().optional(),
+        fiscalCest: z.string().nullable().optional(),
+        fiscalDescription: z.string().nullable().optional(),
+        outboundOperationId: z.string().nullable().optional(),
+        stockQty: z.number().int().min(0).optional(),
+        blockSaleWhenOutOfStock: z.boolean().optional(),
+        ...productCadastroFieldsSchema,
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const existing = await prisma.product.findFirst({
       where: { id, organizationId: auth.organizationId },
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
 
+    if ((req.body as { stockQty?: unknown })?.stockQty !== undefined) {
+      return reply.status(400).send({
+        error:
+          "Alterações de estoque devem ser feitas em /admin/stock/entries (com reautenticação).",
+      });
+    }
+    if (body.data.categoryId === null) {
+      return reply
+        .status(400)
+        .send({ error: "Grupo de produtos é obrigatório" });
+    }
+    if (body.data.supplierId === null) {
+      return reply.status(400).send({ error: "Fornecedor é obrigatório" });
+    }
+
     if (body.data.categoryId !== undefined && body.data.categoryId !== null) {
       const ok = await prisma.productCategory.findFirst({
-        where: { id: body.data.categoryId, organizationId: auth.organizationId },
+        where: {
+          id: body.data.categoryId,
+          organizationId: auth.organizationId,
+        },
       });
-      if (!ok) return reply.status(400).send({ error: "Categoria inválida" });
+      if (!ok)
+        return reply.status(400).send({ error: "Grupo de produtos inválido" });
+    }
+
+    if (body.data.supplierId !== undefined && body.data.supplierId !== null) {
+      const ok = await assertSupplierInOrg(
+        auth.organizationId,
+        body.data.supplierId,
+      );
+      if (!ok) return reply.status(400).send({ error: "Fornecedor inválido" });
     }
 
     const resolvedCatId =
-      body.data.categoryId !== undefined ? body.data.categoryId : existing.categoryId;
+      body.data.categoryId !== undefined
+        ? body.data.categoryId
+        : existing.categoryId;
 
     const categoryChanged =
-      body.data.categoryId !== undefined && body.data.categoryId !== existing.categoryId;
+      body.data.categoryId !== undefined &&
+      body.data.categoryId !== existing.categoryId;
     const attrsProvided = body.data.attributes !== undefined;
 
     let validatedAttrs: Record<string, unknown> | undefined;
@@ -742,41 +1789,113 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       const mergedAttrs = attrsProvided
         ? body.data.attributes!
         : (existing.attributes as Record<string, unknown>);
-      const defs = await loadCategoryDefs(resolvedCatId ?? null, auth.organizationId);
+      const defs = await loadCategoryDefs(
+        resolvedCatId ?? null,
+        auth.organizationId,
+      );
       const validated = validateProductAttributes(mergedAttrs, defs);
-      if (!validated.ok) return reply.status(400).send({ error: validated.error });
+      if (!validated.ok)
+        return reply.status(400).send({ error: validated.error });
       validatedAttrs = validated.value;
     }
 
-    return prisma.product.update({
-      where: { id },
-      data: {
-        name: body.data.name,
-        sku: body.data.sku === undefined ? undefined : body.data.sku,
-        description: body.data.description === undefined ? undefined : body.data.description,
-        basePrice: body.data.basePrice,
-        ...(body.data.imageUrl !== undefined
-          ? {
-              imageUrl:
-                body.data.imageUrl === null || body.data.imageUrl === ""
-                  ? null
-                  : body.data.imageUrl.trim() || null,
-            }
-          : {}),
-        categoryId:
-          body.data.categoryId === undefined ? undefined : body.data.categoryId,
-        ...(validatedAttrs !== undefined
-          ? { attributes: validatedAttrs as Prisma.InputJsonValue }
-          : {}),
-        maxSellerDiscountPercent:
-          body.data.maxSellerDiscountPercent === undefined
-            ? undefined
-            : body.data.maxSellerDiscountPercent,
-        minSaleUnitPrice:
-          body.data.minSaleUnitPrice === undefined ? undefined : body.data.minSaleUnitPrice,
-      },
-      include: productCategoryInclude,
-    });
+    const ncmProvided = body.data.ncm !== undefined;
+    if (ncmProvided || validatedAttrs !== undefined) {
+      const baseAttrs =
+        validatedAttrs ?? (existing.attributes as Record<string, unknown>);
+      const ncmCol = ncmProvided
+        ? normalizeProductNcm(body.data.ncm)
+        : existing.ncm;
+      validatedAttrs = syncProductAttributesNcm(baseAttrs, ncmCol ?? null);
+    }
+
+    try {
+      return await prisma.product.update({
+        where: { id },
+        data: {
+          name: body.data.name,
+          sku: body.data.sku === undefined ? undefined : body.data.sku,
+          barcode:
+            body.data.barcode === undefined
+              ? undefined
+              : normalizeProductBarcode(body.data.barcode),
+          description:
+            body.data.description === undefined
+              ? undefined
+              : body.data.description,
+          basePrice: body.data.basePrice,
+          ...(body.data.imageUrl !== undefined
+            ? {
+                imageUrl:
+                  body.data.imageUrl === null || body.data.imageUrl === ""
+                    ? null
+                    : body.data.imageUrl.trim() || null,
+              }
+            : {}),
+          categoryId:
+            body.data.categoryId === undefined
+              ? undefined
+              : body.data.categoryId,
+          supplierId:
+            body.data.supplierId === undefined
+              ? undefined
+              : body.data.supplierId,
+          ...(validatedAttrs !== undefined
+            ? { attributes: validatedAttrs as Prisma.InputJsonValue }
+            : {}),
+          maxSellerDiscountPercent:
+            body.data.maxSellerDiscountPercent === undefined
+              ? undefined
+              : body.data.maxSellerDiscountPercent,
+          minSaleUnitPrice:
+            body.data.minSaleUnitPrice === undefined
+              ? undefined
+              : body.data.minSaleUnitPrice,
+          commissionPercent:
+            body.data.commissionPercent === undefined
+              ? undefined
+              : body.data.commissionPercent,
+          blockSaleWhenOutOfStock: body.data.blockSaleWhenOutOfStock,
+          ...mapProductCadastroPrisma(body.data),
+          ncmId: body.data.ncmId === undefined ? undefined : body.data.ncmId,
+          fiscalOrigin:
+            body.data.fiscalOrigin === undefined
+              ? undefined
+              : body.data.fiscalOrigin,
+          fiscalGtin:
+            body.data.fiscalGtin === undefined
+              ? undefined
+              : body.data.fiscalGtin,
+          fiscalUnit:
+            body.data.fiscalUnit === undefined
+              ? undefined
+              : body.data.fiscalUnit,
+          fiscalCest:
+            body.data.fiscalCest === undefined
+              ? undefined
+              : body.data.fiscalCest,
+          fiscalDescription:
+            body.data.fiscalDescription === undefined
+              ? undefined
+              : body.data.fiscalDescription,
+          outboundOperationId:
+            body.data.outboundOperationId === undefined
+              ? undefined
+              : body.data.outboundOperationId,
+        },
+        include: productRelationsInclude,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(400)
+          .send({ error: "Código de barras já cadastrado nesta empresa." });
+      }
+      throw e;
+    }
   });
 
   app.delete("/products/:id", async (req, reply) => {
@@ -787,17 +1906,33 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
     await prisma.product.delete({ where: { id } });
+    const actor = await prisma.user.findUnique({
+      where: { id: auth.sub },
+      select: { matricula: true },
+    });
+    await writeAuditLog({
+      organizationId: auth.organizationId,
+      userId: auth.sub,
+      userMatricula: actor?.matricula ?? null,
+      action: "product.delete",
+      entityType: "Product",
+      entityId: id,
+      metadata: { name: existing.name },
+    });
     return reply.status(204).send();
   });
 
   /* --- Promoções por produto --- */
   app.get("/products/:productId/promotions", async (req, reply) => {
     const auth = req.auth!;
-    const { productId } = z.object({ productId: z.string().min(1) }).parse(req.params);
+    const { productId } = z
+      .object({ productId: z.string().min(1) })
+      .parse(req.params);
     const prod = await prisma.product.findFirst({
       where: { id: productId, organizationId: auth.organizationId },
     });
-    if (!prod) return reply.status(404).send({ error: "Produto não encontrado" });
+    if (!prod)
+      return reply.status(404).send({ error: "Produto não encontrado" });
 
     const rows = await prisma.productPromotion.findMany({
       where: { productId, organizationId: auth.organizationId },
@@ -809,7 +1944,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.post("/products/:productId/promotions", async (req, reply) => {
     const auth = req.auth!;
-    const { productId } = z.object({ productId: z.string().min(1) }).parse(req.params);
+    const { productId } = z
+      .object({ productId: z.string().min(1) })
+      .parse(req.params);
     const body = z
       .object({
         scope: z.enum(["PRODUCT_GLOBAL", "SELLER", "CUSTOMER"]),
@@ -825,12 +1962,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         minQuantity: z.number().int().positive().nullable().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const prod = await prisma.product.findFirst({
       where: { id: productId, organizationId: auth.organizationId },
     });
-    if (!prod) return reply.status(404).send({ error: "Produto não encontrado" });
+    if (!prod)
+      return reply.status(404).send({ error: "Produto não encontrado" });
 
     const d = body.data;
     const sellerId = d.scope === "SELLER" ? (d.sellerId ?? null) : null;
@@ -879,118 +2018,147 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return serializeProductPromotion(row);
   });
 
-  app.patch("/products/:productId/promotions/:promotionId", async (req, reply) => {
-    const auth = req.auth!;
-    const p = z.object({ productId: z.string().min(1), promotionId: z.string().min(1) }).parse(req.params);
-    const body = z
-      .object({
-        scope: z.enum(["PRODUCT_GLOBAL", "SELLER", "CUSTOMER"]).optional(),
-        sellerId: z.string().nullable().optional(),
-        customerId: z.string().nullable().optional(),
-        kind: z.enum(["PERCENT_OFF", "FIXED_AMOUNT_OFF", "SALE_PRICE"]).optional(),
-        value: z.number().optional(),
-        label: z.string().nullable().optional(),
-        active: z.boolean().optional(),
-        validFrom: z.string().datetime().nullable().optional(),
-        validTo: z.string().datetime().nullable().optional(),
-        priority: z.number().int().optional(),
-        minQuantity: z.number().int().positive().nullable().optional(),
-      })
-      .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+  app.patch(
+    "/products/:productId/promotions/:promotionId",
+    async (req, reply) => {
+      const auth = req.auth!;
+      const p = z
+        .object({
+          productId: z.string().min(1),
+          promotionId: z.string().min(1),
+        })
+        .parse(req.params);
+      const body = z
+        .object({
+          scope: z.enum(["PRODUCT_GLOBAL", "SELLER", "CUSTOMER"]).optional(),
+          sellerId: z.string().nullable().optional(),
+          customerId: z.string().nullable().optional(),
+          kind: z
+            .enum(["PERCENT_OFF", "FIXED_AMOUNT_OFF", "SALE_PRICE"])
+            .optional(),
+          value: z.number().optional(),
+          label: z.string().nullable().optional(),
+          active: z.boolean().optional(),
+          validFrom: z.string().datetime().nullable().optional(),
+          validTo: z.string().datetime().nullable().optional(),
+          priority: z.number().int().optional(),
+          minQuantity: z.number().int().positive().nullable().optional(),
+        })
+        .safeParse(req.body);
+      if (!body.success)
+        return reply.status(400).send({ error: "Dados inválidos" });
 
-    const existing = await prisma.productPromotion.findFirst({
-      where: {
-        id: p.promotionId,
-        productId: p.productId,
-        organizationId: auth.organizationId,
-      },
-    });
-    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
-
-    const scope = body.data.scope ?? existing.scope;
-    let sellerId =
-      body.data.sellerId !== undefined ? body.data.sellerId : existing.sellerId;
-    let customerId =
-      body.data.customerId !== undefined ? body.data.customerId : existing.customerId;
-
-    if (scope === "PRODUCT_GLOBAL") {
-      sellerId = null;
-      customerId = null;
-    } else if (scope === "SELLER") {
-      customerId = null;
-    } else if (scope === "CUSTOMER") {
-      sellerId = null;
-    }
-
-    const kind = body.data.kind ?? existing.kind;
-    const value = body.data.value ?? decToNum(existing.value);
-
-    const errMsg = assertPromotionCoherence({ scope, sellerId, customerId, kind, value });
-    if (errMsg) return reply.status(400).send({ error: errMsg });
-
-    if (scope === "SELLER") {
-      const s = await prisma.seller.findFirst({
-        where: { id: sellerId!, organizationId: auth.organizationId },
+      const existing = await prisma.productPromotion.findFirst({
+        where: {
+          id: p.promotionId,
+          productId: p.productId,
+          organizationId: auth.organizationId,
+        },
       });
-      if (!s) return reply.status(400).send({ error: "Vendedor inválido" });
-    }
-    if (scope === "CUSTOMER") {
-      const c = await prisma.customer.findFirst({
-        where: { id: customerId!, organizationId: auth.organizationId },
-      });
-      if (!c) return reply.status(400).send({ error: "Cliente inválido" });
-    }
+      if (!existing) return reply.status(404).send({ error: "Não encontrado" });
 
-    const row = await prisma.productPromotion.update({
-      where: { id: p.promotionId },
-      data: {
+      const scope = body.data.scope ?? existing.scope;
+      let sellerId =
+        body.data.sellerId !== undefined
+          ? body.data.sellerId
+          : existing.sellerId;
+      let customerId =
+        body.data.customerId !== undefined
+          ? body.data.customerId
+          : existing.customerId;
+
+      if (scope === "PRODUCT_GLOBAL") {
+        sellerId = null;
+        customerId = null;
+      } else if (scope === "SELLER") {
+        customerId = null;
+      } else if (scope === "CUSTOMER") {
+        sellerId = null;
+      }
+
+      const kind = body.data.kind ?? existing.kind;
+      const value = body.data.value ?? decToNum(existing.value);
+
+      const errMsg = assertPromotionCoherence({
         scope,
         sellerId,
         customerId,
         kind,
-        value: body.data.value ?? undefined,
-        label: body.data.label === undefined ? undefined : body.data.label,
-        active: body.data.active ?? undefined,
-        validFrom:
-          body.data.validFrom === undefined
-            ? undefined
-            : body.data.validFrom
-              ? new Date(body.data.validFrom)
-              : null,
-        validTo:
-          body.data.validTo === undefined
-            ? undefined
-            : body.data.validTo
-              ? new Date(body.data.validTo)
-              : null,
-        priority: body.data.priority ?? undefined,
-        minQuantity:
-          body.data.minQuantity === undefined
-            ? undefined
-            : body.data.minQuantity === null
-              ? null
-              : body.data.minQuantity,
-      },
-      include: promotionRelationInclude,
-    });
-    return serializeProductPromotion(row);
-  });
+        value,
+      });
+      if (errMsg) return reply.status(400).send({ error: errMsg });
 
-  app.delete("/products/:productId/promotions/:promotionId", async (req, reply) => {
-    const auth = req.auth!;
-    const par = z.object({ productId: z.string().min(1), promotionId: z.string().min(1) }).parse(req.params);
-    const existing = await prisma.productPromotion.findFirst({
-      where: {
-        id: par.promotionId,
-        productId: par.productId,
-        organizationId: auth.organizationId,
-      },
-    });
-    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
-    await prisma.productPromotion.delete({ where: { id: par.promotionId } });
-    return reply.status(204).send();
-  });
+      if (scope === "SELLER") {
+        const s = await prisma.seller.findFirst({
+          where: { id: sellerId!, organizationId: auth.organizationId },
+        });
+        if (!s) return reply.status(400).send({ error: "Vendedor inválido" });
+      }
+      if (scope === "CUSTOMER") {
+        const c = await prisma.customer.findFirst({
+          where: { id: customerId!, organizationId: auth.organizationId },
+        });
+        if (!c) return reply.status(400).send({ error: "Cliente inválido" });
+      }
+
+      const row = await prisma.productPromotion.update({
+        where: { id: p.promotionId },
+        data: {
+          scope,
+          sellerId,
+          customerId,
+          kind,
+          value: body.data.value ?? undefined,
+          label: body.data.label === undefined ? undefined : body.data.label,
+          active: body.data.active ?? undefined,
+          validFrom:
+            body.data.validFrom === undefined
+              ? undefined
+              : body.data.validFrom
+                ? new Date(body.data.validFrom)
+                : null,
+          validTo:
+            body.data.validTo === undefined
+              ? undefined
+              : body.data.validTo
+                ? new Date(body.data.validTo)
+                : null,
+          priority: body.data.priority ?? undefined,
+          minQuantity:
+            body.data.minQuantity === undefined
+              ? undefined
+              : body.data.minQuantity === null
+                ? null
+                : body.data.minQuantity,
+        },
+        include: promotionRelationInclude,
+      });
+      return serializeProductPromotion(row);
+    },
+  );
+
+  app.delete(
+    "/products/:productId/promotions/:promotionId",
+    async (req, reply) => {
+      const auth = req.auth!;
+      const par = z
+        .object({
+          productId: z.string().min(1),
+          promotionId: z.string().min(1),
+        })
+        .parse(req.params);
+      const existing = await prisma.productPromotion.findFirst({
+        where: {
+          id: par.promotionId,
+          productId: par.productId,
+          organizationId: auth.organizationId,
+        },
+      });
+      if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+      await prisma.productPromotion.delete({ where: { id: par.promotionId } });
+      return reply.status(204).send();
+    },
+  );
 
   /* --- Vendedores --- */
   app.get("/managers", async (req) => {
@@ -1002,13 +2170,169 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
+  /* --- Usuários da organização (ADMIN / MANAGER; vendedores em /sellers) --- */
+  app.get("/users", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    return prisma.user.findMany({
+      where: {
+        organizationId: auth.organizationId,
+        role: { in: ["ADMIN", "MANAGER"] },
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+      },
+      orderBy: [{ role: "asc" }, { name: "asc" }],
+    });
+  });
+
+  app.post("/users", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+
+    const body = z
+      .object({
+        email: z.string().email(),
+        password: z.string().min(6),
+        name: z.string().min(1),
+        role: z.enum(["ADMIN", "MANAGER"]),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
+
+    const email = body.data.email.toLowerCase();
+    const exists = await prisma.user.findUnique({ where: { email } });
+    if (exists) return reply.status(409).send({ error: "Email já cadastrado" });
+
+    const passwordHash = await hashPassword(body.data.password);
+    const created = await prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        name: body.data.name.trim(),
+        role: body.data.role,
+        organizationId: auth.organizationId,
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    const actor = await prisma.user.findUnique({
+      where: { id: auth.sub },
+      select: { matricula: true },
+    });
+    await writeAuditLog({
+      organizationId: auth.organizationId,
+      userId: auth.sub,
+      userMatricula: actor?.matricula ?? null,
+      action: "user.create",
+      entityType: "User",
+      entityId: created.id,
+      metadata: { email: created.email, role: created.role },
+    });
+
+    return created;
+  });
+
+  /* --- Equipes de vendas (admin) --- */
+  app.get("/teams", async (req) => {
+    const auth = req.auth!;
+    const teams = await listSalesTeams(auth.organizationId);
+    return teams.map(serializeSalesTeam);
+  });
+
+  app.get("/teams/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const team = await getSalesTeam(auth.organizationId, id);
+    if (!team)
+      return reply.status(404).send({ error: "Equipe não encontrada" });
+    return serializeSalesTeam(team);
+  });
+
+  app.post("/teams", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        name: z.string().min(1),
+        leaderSellerId: z.string().min(1),
+        memberSellerIds: z.array(z.string().min(1)).min(1),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    try {
+      const team = await createSalesTeam(auth.organizationId, body.data);
+      return serializeSalesTeam(team);
+    } catch (e) {
+      if (e instanceof SalesTeamError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.patch("/teams/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        name: z.string().min(1).optional(),
+        leaderSellerId: z.string().min(1).optional(),
+        memberSellerIds: z.array(z.string().min(1)).min(1).optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    try {
+      const team = await updateSalesTeam(auth.organizationId, id, body.data);
+      if (!team)
+        return reply.status(404).send({ error: "Equipe não encontrada" });
+      return serializeSalesTeam(team);
+    } catch (e) {
+      if (e instanceof SalesTeamError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
+  app.delete("/teams/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const ok = await deleteSalesTeam(auth.organizationId, id);
+    if (!ok) return reply.status(404).send({ error: "Equipe não encontrada" });
+    return reply.status(204).send();
+  });
+
   app.get("/sellers", async (req) => {
     const auth = req.auth!;
     return prisma.seller.findMany({
       where: sellerScopeWhere(auth),
       include: {
-        user: { select: { id: true, email: true, name: true, role: true } },
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            role: true,
+            matricula: true,
+          },
+        },
         manager: { select: { id: true, name: true, email: true } },
+        team: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -1021,42 +2345,80 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         email: z.string().email(),
         password: z.string().min(6),
         name: z.string().min(1),
-        commissionPercent: z.number().min(0).max(100),
+        matricula: z.string().min(1).max(40).optional(),
+        commissionType: sellerCommissionTypeSchema.default("FIXED"),
+        commissionPercent: z.number().min(0).max(100).optional(),
+        teamId: z.string().min(1).nullable().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos", details: body.error.flatten() });
+    if (!body.success)
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
+
+    const { commissionType } = body.data;
+    const commissionPercent =
+      commissionType === "FIXED"
+        ? (body.data.commissionPercent ?? 10)
+        : (body.data.commissionPercent ?? 0);
 
     const email = body.data.email.toLowerCase();
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) return reply.status(409).send({ error: "Email já cadastrado" });
 
     const passwordHash = await hashPassword(body.data.password);
-    const user = await prisma.user.create({
-      data: {
-        email,
-        passwordHash,
-        name: body.data.name,
-        role: "SELLER",
-        organizationId: auth.organizationId,
-        seller: {
-          create: {
-            organizationId: auth.organizationId,
-            commissionPercent: body.data.commissionPercent,
-            active: true,
+
+    if (body.data.teamId) {
+      const team = await prisma.salesTeam.findFirst({
+        where: { id: body.data.teamId, organizationId: auth.organizationId },
+        select: { id: true },
+      });
+      if (!team) return reply.status(400).send({ error: "Equipe inválida" });
+    }
+
+    try {
+      const user = await prisma.user.create({
+        data: {
+          email,
+          passwordHash,
+          name: body.data.name,
+          matricula: body.data.matricula?.trim() || null,
+          role: "SELLER",
+          organizationId: auth.organizationId,
+          seller: {
+            create: {
+              organizationId: auth.organizationId,
+              commissionType,
+              commissionPercent,
+              active: true,
+              ...(body.data.teamId ? { teamId: body.data.teamId } : {}),
+            },
           },
         },
-      },
-      include: { seller: true },
-    });
+        include: { seller: true },
+      });
 
-    return {
-      id: user.seller!.id,
-      userId: user.id,
-      email: user.email,
-      name: user.name,
-      commissionPercent: decToNum(user.seller!.commissionPercent),
-      active: user.seller!.active,
-    };
+      return {
+        id: user.seller!.id,
+        userId: user.id,
+        email: user.email,
+        name: user.name,
+        matricula: user.matricula,
+        commissionType: user.seller!.commissionType,
+        commissionPercent: decToNum(user.seller!.commissionPercent),
+        active: user.seller!.active,
+      };
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "Matrícula já cadastrada nesta empresa" });
+      }
+      throw e;
+    }
   });
 
   app.patch("/sellers/:id", async (req, reply) => {
@@ -1064,13 +2426,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(req.params);
     const body = z
       .object({
+        commissionType: sellerCommissionTypeSchema.optional(),
         commissionPercent: z.number().min(0).max(100).optional(),
         active: z.boolean().optional(),
         name: z.string().min(1).optional(),
+        matricula: z.string().min(1).max(40).nullable().optional(),
         managerUserId: z.string().min(1).nullable().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const seller = await prisma.seller.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -1079,25 +2444,53 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!seller) return reply.status(404).send({ error: "Não encontrado" });
 
     if (body.data.managerUserId !== undefined) {
-      const v = await validateManagerAssignment(auth.organizationId, body.data.managerUserId);
+      const v = await validateManagerAssignment(
+        auth.organizationId,
+        body.data.managerUserId,
+      );
       if (!v.ok) return reply.status(400).send({ error: v.error });
     }
 
-    await prisma.$transaction([
-      prisma.seller.update({
-        where: { id },
-        data: {
-          commissionPercent: body.data.commissionPercent ?? undefined,
-          active: body.data.active ?? undefined,
-          ...(body.data.managerUserId !== undefined
-            ? { managerUserId: body.data.managerUserId }
-            : {}),
-        },
-      }),
-      ...(body.data.name
-        ? [prisma.user.update({ where: { id: seller.userId }, data: { name: body.data.name } })]
-        : []),
-    ]);
+    try {
+      await prisma.$transaction([
+        prisma.seller.update({
+          where: { id },
+          data: {
+            commissionType: body.data.commissionType ?? undefined,
+            commissionPercent: body.data.commissionPercent ?? undefined,
+            active: body.data.active ?? undefined,
+            ...(body.data.managerUserId !== undefined
+              ? { managerUserId: body.data.managerUserId }
+              : {}),
+          },
+        }),
+        ...(body.data.name || body.data.matricula !== undefined
+          ? [
+              prisma.user.update({
+                where: { id: seller.userId },
+                data: {
+                  ...(body.data.name ? { name: body.data.name } : {}),
+                  ...(body.data.matricula !== undefined
+                    ? {
+                        matricula: body.data.matricula?.trim() || null,
+                      }
+                    : {}),
+                },
+              }),
+            ]
+          : []),
+      ]);
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "Matrícula já cadastrada nesta empresa" });
+      }
+      throw e;
+    }
 
     return prisma.seller.findUnique({
       where: { id },
@@ -1114,7 +2507,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const seller = await prisma.seller.findFirst({
       where: { id, organizationId: auth.organizationId },
     });
-    if (!seller) return reply.status(404).send({ error: "Vendedor não encontrado" });
+    if (!seller)
+      return reply.status(404).send({ error: "Vendedor não encontrado" });
 
     const links = await prisma.sellerProduct.findMany({
       where: { sellerId: id },
@@ -1126,16 +2520,23 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.put("/sellers/:id/products", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
-    const body = z.object({ productIds: z.array(z.string()) }).safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    const body = z
+      .object({ productIds: z.array(z.string()) })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const seller = await prisma.seller.findFirst({
       where: { id, organizationId: auth.organizationId },
     });
-    if (!seller) return reply.status(404).send({ error: "Vendedor não encontrado" });
+    if (!seller)
+      return reply.status(404).send({ error: "Vendedor não encontrado" });
 
     const products = await prisma.product.findMany({
-      where: { organizationId: auth.organizationId, id: { in: body.data.productIds } },
+      where: {
+        organizationId: auth.organizationId,
+        id: { in: body.data.productIds },
+      },
     });
     if (products.length !== body.data.productIds.length) {
       return reply.status(400).send({ error: "Algum produto é inválido" });
@@ -1144,7 +2545,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     await prisma.sellerProduct.deleteMany({ where: { sellerId: id } });
     if (body.data.productIds.length) {
       await prisma.sellerProduct.createMany({
-        data: body.data.productIds.map((productId) => ({ sellerId: id, productId })),
+        data: body.data.productIds.map((productId) => ({
+          sellerId: id,
+          productId,
+        })),
       });
     }
     return { ok: true };
@@ -1153,8 +2557,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   /* --- Clientes --- */
   app.get("/customers", async (req) => {
     const auth = req.auth!;
-    const q = z.object({ sellerId: z.string().optional() }).safeParse(req.query);
-    const where: Prisma.CustomerWhereInput = { organizationId: auth.organizationId };
+    const q = z
+      .object({ sellerId: z.string().optional() })
+      .safeParse(req.query);
+    const where: Prisma.CustomerWhereInput = {
+      organizationId: auth.organizationId,
+    };
     if (q.success && q.data.sellerId) where.sellerId = q.data.sellerId;
     return prisma.customer.findMany({
       where,
@@ -1168,19 +2576,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.post("/customers", async (req, reply) => {
     const auth = req.auth!;
-    const body = z
-      .object({
-        name: z.string().min(1),
-        email: z.string().email().optional(),
-        phone: z.string().optional(),
-        sellerId: z.string().optional(),
-        regionId: z.string().nullable().optional(),
-        latitude: z.number().gte(-90).lte(90).nullable().optional(),
-        longitude: z.number().gte(-180).lte(180).nullable().optional(),
-        addressNote: z.string().max(500).nullable().optional(),
-      })
-      .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    const body = customerBodySchema.safeParse(req.body);
+    if (!body.success)
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
 
     if (body.data.sellerId) {
       const s = await prisma.seller.findFirst({
@@ -1196,46 +2596,34 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       if (!r) return reply.status(400).send({ error: "Região inválida" });
     }
 
-    return prisma.customer.create({
-      data: {
-        name: body.data.name,
-        email: body.data.email,
-        phone: body.data.phone,
-        organizationId: auth.organizationId,
-        sellerId: body.data.sellerId,
-        regionId: body.data.regionId === undefined ? undefined : body.data.regionId,
-        latitude:
-          body.data.latitude === undefined ? undefined : body.data.latitude === null ? null : body.data.latitude,
-        longitude:
-          body.data.longitude === undefined ? undefined : body.data.longitude === null ? null : body.data.longitude,
-        addressNote:
-          body.data.addressNote === undefined
-            ? undefined
-            : body.data.addressNote === null
-              ? null
-              : body.data.addressNote,
-      },
-    });
+    try {
+      return await prisma.customer.create({
+        data: {
+          organizationId: auth.organizationId,
+          ...toCustomerPrismaData(body.data, { includeCredit: true }),
+        } as Prisma.CustomerUncheckedCreateInput,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "CNPJ ou CPF já cadastrado nesta organização." });
+      }
+      throw e;
+    }
   });
 
   app.patch("/customers/:id", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
-    const body = z
-      .object({
-        name: z.string().min(1).optional(),
-        email: z.string().email().nullable().optional(),
-        phone: z.string().nullable().optional(),
-        sellerId: z.string().nullable().optional(),
-        regionId: z.string().nullable().optional(),
-        creditLimit: z.number().positive().nullable().optional(),
-        creditBlocked: z.boolean().optional(),
-        latitude: z.number().gte(-90).lte(90).nullable().optional(),
-        longitude: z.number().gte(-180).lte(180).nullable().optional(),
-        addressNote: z.string().max(500).nullable().optional(),
-      })
-      .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    const body = customerPatchSchema.safeParse(req.body);
+    if (!body.success)
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
 
     const existing = await prisma.customer.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -1249,33 +2637,102 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       if (!r) return reply.status(400).send({ error: "Região inválida" });
     }
 
-    return prisma.customer.update({
-      where: { id },
-      data: {
-        name: body.data.name,
-        email: body.data.email === undefined ? undefined : body.data.email,
-        phone: body.data.phone === undefined ? undefined : body.data.phone,
-        sellerId: body.data.sellerId === undefined ? undefined : body.data.sellerId,
-        regionId: body.data.regionId === undefined ? undefined : body.data.regionId,
-        creditLimit:
-          body.data.creditLimit === undefined
-            ? undefined
-            : body.data.creditLimit === null
-              ? null
-              : body.data.creditLimit,
-        creditBlocked: body.data.creditBlocked === undefined ? undefined : body.data.creditBlocked,
-        latitude:
-          body.data.latitude === undefined ? undefined : body.data.latitude === null ? null : body.data.latitude,
-        longitude:
-          body.data.longitude === undefined ? undefined : body.data.longitude === null ? null : body.data.longitude,
-        addressNote:
-          body.data.addressNote === undefined
-            ? undefined
-            : body.data.addressNote === null
-              ? null
-              : body.data.addressNote,
-      },
-    });
+    const merged: CustomerBodyInput = {
+      name: body.data.name ?? existing.name,
+      email: body.data.email !== undefined ? body.data.email : existing.email,
+      phone: body.data.phone !== undefined ? body.data.phone : existing.phone,
+      sellerId:
+        body.data.sellerId !== undefined
+          ? body.data.sellerId
+          : existing.sellerId,
+      regionId:
+        body.data.regionId !== undefined
+          ? body.data.regionId
+          : existing.regionId,
+      latitude:
+        body.data.latitude !== undefined
+          ? body.data.latitude
+          : existing.latitude != null
+            ? decToNum(existing.latitude)
+            : null,
+      longitude:
+        body.data.longitude !== undefined
+          ? body.data.longitude
+          : existing.longitude != null
+            ? decToNum(existing.longitude)
+            : null,
+      addressNote:
+        body.data.addressNote !== undefined
+          ? body.data.addressNote
+          : existing.addressNote,
+      documentType:
+        body.data.documentType !== undefined
+          ? body.data.documentType
+          : (existing.documentType as CustomerBodyInput["documentType"]),
+      cnpj: body.data.cnpj !== undefined ? body.data.cnpj : existing.cnpj,
+      cpf: body.data.cpf !== undefined ? body.data.cpf : existing.cpf,
+      legalName:
+        body.data.legalName !== undefined
+          ? body.data.legalName
+          : existing.legalName,
+      tradeName:
+        body.data.tradeName !== undefined
+          ? body.data.tradeName
+          : existing.tradeName,
+      cep: body.data.cep !== undefined ? body.data.cep : existing.cep,
+      street:
+        body.data.street !== undefined ? body.data.street : existing.street,
+      number:
+        body.data.number !== undefined ? body.data.number : existing.number,
+      neighborhood:
+        body.data.neighborhood !== undefined
+          ? body.data.neighborhood
+          : existing.neighborhood,
+      state: body.data.state !== undefined ? body.data.state : existing.state,
+      city: body.data.city !== undefined ? body.data.city : existing.city,
+      cityIbgeCode:
+        body.data.cityIbgeCode !== undefined
+          ? body.data.cityIbgeCode
+          : existing.cityIbgeCode,
+      stateRegistration:
+        body.data.stateRegistration !== undefined
+          ? body.data.stateRegistration
+          : existing.stateRegistration,
+      buyerName:
+        body.data.buyerName !== undefined
+          ? body.data.buyerName
+          : existing.buyerName,
+      notes: body.data.notes !== undefined ? body.data.notes : existing.notes,
+      creditLimit:
+        body.data.creditLimit !== undefined
+          ? body.data.creditLimit
+          : existing.creditLimit != null
+            ? decToNum(existing.creditLimit)
+            : null,
+      creditBlocked:
+        body.data.creditBlocked !== undefined
+          ? body.data.creditBlocked
+          : existing.creditBlocked,
+    };
+
+    try {
+      return await prisma.customer.update({
+        where: { id },
+        data: toCustomerPrismaData(merged, {
+          includeCredit: true,
+        }) as Prisma.CustomerUncheckedUpdateInput,
+      });
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply
+          .status(409)
+          .send({ error: "CNPJ ou CPF já cadastrado nesta organização." });
+      }
+      throw e;
+    }
   });
 
   app.delete("/customers/:id", async (req, reply) => {
@@ -1300,7 +2757,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         limit: z.coerce.number().int().min(1).max(500).optional(),
       })
       .safeParse(req.query);
-    if (!q.success) return reply.status(400).send({ error: "Parâmetros inválidos" });
+    if (!q.success)
+      return reply.status(400).send({ error: "Parâmetros inválidos" });
 
     const now = new Date();
     const defaultFrom = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -1308,18 +2766,27 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     let fromDt = defaultFrom;
     if (q.data.from?.trim()) {
       const p = parseVisitPeriodDate(q.data.from, "start");
-      if (!p) return reply.status(400).send({ error: "Data inicial inválida (use YYYY-MM-DD ou ISO)" });
+      if (!p)
+        return reply
+          .status(400)
+          .send({ error: "Data inicial inválida (use YYYY-MM-DD ou ISO)" });
       fromDt = p;
     }
 
     let toDt = now;
     if (q.data.to?.trim()) {
       const p = parseVisitPeriodDate(q.data.to, "end");
-      if (!p) return reply.status(400).send({ error: "Data final inválida (use YYYY-MM-DD ou ISO)" });
+      if (!p)
+        return reply
+          .status(400)
+          .send({ error: "Data final inválida (use YYYY-MM-DD ou ISO)" });
       toDt = p;
     }
 
-    if (fromDt > toDt) return reply.status(400).send({ error: "O início do período deve ser antes do fim" });
+    if (fromDt > toDt)
+      return reply
+        .status(400)
+        .send({ error: "O início do período deve ser antes do fim" });
 
     const sellerId = q.data.sellerId?.trim();
     const scope = sellerScopeWhere(auth);
@@ -1344,14 +2811,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       take: limit,
       include: {
         seller: { include: { user: { select: { name: true } } } },
-        customer: { select: { id: true, name: true, latitude: true, longitude: true } },
+        customer: {
+          select: { id: true, name: true, latitude: true, longitude: true },
+        },
       },
     });
 
     const visits = rows.map((v) => {
       const durationSeconds =
         v.checkedOutAt != null
-          ? Math.round((v.checkedOutAt.getTime() - v.checkedInAt.getTime()) / 1000)
+          ? Math.round(
+              (v.checkedOutAt.getTime() - v.checkedInAt.getTime()) / 1000,
+            )
           : null;
       return {
         id: v.id,
@@ -1359,8 +2830,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         sellerName: v.seller.user.name,
         customerId: v.customerId,
         customerName: v.customer.name,
-        customerLatitude: v.customer.latitude != null ? decToNum(v.customer.latitude) : null,
-        customerLongitude: v.customer.longitude != null ? decToNum(v.customer.longitude) : null,
+        customerLatitude:
+          v.customer.latitude != null ? decToNum(v.customer.latitude) : null,
+        customerLongitude:
+          v.customer.longitude != null ? decToNum(v.customer.longitude) : null,
         checkedInAt: v.checkedInAt.toISOString(),
         checkedOutAt: v.checkedOutAt?.toISOString() ?? null,
         checkInLat: v.checkInLat != null ? decToNum(v.checkInLat) : null,
@@ -1387,7 +2860,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/seller-locations/ws", { websocket: true }, (socket, req) => {
     const q = req.query as { access_token?: string };
-    const token = typeof q.access_token === "string" ? q.access_token.trim() : "";
+    const token =
+      typeof q.access_token === "string" ? q.access_token.trim() : "";
     if (!token) {
       socket.close(4401, "Token obrigatório");
       return;
@@ -1404,7 +2878,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       return;
     }
 
-    const role = auth.role === "MANAGER" ? ("MANAGER" as const) : ("ADMIN" as const);
+    const role =
+      auth.role === "MANAGER" ? ("MANAGER" as const) : ("ADMIN" as const);
     const unregister = registerSellerLocationClient(auth.organizationId, {
       socket,
       role,
@@ -1434,7 +2909,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   /* --- Títulos / crédito do cliente --- */
   app.get("/customers/:customerId/credit-titles", async (req, reply) => {
     const auth = req.auth!;
-    const { customerId } = z.object({ customerId: z.string().min(1) }).parse(req.params);
+    const { customerId } = z
+      .object({ customerId: z.string().min(1) })
+      .parse(req.params);
     const cust = await prisma.customer.findFirst({
       where: { id: customerId, organizationId: auth.organizationId },
     });
@@ -1447,7 +2924,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.post("/customers/:customerId/credit-titles", async (req, reply) => {
     const auth = req.auth!;
-    const { customerId } = z.object({ customerId: z.string().min(1) }).parse(req.params);
+    const { customerId } = z
+      .object({ customerId: z.string().min(1) })
+      .parse(req.params);
     const cust = await prisma.customer.findFirst({
       where: { id: customerId, organizationId: auth.organizationId },
     });
@@ -1463,11 +2942,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         notes: z.string().nullable().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const paid = body.data.paidAmount ?? 0;
     if (paid > body.data.amount + 1e-6) {
-      return reply.status(400).send({ error: "Valor pago não pode ser maior que o título" });
+      return reply
+        .status(400)
+        .send({ error: "Valor pago não pode ser maior que o título" });
     }
 
     return prisma.customerCreditTitle.create({
@@ -1477,7 +2959,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         reference: body.data.reference ?? null,
         amount: body.data.amount,
         paidAmount: paid,
-        issueDate: body.data.issueDate ? new Date(body.data.issueDate) : undefined,
+        issueDate: body.data.issueDate
+          ? new Date(body.data.issueDate)
+          : undefined,
         dueDate: new Date(body.data.dueDate),
         notes: body.data.notes ?? null,
       },
@@ -1498,16 +2982,22 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         status: z.enum(["OPEN", "PAID", "CANCELLED"]).optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const existing = await prisma.customerCreditTitle.findFirst({
       where: { id, organizationId: auth.organizationId },
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
 
-    const amt = body.data.amount !== undefined ? body.data.amount : decToNum(existing.amount);
+    const amt =
+      body.data.amount !== undefined
+        ? body.data.amount
+        : decToNum(existing.amount);
     let paid =
-      body.data.paidAmount !== undefined ? body.data.paidAmount : decToNum(existing.paidAmount);
+      body.data.paidAmount !== undefined
+        ? body.data.paidAmount
+        : decToNum(existing.paidAmount);
     let status = body.data.status ?? existing.status;
 
     if (status === "PAID") {
@@ -1520,10 +3010,13 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return prisma.customerCreditTitle.update({
       where: { id },
       data: {
-        reference: body.data.reference === undefined ? undefined : body.data.reference,
+        reference:
+          body.data.reference === undefined ? undefined : body.data.reference,
         amount: body.data.amount ?? undefined,
         paidAmount: paid,
-        issueDate: body.data.issueDate ? new Date(body.data.issueDate) : undefined,
+        issueDate: body.data.issueDate
+          ? new Date(body.data.issueDate)
+          : undefined,
         dueDate: body.data.dueDate ? new Date(body.data.dueDate) : undefined,
         notes: body.data.notes === undefined ? undefined : body.data.notes,
         status,
@@ -1579,17 +3072,99 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true };
   });
 
+  /** Envia notificação in-app + push para vendedores selecionados (ADMIN/MANAGER). */
+  app.post("/notifications/send", async (req, reply) => {
+    const auth = req.auth!;
+    if (
+      !(await canWriteEffective(auth.organizationId, auth.role, "broadcast"))
+    ) {
+      return reply
+        .status(403)
+        .send({ error: "Sem permissão para notificar vendedores" });
+    }
+    const body = z
+      .object({
+        sellerIds: z.array(z.string().min(1)).min(1).max(200),
+        title: z.string().trim().min(1).max(120),
+        body: z.string().trim().min(1).max(2000),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: "Dados inválidos" });
+    }
+
+    const sellers = await prisma.seller.findMany({
+      where: {
+        id: { in: body.data.sellerIds },
+        ...sellerScopeWhere(auth),
+        active: true,
+      },
+      select: { id: true, userId: true },
+    });
+
+    if (sellers.length === 0) {
+      return reply
+        .status(404)
+        .send({ error: "Nenhum vendedor válido encontrado" });
+    }
+    if (sellers.length !== body.data.sellerIds.length) {
+      return reply.status(400).send({
+        error:
+          "Um ou mais vendedores não existem, estão inativos ou fora do seu escopo",
+      });
+    }
+
+    const userIds = sellers.map((s) => s.userId);
+    await notifyUsers({
+      userIds,
+      title: body.data.title,
+      body: body.data.body,
+      type: "GENERIC",
+    });
+
+    return {
+      ok: true,
+      sent: userIds.length,
+      sellerIds: sellers.map((s) => s.id),
+    };
+  });
+
+  app.get("/push-vapid-public-key", async () => {
+    const publicKey = getWebPushPublicKey();
+    return { publicKey };
+  });
+
+  app.post("/push-devices", async (req, reply) => {
+    const auth = req.auth!;
+    const result = await handleRegisterPushDevice(auth.sub, req.body);
+    if ("error" in result)
+      return reply.status(result.status).send({ error: result.error });
+    return result;
+  });
+
+  app.delete("/push-devices", async (req, reply) => {
+    const auth = req.auth!;
+    const result = await handleUnregisterPushDevice(auth.sub, req.body);
+    if ("error" in result)
+      return reply.status(result.status).send({ error: result.error });
+    return result;
+  });
+
   /* --- Pedidos (visão admin) --- */
   app.get("/orders", async (req) => {
     const auth = req.auth!;
     const q = z
       .object({
         sellerId: z.string().optional(),
-        status: z.enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"]).optional(),
+        status: z
+          .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
+          .optional(),
       })
       .safeParse(req.query);
 
-    const where: Prisma.OrderWhereInput = { organizationId: auth.organizationId };
+    const where: Prisma.OrderWhereInput = {
+      ...orderScopeWhere(auth),
+    };
     if (q.success) {
       if (q.data.sellerId) where.sellerId = q.data.sellerId;
       if (q.data.status) where.status = q.data.status as OrderStatus;
@@ -1602,6 +3177,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         seller: { include: { user: { select: { name: true, email: true } } } },
         customer: true,
         items: { include: { product: true } },
+        fiscalInvoices: {
+          where: { direction: "OUTBOUND" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { id: true, status: true, number: true, series: true },
+        },
       },
     });
   });
@@ -1610,7 +3191,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const count = await prisma.order.count({
       where: {
-        organizationId: auth.organizationId,
+        ...orderScopeWhere(auth),
         status: "PENDING_CREDIT_APPROVAL",
       },
     });
@@ -1621,7 +3202,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
     const order = await prisma.order.findFirst({
-      where: { id, organizationId: auth.organizationId },
+      where: { id, ...orderScopeWhere(auth) },
       include: {
         seller: { include: { user: { select: { name: true, email: true } } } },
         customer: true,
@@ -1632,25 +3213,87 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return order;
   });
 
+  app.get("/orders/:id/pdf", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const scoped = orderScopeWhere(auth);
+    const order = await prisma.order.findFirst({
+      where: { id, ...scoped },
+      include: {
+        seller: { include: { user: { select: { name: true, email: true } } } },
+        customer: true,
+        items: { include: { product: { select: { sku: true } } } },
+        organization: { select: { name: true, displayName: true } },
+      },
+    });
+    if (!order) return reply.status(404).send({ error: "Não encontrado" });
+    return sendOrderPdfReply(reply, order);
+  });
+
   app.patch("/orders/:id/status", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
     const body = z
       .object({
-        status: z.enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"]),
+        status: z.enum([
+          "DRAFT",
+          "CONFIRMED",
+          "CANCELLED",
+          "PENDING_CREDIT_APPROVAL",
+        ]),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const existing = await prisma.order.findFirst({
       where: { id, organizationId: auth.organizationId },
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
 
-    return prisma.order.update({
+    try {
+      await applyStockOnStatusChange(
+        id,
+        existing.status,
+        body.data.status,
+        auth.sub,
+      );
+    } catch (e) {
+      if (e instanceof StockError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+
+    const updated = await prisma.order.update({
       where: { id },
       data: { status: body.data.status },
+      include: {
+        customer: true,
+        seller: {
+          include: {
+            user: { select: { name: true } },
+          },
+        },
+      },
     });
+
+    if (body.data.status === "CONFIRMED" && existing.status !== "CONFIRMED") {
+      void notifySaleConfirmed({
+        organizationId: auth.organizationId,
+        order: {
+          id: updated.id,
+          totalAmount: updated.totalAmount,
+          sellerId: updated.sellerId,
+          seller: {
+            user: updated.seller.user,
+            managerUserId: updated.seller.managerUserId,
+          },
+          customer: updated.customer,
+        },
+      });
+    }
+
+    return updated;
   });
 
   app.post("/orders", async (req, reply) => {
@@ -1659,12 +3302,22 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       .object({
         sellerId: z.string(),
         customerId: z.string().optional(),
-        status: z.enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"]).optional(),
+        status: z
+          .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
+          .optional(),
         notes: z.string().optional(),
-        items: z.array(z.object({ productId: z.string(), quantity: z.number().int().positive() })).min(1),
+        items: z
+          .array(
+            z.object({
+              productId: z.string(),
+              quantity: z.number().int().positive(),
+            }),
+          )
+          .min(1),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const seller = await prisma.seller.findFirst({
       where: { id: body.data.sellerId, organizationId: auth.organizationId },
@@ -1673,7 +3326,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
     if (body.data.customerId) {
       const c = await prisma.customer.findFirst({
-        where: { id: body.data.customerId, organizationId: auth.organizationId },
+        where: {
+          id: body.data.customerId,
+          organizationId: auth.organizationId,
+        },
       });
       if (!c) return reply.status(400).send({ error: "Cliente inválido" });
     }
@@ -1689,12 +3345,24 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         })),
       });
 
+      const orderStatus = body.data.status ?? "CONFIRMED";
+
+      if (orderStatus === "CONFIRMED") {
+        await assertSufficientStock(
+          auth.organizationId,
+          sale.lines.map((l) => ({
+            productId: l.productId,
+            quantity: l.quantity,
+          })),
+        );
+      }
+
       const order = await prisma.order.create({
         data: {
           organizationId: auth.organizationId,
           sellerId: body.data.sellerId,
           customerId: body.data.customerId,
-          status: body.data.status ?? "CONFIRMED",
+          status: orderStatus,
           totalAmount: sale.netTotal,
           comboDiscountTotal: sale.comboDiscountTotal,
           notes: body.data.notes,
@@ -1709,12 +3377,41 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
             })),
           },
         },
-        include: { items: true, seller: { include: { user: true } }, customer: true },
+        include: {
+          items: true,
+          seller: { include: { user: true } },
+          customer: true,
+        },
       });
+
+      if (order.status === "CONFIRMED") {
+        await applyStockOnStatusChange(
+          order.id,
+          "DRAFT",
+          "CONFIRMED",
+          auth.sub,
+        );
+        void notifySaleConfirmed({
+          organizationId: auth.organizationId,
+          order: {
+            id: order.id,
+            totalAmount: order.totalAmount,
+            sellerId: order.sellerId,
+            seller: {
+              user: { name: order.seller.user.name },
+              managerUserId: order.seller.managerUserId,
+            },
+            customer: order.customer,
+          },
+        });
+      }
 
       return order;
     } catch (e) {
-      if (e instanceof OrderPricingError) return reply.status(400).send({ error: e.message });
+      if (e instanceof OrderPricingError)
+        return reply.status(400).send({ error: e.message });
+      if (e instanceof StockError)
+        return reply.status(400).send({ error: e.message });
       throw e;
     }
   });
@@ -1725,7 +3422,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return prisma.productCombo.findMany({
       where: { organizationId: auth.organizationId },
       include: {
-        lines: { include: { product: { select: { id: true, name: true, sku: true } } } },
+        lines: {
+          include: { product: { select: { id: true, name: true, sku: true } } },
+        },
       },
       orderBy: [{ priority: "desc" }, { name: "asc" }],
     });
@@ -1753,13 +3452,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .min(1),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const ids = [...new Set(body.data.lines.map((l) => l.productId))];
     const count = await prisma.product.count({
       where: { organizationId: auth.organizationId, id: { in: ids } },
     });
-    if (count !== ids.length) return reply.status(400).send({ error: "Um ou mais produtos são inválidos" });
+    if (count !== ids.length)
+      return reply
+        .status(400)
+        .send({ error: "Um ou mais produtos são inválidos" });
 
     const d = body.data;
     const combo = await prisma.productCombo.create({
@@ -1781,7 +3484,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         },
       },
       include: {
-        lines: { include: { product: { select: { id: true, name: true, sku: true } } } },
+        lines: {
+          include: { product: { select: { id: true, name: true, sku: true } } },
+        },
       },
     });
     return combo;
@@ -1798,7 +3503,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         validFrom: z.string().datetime().nullable().optional(),
         validTo: z.string().datetime().nullable().optional(),
         priority: z.number().int().optional(),
-        kind: z.enum(["FIXED_PER_COMPLETE_SET", "PERCENT_OF_SET_SUBTOTAL"]).optional(),
+        kind: z
+          .enum(["FIXED_PER_COMPLETE_SET", "PERCENT_OF_SET_SUBTOTAL"])
+          .optional(),
         value: z.number().nonnegative().optional(),
         lines: z
           .array(
@@ -1811,7 +3518,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const existing = await prisma.productCombo.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -1824,7 +3532,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       const cnt = await prisma.product.count({
         where: { organizationId: auth.organizationId, id: { in: ids } },
       });
-      if (cnt !== ids.length) return reply.status(400).send({ error: "Um ou mais produtos são inválidos" });
+      if (cnt !== ids.length)
+        return reply
+          .status(400)
+          .send({ error: "Um ou mais produtos são inválidos" });
     }
 
     await prisma.$transaction(async (tx) => {
@@ -1835,8 +3546,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           label: d.label === undefined ? undefined : d.label,
           active: d.active ?? undefined,
           validFrom:
-            d.validFrom === undefined ? undefined : d.validFrom ? new Date(d.validFrom) : null,
-          validTo: d.validTo === undefined ? undefined : d.validTo ? new Date(d.validTo) : null,
+            d.validFrom === undefined
+              ? undefined
+              : d.validFrom
+                ? new Date(d.validFrom)
+                : null,
+          validTo:
+            d.validTo === undefined
+              ? undefined
+              : d.validTo
+                ? new Date(d.validTo)
+                : null,
           priority: d.priority ?? undefined,
           kind: d.kind ?? undefined,
           value: d.value ?? undefined,
@@ -1857,7 +3577,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return prisma.productCombo.findFirst({
       where: { id },
       include: {
-        lines: { include: { product: { select: { id: true, name: true, sku: true } } } },
+        lines: {
+          include: { product: { select: { id: true, name: true, sku: true } } },
+        },
       },
     });
   });
@@ -1877,12 +3599,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.get("/seller-commission-rules", async (req, reply) => {
     const auth = req.auth!;
     const q = z.object({ sellerId: z.string().min(1) }).safeParse(req.query);
-    if (!q.success) return reply.status(400).send({ error: "Informe sellerId na query" });
+    if (!q.success)
+      return reply.status(400).send({ error: "Informe sellerId na query" });
 
     const seller = await prisma.seller.findFirst({
       where: { id: q.data.sellerId, organizationId: auth.organizationId },
     });
-    if (!seller) return reply.status(404).send({ error: "Vendedor não encontrado" });
+    if (!seller)
+      return reply.status(404).send({ error: "Vendedor não encontrado" });
 
     return prisma.sellerCommissionRule.findMany({
       where: { organizationId: auth.organizationId, sellerId: q.data.sellerId },
@@ -1906,7 +3630,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const d = body.data;
     const seller = await prisma.seller.findFirst({
@@ -1956,7 +3681,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const existing = await prisma.sellerCommissionRule.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -2007,7 +3733,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   /* --- Faixas de comissão progressiva (por faturamento MTD) --- */
   app.get("/commission-progressive-tiers", async (req) => {
     const auth = req.auth!;
-    const q = z.object({ sellerId: z.string().optional() }).safeParse(req.query);
+    const q = z
+      .object({ sellerId: z.string().optional() })
+      .safeParse(req.query);
     const where: Prisma.CommissionProgressiveTierWhereInput = {
       organizationId: auth.organizationId,
     };
@@ -2033,7 +3761,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
     const d = body.data;
     if (d.sellerId) {
       const s = await prisma.seller.findFirst({
@@ -2067,7 +3796,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const existing = await prisma.commissionProgressiveTier.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -2116,7 +3846,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         month: z.coerce.number().int().min(1).max(12).optional(),
       })
       .safeParse(req.query);
-    const where: Prisma.SellerMonthlyGoalWhereInput = { organizationId: auth.organizationId };
+    const where: Prisma.SellerMonthlyGoalWhereInput = {
+      organizationId: auth.organizationId,
+    };
     if (q.success) {
       if (q.data.sellerId) where.sellerId = q.data.sellerId;
       if (q.data.year != null) where.year = q.data.year;
@@ -2142,7 +3874,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         targetAmount: z.number().positive(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const d = body.data;
     const seller = await prisma.seller.findFirst({
@@ -2150,7 +3883,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!seller) return reply.status(400).send({ error: "Vendedor inválido" });
 
-    return prisma.sellerMonthlyGoal.upsert({
+    const goal = await prisma.sellerMonthlyGoal.upsert({
       where: {
         organizationId_sellerId_year_month: {
           organizationId: auth.organizationId,
@@ -2175,6 +3908,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         seller: { include: { user: { select: { name: true } } } },
       },
     });
+
+    void notifySellerGoalUpdated({
+      sellerId: goal.sellerId,
+      organizationId: auth.organizationId,
+      goalId: goal.id,
+      year: goal.year,
+      month: goal.month,
+      targetAmount: Number(goal.targetAmount),
+      title: goal.title,
+    });
+
+    return goal;
   });
 
   app.patch("/seller-monthly-goals/:id", async (req, reply) => {
@@ -2186,14 +3931,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         targetAmount: z.number().positive().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const existing = await prisma.sellerMonthlyGoal.findFirst({
       where: { id, organizationId: auth.organizationId },
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
 
-    return prisma.sellerMonthlyGoal.update({
+    const goal = await prisma.sellerMonthlyGoal.update({
       where: { id },
       data: {
         title: body.data.title?.trim(),
@@ -2203,6 +3949,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         seller: { include: { user: { select: { name: true } } } },
       },
     });
+
+    void notifySellerGoalUpdated({
+      sellerId: goal.sellerId,
+      organizationId: auth.organizationId,
+      goalId: goal.id,
+      year: goal.year,
+      month: goal.month,
+      targetAmount: Number(goal.targetAmount),
+      title: goal.title,
+    });
+
+    return goal;
   });
 
   app.delete("/seller-monthly-goals/:id", async (req, reply) => {
@@ -2217,12 +3975,364 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   });
 
   /** Painel simples — vendas do dia, carteira “parada”, produtos sem giro, clientes sem compra. */
-  app.get("/reports/insights", async (req) => {
+  app.get("/reports/insights", async (req, reply) => {
     const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({
+        error: "Relatórios avançados não disponíveis para líderes de equipe",
+      });
+    }
     return buildDistributorInsights(auth.organizationId);
   });
 
+  app.get("/reports/scorecard", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({ from: z.string().optional(), to: z.string().optional() })
+      .safeParse(req.query);
+    let sellerIds: string[] | undefined;
+    if (isTeamLeaderAuth(auth)) {
+      sellerIds = await teamMemberSellerIds(auth.teamLeaderTeamId!);
+    } else if (auth.role === "MANAGER") {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+    return buildSalesScorecard({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerIds,
+    });
+  });
+
+  app.get("/reports/margin", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({
+        error: "Relatório de margem disponível apenas para admin/gestor",
+      });
+    }
+    const q = z
+      .object({ from: z.string().optional(), to: z.string().optional() })
+      .safeParse(req.query);
+    let sellerIds: string[] | undefined;
+    if (auth.role === "MANAGER") {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+    return buildMarginReport({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerIds,
+    });
+  });
+
+  app.get("/reports/commission-statement", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply
+        .status(403)
+        .send({ error: "Extrato de comissão disponível apenas para admin" });
+    }
+    const q = z
+      .object({
+        year: z.coerce.number().int().optional(),
+        month: z.coerce.number().int().min(1).max(12).optional(),
+      })
+      .safeParse(req.query);
+    return buildCommissionStatement({
+      organizationId: auth.organizationId,
+      year: q.success ? q.data.year : undefined,
+      month: q.success ? q.data.month : undefined,
+    });
+  });
+
+  app.get("/reports/stock-health", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply
+        .status(403)
+        .send({ error: "Relatório de estoque disponível apenas para admin" });
+    }
+    return buildStockHealthReport(auth.organizationId);
+  });
+
+  app.get("/reports/credit-aging", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply
+        .status(403)
+        .send({ error: "Aging de crédito disponível apenas para admin" });
+    }
+    return buildCreditAgingReport(auth.organizationId);
+  });
+
+  app.get("/reports/fiscal-reconciliation", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply
+        .status(403)
+        .send({ error: "Conciliação fiscal disponível apenas para admin" });
+    }
+    const q = z
+      .object({ from: z.string().optional(), to: z.string().optional() })
+      .safeParse(req.query);
+    return buildFiscalReconciliation({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+    });
+  });
+
+  app.get("/reports/visit-effectiveness", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        conversionWindowDays: z.coerce.number().int().min(1).max(30).optional(),
+      })
+      .safeParse(req.query);
+    let sellerIds: string[] | undefined;
+    if (isTeamLeaderAuth(auth)) {
+      sellerIds = await teamMemberSellerIds(auth.teamLeaderTeamId!);
+    } else if (auth.role === "MANAGER") {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+    return buildVisitEffectiveness({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      conversionWindowDays: q.success ? q.data.conversionWindowDays : undefined,
+      sellerIds,
+    });
+  });
+
+  app.get("/reports/team-summary", async (req, reply) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        teamId: z.string().optional(),
+      })
+      .safeParse(req.query);
+
+    let sellerIds: string[];
+    let teamName: string | null = null;
+
+    if (isTeamLeaderAuth(auth)) {
+      const teamId = auth.teamLeaderTeamId!;
+      sellerIds = await teamMemberSellerIds(teamId);
+      const team = await getSalesTeam(auth.organizationId, teamId);
+      teamName = team?.name ?? null;
+    } else if (q.success && q.data.teamId) {
+      const team = await getSalesTeam(auth.organizationId, q.data.teamId);
+      if (!team)
+        return reply.status(404).send({ error: "Equipe não encontrada" });
+      sellerIds = team.members.map((m) => m.id);
+      teamName = team.name;
+    } else {
+      return reply
+        .status(400)
+        .send({ error: "Informe teamId ou acesse como líder de equipe" });
+    }
+
+    return buildTeamSalesSummary({
+      organizationId: auth.organizationId,
+      sellerIds,
+      teamName,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+    });
+  });
+
+  app.get("/reports/sales-by-supplier", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(20).optional(),
+      })
+      .safeParse(req.query);
+
+    let sellerIds: string[] | undefined;
+    if (auth.role === "MANAGER" || isTeamLeaderAuth(auth)) {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+
+    return buildSalesBySupplier({
+      organizationId: auth.organizationId,
+      sellerIds,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      limit: q.success ? q.data.limit : undefined,
+    });
+  });
+
   /* --- Relatório PDF --- */
+  app.get("/reports/customers.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const q = z
+      .object({
+        sellerId: z.string().optional(),
+        customerId: z.string().optional(),
+        creditStatus: z.enum(["blocked", "ok"]).optional(),
+      })
+      .passthrough()
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    const extras = readExtraParams(
+      (q.success ? q.data : req.query) as Record<string, unknown>,
+    );
+    const pdf = await buildCustomersPdf({
+      organizationId: auth.organizationId,
+      sellerId: filters.sellerId,
+      customerId: filters.customerId,
+      creditStatus: filters.creditStatus,
+      extras,
+    });
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="relatorio-clientes.pdf"',
+      )
+      .send(pdf);
+  });
+
+  app.get("/reports/orders.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const q = z
+      .object({
+        sellerId: z.string().optional(),
+        customerId: z.string().optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        status: z
+          .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
+          .optional(),
+        romaneio: z
+          .union([z.literal("1"), z.literal("true"), z.literal("0")])
+          .optional(),
+      })
+      .passthrough()
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    const extras = readExtraParams(
+      (q.success ? q.data : req.query) as Record<string, unknown>,
+    );
+    const pdf = await buildOrdersPdf({
+      organizationId: auth.organizationId,
+      sellerId: filters.sellerId,
+      customerId: filters.customerId,
+      from: filters.from,
+      to: filters.to,
+      status: filters.status,
+      romaneio: filters.romaneio === "1" || filters.romaneio === "true",
+      extras,
+    });
+    const filename =
+      filters.romaneio === "1" || filters.romaneio === "true"
+        ? "relatorio-pedidos-romaneio.pdf"
+        : "relatorio-pedidos.pdf";
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header("Content-Disposition", `attachment; filename="${filename}"`)
+      .send(pdf);
+  });
+
+  app.get("/reports/order-items.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const q = z
+      .object({
+        sellerId: z.string().optional(),
+        customerId: z.string().optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        status: z
+          .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
+          .optional(),
+        groupByOrder: z
+          .union([z.literal("1"), z.literal("true"), z.literal("0")])
+          .optional(),
+      })
+      .passthrough()
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    const extras = readExtraParams(
+      (q.success ? q.data : req.query) as Record<string, unknown>,
+    );
+    const pdf = await buildOrderItemsPdf({
+      organizationId: auth.organizationId,
+      sellerId: filters.sellerId,
+      customerId: filters.customerId,
+      from: filters.from,
+      to: filters.to,
+      status: filters.status,
+      groupByOrder:
+        filters.groupByOrder === "1" || filters.groupByOrder === "true",
+      extras,
+    });
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="relatorio-itens-pedidos.pdf"',
+      )
+      .send(pdf);
+  });
+
+  app.get("/reports/stock.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const q = z
+      .object({
+        supplierId: z.string().optional(),
+        categoryId: z.string().optional(),
+        q: z.string().optional(),
+      })
+      .passthrough()
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    const extras = readExtraParams(
+      (q.success ? q.data : req.query) as Record<string, unknown>,
+    );
+    const pdf = await buildStockPdf({
+      organizationId: auth.organizationId,
+      supplierId: filters.supplierId,
+      categoryId: filters.categoryId,
+      q: filters.q,
+      extras,
+    });
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="relatorio-estoque.pdf"',
+      )
+      .send(pdf);
+  });
+
   app.get("/reports/sales.pdf", async (req, reply) => {
     const auth = req.auth!;
     const q = z
@@ -2262,17 +4372,23 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
     doc.fontSize(18).text("Relatório de vendas", { align: "center" });
     doc.moveDown();
-    doc.fontSize(10).text(`Gerado em: ${new Date().toLocaleString("pt-BR")}`, { align: "right" });
+    doc.fontSize(10).text(`Gerado em: ${new Date().toLocaleString("pt-BR")}`, {
+      align: "right",
+    });
     doc.moveDown();
 
     let sum = 0;
     for (const o of orders) {
       const amount = decToNum(o.totalAmount);
       sum += amount;
-      doc.fontSize(12).text(`Pedido ${o.id.slice(0, 8)}… — ${o.status}`, { continued: false });
-      doc.fontSize(10).text(
-        `Vendedor: ${o.seller.user.name} | Cliente: ${o.customer?.name ?? "-"} | Total: R$ ${amount.toFixed(2)} | ${o.createdAt.toISOString()}`,
-      );
+      doc.fontSize(12).text(`Pedido ${o.id.slice(0, 8)}… — ${o.status}`, {
+        continued: false,
+      });
+      doc
+        .fontSize(10)
+        .text(
+          `Vendedor: ${o.seller.user.name} | Cliente: ${o.customer?.name ?? "-"} | Total: R$ ${amount.toFixed(2)} | ${o.createdAt.toISOString()}`,
+        );
       for (const it of o.items) {
         doc.text(
           `  • ${it.productName} x${it.quantity} @ R$ ${decToNum(it.unitPrice).toFixed(2)} = R$ ${(decToNum(it.unitPrice) * it.quantity).toFixed(2)}`,
@@ -2280,13 +4396,20 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       }
       doc.moveDown(0.5);
     }
-    doc.fontSize(12).text(`Total geral: R$ ${sum.toFixed(2)}`, { align: "right" });
+    doc
+      .fontSize(12)
+      .text(`Total geral: R$ ${sum.toFixed(2)}`, { align: "right" });
     doc.end();
 
     const pdf = await done;
     return reply
       .header("Content-Type", "application/pdf")
-      .header("Content-Disposition", 'attachment; filename="relatorio-vendas.pdf"')
+      .header(
+        "Content-Disposition",
+        'attachment; filename="relatorio-vendas.pdf"',
+      )
       .send(pdf);
   });
+
+  await app.register(fiscalRoutes, { prefix: "/fiscal" });
 };

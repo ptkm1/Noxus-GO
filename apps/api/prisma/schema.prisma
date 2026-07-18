@@ -52,6 +52,90 @@ enum ProductComboDiscountKind {
   PERCENT_OF_SET_SUBTOTAL
 }
 
+/// Como o vendedor é comissionado (define de onde vem o % na venda).
+enum SellerCommissionType {
+  FIXED
+  BY_PRODUCT
+  BY_CATEGORY
+  BY_SUPPLIER
+}
+
+enum FiscalDocumentDirection {
+  OUTBOUND
+  INBOUND
+}
+
+enum FiscalInvoiceStatus {
+  DRAFT
+  TRANSMITTED
+  AUTHORIZED
+  REJECTED
+  CANCELLED
+  IMPORTED
+}
+
+enum NfeEnvironment {
+  HOMOLOGATION
+  PRODUCTION
+}
+
+enum FiscalTaxRegime {
+  SIMPLES_NACIONAL
+  LUCRO_PRESUMIDO
+  LUCRO_REAL
+}
+
+enum FiscalOperationDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum FiscalManifestationType {
+  CIENCIA
+  CONFIRMACAO
+  DESCONHECIMENTO
+  NAO_REALIZADA
+}
+
+enum CustomerDocumentType {
+  CNPJ
+  CPF
+}
+
+/// Classificação comercial do produto (cadastro).
+enum ProductClassification {
+  RESALE
+  RAW_MATERIAL
+  INTERNAL_USE
+  SERVICE
+  OTHER
+}
+
+enum StockMovementType {
+  MANUAL_IN
+  MANUAL_OUT
+  MANUAL_ADJUST
+  ADJUST
+  SALE
+  SALE_REVERSAL
+  INBOUND_INVOICE
+  OUTBOUND_INVOICE
+}
+
+enum AccountsPayableStatus {
+  AUTHORIZED
+  PENDING
+  PAID
+  CANCELLED
+}
+
+/// Nível de acesso na matriz de roles (org-scoped).
+enum AccessLevel {
+  none
+  read
+  write
+}
+
 model Organization {
   id               String             @id @default(cuid())
   name             String
@@ -66,6 +150,10 @@ model Organization {
   creditPolicy     CreditPolicy       @default(WARN_ONLY)
   /// Desconto máximo extra do vendedor (%) quando o produto não define `maxSellerDiscountPercent`.
   defaultMaxSellerDiscountPercent Decimal @default(50) @db.Decimal(5, 2)
+  /// TODO futuro: CNPJ do emitente para NF-e real / certificado.
+  cnpj             String?
+  /// TODO futuro: Inscrição estadual do emitente.
+  stateRegistration String?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   users            User[]
@@ -85,6 +173,37 @@ model Organization {
   sellerCustomerVisits SellerCustomerVisit[]
   sellerLiveLocations  SellerLiveLocation[]
   sellerLocationHistory SellerLocationHistory[]
+  salesTeams         SalesTeam[]
+  suppliers          Supplier[]
+  productLots        ProductLot[]
+  stockMovements     StockMovement[]
+  auditLogs          AuditLog[]
+  costCenters        CostCenter[]
+  expenseHistories   ExpenseHistory[]
+  fixedExpenses      OperationalFixedExpense[]
+  accountsPayables   AccountsPayable[]
+  rolePermissions    OrganizationRolePermission[]
+  fiscalConfig          OrganizationFiscalConfig?
+  fiscalNcms            FiscalNcm[]
+  fiscalOperations      FiscalOperation[]
+  fiscalInvoices        FiscalInvoice[]
+  productStocks         ProductStock[]
+}
+
+/// Matriz de permissões por organização (defaults seedados; ADMIN edita via painel).
+model OrganizationRolePermission {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role           Role
+  /// Chave estável alinhada a PermissionResource (ex.: stock, orders).
+  resource       String
+  level          AccessLevel
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([organizationId, role, resource])
+  @@index([organizationId])
 }
 
 model User {
@@ -92,14 +211,21 @@ model User {
   email          String       @unique
   passwordHash   String
   name           String
+  /// Matrícula funcional (única por organização quando preenchida).
+  matricula      String?
   role           Role
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   seller         Seller?
   managedSellers Seller[]     @relation("SellerManager")
   notifications  Notification[]
+  pushDevices    PushDevice[]
+  stockMovements StockMovement[]
+  auditLogs      AuditLog[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, matricula])
 }
 
 model Seller {
@@ -110,6 +236,7 @@ model Seller {
   organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   managerUserId     String?
   manager           User?              @relation("SellerManager", fields: [managerUserId], references: [id], onDelete: SetNull)
+  commissionType    SellerCommissionType @default(FIXED)
   commissionPercent Decimal            @db.Decimal(5, 2)
   active            Boolean            @default(true)
   sellerProducts    SellerProduct[]
@@ -123,10 +250,28 @@ model Seller {
   sellerCustomerVisits SellerCustomerVisit[]
   liveLocation         SellerLiveLocation?
   locationHistory      SellerLocationHistory[]
+  teamId               String?
+  team                 SalesTeam?         @relation("TeamMembers", fields: [teamId], references: [id], onDelete: SetNull)
+  ledTeam              SalesTeam?         @relation("TeamLeader")
   createdAt         DateTime           @default(now())
   updatedAt         DateTime         @updatedAt
 
   @@index([organizationId, managerUserId])
+  @@index([organizationId, teamId])
+}
+
+model SalesTeam {
+  id             String       @id @default(cuid())
+  name           String
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leaderSellerId String       @unique
+  leaderSeller   Seller       @relation("TeamLeader", fields: [leaderSellerId], references: [id], onDelete: Restrict)
+  members        Seller[]     @relation("TeamMembers")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
 }
 
 /// Última posição reportada pelo app do vendedor (foreground).
@@ -204,6 +349,8 @@ model ProductCategory {
   name             String
   /// JSON: lista de definições de campos dinâmicos (tipo PIM por categoria).
   attributeSchema  Json?
+  /// % de comissão quando vendedores usam modo BY_CATEGORY.
+  commissionPercent Decimal?          @db.Decimal(5, 2)
   products         Product[]
   commissionRules  SellerCommissionRule[]
   createdAt        DateTime     @default(now())
@@ -213,10 +360,43 @@ model ProductCategory {
   @@map("product_categories")
 }
 
+model Supplier {
+  id                String          @id @default(cuid())
+  organizationId    String
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code              String
+  legalName         String
+  cnpj              String
+  tradeName         String
+  active            Boolean         @default(true)
+  stateRegistration String?
+  email             String?
+  phone             String?
+  street            String?
+  addressNumber     String?
+  complement        String?
+  district          String?
+  city              String?
+  state             String?
+  zipCode           String?
+  products          Product[]
+  fiscalInvoices    FiscalInvoice[]
+  fixedExpenses     OperationalFixedExpense[]
+  accountsPayables  AccountsPayable[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([organizationId, code])
+  @@unique([organizationId, cnpj])
+  @@index([organizationId])
+}
+
 model Product {
   id               String             @id @default(cuid())
   name             String
   sku              String?
+  /// Código de barras / EAN para leitura na venda rápida.
+  barcode          String?
   description      String?
   /// URL pública da foto (CDN, bucket, etc.) para catálogo no app do vendedor.
   imageUrl         String?
@@ -225,20 +405,140 @@ model Product {
   maxSellerDiscountPercent Decimal?    @db.Decimal(5, 2)
   /// Piso por unidade após promoções e desconto do vendedor (null = sem piso específico).
   minSaleUnitPrice Decimal?           @db.Decimal(12, 2)
+  /// % de comissão quando vendedores usam modo BY_PRODUCT.
+  commissionPercent Decimal?           @db.Decimal(5, 2)
   /// JSON: valores dos campos definidos em `category.attributeSchema`.
   attributes       Json               @default("{}")
+  /// Quantidade em estoque (unidades vendáveis).
+  stockQty         Int                @default(0)
+  /// Se ativo, impede venda quando `stockQty` é insuficiente.
+  blockSaleWhenOutOfStock Boolean       @default(false)
+  /// Linha comercial (ex.: Linha 1).
+  productLine      String?
+  productClassification ProductClassification?
+  /// Unidade de compra (UN, CX, FD…).
+  purchaseUnit     String?
+  /// Quantidade por caixa padrão na compra.
+  standardPurchaseBoxQty Int?
+  grossWeightKg    Decimal?             @db.Decimal(10, 3)
+  netWeightKg      Decimal?             @db.Decimal(10, 3)
+  stockAddress     String?
+  minStockQty      Int                  @default(0)
+  maxStockQty      Int?
+  costPrice        Decimal?             @db.Decimal(12, 2)
+  factoryPrice     Decimal?             @db.Decimal(12, 2)
+  maxSalePrice     Decimal?             @db.Decimal(12, 2)
+  freightAmount    Decimal?             @db.Decimal(12, 2)
+  collectionCommissionPercent Decimal?  @db.Decimal(5, 2)
+  maxDailyQtyPerSeller Int?
+  maxDailyQtyPerCustomer Int?
+  ncm              String?
+  ncmException     String?
+  /// Origem da mercadoria na NF-e (0–8).
+  nfeOrigin        Int?
+  fiscalClass      String?
+  pisCofinsClassification String?
+  cstPis           String?
+  ipiPercent       Decimal?             @db.Decimal(5, 2)
+  icmsCostPercent  Decimal?           @db.Decimal(5, 2)
+  cbsIbsClassification String?
   organizationId   String
   organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   categoryId       String?
   category         ProductCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  supplierId       String?
+  supplier         Supplier?          @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   priceTableItems  PriceTableItem[]
   sellerProducts   SellerProduct[]
   promotions       ProductPromotion[]
   comboLines       ProductComboLine[]
   commissionRules  SellerCommissionRule[]
   orderItems       OrderItem[]
+  lots             ProductLot[]
+  productStock     ProductStock?
+  stockMovements   StockMovement[]
+  fiscalInvoiceItems FiscalInvoiceItem[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
+
+  /// Cadastro fiscal para NF-e (tabela NCM da organização)
+  ncmId               String?
+  fiscalNcm           FiscalNcm?         @relation(fields: [ncmId], references: [id], onDelete: SetNull)
+  fiscalOrigin        Int?
+  fiscalGtin          String?
+  fiscalUnit          String?
+  fiscalCest          String?
+  fiscalDescription   String?
+  outboundOperationId String?
+  outboundOperation   FiscalOperation?   @relation("ProductOutboundOp", fields: [outboundOperationId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, barcode])
+  @@index([organizationId, supplierId])
+  @@index([organizationId, categoryId])
+  @@index([organizationId, ncm])
+}
+
+/// Lote de produto com validade e saldo próprio.
+model ProductLot {
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  lotCode        String
+  expiresAt      DateTime
+  qty            Int            @default(0)
+  movements      StockMovement[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([productId, lotCode])
+  @@index([organizationId, expiresAt])
+  @@index([productId, expiresAt])
+}
+
+/// Ledger de movimentações de estoque.
+model StockMovement {
+  id             String            @id @default(cuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type           StockMovementType
+  qtyDelta       Int
+  balanceAfter   Int
+  lotId          String?
+  lot            ProductLot?       @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  lotCode        String?
+  expiresAt      DateTime?
+  userId         String?
+  user           User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  orderId        String?
+  order          Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  reason         String?
+  createdAt      DateTime          @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([productId, createdAt])
+  @@index([orderId])
+}
+
+/// Histórico rastreável de alterações sensíveis.
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userMatricula  String?
+  action         String
+  entityType     String
+  entityId       String?
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, entityType, entityId])
 }
 
 model ProductPromotion {
@@ -402,8 +702,27 @@ model Customer {
   latitude       Decimal?           @db.Decimal(10, 8)
   longitude      Decimal?           @db.Decimal(11, 8)
   addressNote    String?
+  documentType   CustomerDocumentType?
+  cnpj           String?
+  cpf            String?
+  legalName      String?
+  tradeName      String?
+  cep            String?
+  street         String?
+  number         String?
+  neighborhood   String?
+  state          String?
+  city           String?
+  cityIbgeCode   String?
+  stateRegistration String?
+  buyerName      String?
+  notes          String?
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
+
+  @@unique([organizationId, cnpj])
+  @@unique([organizationId, cpf])
+  @@index([organizationId, state, city])
 }
 
 model CustomerCreditTitle {
@@ -464,9 +783,20 @@ model Order {
   clientMutationId String? @unique
   /// Motivos registrados quando o pedido ficou aguardando aprovação de crédito.
   creditHoldReasons Json?
+  /// TODO futuro: número sequencial por org para filtro "Número entre" (hoje id=cuid). Pode ser removido ou implementado depois.
+  orderNumber    Int?
+  /// TODO futuro: flag de orçamento vs pedido real. Reservado; UI não filtra neste ciclo.
+  isQuote        Boolean      @default(false)
+  /// TODO futuro: "Representada" (multi-empresa). Reservado; UI não filtra neste ciclo.
+  representada   String?
   items          OrderItem[]
+  stockMovements StockMovement[]
+  fiscalInvoices FiscalInvoice[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, orderNumber])
+  @@index([organizationId, createdAt])
 }
 
 model OrderItem {
@@ -483,12 +813,272 @@ model OrderItem {
   createdAt   DateTime @default(now())
 }
 
+enum PushPlatform {
+  IOS
+  ANDROID
+  WEB
+}
+
 model Notification {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String
   body      String
+  /// SALE_CONFIRMED | CREDIT_PENDING | GOAL_UPDATED | CREDIT_RESOLVED | …
+  type      String   @default("GENERIC")
+  data      Json?
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, read])
+}
+
+/// Token Expo (mobile) ou subscription Web Push (browser) por utilizador.
+model PushDevice {
+  id                   String       @id @default(cuid())
+  userId               String
+  user                 User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform             PushPlatform
+  expoPushToken        String?
+  webPushEndpoint      String?
+  webPushSubscription  Json?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  @@unique([expoPushToken])
+  @@unique([webPushEndpoint])
+  @@index([userId])
+}
+
+/// Centro de custo (lookup para lançamentos / despesas fixas).
+model CostCenter {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code           String
+  name           String
+  active         Boolean      @default(true)
+  fixedExpenses  OperationalFixedExpense[]
+  accountsPayables AccountsPayable[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+/// Histórico contábil / natureza da despesa (ex.: IMPOSTO).
+model ExpenseHistory {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code           String
+  description    String
+  active         Boolean      @default(true)
+  fixedExpenses  OperationalFixedExpense[]
+  accountsPayables AccountsPayable[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+/// Template de despesa operacional fixa (recorrente) para uso futuro em relatórios.
+model OperationalFixedExpense {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  supplierId     String?
+  supplier       Supplier?    @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  costCenterId   String?
+  costCenter     CostCenter?  @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
+  historyId      String?
+  history        ExpenseHistory? @relation(fields: [historyId], references: [id], onDelete: SetNull)
+  amount         Decimal      @db.Decimal(14, 2)
+  /// Dia do mês do vencimento recorrente (1–28).
+  dayOfMonth     Int
+  active         Boolean      @default(true)
+  notes          String?
+  competenceLabel String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, active])
+}
+
+/// Lançamento de contas a pagar (despesa operacional).
+model AccountsPayable {
+  id             String                @id @default(cuid())
+  organizationId String
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Número / referência do documento.
+  docNumber      String
+  supplierId     String
+  supplier       Supplier              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  issueDate      DateTime
+  dueDate        DateTime
+  /// Competência (usar 1º dia do mês).
+  competence     DateTime
+  historyId      String?
+  history        ExpenseHistory?       @relation(fields: [historyId], references: [id], onDelete: SetNull)
+  costCenterId   String?
+  costCenter     CostCenter?           @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
+  amount         Decimal               @db.Decimal(14, 2)
+  notes          String?
+  status         AccountsPayableStatus @default(AUTHORIZED)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@index([organizationId, dueDate])
+  @@index([organizationId, status])
+  @@index([organizationId, supplierId])
+}
+
+model OrganizationFiscalConfig {
+  id                        String          @id @default(cuid())
+  organizationId            String          @unique
+  organization              Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  cnpj                      String?
+  stateRegistration         String?
+  municipalRegistration     String?
+  taxRegime                 FiscalTaxRegime @default(SIMPLES_NACIONAL)
+  uf                        String?
+  cityIbge                  String?
+  street                    String?
+  addressNumber             String?
+  complement                String?
+  district                  String?
+  city                      String?
+  zipCode                   String?
+  nfeEnvironment            NfeEnvironment  @default(HOMOLOGATION)
+  nfeSeries                 Int             @default(1)
+  nfeLastNumber             Int             @default(0)
+  certificatePfxEncrypted   Bytes?
+  certificatePasswordEncrypted String?
+  certificateExpiresAt      DateTime?
+  certificateCnpj           String?
+  autoStockOnInboundInvoice Boolean         @default(false)
+  /// Imagem da logo exibida no DANFE (PNG/JPEG/WebP).
+  danfeLogoBytes            Bytes?
+  danfeLogoMimeType         String?
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+}
+
+model FiscalNcm {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code             String
+  description      String
+  cest             String?
+  defaultCstIcms   String?
+  defaultCsosn     String?
+  icmsRate         Decimal?     @db.Decimal(5, 2)
+  pisRate          Decimal?     @db.Decimal(5, 2)
+  cofinsRate       Decimal?     @db.Decimal(5, 2)
+  active           Boolean      @default(true)
+  products         Product[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@unique([organizationId, code])
+}
+
+model FiscalOperation {
+  id               String                   @id @default(cuid())
+  organizationId   String
+  organization     Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  direction        FiscalOperationDirection
+  cfop             String
+  description      String
+  nature           String?
+  defaultCstIcms   String?
+  defaultCsosn     String?
+  movesStock       Boolean                  @default(false)
+  active           Boolean                  @default(true)
+  productsOutbound Product[]                @relation("ProductOutboundOp")
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  @@unique([organizationId, direction, cfop])
+}
+
+model FiscalInvoice {
+  id               String                  @id @default(cuid())
+  organizationId   String
+  organization     Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  direction        FiscalDocumentDirection
+  status           FiscalInvoiceStatus     @default(DRAFT)
+  orderId          String?
+  order            Order?                  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  supplierId       String?
+  supplier         Supplier?               @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  customerId       String?
+  number           Int?
+  series           Int?
+  accessKey        String?                 @unique
+  totalAmount      Decimal                 @db.Decimal(14, 2)
+  issuedAt         DateTime?
+  xmlSigned        String?                 @db.Text
+  xmlAuthorized    String?                 @db.Text
+  protocol         String?
+  rejectionReason  String?
+  issuerSnapshot   Json?
+  recipientSnapshot Json?
+  stockApplied     Boolean                 @default(false)
+  manifestationType FiscalManifestationType?
+  items            FiscalInvoiceItem[]
+  events           FiscalInvoiceEvent[]
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@index([organizationId, direction, status])
+  @@index([organizationId, orderId])
+}
+
+model FiscalInvoiceItem {
+  id               String        @id @default(cuid())
+  fiscalInvoiceId  String
+  fiscalInvoice    FiscalInvoice @relation(fields: [fiscalInvoiceId], references: [id], onDelete: Cascade)
+  productId        String?
+  product          Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  lineNumber       Int
+  description      String
+  ncm              String?
+  cfop             String?
+  unit             String?
+  quantity         Decimal       @db.Decimal(14, 4)
+  unitPrice        Decimal       @db.Decimal(12, 2)
+  totalPrice       Decimal       @db.Decimal(14, 2)
+  supplierProductCode String?
+  taxSnapshot      Json?
+  createdAt        DateTime      @default(now())
+}
+
+model FiscalInvoiceEvent {
+  id               String        @id @default(cuid())
+  fiscalInvoiceId  String
+  fiscalInvoice    FiscalInvoice @relation(fields: [fiscalInvoiceId], references: [id], onDelete: Cascade)
+  eventType        String
+  requestPayload   String?       @db.Text
+  responsePayload  String?       @db.Text
+  success          Boolean       @default(false)
+  createdAt        DateTime      @default(now())
+}
+
+model ProductStock {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  productId        String       @unique
+  product          Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantityOnHand   Decimal      @default(0) @db.Decimal(14, 4)
+  updatedAt        DateTime     @updatedAt
+
+  @@unique([organizationId, productId])
 }

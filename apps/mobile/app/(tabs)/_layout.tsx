@@ -1,26 +1,31 @@
-import { Tabs, useRouter } from "expo-router";
+import { SafeScreen, TabBarIcon } from "@/components/layout";
+import { useAuth } from "@/context/AuthContext";
+import type { EventArg, NavigationState } from "@react-navigation/native";
+import { Redirect, Tabs, useRouter } from "expo-router";
 import {
-  Bell,
   ClipboardCheck,
+  LayoutDashboard,
   MapPin,
-  Package,
   ShoppingBag,
-  TrendingUp,
-  UserRound,
   Users,
 } from "lucide-react-native";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../../lib/theme";
 
-/** Altura aproximada da barra de tabs + margem para o FAB ficar acima dela. */
-const FAB_ABOVE_TAB_BAR = Platform.select({ ios: 52, android: 56 }) ?? 56;
+const TAB_BAR_HEIGHT = Platform.select({ ios: 84, android: 64 }) ?? 64;
 
 function QuickSaleFab() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const bottom = Math.max(insets.bottom, 10) + FAB_ABOVE_TAB_BAR + 12;
+  const bottom = Math.max(insets.bottom, 8) + TAB_BAR_HEIGHT - 8;
 
   return (
     <Pressable
@@ -32,88 +37,144 @@ function QuickSaleFab() {
       ]}
       onPress={() => router.push("/quick-sale")}
     >
-      <ClipboardCheck color={colors.primaryForeground} size={26} strokeWidth={2.5} />
+      <ClipboardCheck
+        color={colors.primaryForeground}
+        size={26}
+        strokeWidth={2.5}
+      />
     </Pressable>
   );
 }
 
+function tabIcon(Icon: typeof ShoppingBag) {
+  return ({
+    color,
+    focused,
+  }: {
+    color: string;
+    focused: boolean;
+    size: number;
+  }) => <TabBarIcon Icon={Icon} color={color} focused={focused} />;
+}
+
+/**
+ * Segundo toque na tab já focada: volta ao ecrã raiz dessa stack
+ * (ex. detalhe de venda → lista de vendas).
+ */
+function tabPressPopToRoot(tabName: string, rootScreen = "index") {
+  return ({
+    navigation,
+    route,
+  }: {
+    navigation: { navigate: (name: string, params?: object) => void };
+    route: { state?: NavigationState; name: string };
+  }) => ({
+    tabPress: (e: EventArg<"tabPress", true, undefined>) => {
+      const nested = route.state;
+      if (nested && typeof nested.index === "number" && nested.index > 0) {
+        e.preventDefault();
+        const root = nested.routes[0];
+        navigation.navigate(tabName, {
+          screen: root?.name ?? rootScreen,
+        });
+      }
+    },
+  });
+}
+
+/** Rotas fora da tab bar — acessíveis pela home, header ou perfil. */
+const HIDDEN_TAB = { href: null } as const;
+
 export default function TabsLayout() {
+  const { user, loading } = useAuth();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+
+  if (loading) {
+    return (
+      <SafeScreen style={{ alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator color={colors.primary} />
+      </SafeScreen>
+    );
+  }
+
+  if (!user) {
+    return <Redirect href="/login" />;
+  }
+
+  const tabHeight =
+    TAB_BAR_HEIGHT +
+    Math.max(insets.bottom - (Platform.OS === "ios" ? 20 : 0), 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Tabs
         screenOptions={{
-          headerShown: true,
+          headerShown: false,
+          tabBarHideOnKeyboard: true,
           tabBarActiveTintColor: colors.primary,
           tabBarInactiveTintColor: colors.iconMuted,
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: "600",
+            marginTop: 2,
+          },
           tabBarStyle: {
             backgroundColor: colors.tabBar,
             borderTopColor: colors.tabBarBorder,
+            borderTopWidth: 1,
+            height: tabHeight,
+            paddingTop: 8,
+            paddingBottom: Math.max(
+              insets.bottom,
+              Platform.OS === "ios" ? 20 : 8,
+            ),
           },
-          headerStyle: { backgroundColor: colors.headerBackground },
-          headerTintColor: colors.primary,
-          headerTitleStyle: { color: colors.headerTitle, fontWeight: "600" },
           sceneStyle: { backgroundColor: colors.background },
         }}
       >
         <Tabs.Screen
-          name="sales"
+          name="index"
+          options={{
+            title: "Início",
+            tabBarLabel: "Início",
+            tabBarIcon: tabIcon(LayoutDashboard),
+          }}
+          listeners={tabPressPopToRoot("index")}
+        />
+        <Tabs.Screen
+          name="vendas"
           options={{
             title: "Vendas",
             tabBarLabel: "Vendas",
-            tabBarIcon: ({ color, size }) => <ShoppingBag color={color} size={size} />,
-            headerShown: false,
+            tabBarIcon: tabIcon(ShoppingBag),
           }}
-        />
-        <Tabs.Screen
-          name="commission"
-          options={{
-            title: "Comissão",
-            tabBarLabel: "Comissão",
-            tabBarIcon: ({ color, size }) => <TrendingUp color={color} size={size} />,
-          }}
+          listeners={tabPressPopToRoot("vendas")}
         />
         <Tabs.Screen
           name="customers"
           options={{
             title: "Clientes",
             tabBarLabel: "Clientes",
-            tabBarIcon: ({ color, size }) => <Users color={color} size={size} />,
+            tabBarIcon: tabIcon(Users),
           }}
+          listeners={tabPressPopToRoot("customers")}
         />
         <Tabs.Screen
           name="route-plan"
           options={{
             title: "Rota",
             tabBarLabel: "Rota",
-            tabBarIcon: ({ color, size }) => <MapPin color={color} size={size} />,
+            tabBarIcon: tabIcon(MapPin),
           }}
+          listeners={tabPressPopToRoot("route-plan")}
         />
-        <Tabs.Screen
-          name="products"
-          options={{
-            title: "Catálogo",
-            tabBarLabel: "Catálogo",
-            tabBarIcon: ({ color, size }) => <Package color={color} size={size} />,
-          }}
-        />
-        <Tabs.Screen
-          name="notifications"
-          options={{
-            title: "Notificações",
-            tabBarLabel: "Avisos",
-            tabBarIcon: ({ color, size }) => <Bell color={color} size={size} />,
-          }}
-        />
-        <Tabs.Screen
-          name="profile"
-          options={{
-            title: "Perfil",
-            tabBarLabel: "Perfil",
-            tabBarIcon: ({ color, size }) => <UserRound color={color} size={size} />,
-          }}
-        />
+
+        <Tabs.Screen name="_route-plan.styles" options={HIDDEN_TAB} />
+        <Tabs.Screen name="commission" options={HIDDEN_TAB} />
+        <Tabs.Screen name="products" options={HIDDEN_TAB} />
+        <Tabs.Screen name="notifications" options={HIDDEN_TAB} />
+        <Tabs.Screen name="profile" options={HIDDEN_TAB} />
       </Tabs>
       <QuickSaleFab />
     </View>
@@ -133,5 +194,6 @@ const fabStyles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.28,
     shadowRadius: 6,
+    zIndex: 50,
   },
 });

@@ -10,7 +10,7 @@ export async function loadThemePreference(): Promise<ThemePreference> {
   } catch {
     /* ignore */
   }
-  return "system";
+  return "dark";
 }
 
 export async function saveThemePreference(value: ThemePreference): Promise<void> {
