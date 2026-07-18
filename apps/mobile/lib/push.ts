@@ -1,8 +1,8 @@
+import { apiFetch } from "@/lib/api";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import { apiFetch } from "@/lib/api";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -13,11 +13,17 @@ Notifications.setNotificationHandler({
   }),
 });
 
+/** Token Expo actualmente associado à sessão (para logout limpar no servidor). */
+let registeredExpoToken: string | null = null;
+
 function projectId(): string | undefined {
   return (
     Constants.easConfig?.projectId ??
-    (Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined)
-      ?.eas?.projectId
+    (
+      Constants.expoConfig?.extra as
+        | { eas?: { projectId?: string } }
+        | undefined
+    )?.eas?.projectId
   );
 }
 
@@ -55,6 +61,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
     body: JSON.stringify({ platform, expoPushToken: token }),
   });
 
+  registeredExpoToken = token;
   return token;
 }
 
@@ -66,8 +73,34 @@ export async function unregisterPushToken(token: string | null): Promise<void> {
       body: JSON.stringify({ expoPushToken: token }),
     });
   } catch {
-    /* ignore */
+    /* ignore — rede / 401 */
+  } finally {
+    if (registeredExpoToken === token) registeredExpoToken = null;
   }
+}
+
+/**
+ * Remove o device da conta actual. Chamar **antes** de clearTokens no logout,
+ * enquanto o access token ainda é válido.
+ */
+export async function unregisterCurrentPushDevice(): Promise<void> {
+  let token = registeredExpoToken;
+  if (!token && Device.isDevice) {
+    try {
+      const pid = projectId();
+      const tokenRes = await Notifications.getExpoPushTokenAsync(
+        pid ? { projectId: pid } : undefined,
+      );
+      token = tokenRes.data ?? null;
+    } catch {
+      token = null;
+    }
+  }
+  await unregisterPushToken(token);
+}
+
+export function clearLocalPushRegistration(): void {
+  registeredExpoToken = null;
 }
 
 export function hrefFromNotificationData(

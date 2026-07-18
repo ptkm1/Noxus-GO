@@ -104,7 +104,7 @@ export async function startSellerBackgroundLocation(): Promise<boolean> {
     timeInterval: 60_000,
     showsBackgroundLocationIndicator: true,
     foregroundService: {
-      notificationTitle: "commerce pro mobile",
+      notificationTitle: "CommercePro",
       notificationBody: "Rastreio de rota ativo",
       notificationColor: "#8A3FFC",
     },

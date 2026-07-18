@@ -1,20 +1,34 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { FormField, FormGrid, FormSection } from "@/components/forms";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { fieldControlClass } from "@/lib/field-styles";
+import { cn } from "@/lib/utils";
+import type {
+  FiscalInvoiceStatus,
+  FiscalTaxRegime,
+  NfeEnvironment,
+} from "@pedidos/shared";
 import {
   FISCAL_INVOICE_STATUS_LABELS,
   FISCAL_TAX_REGIME_LABELS,
   NFE_ENVIRONMENT_LABELS,
 } from "@pedidos/shared";
-import type { FiscalInvoiceStatus, FiscalTaxRegime, NfeEnvironment } from "@pedidos/shared";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { FormField, FormGrid, FormSection } from "@/components/forms";
-import { fieldControlClass } from "@/lib/field-styles";
-import { apiFetch, downloadPdf, fetchAuthenticatedBlob, printPdf } from "../lib/api";
-import { getErrorMessage } from "../lib/api-error";
-import { notifyError, notifySuccess, promptAction } from "../lib/app-notifications";
-import { cn } from "@/lib/utils";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { FiscalCadastrosPanel } from "../components/FiscalCadastrosPanel";
+import {
+  apiFetch,
+  downloadPdf,
+  fetchAuthenticatedBlob,
+  printPdf,
+} from "../lib/api";
+import { getErrorMessage } from "../lib/api-error";
+import {
+  notifyError,
+  notifySuccess,
+  promptAction,
+} from "../lib/app-notifications";
 
 type Tab = "saida" | "entrada" | "cadastros" | "config";
 
@@ -28,7 +42,11 @@ type EligibleOrder = {
   readinessIssues?: { code: string; message: string }[];
   customer: { id: string; name: string; document: string | null } | null;
   seller: { user: { name: string } };
-  fiscalInvoice: { id: string; status: FiscalInvoiceStatus; number: number | null } | null;
+  fiscalInvoice: {
+    id: string;
+    status: FiscalInvoiceStatus;
+    number: number | null;
+  } | null;
 };
 
 type FiscalInvoice = {
@@ -43,7 +61,12 @@ type FiscalInvoice = {
   stockApplied: boolean;
   supplier?: { tradeName?: string; legalName?: string; cnpj?: string } | null;
   order?: { customer: { name: string } | null } | null;
-  items: { id: string; description: string; quantity: unknown; productId: string | null }[];
+  items: {
+    id: string;
+    description: string;
+    quantity: unknown;
+    productId: string | null;
+  }[];
 };
 
 type FiscalSettings = {
@@ -85,7 +108,9 @@ export function FaturamentoPage() {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [mappingInvoiceId, setMappingInvoiceId] = useState<string | null>(null);
-  const [productMappings, setProductMappings] = useState<Record<string, string>>({});
+  const [productMappings, setProductMappings] = useState<
+    Record<string, string>
+  >({});
 
   const { data: settings, refetch: refetchSettings } = useQuery({
     queryKey: ["admin", "fiscal", "settings"],
@@ -95,7 +120,9 @@ export function FaturamentoPage() {
   const { data: products = [] } = useQuery({
     queryKey: ["admin", "products", "fiscal-map"],
     queryFn: () =>
-      apiFetch<{ id: string; name: string; sku?: string | null }[]>("/admin/products"),
+      apiFetch<{ id: string; name: string; sku?: string | null }[]>(
+        "/admin/products",
+      ),
     enabled: tab === "entrada",
   });
 
@@ -119,7 +146,9 @@ export function FaturamentoPage() {
 
   const emitFromOrder = useMutation({
     mutationFn: (orderId: string) =>
-      apiFetch(`/admin/fiscal/outbound/from-order/${orderId}`, { method: "POST" }),
+      apiFetch(`/admin/fiscal/outbound/from-order/${orderId}`, {
+        method: "POST",
+      }),
     onSuccess: () => {
       notifySuccess("NF-e em rascunho criada com sucesso.");
       void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
@@ -128,7 +157,9 @@ export function FaturamentoPage() {
 
   const transmit = useMutation({
     mutationFn: (invoiceId: string) =>
-      apiFetch(`/admin/fiscal/outbound/invoices/${invoiceId}/transmit`, { method: "POST" }),
+      apiFetch(`/admin/fiscal/outbound/invoices/${invoiceId}/transmit`, {
+        method: "POST",
+      }),
     onSuccess: () => {
       notifySuccess("NF-e transmitida para a SEFAZ.");
       void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
@@ -136,7 +167,13 @@ export function FaturamentoPage() {
   });
 
   const cancelOutbound = useMutation({
-    mutationFn: ({ invoiceId, justification }: { invoiceId: string; justification: string }) =>
+    mutationFn: ({
+      invoiceId,
+      justification,
+    }: {
+      invoiceId: string;
+      justification: string;
+    }) =>
       apiFetch(`/admin/fiscal/outbound/invoices/${invoiceId}/cancel`, {
         method: "POST",
         body: JSON.stringify({ justification }),
@@ -148,7 +185,13 @@ export function FaturamentoPage() {
   });
 
   const cancelInbound = useMutation({
-    mutationFn: ({ invoiceId, justification }: { invoiceId: string; justification: string }) =>
+    mutationFn: ({
+      invoiceId,
+      justification,
+    }: {
+      invoiceId: string;
+      justification: string;
+    }) =>
       apiFetch(`/admin/fiscal/inbound/invoices/${invoiceId}/cancel`, {
         method: "POST",
         body: JSON.stringify({ justification }),
@@ -162,7 +205,8 @@ export function FaturamentoPage() {
   async function promptCancel(onConfirm: (justification: string) => void) {
     const justification = await promptAction({
       title: "Cancelar NF-e",
-      message: "Informe a justificativa do cancelamento (mínimo 15 caracteres).",
+      message:
+        "Informe a justificativa do cancelamento (mínimo 15 caracteres).",
       placeholder: "Motivo do cancelamento…",
       multiline: true,
       minLength: 15,
@@ -174,10 +218,16 @@ export function FaturamentoPage() {
   }
 
   function canShowDanfe(status: FiscalInvoiceStatus) {
-    return status === "AUTHORIZED" || status === "IMPORTED" || status === "CANCELLED";
+    return (
+      status === "AUTHORIZED" || status === "IMPORTED" || status === "CANCELLED"
+    );
   }
 
-  async function handleDanfe(invoiceId: string, number: number | null, action: "download" | "print") {
+  async function handleDanfe(
+    invoiceId: string,
+    number: number | null,
+    action: "download" | "print",
+  ) {
     const path = `/admin/fiscal/invoices/${invoiceId}/danfe.pdf`;
     const filename = `danfe-${number ?? invoiceId.slice(0, 8)}.pdf`;
     try {
@@ -210,9 +260,12 @@ export function FaturamentoPage() {
 
   const syncDfe = useMutation({
     mutationFn: () =>
-      apiFetch<{ message: string; imported?: number }>("/admin/fiscal/inbound/sync", {
-        method: "POST",
-      }),
+      apiFetch<{ message: string; imported?: number }>(
+        "/admin/fiscal/inbound/sync",
+        {
+          method: "POST",
+        },
+      ),
     onSuccess: (res) => {
       notifySuccess(res.message ?? "Consulta DF-e concluída.");
       void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
@@ -221,12 +274,19 @@ export function FaturamentoPage() {
 
   const confirmImport = useMutation({
     mutationFn: () =>
-      apiFetch("/admin/fiscal/inbound/invoices/" + mappingInvoiceId + "/confirm-import", {
-        method: "POST",
-        body: JSON.stringify({ productMappings }),
-      }),
+      apiFetch(
+        "/admin/fiscal/inbound/invoices/" +
+          mappingInvoiceId +
+          "/confirm-import",
+        {
+          method: "POST",
+          body: JSON.stringify({ productMappings }),
+        },
+      ),
     onSuccess: () => {
-      notifySuccess("Importação confirmada (de-para e estoque, se configurado).");
+      notifySuccess(
+        "Importação confirmada (de-para e estoque, se configurado).",
+      );
       setMappingInvoiceId(null);
       setProductMappings({});
       void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
@@ -265,7 +325,9 @@ export function FaturamentoPage() {
       }
       setXmlPaste(text);
       setXmlFileName(file.name);
-      notifySuccess(`Arquivo "${file.name}" carregado. Clique em Importar NF-e para concluir.`);
+      notifySuccess(
+        `Arquivo "${file.name}" carregado. Clique em Importar NF-e para concluir.`,
+      );
     } catch {
       notifyError("Não foi possível ler o arquivo XML.");
     }
@@ -311,7 +373,10 @@ export function FaturamentoPage() {
 
   const saveSettings = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      apiFetch("/admin/fiscal/settings", { method: "PUT", body: JSON.stringify(body) }),
+      apiFetch("/admin/fiscal/settings", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
     onSuccess: () => {
       notifySuccess("Configurações fiscais salvas.");
       void refetchSettings();
@@ -324,8 +389,10 @@ export function FaturamentoPage() {
       const buf = await certFile.arrayBuffer();
       const bytes = new Uint8Array(buf);
       let binary = "";
-      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      for (let i = 0; i < bytes.length; i += 0x8000)
+        binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
       const pfxBase64 = btoa(binary);
+      return apiFetch("/admin/fiscal/certificate", {
         method: "POST",
         body: JSON.stringify({ pfxBase64, password: certPassword }),
       });
@@ -345,12 +412,17 @@ export function FaturamentoPage() {
       const imageBase64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
       return apiFetch("/admin/fiscal/logo", {
         method: "POST",
-        body: JSON.stringify({ imageBase64, mimeType: logoFile.type || "image/png" }),
+        body: JSON.stringify({
+          imageBase64,
+          mimeType: logoFile.type || "image/png",
+        }),
       });
     },
     onSuccess: () => {
       setLogoFile(null);
-      notifySuccess("Logo salva. Ela aparecerá nos DANFE gerados pelo sistema.");
+      notifySuccess(
+        "Logo salva. Ela aparecerá nos DANFE gerados pelo sistema.",
+      );
       void refetchSettings();
     },
     onError: (e) => notifyError(getErrorMessage(e), "Falha ao enviar logo"),
@@ -437,7 +509,9 @@ export function FaturamentoPage() {
             type="button"
             onClick={() => setTab(t.id)}
             className={`rounded-lg px-4 py-2 text-sm font-medium ${
-              tab === t.id ? "bg-primary text-white" : "bg-card border border-border"
+              tab === t.id
+                ? "bg-primary text-primary-foreground"
+                : "bg-card border border-border"
             }`}
           >
             {t.label}
@@ -467,26 +541,38 @@ export function FaturamentoPage() {
                   <tbody>
                     {eligibleOrders.map((o) => (
                       <tr key={o.id} className="border-t border-border">
-                        <td className="px-4 py-3 font-mono text-xs">{o.id.slice(0, 8)}…</td>
+                        <td className="px-4 py-3 font-mono text-xs">
+                          {o.id.slice(0, 8)}…
+                        </td>
                         <td className="px-4 py-3">{o.customer?.name ?? "—"}</td>
                         <td className="px-4 py-3">{o.seller.user.name}</td>
-                        <td className="px-4 py-3">R$ {Number(o.totalAmount).toFixed(2)}</td>
+                        <td className="px-4 py-3">
+                          R$ {Number(o.totalAmount).toFixed(2)}
+                        </td>
                         <td className="px-4 py-3">
                           {o.fiscalStatus === "NONE"
                             ? "Sem nota"
-                            : FISCAL_INVOICE_STATUS_LABELS[o.fiscalStatus as FiscalInvoiceStatus]}
+                            : FISCAL_INVOICE_STATUS_LABELS[
+                                o.fiscalStatus as FiscalInvoiceStatus
+                              ]}
                         </td>
                         <td className="px-4 py-3">
-                          {o.fiscalStatus === "NONE" || o.fiscalStatus === "REJECTED" ? (
+                          {o.fiscalStatus === "NONE" ||
+                          o.fiscalStatus === "REJECTED" ? (
                             <div className="space-y-1">
-                              {o.readinessIssues && o.readinessIssues.length > 0 && (
-                                <p className="max-w-xs text-xs text-amber-600">
-                                  {o.readinessIssues.map((i) => i.message).join(" · ")}
-                                </p>
-                              )}
+                              {o.readinessIssues &&
+                                o.readinessIssues.length > 0 && (
+                                  <p className="max-w-xs text-xs text-amber-600">
+                                    {o.readinessIssues
+                                      .map((i) => i.message)
+                                      .join(" · ")}
+                                  </p>
+                                )}
                               <Button
                                 size="sm"
-                                disabled={emitFromOrder.isPending || o.canEmit === false}
+                                disabled={
+                                  emitFromOrder.isPending || o.canEmit === false
+                                }
                                 onClick={() => emitFromOrder.mutate(o.id)}
                               >
                                 Emitir NF-e
@@ -496,7 +582,9 @@ export function FaturamentoPage() {
                             <Button
                               size="sm"
                               disabled={transmit.isPending}
-                              onClick={() => transmit.mutate(o.fiscalInvoice!.id)}
+                              onClick={() =>
+                                transmit.mutate(o.fiscalInvoice!.id)
+                              }
                             >
                               Transmitir
                             </Button>
@@ -530,10 +618,18 @@ export function FaturamentoPage() {
                       <td className="px-4 py-3">
                         {inv.series}/{inv.number}
                       </td>
-                      <td className="px-4 py-3">{inv.order?.customer?.name ?? "—"}</td>
-                      <td className="px-4 py-3">{FISCAL_INVOICE_STATUS_LABELS[inv.status]}</td>
-                      <td className="px-4 py-3">R$ {Number(inv.totalAmount).toFixed(2)}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{inv.accessKey?.slice(0, 12) ?? "—"}…</td>
+                      <td className="px-4 py-3">
+                        {inv.order?.customer?.name ?? "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        {FISCAL_INVOICE_STATUS_LABELS[inv.status]}
+                      </td>
+                      <td className="px-4 py-3">
+                        R$ {Number(inv.totalAmount).toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs">
+                        {inv.accessKey?.slice(0, 12) ?? "—"}…
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">
                           {canShowDanfe(inv.status) && (
@@ -541,14 +637,22 @@ export function FaturamentoPage() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => void handleDanfe(inv.id, inv.number, "download")}
+                                onClick={() =>
+                                  void handleDanfe(
+                                    inv.id,
+                                    inv.number,
+                                    "download",
+                                  )
+                                }
                               >
                                 DANFE
                               </Button>
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => void handleDanfe(inv.id, inv.number, "print")}
+                                onClick={() =>
+                                  void handleDanfe(inv.id, inv.number, "print")
+                                }
                               >
                                 Imprimir
                               </Button>
@@ -562,7 +666,10 @@ export function FaturamentoPage() {
                               disabled={cancelOutbound.isPending}
                               onClick={() =>
                                 promptCancel((justification) =>
-                                  cancelOutbound.mutate({ invoiceId: inv.id, justification }),
+                                  cancelOutbound.mutate({
+                                    invoiceId: inv.id,
+                                    justification,
+                                  }),
                                 )
                               }
                             >
@@ -584,17 +691,23 @@ export function FaturamentoPage() {
         <div className="space-y-6">
           <FormSection title="Consultar SEFAZ (DF-e)">
             <p className="mb-3 text-sm text-muted-foreground">
-              Busca notas emitidas contra o CNPJ da empresa (Distribuição DF-e). Requer certificado A1.
+              Busca notas emitidas contra o CNPJ da empresa (Distribuição DF-e).
+              Requer certificado A1.
             </p>
-            <Button disabled={syncDfe.isPending} onClick={() => syncDfe.mutate()}>
+            <Button
+              disabled={syncDfe.isPending}
+              onClick={() => syncDfe.mutate()}
+            >
               {syncDfe.isPending ? "Consultando…" : "Consultar DF-e na SEFAZ"}
             </Button>
           </FormSection>
 
           <FormSection title="Importar XML manualmente">
             <p className="mb-3 text-sm text-muted-foreground">
-              O padrão fiscal é o <strong>XML da NF-e</strong> (arquivo .xml), não o PDF do DANFE. Arraste o arquivo,
-              selecione no computador ou cole o conteúdo — após importar, o sistema gera o DANFE no layout oficial.
+              O padrão fiscal é o <strong>XML da NF-e</strong> (arquivo .xml),
+              não o PDF do DANFE. Arraste o arquivo, selecione no computador ou
+              cole o conteúdo — após importar, o sistema gera o DANFE no layout
+              oficial.
             </p>
 
             <div
@@ -633,7 +746,9 @@ export function FaturamentoPage() {
                 }}
               />
               <p className="text-sm font-medium">
-                {xmlDragActive ? "Solte o arquivo XML aqui" : "Arraste o arquivo .xml para esta área"}
+                {xmlDragActive
+                  ? "Solte o arquivo XML aqui"
+                  : "Arraste o arquivo .xml para esta área"}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">ou</p>
               <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
@@ -649,10 +764,15 @@ export function FaturamentoPage() {
                 </Button>
                 {xmlFileName ? (
                   <span className="text-sm text-muted-foreground">
-                    Selecionado: <span className="font-medium text-foreground">{xmlFileName}</span>
+                    Selecionado:{" "}
+                    <span className="font-medium text-foreground">
+                      {xmlFileName}
+                    </span>
                   </span>
                 ) : (
-                  <span className="text-sm text-muted-foreground">Nenhum arquivo selecionado</span>
+                  <span className="text-sm text-muted-foreground">
+                    Nenhum arquivo selecionado
+                  </span>
                 )}
               </div>
             </div>
@@ -667,12 +787,16 @@ export function FaturamentoPage() {
                 if (e.target.value.trim() && !xmlFileName) return;
                 if (!e.target.value.trim()) {
                   setXmlFileName(null);
-                  if (xmlFileInputRef.current) xmlFileInputRef.current.value = "";
+                  if (xmlFileInputRef.current)
+                    xmlFileInputRef.current.value = "";
                 }
               }}
             />
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <Button disabled={importXml.isPending || !xmlPaste.trim()} onClick={() => importXml.mutate()}>
+              <Button
+                disabled={importXml.isPending || !xmlPaste.trim()}
+                onClick={() => importXml.mutate()}
+              >
                 {importXml.isPending ? "Importando…" : "Importar NF-e"}
               </Button>
               {xmlPaste.trim() ? (
@@ -683,7 +807,8 @@ export function FaturamentoPage() {
                   onClick={() => {
                     setXmlPaste("");
                     setXmlFileName(null);
-                    if (xmlFileInputRef.current) xmlFileInputRef.current.value = "";
+                    if (xmlFileInputRef.current)
+                      xmlFileInputRef.current.value = "";
                   }}
                 >
                   Limpar
@@ -692,7 +817,8 @@ export function FaturamentoPage() {
             </div>
             {settings?.autoStockOnInboundInvoice ? (
               <p className="mt-2 text-sm text-muted-foreground">
-                Estoque automático ativo — confirme o de-para dos produtos após importar.
+                Estoque automático ativo — confirme o de-para dos produtos após
+                importar.
               </p>
             ) : (
               <p className="mt-2 text-sm text-muted-foreground">
@@ -704,19 +830,28 @@ export function FaturamentoPage() {
           {mappingInvoiceId ? (
             <FormSection title="De-para de produtos (confirmação)">
               <p className="mb-3 text-sm text-muted-foreground">
-                Vincule cada item da NF-e a um produto interno. Necessário para estoque automático.
+                Vincule cada item da NF-e a um produto interno. Necessário para
+                estoque automático.
               </p>
-              {(inboundInvoices.find((i) => i.id === mappingInvoiceId)?.items ?? []).map((item) => (
+              {(
+                inboundInvoices.find((i) => i.id === mappingInvoiceId)?.items ??
+                []
+              ).map((item) => (
                 <div key={item.id} className="mb-3 grid gap-2 sm:grid-cols-2">
                   <div className="text-sm">
                     <p className="font-medium">{item.description}</p>
-                    <p className="text-muted-foreground">Qtd: {String(item.quantity)}</p>
+                    <p className="text-muted-foreground">
+                      Qtd: {String(item.quantity)}
+                    </p>
                   </div>
                   <select
                     className={fieldControlClass}
                     value={productMappings[item.id] ?? item.productId ?? ""}
                     onChange={(e) =>
-                      setProductMappings((prev) => ({ ...prev, [item.id]: e.target.value }))
+                      setProductMappings((prev) => ({
+                        ...prev,
+                        [item.id]: e.target.value,
+                      }))
                     }
                   >
                     <option value="">Sem vínculo</option>
@@ -730,10 +865,18 @@ export function FaturamentoPage() {
                 </div>
               ))}
               <div className="mt-3 flex gap-2">
-                <Button disabled={confirmImport.isPending} onClick={() => confirmImport.mutate()}>
-                  {confirmImport.isPending ? "Confirmando…" : "Confirmar importação"}
+                <Button
+                  disabled={confirmImport.isPending}
+                  onClick={() => confirmImport.mutate()}
+                >
+                  {confirmImport.isPending
+                    ? "Confirmando…"
+                    : "Confirmar importação"}
                 </Button>
-                <Button variant="ghost" onClick={() => setMappingInvoiceId(null)}>
+                <Button
+                  variant="ghost"
+                  onClick={() => setMappingInvoiceId(null)}
+                >
                   Fechar
                 </Button>
               </div>
@@ -741,7 +884,9 @@ export function FaturamentoPage() {
           ) : null}
 
           <section>
-            <h2 className="mb-3 text-lg font-medium">Notas de entrada registradas</h2>
+            <h2 className="mb-3 text-lg font-medium">
+              Notas de entrada registradas
+            </h2>
             <div className="overflow-x-auto rounded-xl border border-border bg-card">
               <table className="w-full text-sm">
                 <thead className="bg-background text-left text-muted-foreground">
@@ -758,14 +903,22 @@ export function FaturamentoPage() {
                   {inboundInvoices.map((inv) => (
                     <tr key={inv.id} className="border-t border-border">
                       <td className="px-4 py-3">
-                        {inv.supplier?.tradeName ?? inv.supplier?.legalName ?? "—"}
+                        {inv.supplier?.tradeName ??
+                          inv.supplier?.legalName ??
+                          "—"}
                       </td>
                       <td className="px-4 py-3">
                         {inv.series}/{inv.number}
                       </td>
-                      <td className="px-4 py-3">R$ {Number(inv.totalAmount).toFixed(2)}</td>
-                      <td className="px-4 py-3">{inv.stockApplied ? "Aplicado" : "Não"}</td>
-                      <td className="px-4 py-3">{FISCAL_INVOICE_STATUS_LABELS[inv.status]}</td>
+                      <td className="px-4 py-3">
+                        R$ {Number(inv.totalAmount).toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {inv.stockApplied ? "Aplicado" : "Não"}
+                      </td>
+                      <td className="px-4 py-3">
+                        {FISCAL_INVOICE_STATUS_LABELS[inv.status]}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">
                           {canShowDanfe(inv.status) && (
@@ -773,20 +926,29 @@ export function FaturamentoPage() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => void handleDanfe(inv.id, inv.number, "download")}
+                                onClick={() =>
+                                  void handleDanfe(
+                                    inv.id,
+                                    inv.number,
+                                    "download",
+                                  )
+                                }
                               >
                                 DANFE
                               </Button>
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => void handleDanfe(inv.id, inv.number, "print")}
+                                onClick={() =>
+                                  void handleDanfe(inv.id, inv.number, "print")
+                                }
                               >
                                 Imprimir
                               </Button>
                             </>
                           )}
-                          {(inv.status === "IMPORTED" || inv.status === "AUTHORIZED") &&
+                          {(inv.status === "IMPORTED" ||
+                            inv.status === "AUTHORIZED") &&
                             !inv.stockApplied && (
                               <Button
                                 size="sm"
@@ -795,7 +957,8 @@ export function FaturamentoPage() {
                                   setMappingInvoiceId(inv.id);
                                   const initial: Record<string, string> = {};
                                   for (const it of inv.items) {
-                                    if (it.productId) initial[it.id] = it.productId;
+                                    if (it.productId)
+                                      initial[it.id] = it.productId;
                                   }
                                   setProductMappings(initial);
                                 }}
@@ -804,19 +967,24 @@ export function FaturamentoPage() {
                               </Button>
                             )}
                           {inv.accessKey &&
-                            (inv.status === "IMPORTED" || inv.status === "DRAFT") && (
+                            (inv.status === "IMPORTED" ||
+                              inv.status === "DRAFT") && (
                               <Button
                                 size="sm"
                                 variant="ghost"
                                 disabled={manifest.isPending}
                                 onClick={() =>
-                                  manifest.mutate({ accessKey: inv.accessKey!, type: "CIENCIA" })
+                                  manifest.mutate({
+                                    accessKey: inv.accessKey!,
+                                    type: "CIENCIA",
+                                  })
                                 }
                               >
                                 Ciência
                               </Button>
                             )}
-                          {(inv.status === "IMPORTED" || inv.status === "AUTHORIZED") && (
+                          {(inv.status === "IMPORTED" ||
+                            inv.status === "AUTHORIZED") && (
                             <Button
                               size="sm"
                               variant="ghost"
@@ -824,7 +992,10 @@ export function FaturamentoPage() {
                               disabled={cancelInbound.isPending}
                               onClick={() =>
                                 promptCancel((justification) =>
-                                  cancelInbound.mutate({ invoiceId: inv.id, justification }),
+                                  cancelInbound.mutate({
+                                    invoiceId: inv.id,
+                                    justification,
+                                  }),
                                 )
                               }
                             >
@@ -849,22 +1020,36 @@ export function FaturamentoPage() {
           <FormSection title="Emitente">
             <FormGrid>
               <FormField label="CNPJ">
-                <Input value={form.cnpj} onChange={(e) => setForm({ ...form, cnpj: e.target.value })} />
+                <Input
+                  value={form.cnpj}
+                  onChange={(e) => setForm({ ...form, cnpj: e.target.value })}
+                />
               </FormField>
               <FormField label="Inscrição estadual">
                 <Input
                   value={form.stateRegistration}
-                  onChange={(e) => setForm({ ...form, stateRegistration: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, stateRegistration: e.target.value })
+                  }
                 />
               </FormField>
               <FormField label="UF">
-                <Input value={form.uf} maxLength={2} onChange={(e) => setForm({ ...form, uf: e.target.value })} />
+                <Input
+                  value={form.uf}
+                  maxLength={2}
+                  onChange={(e) => setForm({ ...form, uf: e.target.value })}
+                />
               </FormField>
               <FormField label="Regime">
                 <select
                   className={fieldControlClass}
                   value={form.taxRegime}
-                  onChange={(e) => setForm({ ...form, taxRegime: e.target.value as FiscalTaxRegime })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      taxRegime: e.target.value as FiscalTaxRegime,
+                    })
+                  }
                 >
                   {Object.entries(FISCAL_TAX_REGIME_LABELS).map(([k, v]) => (
                     <option key={k} value={k}>
@@ -877,7 +1062,12 @@ export function FaturamentoPage() {
                 <select
                   className={fieldControlClass}
                   value={form.nfeEnvironment}
-                  onChange={(e) => setForm({ ...form, nfeEnvironment: e.target.value as NfeEnvironment })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      nfeEnvironment: e.target.value as NfeEnvironment,
+                    })
+                  }
                 >
                   {Object.entries(NFE_ENVIRONMENT_LABELS).map(([k, v]) => (
                     <option key={k} value={k}>
@@ -887,7 +1077,12 @@ export function FaturamentoPage() {
                 </select>
               </FormField>
               <FormField label="Série">
-                <Input value={form.nfeSeries} onChange={(e) => setForm({ ...form, nfeSeries: e.target.value })} />
+                <Input
+                  value={form.nfeSeries}
+                  onChange={(e) =>
+                    setForm({ ...form, nfeSeries: e.target.value })
+                  }
+                />
               </FormField>
             </FormGrid>
             <div className="mt-4">
@@ -906,15 +1101,22 @@ export function FaturamentoPage() {
 
           <FormSection title="Logo no DANFE">
             <p className="mb-3 text-sm text-muted-foreground">
-              Imagem exibida no <strong>canto superior esquerdo</strong> do DANFE, em área dedicada apenas à logo da
-              empresa. PNG ou JPEG recomendado (também aceita WebP e GIF). Tamanho máximo: 512 KB.
+              Imagem exibida no <strong>canto superior esquerdo</strong> do
+              DANFE, em área dedicada apenas à logo da empresa. PNG ou JPEG
+              recomendado (também aceita WebP e GIF). Tamanho máximo: 512 KB.
             </p>
             <div className="flex flex-wrap items-start gap-6">
               <div className="flex h-24 w-40 items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 p-2">
                 {logoPreview ? (
-                  <img src={logoPreview} alt="Logo da empresa" className="max-h-full max-w-full object-contain" />
+                  <img
+                    src={logoPreview}
+                    alt="Logo da empresa"
+                    className="max-h-full max-w-full object-contain"
+                  />
                 ) : (
-                  <span className="text-center text-xs text-muted-foreground">Sem logo</span>
+                  <span className="text-center text-xs text-muted-foreground">
+                    Sem logo
+                  </span>
                 )}
               </div>
               <div className="flex min-w-[220px] flex-1 flex-col gap-3">
@@ -926,7 +1128,10 @@ export function FaturamentoPage() {
                   />
                 </FormField>
                 <div className="flex flex-wrap gap-2">
-                  <Button disabled={uploadLogo.isPending || !logoFile} onClick={() => uploadLogo.mutate()}>
+                  <Button
+                    disabled={uploadLogo.isPending || !logoFile}
+                    onClick={() => uploadLogo.mutate()}
+                  >
                     {uploadLogo.isPending ? "Enviando…" : "Salvar logo"}
                   </Button>
                   {settings?.logo?.uploaded ? (
@@ -947,7 +1152,9 @@ export function FaturamentoPage() {
 
           <FormSection title="Certificado A1">
             {settings?.certificate?.uploaded && (
-              <p className={`mb-3 text-sm ${settings.certificate.warning ? "text-amber-600" : "text-muted-foreground"}`}>
+              <p
+                className={`mb-3 text-sm ${settings.certificate.warning ? "text-amber-600" : "text-muted-foreground"}`}
+              >
                 Certificado enviado
                 {settings.certificate.expiresAt
                   ? ` — validade ${new Date(settings.certificate.expiresAt).toLocaleDateString("pt-BR")}`
@@ -971,21 +1178,28 @@ export function FaturamentoPage() {
                 />
               </FormField>
             </FormGrid>
-            <Button className="mt-3" disabled={uploadCert.isPending} onClick={() => uploadCert.mutate()}>
+            <Button
+              className="mt-3"
+              disabled={uploadCert.isPending}
+              onClick={() => uploadCert.mutate()}
+            >
               Enviar certificado
             </Button>
           </FormSection>
 
           <FormSection title="Estoque na NF-e de entrada">
             <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={form.autoStockOnInboundInvoice}
-                onChange={(e) =>
-                  setForm({ ...form, autoStockOnInboundInvoice: e.target.checked })
+                onCheckedChange={(v) =>
+                  setForm({
+                    ...form,
+                    autoStockOnInboundInvoice: v === true,
+                  })
                 }
               />
-              Lançar estoque automaticamente ao confirmar importação de NF-e de entrada
+              Lançar estoque automaticamente ao confirmar importação de NF-e de
+              entrada
             </label>
             <p className="mt-2 text-sm text-muted-foreground">
               Quando desligado, use a tela Estoque para movimentações manuais.

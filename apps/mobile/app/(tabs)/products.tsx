@@ -10,7 +10,6 @@ import { CatalogFiltersModal } from "@/components/molecules/CatalogFiltersModal"
 import { CatalogViewModeToggle } from "@/components/molecules/CatalogViewModeToggle";
 import {
   CollapsibleCatalogSection,
-  HorizontalProductRail,
   ProductCatalogTile,
 } from "@/components/ProductCatalogViews";
 import { useProductsScreen } from "@/hooks/screens/useProductsScreen";
@@ -41,7 +40,7 @@ export default function ProductsScreen() {
     emptyMessage,
   } = useProductsScreen();
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const filterActive = catalog.categoryFilterId != null;
+  const filterActive = catalog.categoryFilterIds.length > 0;
 
   const header = (
     <View style={styles.header}>
@@ -100,10 +99,13 @@ export default function ProductsScreen() {
         onProductPress={() => onRailProductPress()}
       />
 
-      <HorizontalProductRail
+      <CollapsibleCatalogSection
         title="Favoritos"
         products={catalog.favoriteProductsList}
-        tileWidth={layout.railTileW}
+        viewMode={viewMode}
+        tileWidth={layout.tileW}
+        listTileWidth={layout.listTileW}
+        catalogGap={layout.catalogGap}
         favoriteIds={catalog.favoriteIds}
         onToggleFavorite={catalog.toggleFavorite}
         onProductPress={() => onFavoriteRailPress()}
@@ -176,8 +178,10 @@ export default function ProductsScreen() {
         visible={filtersOpen}
         onClose={() => setFiltersOpen(false)}
         categories={catalog.catalogCategories}
-        selectedCategoryId={catalog.categoryFilterId}
-        onApply={catalog.setCategoryFilterId}
+        selectedCategoryIds={catalog.categoryFilterIds}
+        onApply={({ categoryIds }) => {
+          catalog.setCategoryFilterIds(categoryIds);
+        }}
       />
     </SafeScreen>
   );

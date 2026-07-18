@@ -3,10 +3,12 @@ import { useCallback, useEffect, useState } from "react";
 
 export type CatalogViewMode = "grid" | "list";
 
-const STORAGE_KEY = "pedidos_catalog_view_mode";
+/** v3: default cards horizontais (list). */
+const STORAGE_KEY = "pedidos_catalog_view_mode_v3";
+const DEFAULT_MODE: CatalogViewMode = "list";
 
 export function useCatalogViewMode() {
-  const [viewMode, setViewModeState] = useState<CatalogViewMode>("grid");
+  const [viewMode, setViewModeState] = useState<CatalogViewMode>(DEFAULT_MODE);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -14,6 +16,7 @@ export function useCatalogViewMode() {
     void AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
       if (cancelled) return;
       if (raw === "grid" || raw === "list") setViewModeState(raw);
+      else setViewModeState(DEFAULT_MODE);
       setReady(true);
     });
     return () => {

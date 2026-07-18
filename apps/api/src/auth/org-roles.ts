@@ -31,10 +31,11 @@ const MANAGER_GET_ALLOW = [
   /^\/push-vapid-public-key$/,
 ] as const;
 
-/** Write paths managers may use (inbox + push registration). */
+/** Write paths managers may use (inbox + push registration + broadcast). */
 const MANAGER_WRITE_ALLOW = [
   /^\/notifications\/[^/]+\/read$/,
   /^\/notifications\/read-all$/,
+  /^\/notifications\/send$/,
   /^\/push-devices$/,
 ] as const;
 

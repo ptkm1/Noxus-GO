@@ -8,10 +8,14 @@ import { MOBILE_TAB_SCROLL_BOTTOM } from "@/components/layout/MobileScreen";
 import { DevToolsVersionTap } from "@/components/molecules/DevToolsVersionTap";
 import { ProgressStat } from "@/components/molecules/StatCard";
 import { SyncStatusBanner } from "@/components/molecules/SyncStatusBanner";
-import type { CommissionDashboard } from "@/hooks/screens/useCommissionScreen";
 import { useProfileScreen } from "@/hooks/screens/useProfileScreen";
 import { useLogout } from "@/hooks/useLogout";
-import { apiFetch } from "@/lib/api";
+import { useNetInfoOnline } from "@/hooks/useNetInfoOnline";
+import { useSyncStatusMeta } from "@/hooks/useSyncStatusMeta";
+import {
+  fetchSellerCommissionDashboard,
+  sellerOfflineStaleTime,
+} from "@/lib/seller-offline-queries";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
 import { radiiPx } from "@pedidos/design-tokens";
@@ -74,14 +78,16 @@ const menuStyles = StyleSheet.create({
 export default function ProfileScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const isOnline = useNetInfoOnline();
+  const { lastSync, lastSyncedCount } = useSyncStatusMeta();
   const { logoutAndGoLogin, logoutPending } = useLogout();
   const { me, name, setName, saveName, savePending, goSettings } =
     useProfileScreen();
 
   const { data: commission } = useQuery({
     queryKey: ["seller", "commission-dashboard"],
-    queryFn: () =>
-      apiFetch<CommissionDashboard>("/seller/commission-dashboard"),
+    staleTime: sellerOfflineStaleTime,
+    queryFn: fetchSellerCommissionDashboard,
   });
 
   const initials =
@@ -196,7 +202,12 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        <SyncStatusBanner isOnline pendingItems={0} />
+        <SyncStatusBanner
+          isOnline={isOnline}
+          lastSync={lastSync}
+          lastSyncedCount={lastSyncedCount}
+          pendingItems={0}
+        />
 
         <ThemedCard>
           <ThemedText variant="label" muted style={{ marginBottom: 8 }}>

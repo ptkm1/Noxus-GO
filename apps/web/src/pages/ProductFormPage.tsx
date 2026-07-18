@@ -6,9 +6,11 @@ import {
 } from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useProductFormPage } from "@/hooks/useProductFormPage";
+import { fieldControlClass } from "@/lib/field-styles";
 import { cn } from "@/lib/utils";
 import {
   PRODUCT_CLASSIFICATIONS,
@@ -22,9 +24,13 @@ import { Link } from "react-router-dom";
 import { DynamicCategoryAttributes } from "../components/DynamicCategoryAttributes";
 import { ProductPromotionsPanel } from "../components/ProductPromotionsPanel";
 import { apiFetch } from "../lib/api";
-import { fieldControlClass } from "@/lib/field-styles";
 
-type FiscalNcmOption = { id: string; code: string; description: string; active: boolean };
+type FiscalNcmOption = {
+  id: string;
+  code: string;
+  description: string;
+  active: boolean;
+};
 type FiscalOpOption = {
   id: string;
   direction: string;
@@ -672,12 +678,11 @@ export function ProductFormPage() {
                 className="sm:col-span-2"
               >
                 <label className="flex items-center gap-2 text-sm text-foreground">
-                  <input
+                  <Checkbox
                     id="prod-block-stock"
-                    type="checkbox"
                     checked={values.blockSaleWhenOutOfStock}
-                    onChange={(e) =>
-                      setField("blockSaleWhenOutOfStock", e.target.checked)
+                    onCheckedChange={(v) =>
+                      setField("blockSaleWhenOutOfStock", v === true)
                     }
                   />
                   Bloquear venda quando estoque = 0
@@ -778,17 +783,24 @@ export function ProductFormPage() {
                   ))}
                   {!PURCHASE_UNITS.some((u) => u.value === values.fiscalUnit) &&
                   values.fiscalUnit ? (
-                    <option value={values.fiscalUnit}>{values.fiscalUnit}</option>
+                    <option value={values.fiscalUnit}>
+                      {values.fiscalUnit}
+                    </option>
                   ) : null}
                 </select>
               </FormField>
 
-              <FormField label="CFOP padrão de saída" htmlFor="prod-outbound-op">
+              <FormField
+                label="CFOP padrão de saída"
+                htmlFor="prod-outbound-op"
+              >
                 <select
                   id="prod-outbound-op"
                   className={fieldControlClass}
                   value={values.outboundOperationId}
-                  onChange={(e) => setField("outboundOperationId", e.target.value)}
+                  onChange={(e) =>
+                    setField("outboundOperationId", e.target.value)
+                  }
                 >
                   <option value="">Usar padrão (5102)</option>
                   {outboundOps
@@ -826,7 +838,9 @@ export function ProductFormPage() {
                 <Input
                   id="prod-fiscal-desc"
                   value={values.fiscalDescription}
-                  onChange={(e) => setField("fiscalDescription", e.target.value)}
+                  onChange={(e) =>
+                    setField("fiscalDescription", e.target.value)
+                  }
                 />
               </FormField>
 

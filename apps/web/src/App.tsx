@@ -17,6 +17,7 @@ import { AppNotificationsProvider } from "./lib/app-notifications";
 import { createAppQueryClient } from "./lib/query-client";
 import { isWebStaff, isWebTeamLeader } from "./lib/staff";
 import { ThemeProvider } from "./lib/theme";
+import { BroadcastNotificationsPage } from "./pages/BroadcastNotificationsPage";
 import { CommissionGoalsPage } from "./pages/CommissionGoalsPage";
 import { CommissionHubPage } from "./pages/CommissionHubPage";
 import { CommissionTiersPage } from "./pages/CommissionTiersPage";
@@ -205,6 +206,10 @@ function AppRoutes() {
             <Route
               path="vendedores/:sellerId/produtos"
               element={<SellerProductsPage />}
+            />
+            <Route
+              path="notificar-vendedores"
+              element={<BroadcastNotificationsPage />}
             />
             <Route path="usuarios" element={<UsersPage />} />
             <Route path="equipes" element={<TeamsPage />} />

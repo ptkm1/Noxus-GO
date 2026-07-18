@@ -1,12 +1,9 @@
+import type { AppNotification } from "@pedidos/shared";
+import { notificationBodyDisplay, notificationHref } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import type { AppNotification } from "@pedidos/shared";
-import {
-  notificationBodyDisplay,
-  notificationHref,
-} from "@pedidos/shared";
-import { apiFetch } from "../lib/api";
 import { EnableWebPushButton } from "../components/EnableWebPushButton";
+import { apiFetch } from "../lib/api";
 
 export function NotificationsPage() {
   const qc = useQueryClient();
@@ -27,7 +24,9 @@ export function NotificationsPage() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin", "notifications"] });
-      void qc.invalidateQueries({ queryKey: ["admin", "notifications-unread"] });
+      void qc.invalidateQueries({
+        queryKey: ["admin", "notifications-unread"],
+      });
     },
   });
 
@@ -39,7 +38,9 @@ export function NotificationsPage() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin", "notifications"] });
-      void qc.invalidateQueries({ queryKey: ["admin", "notifications-unread"] });
+      void qc.invalidateQueries({
+        queryKey: ["admin", "notifications-unread"],
+      });
     },
   });
 
@@ -90,7 +91,7 @@ export function NotificationsPage() {
                 className={`rounded-xl border px-4 py-4 ${
                   n.read
                     ? "border-border bg-card"
-                    : "border-warning/30 bg-warning/10/80"
+                    : "border-primary/40 bg-primary/10"
                 }`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -105,7 +106,7 @@ export function NotificationsPage() {
                     {href && openLabel ? (
                       <Link
                         to={href}
-                        className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90"
+                        className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                       >
                         {openLabel}
                       </Link>

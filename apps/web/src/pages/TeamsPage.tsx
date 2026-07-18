@@ -1,12 +1,13 @@
+import { useConfirm } from "@/components/confirm";
 import {
   FormField,
   FormGrid,
   FormSheet,
   FormSheetActions,
 } from "@/components/forms";
-import { useConfirm } from "@/components/confirm";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -155,8 +156,8 @@ export function TeamsPage() {
             Equipes de vendas
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Crie equipes nomeadas, defina um vendedor líder e escolha os membros.
-            O líder ganha acesso ao painel web limitado à equipe.
+            Crie equipes nomeadas, defina um vendedor líder e escolha os
+            membros. O líder ganha acesso ao painel web limitado à equipe.
           </p>
         </div>
         <Button type="button" onClick={openCreate}>
@@ -230,10 +231,9 @@ export function TeamsPage() {
                     key={s.id}
                     className="flex cursor-pointer items-center gap-2 text-sm"
                   >
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={memberSellerIds.includes(s.id)}
-                      onChange={() => toggleMember(s.id)}
+                      onCheckedChange={() => toggleMember(s.id)}
                     />
                     <span>
                       {s.user.name}

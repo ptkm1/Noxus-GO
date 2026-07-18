@@ -8,9 +8,14 @@ import { ProgressStat, StatCard } from "@/components/molecules/StatCard";
 import { SyncStatusBanner } from "@/components/molecules/SyncStatusBanner";
 import { TopSuppliersBlock } from "@/components/molecules/TopSuppliersBlock";
 import { useAuth } from "@/context/AuthContext";
-import type { CommissionDashboard } from "@/hooks/screens/useCommissionScreen";
 import { useSalesListScreen } from "@/hooks/screens/useSalesListScreen";
+import { useNetInfoOnline } from "@/hooks/useNetInfoOnline";
+import { useSyncStatusMeta } from "@/hooks/useSyncStatusMeta";
 import { apiFetch } from "@/lib/api";
+import {
+  fetchSellerCommissionDashboard,
+  sellerOfflineStaleTime,
+} from "@/lib/seller-offline-queries";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
 import { radiiPx } from "@pedidos/design-tokens";
@@ -32,6 +37,8 @@ export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { colors } = useTheme();
+  const isOnline = useNetInfoOnline();
+  const { lastSync, lastSyncedCount } = useSyncStatusMeta();
   const {
     orders,
     isLoading,
@@ -45,8 +52,8 @@ export default function HomeScreen() {
 
   const { data: commission, isLoading: commissionLoading } = useQuery({
     queryKey: ["seller", "commission-dashboard"],
-    queryFn: () =>
-      apiFetch<CommissionDashboard>("/seller/commission-dashboard"),
+    staleTime: sellerOfflineStaleTime,
+    queryFn: fetchSellerCommissionDashboard,
   });
 
   const { data: notifications = [] } = useQuery({
@@ -119,7 +126,12 @@ export default function HomeScreen() {
         onRefresh={() => void refetch()}
         contentContainerStyle={{ gap: 20 }}
       >
-        <SyncStatusBanner isOnline pendingItems={pending + dead} />
+        <SyncStatusBanner
+          isOnline={isOnline}
+          lastSync={lastSync}
+          lastSyncedCount={lastSyncedCount}
+          pendingItems={pending + dead}
+        />
 
         {goalTarget > 0 ? (
           <ProgressStat

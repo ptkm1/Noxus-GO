@@ -1,10 +1,10 @@
+import { runOfflineDb } from "./offline-db";
+import { notifyOfflineOutboxChanged } from "./offline-outbox-events";
 import type {
   OfflineQueueRow,
   OfflineQueueRowState,
   OfflineSaleQueuePayload,
 } from "./offline-sale-types";
-import { runOfflineDb } from "./offline-db";
-import { notifyOfflineOutboxChanged } from "./offline-outbox-events";
 
 function rowFromDb(r: {
   local_id: string;
@@ -40,7 +40,9 @@ function rowFromDb(r: {
   };
 }
 
-export async function enqueueOfflineSale(payload: OfflineSaleQueuePayload): Promise<boolean> {
+export async function enqueueOfflineSale(
+  payload: OfflineSaleQueuePayload,
+): Promise<boolean> {
   const ok = await runOfflineDb(async (db) => {
     const now = Date.now();
     await db.runAsync(
@@ -72,7 +74,9 @@ export async function countDeadOfflineSales(): Promise<number> {
   }, 0);
 }
 
-export async function listOfflineSaleRows(limit = 50): Promise<OfflineQueueRow[]> {
+export async function listOfflineSaleRows(
+  limit = 50,
+): Promise<OfflineQueueRow[]> {
   return runOfflineDb(async (db) => {
     const rows = await db.getAllAsync<{
       local_id: string;
@@ -84,22 +88,28 @@ export async function listOfflineSaleRows(limit = 50): Promise<OfflineQueueRow[]
       server_order_id: string | null;
       created_at_ms: number;
       updated_at_ms: number;
-    }>(`SELECT * FROM offline_sale_outbox WHERE state != 'sent' ORDER BY created_at_ms ASC LIMIT ?`, [
-      limit,
-    ]);
+    }>(
+      `SELECT * FROM offline_sale_outbox WHERE state != 'sent' ORDER BY created_at_ms ASC LIMIT ?`,
+      [limit],
+    );
     return rows.map(rowFromDb);
   }, []);
 }
 
 export async function deleteOfflineSaleRow(localId: string): Promise<void> {
   await runOfflineDb(async (db) => {
-    await db.runAsync(`DELETE FROM offline_sale_outbox WHERE local_id = ?`, [localId]);
+    await db.runAsync(`DELETE FROM offline_sale_outbox WHERE local_id = ?`, [
+      localId,
+    ]);
     return true;
   }, false);
   notifyOfflineOutboxChanged();
 }
 
-export async function claimRowsForSync(nowMs: number, batch = 8): Promise<OfflineQueueRow[]> {
+export async function claimRowsForSync(
+  nowMs: number,
+  batch = 8,
+): Promise<OfflineQueueRow[]> {
   return runOfflineDb(async (db) => {
     await db.execAsync("BEGIN IMMEDIATE;");
     try {
@@ -130,7 +140,10 @@ export async function claimRowsForSync(nowMs: number, batch = 8): Promise<Offlin
         server_order_id: string | null;
         created_at_ms: number;
         updated_at_ms: number;
-      }>(`SELECT * FROM offline_sale_outbox WHERE local_id IN (${placeholders})`, [...ids]);
+      }>(
+        `SELECT * FROM offline_sale_outbox WHERE local_id IN (${placeholders})`,
+        [...ids],
+      );
       await db.execAsync("COMMIT;");
       notifyOfflineOutboxChanged();
       return full.map(rowFromDb);
@@ -145,7 +158,9 @@ export async function claimRowsForSync(nowMs: number, batch = 8): Promise<Offlin
   }, []);
 }
 
-export async function releaseStaleSyncingClaims(timeoutMs = 120_000): Promise<void> {
+export async function releaseStaleSyncingClaims(
+  timeoutMs = 120_000,
+): Promise<void> {
   await runOfflineDb(async (db) => {
     const cutoff = Date.now() - timeoutMs;
     await db.runAsync(
@@ -159,7 +174,9 @@ export async function releaseStaleSyncingClaims(timeoutMs = 120_000): Promise<vo
 
 export async function markOfflineSaleSent(localId: string): Promise<void> {
   await runOfflineDb(async (db) => {
-    await db.runAsync(`DELETE FROM offline_sale_outbox WHERE local_id = ?`, [localId]);
+    await db.runAsync(`DELETE FROM offline_sale_outbox WHERE local_id = ?`, [
+      localId,
+    ]);
     return true;
   }, false);
   notifyOfflineOutboxChanged();
@@ -182,7 +199,10 @@ export async function rescheduleOfflineSaleRetry(
   notifyOfflineOutboxChanged();
 }
 
-export async function markOfflineSaleDead(localId: string, lastError: string): Promise<void> {
+export async function markOfflineSaleDead(
+  localId: string,
+  lastError: string,
+): Promise<void> {
   await runOfflineDb(async (db) => {
     await db.runAsync(
       `UPDATE offline_sale_outbox SET state = 'dead', last_error = ?, updated_at_ms = ?
@@ -194,7 +214,10 @@ export async function markOfflineSaleDead(localId: string, lastError: string): P
   notifyOfflineOutboxChanged();
 }
 
-export async function resetOfflineSaleToQueued(localId: string, lastError: string): Promise<void> {
+export async function resetOfflineSaleToQueued(
+  localId: string,
+  lastError: string,
+): Promise<void> {
   await runOfflineDb(async (db) => {
     await db.runAsync(
       `UPDATE offline_sale_outbox SET state = 'queued', next_retry_at_ms = 0, last_error = ?, updated_at_ms = ?
@@ -216,4 +239,16 @@ export async function reviveOfflineSaleRow(localId: string): Promise<void> {
     return true;
   }, false);
   notifyOfflineOutboxChanged();
+}
+
+/** Para "Sincronizar agora": põe todos os queued prontos (ignora backoff). */
+export async function prepareQueuedSalesForImmediateSync(): Promise<void> {
+  await runOfflineDb(async (db) => {
+    await db.runAsync(
+      `UPDATE offline_sale_outbox SET next_retry_at_ms = 0, updated_at_ms = ?
+       WHERE state = 'queued'`,
+      [Date.now()],
+    );
+    return true;
+  }, false);
 }

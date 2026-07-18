@@ -36,7 +36,7 @@ export function useOfflineQueueScreen() {
   const syncNow = useCallback(async () => {
     setSyncing(true);
     try {
-      await flushOfflineSaleOutbox(qc);
+      await flushOfflineSaleOutbox(qc, { forceImmediate: true });
       refresh();
       await load();
     } finally {

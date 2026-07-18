@@ -1,14 +1,22 @@
-import { StyleSheet, View } from "react-native";
-import { Clock, RefreshCw, Wifi, WifiOff } from "lucide-react-native";
 import { ThemedText } from "@/components/atoms/ThemedText";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
 import { radiiPx } from "@pedidos/design-tokens";
+import {
+  CheckCircle2,
+  Clock,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+} from "lucide-react-native";
+import { StyleSheet, View } from "react-native";
 
 type Props = {
   isOnline: boolean;
   isSyncing?: boolean;
   lastSync?: Date | null;
+  /** Itens sincronizados na última sync bem-sucedida (ex. pedidos da fila). */
+  lastSyncedCount?: number | null;
   pendingItems?: number;
 };
 
@@ -16,20 +24,37 @@ export function SyncStatusBanner({
   isOnline,
   isSyncing = false,
   lastSync,
+  lastSyncedCount = null,
   pendingItems = 0,
 }: Props) {
   const { colors } = useTheme();
-  const iconBg = isOnline ? colorWithAlpha(colors.primary, 0.2) : colorWithAlpha(colors.danger, 0.2);
+  const iconBg = isOnline
+    ? colorWithAlpha(colors.primary, 0.2)
+    : colorWithAlpha(colors.danger, 0.2);
 
-  const lastLabel = lastSync
-    ? `Última sync: ${new Intl.DateTimeFormat("pt-BR", {
+  const timeLabel = lastSync
+    ? new Intl.DateTimeFormat("pt-BR", {
         hour: "2-digit",
         minute: "2-digit",
-      }).format(lastSync)}`
-    : "Nunca sincronizado";
+      }).format(lastSync)
+    : null;
+
+  let lastLabel = "Nunca sincronizado";
+  if (isSyncing) {
+    lastLabel = "A enviar dados…";
+  } else if (timeLabel && lastSyncedCount && lastSyncedCount > 0) {
+    lastLabel = `Última sync: ${timeLabel} · ${lastSyncedCount} sincronizado${lastSyncedCount === 1 ? "" : "s"}`;
+  } else if (timeLabel) {
+    lastLabel = `Última sync: ${timeLabel}`;
+  }
 
   return (
-    <View style={[styles.wrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <View
+      style={[
+        styles.wrap,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
+    >
       <View style={[styles.iconWrap, { backgroundColor: iconBg }]}>
         {isSyncing ? (
           <RefreshCw color={colors.primary} size={20} />
@@ -48,10 +73,33 @@ export function SyncStatusBanner({
         </ThemedText>
       </View>
       {pendingItems > 0 ? (
-        <View style={[styles.pending, { backgroundColor: colorWithAlpha(colors.warning, 0.2) }]}>
+        <View
+          style={[
+            styles.pending,
+            { backgroundColor: colorWithAlpha(colors.warning, 0.2) },
+          ]}
+        >
           <Clock color={colors.warning} size={16} />
-          <ThemedText variant="caption" style={{ color: colors.warning, fontWeight: "600" }}>
+          <ThemedText
+            variant="caption"
+            style={{ color: colors.warning, fontWeight: "600" }}
+          >
             {pendingItems} pend.
+          </ThemedText>
+        </View>
+      ) : lastSyncedCount && lastSyncedCount > 0 && lastSync ? (
+        <View
+          style={[
+            styles.pending,
+            { backgroundColor: colorWithAlpha(colors.success, 0.2) },
+          ]}
+        >
+          <CheckCircle2 color={colors.success} size={16} />
+          <ThemedText
+            variant="caption"
+            style={{ color: colors.success, fontWeight: "600" }}
+          >
+            {lastSyncedCount} ok
           </ThemedText>
         </View>
       ) : null}

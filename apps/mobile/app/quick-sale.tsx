@@ -31,7 +31,6 @@ import {
 import { BarcodeScannerModal } from "../components/BarcodeScannerModal";
 import {
   CollapsibleCatalogSection,
-  HorizontalProductRail,
   ProductCatalogTile,
 } from "../components/ProductCatalogViews";
 import { ThemedTextInput } from "../components/atoms/ThemedTextInput";
@@ -56,7 +55,8 @@ export default function QuickSaleScreen() {
 
   const cartExpandedMaxH = Math.min(windowHeight * 0.4, 280);
   const hasCart = s.cartLines.length > 0;
-  const filterActive = catalog.categoryFilterId != null;
+  const filterActive =
+    catalog.categoryFilterIds.length > 0 || s.customerId != null;
 
   useEffect(() => {
     if (!hasCart) setCartExpanded(false);
@@ -82,78 +82,11 @@ export default function QuickSaleScreen() {
 
   const header = (
     <View style={styles.headerBlock}>
-      <Text style={styles.sectionTitle}>Cliente</Text>
-      <Text style={styles.hint}>
-        Opcional — usa promoções por cliente quando existirem.
-      </Text>
-      <ThemedTextInput
-        placeholder="Filtrar cliente…"
-        value={s.customerQuery}
-        onChangeText={s.setCustomerQuery}
-        autoCapitalize="words"
-        autoCorrect={false}
-      />
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.hScroll}
-      >
-        <Pressable
-          style={[styles.pill, s.customerId === undefined && styles.pillActive]}
-          onPress={() => s.setCustomerId(undefined)}
-        >
-          <Text
-            style={[
-              styles.pillText,
-              s.customerId === undefined && styles.pillTextActive,
-            ]}
-          >
-            Consumidor avulso
-          </Text>
-        </Pressable>
-        {s.lastCustomerEntity ? (
-          <Pressable
-            style={[
-              styles.pill,
-              s.customerId !== s.lastCustomerEntity.id && styles.pillOutline,
-              s.customerId === s.lastCustomerEntity.id && styles.pillActive,
-            ]}
-            onPress={() => s.setCustomerId(s.lastCustomerEntity!.id)}
-          >
-            <Text
-              style={[
-                styles.pillText,
-                s.customerId === s.lastCustomerEntity.id &&
-                  styles.pillTextActive,
-              ]}
-              numberOfLines={1}
-            >
-              Último: {s.lastCustomerEntity.name}
-            </Text>
-          </Pressable>
-        ) : null}
-        {s.filteredCustomers.map((c) => (
-          <Pressable
-            key={c.id}
-            style={[styles.pill, s.customerId === c.id && styles.pillActive]}
-            onPress={() => s.setCustomerId(c.id)}
-          >
-            <Text
-              style={[
-                styles.pillText,
-                s.customerId === c.id && styles.pillTextActive,
-              ]}
-              numberOfLines={1}
-            >
-              {c.name}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
       {s.customerId ? (
         <Pressable onPress={s.openCustomerCredit} style={styles.creditLinkBtn}>
           <Text style={styles.creditLinkTxt}>
-            Financeiro do cliente · limite e títulos
+            {(s.customers.find((c) => c.id === s.customerId)?.name ??
+              "Cliente") + " · financeiro"}
           </Text>
         </Pressable>
       ) : null}
@@ -207,9 +140,7 @@ export default function QuickSaleScreen() {
         />
       ) : null}
 
-      <Text style={[styles.sectionTitle, { marginTop: 8 }]}>
-        Catálogo visual
-      </Text>
+      <Text style={styles.sectionTitle}>Catálogo visual</Text>
       <View style={styles.searchRow}>
         <Search size={18} color={colors.iconMuted} style={styles.searchIcon} />
         <ThemedTextInput
@@ -261,10 +192,13 @@ export default function QuickSaleScreen() {
         qtyByProductId={s.cartQtyByProductId}
       />
 
-      <HorizontalProductRail
+      <CollapsibleCatalogSection
         title="Favoritos"
         products={catalog.favoriteProductsList}
-        tileWidth={layout.railTileW}
+        viewMode={viewMode}
+        tileWidth={layout.tileW}
+        listTileWidth={layout.listTileW}
+        catalogGap={layout.catalogGap}
         favoriteIds={catalog.favoriteIds}
         onToggleFavorite={catalog.toggleFavorite}
         onProductPress={(p) => s.scheduleProductTap(p as SaleProduct)}
@@ -484,8 +418,14 @@ export default function QuickSaleScreen() {
           visible={filtersOpen}
           onClose={() => setFiltersOpen(false)}
           categories={catalog.catalogCategories}
-          selectedCategoryId={catalog.categoryFilterId}
-          onApply={catalog.setCategoryFilterId}
+          selectedCategoryIds={catalog.categoryFilterIds}
+          customers={s.customers}
+          selectedCustomerId={s.customerId}
+          lastCustomer={s.lastCustomerEntity}
+          onApply={({ categoryIds, customerId }) => {
+            catalog.setCategoryFilterIds(categoryIds);
+            s.setCustomerId(customerId);
+          }}
         />
       </KeyboardAvoidingScreen>
     </SafeScreen>

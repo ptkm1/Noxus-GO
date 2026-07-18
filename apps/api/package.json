@@ -10,7 +10,8 @@
     "build": "tsc",
     "typecheck:prisma": "tsc -p tsconfig.prisma.json",
     "start": "node dist/index.js",
-    "prisma": "prisma"
+    "prisma": "prisma",
+    "smoke:push": "tsx scripts/smoke-push.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -28,7 +28,7 @@ async function notifyAdminsCreditPendingEmail(params: {
   const total = decToNum(params.order.totalAmount);
   const cust = params.order.customer?.name ?? "Cliente sem nome";
   const seller = params.order.seller.user.name;
-  const subject = "[Pedidos] Pedido aguardando aprovação de crédito";
+  const subject = "[CommercePro] Pedido aguardando aprovação de crédito";
   const webBase = (process.env.WEB_APP_ORIGIN ?? "").replace(/\/$/, "");
   const detailPath = `/vendas/${params.order.id}`;
   const detailLink =
@@ -51,7 +51,10 @@ async function notifyAdminsCreditPendingEmail(params: {
   });
 
   if (!result.ok) {
-    console.warn("[email] Falha ao notificar admins (crédito):", result.message);
+    console.warn(
+      "[email] Falha ao notificar admins (crédito):",
+      result.message,
+    );
   }
 }
 

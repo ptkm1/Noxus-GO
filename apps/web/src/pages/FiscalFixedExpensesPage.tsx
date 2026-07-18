@@ -6,6 +6,7 @@ import {
 } from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -312,11 +313,10 @@ export function FiscalFixedExpensesPage() {
           </FormField>
           <FormField label="Status" className="sm:col-span-2">
             <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={form.active}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, active: e.target.checked }))
+                onCheckedChange={(v) =>
+                  setForm((f) => ({ ...f, active: v === true }))
                 }
               />
               Despesa ativa

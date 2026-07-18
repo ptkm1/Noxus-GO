@@ -1,14 +1,14 @@
 import type { Role } from "@prisma/client";
 import {
+  defaultPermissionRows,
   EDITABLE_ROLES,
+  getPermission,
+  isPermissionLevel,
+  isPermissionResource,
   LOCKED_ROLES,
   PERMISSION_RESOURCE_LABELS,
   PERMISSION_RESOURCES,
   ROLE_LABELS,
-  defaultPermissionRows,
-  getPermission,
-  isPermissionLevel,
-  isPermissionResource,
   type PermissionLevel,
   type PermissionResource,
 } from "../auth/permissions.js";
@@ -189,7 +189,9 @@ export async function updateOrgRolePermissions(
   }
 
   // Reafirma defaults da coluna ADMIN no banco.
-  const adminDefaults = defaultPermissionRows().filter((r) => r.role === "ADMIN");
+  const adminDefaults = defaultPermissionRows().filter(
+    (r) => r.role === "ADMIN",
+  );
   await prisma.$transaction(
     adminDefaults.map((r) =>
       prisma.organizationRolePermission.upsert({
@@ -257,5 +259,6 @@ export function adminPathToResource(
     return "price_tables";
   if (path.startsWith("/permissions")) return "permissions";
   if (path.startsWith("/audit")) return "audit";
+  if (path.startsWith("/notifications/send")) return "broadcast";
   return null;
 }

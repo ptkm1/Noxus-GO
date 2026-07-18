@@ -1,5 +1,6 @@
 import { SafeScreen, TabBarIcon } from "@/components/layout";
 import { useAuth } from "@/context/AuthContext";
+import type { EventArg, NavigationState } from "@react-navigation/native";
 import { Redirect, Tabs, useRouter } from "expo-router";
 import {
   ClipboardCheck,
@@ -54,6 +55,31 @@ function tabIcon(Icon: typeof ShoppingBag) {
     focused: boolean;
     size: number;
   }) => <TabBarIcon Icon={Icon} color={color} focused={focused} />;
+}
+
+/**
+ * Segundo toque na tab já focada: volta ao ecrã raiz dessa stack
+ * (ex. detalhe de venda → lista de vendas).
+ */
+function tabPressPopToRoot(tabName: string, rootScreen = "index") {
+  return ({
+    navigation,
+    route,
+  }: {
+    navigation: { navigate: (name: string, params?: object) => void };
+    route: { state?: NavigationState; name: string };
+  }) => ({
+    tabPress: (e: EventArg<"tabPress", true, undefined>) => {
+      const nested = route.state;
+      if (nested && typeof nested.index === "number" && nested.index > 0) {
+        e.preventDefault();
+        const root = nested.routes[0];
+        navigation.navigate(tabName, {
+          screen: root?.name ?? rootScreen,
+        });
+      }
+    },
+  });
 }
 
 /** Rotas fora da tab bar — acessíveis pela home, header ou perfil. */
@@ -114,6 +140,7 @@ export default function TabsLayout() {
             tabBarLabel: "Início",
             tabBarIcon: tabIcon(LayoutDashboard),
           }}
+          listeners={tabPressPopToRoot("index")}
         />
         <Tabs.Screen
           name="vendas"
@@ -122,6 +149,7 @@ export default function TabsLayout() {
             tabBarLabel: "Vendas",
             tabBarIcon: tabIcon(ShoppingBag),
           }}
+          listeners={tabPressPopToRoot("vendas")}
         />
         <Tabs.Screen
           name="customers"
@@ -130,6 +158,7 @@ export default function TabsLayout() {
             tabBarLabel: "Clientes",
             tabBarIcon: tabIcon(Users),
           }}
+          listeners={tabPressPopToRoot("customers")}
         />
         <Tabs.Screen
           name="route-plan"
@@ -138,6 +167,7 @@ export default function TabsLayout() {
             tabBarLabel: "Rota",
             tabBarIcon: tabIcon(MapPin),
           }}
+          listeners={tabPressPopToRoot("route-plan")}
         />
 
         <Tabs.Screen name="_route-plan.styles" options={HIDDEN_TAB} />

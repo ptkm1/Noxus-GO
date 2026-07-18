@@ -27,7 +27,10 @@ type ReportTab =
   | "visitas";
 
 function fmtMoney(n: number): string {
-  return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function fmtPct(n: number): string {
@@ -47,7 +50,7 @@ function PeriodBar(props: {
           onClick={() => props.onPreset(p)}
           className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
             props.preset === p
-              ? "bg-primary text-white"
+              ? "bg-primary text-primary-foreground"
               : "border border-border bg-card text-foreground hover:bg-background"
           }`}
         >
@@ -58,14 +61,23 @@ function PeriodBar(props: {
   );
 }
 
-function KpiCards(props: { items: Array<{ label: string; value: string; hint?: string }> }) {
+function KpiCards(props: {
+  items: Array<{ label: string; value: string; hint?: string }>;
+}) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       {props.items.map((k) => (
-        <div key={k.label} className="rounded-xl border border-border bg-card p-4">
+        <div
+          key={k.label}
+          className="rounded-xl border border-border bg-card p-4"
+        >
           <p className="text-sm text-muted-foreground">{k.label}</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{k.value}</p>
-          {k.hint ? <p className="mt-1 text-xs text-muted-foreground">{k.hint}</p> : null}
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+            {k.value}
+          </p>
+          {k.hint ? (
+            <p className="mt-1 text-xs text-muted-foreground">{k.hint}</p>
+          ) : null}
         </div>
       ))}
     </div>
@@ -97,8 +109,18 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
     queryFn: () =>
       apiFetch<{
         totals: { orderCount: number; totalAmount: number; avgTicket: number };
-        bySeller: Array<{ sellerId: string; name: string; orderCount: number; totalAmount: number }>;
-        byTeam: Array<{ teamId: string; teamName: string; orderCount: number; totalAmount: number }>;
+        bySeller: Array<{
+          sellerId: string;
+          name: string;
+          orderCount: number;
+          totalAmount: number;
+        }>;
+        byTeam: Array<{
+          teamId: string;
+          teamName: string;
+          orderCount: number;
+          totalAmount: number;
+        }>;
         daily: Array<{ date: string; orderCount: number; totalAmount: number }>;
       }>(
         `/admin/reports/scorecard?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`,
@@ -152,7 +174,11 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
     queryKey: ["admin", "reports", "commission", commYear, commMonth],
     queryFn: () =>
       apiFetch<{
-        totals: { revenue: number; commission: number; sellersWithSales: number };
+        totals: {
+          revenue: number;
+          commission: number;
+          sellersWithSales: number;
+        };
         bySeller: Array<{
           sellerId: string;
           name: string;
@@ -162,7 +188,9 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
           goalTarget: number | null;
           goalPct: number | null;
         }>;
-      }>(`/admin/reports/commission-statement?year=${commYear}&month=${commMonth}`),
+      }>(
+        `/admin/reports/commission-statement?year=${commYear}&month=${commMonth}`,
+      ),
     enabled: tab === "comissao" && props.showAdminOnly,
     staleTime: 45_000,
   });
@@ -322,7 +350,7 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
             onClick={() => setTab(t.id)}
             className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
               tab === t.id
-                ? "bg-primary text-white"
+                ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
@@ -331,7 +359,10 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
         ))}
       </div>
 
-      {(tab === "comercial" || tab === "margem" || tab === "fiscal" || tab === "visitas") && (
+      {(tab === "comercial" ||
+        tab === "margem" ||
+        tab === "fiscal" ||
+        tab === "visitas") && (
         <PeriodBar preset={preset} onPreset={setPreset} />
       )}
 
@@ -341,7 +372,9 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
           {scorecardQ.isLoading ? (
             <p className="text-muted-foreground">Carregando…</p>
           ) : scorecardQ.error ? (
-            <p className="text-sm text-destructive">{(scorecardQ.error as Error).message}</p>
+            <p className="text-sm text-destructive">
+              {(scorecardQ.error as Error).message}
+            </p>
           ) : scorecardQ.data ? (
             <>
               <KpiCards
@@ -360,13 +393,18 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
                   },
                   {
                     label: "Vendedores com venda",
-                    value: String(scorecardQ.data.bySeller.filter((s) => s.orderCount > 0).length),
+                    value: String(
+                      scorecardQ.data.bySeller.filter((s) => s.orderCount > 0)
+                        .length,
+                    ),
                   },
                 ]}
               />
               <div className="grid gap-6 lg:grid-cols-2">
                 <div className="rounded-xl border border-border bg-card">
-                  <p className="border-b border-border px-4 py-3 text-sm font-medium">Por vendedor</p>
+                  <p className="border-b border-border px-4 py-3 text-sm font-medium">
+                    Por vendedor
+                  </p>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -379,7 +417,9 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
                       {scorecardQ.data.bySeller.slice(0, 15).map((r) => (
                         <TableRow key={r.sellerId}>
                           <TableCell className="px-4 py-2">{r.name}</TableCell>
-                          <TableCell className="px-4 py-2">{r.orderCount}</TableCell>
+                          <TableCell className="px-4 py-2">
+                            {r.orderCount}
+                          </TableCell>
                           <TableCell className="px-4 py-2 tabular-nums">
                             R$ {fmtMoney(r.totalAmount)}
                           </TableCell>
@@ -389,9 +429,13 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
                   </Table>
                 </div>
                 <div className="rounded-xl border border-border bg-card">
-                  <p className="border-b border-border px-4 py-3 text-sm font-medium">Por equipe</p>
+                  <p className="border-b border-border px-4 py-3 text-sm font-medium">
+                    Por equipe
+                  </p>
                   {scorecardQ.data.byTeam.length === 0 ? (
-                    <p className="px-4 py-6 text-sm text-muted-foreground">Nenhuma equipe com vendas.</p>
+                    <p className="px-4 py-6 text-sm text-muted-foreground">
+                      Nenhuma equipe com vendas.
+                    </p>
                   ) : (
                     <Table>
                       <TableHeader>
@@ -404,8 +448,12 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
                       <TableBody>
                         {scorecardQ.data.byTeam.map((r) => (
                           <TableRow key={r.teamId}>
-                            <TableCell className="px-4 py-2">{r.teamName}</TableCell>
-                            <TableCell className="px-4 py-2">{r.orderCount}</TableCell>
+                            <TableCell className="px-4 py-2">
+                              {r.teamName}
+                            </TableCell>
+                            <TableCell className="px-4 py-2">
+                              {r.orderCount}
+                            </TableCell>
                             <TableCell className="px-4 py-2 tabular-nums">
                               R$ {fmtMoney(r.totalAmount)}
                             </TableCell>
@@ -425,7 +473,10 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
                         ...scorecardQ.data!.daily.map((x) => x.totalAmount),
                         1,
                       );
-                      const h = Math.max(4, Math.round((d.totalAmount / max) * 100));
+                      const h = Math.max(
+                        4,
+                        Math.round((d.totalAmount / max) * 100),
+                      );
                       return (
                         <div
                           key={d.date}
@@ -448,9 +499,18 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
           <h2 className="text-lg font-semibold">Margem / contribuição</h2>
           <KpiCards
             items={[
-              { label: "Receita", value: `R$ ${fmtMoney(marginQ.data.totals.revenue)}` },
-              { label: "Custo", value: `R$ ${fmtMoney(marginQ.data.totals.cost)}` },
-              { label: "Margem", value: `R$ ${fmtMoney(marginQ.data.totals.margin)}` },
+              {
+                label: "Receita",
+                value: `R$ ${fmtMoney(marginQ.data.totals.revenue)}`,
+              },
+              {
+                label: "Custo",
+                value: `R$ ${fmtMoney(marginQ.data.totals.cost)}`,
+              },
+              {
+                label: "Margem",
+                value: `R$ ${fmtMoney(marginQ.data.totals.margin)}`,
+              },
               {
                 label: "Margem %",
                 value: fmtPct(marginQ.data.totals.marginPct),
@@ -462,7 +522,9 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
             ]}
           />
           <div className="rounded-xl border border-border bg-card">
-            <p className="border-b border-border px-4 py-3 text-sm font-medium">Por produto (top 50)</p>
+            <p className="border-b border-border px-4 py-3 text-sm font-medium">
+              Por produto (top 50)
+            </p>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -476,9 +538,15 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
                 {marginQ.data.byProduct.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="px-4 py-2">{r.label}</TableCell>
-                    <TableCell className="px-4 py-2 tabular-nums">R$ {fmtMoney(r.revenue)}</TableCell>
-                    <TableCell className="px-4 py-2 tabular-nums">R$ {fmtMoney(r.margin)}</TableCell>
-                    <TableCell className="px-4 py-2 tabular-nums">{fmtPct(r.marginPct)}</TableCell>
+                    <TableCell className="px-4 py-2 tabular-nums">
+                      R$ {fmtMoney(r.revenue)}
+                    </TableCell>
+                    <TableCell className="px-4 py-2 tabular-nums">
+                      R$ {fmtMoney(r.margin)}
+                    </TableCell>
+                    <TableCell className="px-4 py-2 tabular-nums">
+                      {fmtPct(r.marginPct)}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -486,7 +554,9 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-xl border border-border bg-card">
-              <p className="border-b border-border px-4 py-3 text-sm font-medium">Por fornecedor</p>
+              <p className="border-b border-border px-4 py-3 text-sm font-medium">
+                Por fornecedor
+              </p>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -499,15 +569,21 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
                   {marginQ.data.bySupplier.map((r) => (
                     <TableRow key={r.id}>
                       <TableCell className="px-4 py-2">{r.label}</TableCell>
-                      <TableCell className="px-4 py-2 tabular-nums">R$ {fmtMoney(r.margin)}</TableCell>
-                      <TableCell className="px-4 py-2 tabular-nums">{fmtPct(r.marginPct)}</TableCell>
+                      <TableCell className="px-4 py-2 tabular-nums">
+                        R$ {fmtMoney(r.margin)}
+                      </TableCell>
+                      <TableCell className="px-4 py-2 tabular-nums">
+                        {fmtPct(r.marginPct)}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
             <div className="rounded-xl border border-border bg-card">
-              <p className="border-b border-border px-4 py-3 text-sm font-medium">Por vendedor</p>
+              <p className="border-b border-border px-4 py-3 text-sm font-medium">
+                Por vendedor
+              </p>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -520,8 +596,12 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
                   {marginQ.data.bySeller.map((r) => (
                     <TableRow key={r.id}>
                       <TableCell className="px-4 py-2">{r.label}</TableCell>
-                      <TableCell className="px-4 py-2 tabular-nums">R$ {fmtMoney(r.margin)}</TableCell>
-                      <TableCell className="px-4 py-2 tabular-nums">{fmtPct(r.marginPct)}</TableCell>
+                      <TableCell className="px-4 py-2 tabular-nums">
+                        R$ {fmtMoney(r.margin)}
+                      </TableCell>
+                      <TableCell className="px-4 py-2 tabular-nums">
+                        {fmtPct(r.marginPct)}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -530,7 +610,9 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
           </div>
         </section>
       )}
-      {tab === "margem" && marginQ.isLoading && <p className="text-muted-foreground">Carregando…</p>}
+      {tab === "margem" && marginQ.isLoading && (
+        <p className="text-muted-foreground">Carregando…</p>
+      )}
 
       {tab === "comissao" && (
         <section className="space-y-4">
@@ -541,7 +623,9 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
               onValueChange={(v) => setCommMonth(Number(v))}
               options={Array.from({ length: 12 }, (_, i) => ({
                 value: String(i + 1),
-                label: new Date(2000, i, 1).toLocaleString("pt-BR", { month: "long" }),
+                label: new Date(2000, i, 1).toLocaleString("pt-BR", {
+                  month: "long",
+                }),
               }))}
             />
             <AppSelect
@@ -588,7 +672,9 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
                     {commissionQ.data.bySeller.map((r) => (
                       <TableRow key={r.sellerId}>
                         <TableCell className="px-4 py-2">{r.name}</TableCell>
-                        <TableCell className="px-4 py-2">{r.orderCount}</TableCell>
+                        <TableCell className="px-4 py-2">
+                          {r.orderCount}
+                        </TableCell>
                         <TableCell className="px-4 py-2 tabular-nums">
                           R$ {fmtMoney(r.revenue)}
                         </TableCell>
@@ -614,14 +700,23 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
         <section className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-semibold">Saúde de estoque</h2>
-            <Link to="/estoque" className="text-sm text-primary hover:underline">
+            <Link
+              to="/estoque"
+              className="text-sm text-primary hover:underline"
+            >
               Abrir módulo Estoque
             </Link>
           </div>
           <KpiCards
             items={[
-              { label: "Abaixo do mínimo", value: String(stockQ.data.totals.belowMinCount) },
-              { label: "Acima do máximo", value: String(stockQ.data.totals.aboveMaxCount) },
+              {
+                label: "Abaixo do mínimo",
+                value: String(stockQ.data.totals.belowMinCount),
+              },
+              {
+                label: "Acima do máximo",
+                value: String(stockQ.data.totals.aboveMaxCount),
+              },
               {
                 label: "Parados c/ saldo",
                 value: String(stockQ.data.totals.stagnantWithStockCount),
@@ -634,9 +729,13 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
             ]}
           />
           <div className="rounded-xl border border-border bg-card">
-            <p className="border-b border-border px-4 py-3 text-sm font-medium">Abaixo do mínimo</p>
+            <p className="border-b border-border px-4 py-3 text-sm font-medium">
+              Abaixo do mínimo
+            </p>
             {stockQ.data.belowMin.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-muted-foreground">Nenhum produto abaixo do mínimo.</p>
+              <p className="px-4 py-6 text-sm text-muted-foreground">
+                Nenhum produto abaixo do mínimo.
+              </p>
             ) : (
               <Table>
                 <TableHeader>
@@ -652,8 +751,12 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
                     <TableRow key={r.productId}>
                       <TableCell className="px-4 py-2">{r.name}</TableCell>
                       <TableCell className="px-4 py-2">{r.quantity}</TableCell>
-                      <TableCell className="px-4 py-2">{r.minStockQty}</TableCell>
-                      <TableCell className="px-4 py-2 text-destructive">{r.deficit}</TableCell>
+                      <TableCell className="px-4 py-2">
+                        {r.minStockQty}
+                      </TableCell>
+                      <TableCell className="px-4 py-2 text-destructive">
+                        {r.deficit}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -691,7 +794,9 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
           </div>
         </section>
       )}
-      {tab === "estoque" && stockQ.isLoading && <p className="text-muted-foreground">Carregando…</p>}
+      {tab === "estoque" && stockQ.isLoading && (
+        <p className="text-muted-foreground">Carregando…</p>
+      )}
 
       {tab === "credito" && creditQ.data && (
         <section className="space-y-4">
@@ -735,29 +840,46 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
                 {creditQ.data.customers.slice(0, 50).map((c) => (
                   <TableRow key={c.customerId}>
                     <TableCell className="px-4 py-2">
-                      <Link to={`/clientes`} className="font-medium text-primary hover:underline">
+                      <Link
+                        to={`/clientes`}
+                        className="font-medium text-primary hover:underline"
+                      >
                         {c.name}
                       </Link>
                       {c.creditBlocked ? (
-                        <span className="ml-2 text-xs text-destructive">Bloqueado</span>
+                        <span className="ml-2 text-xs text-destructive">
+                          Bloqueado
+                        </span>
                       ) : null}
                       {c.overLimit ? (
-                        <span className="ml-2 text-xs text-amber-700">Sobre limite</span>
+                        <span className="ml-2 text-xs text-amber-700">
+                          Sobre limite
+                        </span>
                       ) : null}
                     </TableCell>
                     <TableCell className="px-4 py-2 tabular-nums">
                       R$ {fmtMoney(c.openBalance)}
                     </TableCell>
                     <TableCell className="px-4 py-2">
-                      {c.limitUtilizationPct != null ? fmtPct(c.limitUtilizationPct) : "—"}
+                      {c.limitUtilizationPct != null
+                        ? fmtPct(c.limitUtilizationPct)
+                        : "—"}
                     </TableCell>
                     <TableCell className="px-4 py-2 tabular-nums">
                       {fmtMoney(c.buckets.current)}
                     </TableCell>
-                    <TableCell className="px-4 py-2 tabular-nums">{fmtMoney(c.buckets.d1_30)}</TableCell>
-                    <TableCell className="px-4 py-2 tabular-nums">{fmtMoney(c.buckets.d31_60)}</TableCell>
-                    <TableCell className="px-4 py-2 tabular-nums">{fmtMoney(c.buckets.d61_90)}</TableCell>
-                    <TableCell className="px-4 py-2 tabular-nums">{fmtMoney(c.buckets.d90_plus)}</TableCell>
+                    <TableCell className="px-4 py-2 tabular-nums">
+                      {fmtMoney(c.buckets.d1_30)}
+                    </TableCell>
+                    <TableCell className="px-4 py-2 tabular-nums">
+                      {fmtMoney(c.buckets.d31_60)}
+                    </TableCell>
+                    <TableCell className="px-4 py-2 tabular-nums">
+                      {fmtMoney(c.buckets.d61_90)}
+                    </TableCell>
+                    <TableCell className="px-4 py-2 tabular-nums">
+                      {fmtMoney(c.buckets.d90_plus)}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -765,13 +887,18 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
           </div>
         </section>
       )}
-      {tab === "credito" && creditQ.isLoading && <p className="text-muted-foreground">Carregando…</p>}
+      {tab === "credito" && creditQ.isLoading && (
+        <p className="text-muted-foreground">Carregando…</p>
+      )}
 
       {tab === "fiscal" && fiscalQ.data && (
         <section className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-semibold">Conciliação NF-e × vendas</h2>
-            <Link to="/faturamento" className="text-sm text-primary hover:underline">
+            <Link
+              to="/faturamento"
+              className="text-sm text-primary hover:underline"
+            >
               Ir para Faturamento
             </Link>
           </div>
@@ -802,7 +929,9 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
               Pedidos sem NF-e autorizada
             </p>
             {fiscalQ.data.ordersWithoutNfe.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-muted-foreground">Todos os pedidos do período têm NF-e.</p>
+              <p className="px-4 py-6 text-sm text-muted-foreground">
+                Todos os pedidos do período têm NF-e.
+              </p>
             ) : (
               <Table>
                 <TableHeader>
@@ -819,8 +948,12 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
                       <TableCell className="px-4 py-2 whitespace-nowrap">
                         {new Date(o.createdAt).toLocaleString("pt-BR")}
                       </TableCell>
-                      <TableCell className="px-4 py-2">{o.customerName}</TableCell>
-                      <TableCell className="px-4 py-2">{o.sellerName}</TableCell>
+                      <TableCell className="px-4 py-2">
+                        {o.customerName}
+                      </TableCell>
+                      <TableCell className="px-4 py-2">
+                        {o.sellerName}
+                      </TableCell>
                       <TableCell className="px-4 py-2 tabular-nums">
                         R$ {fmtMoney(o.totalAmount)}
                       </TableCell>
@@ -832,7 +965,9 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
           </div>
         </section>
       )}
-      {tab === "fiscal" && fiscalQ.isLoading && <p className="text-muted-foreground">Carregando…</p>}
+      {tab === "fiscal" && fiscalQ.isLoading && (
+        <p className="text-muted-foreground">Carregando…</p>
+      )}
 
       {tab === "visitas" && visitsQ.data && (
         <section className="space-y-4">
@@ -861,7 +996,9 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
             ]}
           />
           <div className="rounded-xl border border-border bg-card">
-            <p className="border-b border-border px-4 py-3 text-sm font-medium">Por vendedor</p>
+            <p className="border-b border-border px-4 py-3 text-sm font-medium">
+              Por vendedor
+            </p>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -878,8 +1015,12 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
                     <TableCell className="px-4 py-2">{r.name}</TableCell>
                     <TableCell className="px-4 py-2">{r.visits}</TableCell>
                     <TableCell className="px-4 py-2">{r.converted}</TableCell>
-                    <TableCell className="px-4 py-2">{fmtPct(r.conversionRate)}</TableCell>
-                    <TableCell className="px-4 py-2 tabular-nums">R$ {fmtMoney(r.revenue)}</TableCell>
+                    <TableCell className="px-4 py-2">
+                      {fmtPct(r.conversionRate)}
+                    </TableCell>
+                    <TableCell className="px-4 py-2 tabular-nums">
+                      R$ {fmtMoney(r.revenue)}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -887,7 +1028,9 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
           </div>
         </section>
       )}
-      {tab === "visitas" && visitsQ.isLoading && <p className="text-muted-foreground">Carregando…</p>}
+      {tab === "visitas" && visitsQ.isLoading && (
+        <p className="text-muted-foreground">Carregando…</p>
+      )}
     </div>
   );
 }

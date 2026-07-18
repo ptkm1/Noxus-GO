@@ -1,6 +1,6 @@
 import { useAuth } from "@/auth/AuthContext";
-import { AppSelect } from "@/components/ui/app-select";
 import { ManagementReportsPanel } from "@/components/ManagementReportsPanel";
+import { AppSelect } from "@/components/ui/app-select";
 import {
   Table,
   TableBody,
@@ -77,7 +77,10 @@ export function ReportsPage() {
       if (from) q.set("from", new Date(from).toISOString());
       if (to) q.set("to", new Date(to).toISOString());
       if (sellerId) q.set("sellerId", sellerId);
-      await downloadPdf(`/admin/reports/sales.pdf?${q.toString()}`, "relatorio-vendas.pdf");
+      await downloadPdf(
+        `/admin/reports/sales.pdf?${q.toString()}`,
+        "relatorio-vendas.pdf",
+      );
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Erro ao exportar");
     } finally {
@@ -91,7 +94,9 @@ export function ReportsPage() {
     return (
       <div className="space-y-10">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Relatórios da equipe</h1>
+          <h1 className="text-2xl font-semibold text-foreground">
+            Relatórios da equipe
+          </h1>
           <p className="mt-2 max-w-2xl text-muted-foreground">
             Scorecard, visitas e resumo de vendas confirmadas da sua equipe
             {user?.teamName ? ` (${user.teamName})` : ""}.
@@ -106,7 +111,9 @@ export function ReportsPage() {
 
         <div className="max-w-xl space-y-4 rounded-xl border border-border bg-card p-6">
           <div>
-            <label className="block text-sm font-medium text-foreground">De</label>
+            <label className="block text-sm font-medium text-foreground">
+              De
+            </label>
             <input
               type="datetime-local"
               className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -115,7 +122,9 @@ export function ReportsPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-foreground">Até</label>
+            <label className="block text-sm font-medium text-foreground">
+              Até
+            </label>
             <input
               type="datetime-local"
               className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -143,7 +152,9 @@ export function ReportsPage() {
           <>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="rounded-xl border border-border bg-card p-4">
-                <p className="text-sm text-muted-foreground">Pedidos confirmados</p>
+                <p className="text-sm text-muted-foreground">
+                  Pedidos confirmados
+                </p>
                 <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
                   {teamSummary.totals.orderCount}
                 </p>
@@ -156,7 +167,9 @@ export function ReportsPage() {
               </div>
             </div>
             <div className="rounded-xl border border-border bg-card">
-              <p className="border-b border-border px-4 py-3 text-sm font-medium">Por vendedor</p>
+              <p className="border-b border-border px-4 py-3 text-sm font-medium">
+                Por vendedor
+              </p>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -169,7 +182,9 @@ export function ReportsPage() {
                   {teamSummary.bySeller.map((s) => (
                     <TableRow key={s.sellerId}>
                       <TableCell className="px-4 py-3">{s.name}</TableCell>
-                      <TableCell className="px-4 py-3">{s.orderCount}</TableCell>
+                      <TableCell className="px-4 py-3">
+                        {s.orderCount}
+                      </TableCell>
                       <TableCell className="px-4 py-3 tabular-nums">
                         R$ {fmtMoney(s.totalAmount)}
                       </TableCell>
@@ -194,8 +209,12 @@ export function ReportsPage() {
                   <TableBody>
                     {teamSummary.topProducts.map((p) => (
                       <TableRow key={p.productId}>
-                        <TableCell className="px-4 py-3">{p.productName}</TableCell>
-                        <TableCell className="px-4 py-3">{p.quantity}</TableCell>
+                        <TableCell className="px-4 py-3">
+                          {p.productName}
+                        </TableCell>
+                        <TableCell className="px-4 py-3">
+                          {p.quantity}
+                        </TableCell>
                         <TableCell className="px-4 py-3 tabular-nums">
                           R$ {fmtMoney(p.totalAmount)}
                         </TableCell>
@@ -217,7 +236,8 @@ export function ReportsPage() {
         <h1 className="text-2xl font-semibold text-foreground">Relatórios</h1>
         <p className="mt-2 max-w-2xl text-muted-foreground">
           Relatórios gerenciais de vendas, margem, comissão, estoque, crédito,
-          fiscal e visitas. Para indicadores do dia a dia, use a aba Indicadores.
+          fiscal e visitas. Para indicadores do dia a dia, use a aba
+          Indicadores.
         </p>
       </div>
 
@@ -225,7 +245,9 @@ export function ReportsPage() {
 
       <section className="space-y-4 border-t border-border pt-10">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">Exportar vendas em PDF</h2>
+          <h2 className="text-lg font-semibold text-foreground">
+            Exportar vendas em PDF
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Opcional — escolha período e vendedor só quando precisar do arquivo.
           </p>
@@ -233,7 +255,9 @@ export function ReportsPage() {
 
         <div className="max-w-xl space-y-4 rounded-xl border border-border bg-card p-6">
           <div>
-            <label className="block text-sm font-medium text-foreground">De</label>
+            <label className="block text-sm font-medium text-foreground">
+              De
+            </label>
             <input
               type="datetime-local"
               className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -242,7 +266,9 @@ export function ReportsPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-foreground">Até</label>
+            <label className="block text-sm font-medium text-foreground">
+              Até
+            </label>
             <input
               type="datetime-local"
               className="mt-1 w-full rounded border px-3 py-2 text-sm"
@@ -251,7 +277,9 @@ export function ReportsPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-foreground">Vendedor</label>
+            <label className="block text-sm font-medium text-foreground">
+              Vendedor
+            </label>
             <AppSelect
               className="mt-1"
               value={sellerId}
@@ -267,7 +295,7 @@ export function ReportsPage() {
           {err && <p className="text-sm text-destructive">{err}</p>}
           <button
             type="button"
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             onClick={() => void exportPdf()}
             disabled={pending}
           >

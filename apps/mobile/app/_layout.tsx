@@ -4,11 +4,12 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { DevToolsBootstrap } from "../components/DevToolsBootstrap";
 import { OfflineSyncBootstrap } from "../components/OfflineSyncBootstrap";
+import { PushBootstrap } from "../components/PushBootstrap";
+import { SellerCacheBootstrap } from "../components/SellerCacheBootstrap";
 import { SellerLocationReporter } from "../components/SellerLocationReporter";
 import { AuthProvider } from "../context/AuthContext";
 import { ToastProvider } from "../context/ToastContext";
 import { ThemeProvider, useTheme } from "../lib/theme";
-import { PushBootstrap } from "../components/PushBootstrap";
 
 const qc = new QueryClient();
 
@@ -57,6 +58,7 @@ export default function RootLayout() {
               <AuthProvider>
                 <PushBootstrap />
                 <OfflineSyncBootstrap />
+                <SellerCacheBootstrap />
                 <SellerLocationReporter />
                 <RootStack />
               </AuthProvider>

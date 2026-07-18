@@ -1,5 +1,5 @@
-export const APP_BRAND_NAME = "commerce pro mobile";
-export const APP_BRAND_SHORT = "commerce pro";
+export const APP_BRAND_NAME = "CommercePro";
+export const APP_BRAND_SHORT = "CommercePro";
 export const APP_BRAND_LILAC = "#8A3FFC";
 
 /** Path do ícone exportado do Figma (viewBox 0 0 133 121). */

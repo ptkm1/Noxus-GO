@@ -1,3 +1,4 @@
+import { useConfirm } from "@/components/confirm";
 import {
   FormField,
   FormGrid,
@@ -5,9 +6,9 @@ import {
   FormSheet,
   FormSheetActions,
 } from "@/components/forms";
-import { useConfirm } from "@/components/confirm";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -362,11 +363,9 @@ export function CustomersPage() {
               className="flex flex-row items-center gap-2 sm:col-span-2"
             >
               <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                <input
-                  type="checkbox"
-                  className="size-4 rounded border-border"
+                <Checkbox
                   checked={creditBlockedEdit}
-                  onChange={(e) => setCreditBlockedEdit(e.target.checked)}
+                  onCheckedChange={(v) => setCreditBlockedEdit(v === true)}
                 />
                 Cliente bloqueado para vendas
               </label>

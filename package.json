@@ -24,7 +24,8 @@
     "db:seed:sales-chart": "dotenv -e apps/api/.env -- tsx apps/api/prisma/seed-sales-chart-demo.ts",
     "predb:seed": "pnpm db:generate",
     "db:generate": "dotenv -e apps/api/.env -- prisma generate --config apps/api/prisma.config.ts",
-    "db:studio": "dotenv -e apps/api/.env -- prisma studio --config apps/api/prisma.config.ts"
+    "db:studio": "dotenv -e apps/api/.env -- prisma studio --config apps/api/prisma.config.ts",
+    "smoke:push": "dotenv -e apps/api/.env -- pnpm --filter @pedidos/api smoke:push"
   },
   "engines": {
     "node": ">=20.19.0 <21.0.0-0 || >=22.12.0"

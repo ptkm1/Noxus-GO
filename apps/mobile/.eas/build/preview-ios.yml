@@ -1,5 +1,5 @@
 build:
-  name: Pedidos preview iOS
+  name: CommercePro preview iOS
   steps:
     - eas/checkout
     - eas/use_npm_token

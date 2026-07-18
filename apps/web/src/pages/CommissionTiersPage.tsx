@@ -1,6 +1,3 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { useConfirm } from "@/components/confirm";
 import {
   FilterBar,
@@ -11,6 +8,7 @@ import {
 } from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -20,6 +18,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiFetch } from "../lib/api";
 
 function num(v: unknown): number {
@@ -57,19 +58,24 @@ export function CommissionTiersPage() {
     queryFn: () => apiFetch<Seller[]>("/admin/sellers"),
   });
 
-  const activeSellers = useMemo(() => sellers.filter((s) => s.active), [sellers]);
+  const activeSellers = useMemo(
+    () => sellers.filter((s) => s.active),
+    [sellers],
+  );
 
   const [tierScope, setTierScope] = useState<string>("all");
 
   const { data: tiersRaw = [], isLoading: tiersLoading } = useQuery({
     queryKey: ["admin", "commission-progressive-tiers"],
-    queryFn: () => apiFetch<ProgressiveTierRow[]>("/admin/commission-progressive-tiers"),
+    queryFn: () =>
+      apiFetch<ProgressiveTierRow[]>("/admin/commission-progressive-tiers"),
   });
 
   const tiers = useMemo(() => {
     let rows = tiersRaw;
     if (tierScope === "global") rows = rows.filter((t) => t.sellerId == null);
-    else if (tierScope !== "all") rows = rows.filter((t) => t.sellerId === tierScope);
+    else if (tierScope !== "all")
+      rows = rows.filter((t) => t.sellerId === tierScope);
     return [...rows].sort((a, b) => {
       const ak = a.sellerId ?? "";
       const bk = b.sellerId ?? "";
@@ -119,7 +125,9 @@ export function CommissionTiersPage() {
         }),
       }),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["admin", "commission-progressive-tiers"] });
+      void qc.invalidateQueries({
+        queryKey: ["admin", "commission-progressive-tiers"],
+      });
       closeTierSheet();
     },
   });
@@ -140,13 +148,21 @@ export function CommissionTiersPage() {
         body: JSON.stringify(rest),
       });
     },
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "commission-progressive-tiers"] }),
+    onSuccess: () =>
+      void qc.invalidateQueries({
+        queryKey: ["admin", "commission-progressive-tiers"],
+      }),
   });
 
   const deleteTier = useMutation({
     mutationFn: (id: string) =>
-      apiFetch(`/admin/commission-progressive-tiers/${id}`, { method: "DELETE" }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "commission-progressive-tiers"] }),
+      apiFetch(`/admin/commission-progressive-tiers/${id}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () =>
+      void qc.invalidateQueries({
+        queryKey: ["admin", "commission-progressive-tiers"],
+      }),
   });
 
   const loading = sellersLoading || tiersLoading;
@@ -262,7 +278,11 @@ export function CommissionTiersPage() {
               onChange={(e) => setNtPriority(e.target.value)}
             />
           </FormField>
-          <FormField label="Rótulo (opcional)" htmlFor="nt-label" className="sm:col-span-2">
+          <FormField
+            label="Rótulo (opcional)"
+            htmlFor="nt-label"
+            className="sm:col-span-2"
+          >
             <Input
               id="nt-label"
               placeholder="ex: Superação"
@@ -272,7 +292,9 @@ export function CommissionTiersPage() {
           </FormField>
         </FormGrid>
         {createTier.error ? (
-          <p className="mt-3 text-sm text-destructive">{(createTier.error as Error).message}</p>
+          <p className="mt-3 text-sm text-destructive">
+            {(createTier.error as Error).message}
+          </p>
         ) : null}
       </FormSheet>
 
@@ -295,7 +317,10 @@ export function CommissionTiersPage() {
             <TableBody>
               {tiers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={7}
+                    className="px-4 py-8 text-center text-muted-foreground"
+                  >
                     Nenhuma faixa neste filtro.
                   </TableCell>
                 </TableRow>
@@ -314,7 +339,10 @@ export function CommissionTiersPage() {
                           label: s.user.name,
                         }))}
                         onValueChange={(v) => {
-                          patchTier.mutate({ id: t.id, sellerId: v === "" ? null : v });
+                          patchTier.mutate({
+                            id: t.id,
+                            sellerId: v === "" ? null : v,
+                          });
                         }}
                       />
                     </TableCell>
@@ -328,7 +356,10 @@ export function CommissionTiersPage() {
                         key={`${t.id}-thr-${t.thresholdAmount}`}
                         onBlur={(e) => {
                           const v = Number(e.target.value);
-                          if (!Number.isNaN(v) && v !== num(t.thresholdAmount)) {
+                          if (
+                            !Number.isNaN(v) &&
+                            v !== num(t.thresholdAmount)
+                          ) {
                             patchTier.mutate({ id: t.id, thresholdAmount: v });
                           }
                         }}
@@ -345,8 +376,14 @@ export function CommissionTiersPage() {
                         key={`${t.id}-pct-${t.commissionPercent}`}
                         onBlur={(e) => {
                           const v = Number(e.target.value);
-                          if (!Number.isNaN(v) && v !== num(t.commissionPercent)) {
-                            patchTier.mutate({ id: t.id, commissionPercent: v });
+                          if (
+                            !Number.isNaN(v) &&
+                            v !== num(t.commissionPercent)
+                          ) {
+                            patchTier.mutate({
+                              id: t.id,
+                              commissionPercent: v,
+                            });
                           }
                         }}
                       />
@@ -359,7 +396,11 @@ export function CommissionTiersPage() {
                         key={`${t.id}-pri-${t.priority}`}
                         onBlur={(e) => {
                           const v = Number(e.target.value);
-                          if (!Number.isNaN(v) && Number.isInteger(v) && v !== t.priority) {
+                          if (
+                            !Number.isNaN(v) &&
+                            Number.isInteger(v) &&
+                            v !== t.priority
+                          ) {
                             patchTier.mutate({ id: t.id, priority: v });
                           }
                         }}
@@ -374,16 +415,18 @@ export function CommissionTiersPage() {
                           const raw = e.target.value.trim();
                           const next = raw === "" ? null : raw;
                           const prev = t.label ?? null;
-                          if (next !== prev) patchTier.mutate({ id: t.id, label: next });
+                          if (next !== prev)
+                            patchTier.mutate({ id: t.id, label: next });
                         }}
                       />
                     </TableCell>
                     <TableCell className="px-4 py-3">
-                      <input
-                        type="checkbox"
-                        defaultChecked={t.active}
-                        key={`${t.id}-act-${t.active}`}
-                        onChange={(e) => patchTier.mutate({ id: t.id, active: e.target.checked })}
+                      <Checkbox
+                        checked={t.active}
+                        onCheckedChange={(v) =>
+                          patchTier.mutate({ id: t.id, active: v === true })
+                        }
+                        aria-label={`Faixa ativa ${t.id}`}
                       />
                     </TableCell>
                     <TableCell className="px-4 py-3 text-right">

@@ -1,9 +1,9 @@
 import { useAuth } from "@/context/AuthContext";
 import { useAppToast } from "@/context/ToastContext";
 import {
+  clearLocalPushRegistration,
   hrefFromNotificationData,
   registerForPushNotifications,
-  unregisterPushToken,
 } from "@/lib/push";
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
@@ -12,6 +12,7 @@ import { AppState } from "react-native";
 
 /**
  * Regista Expo Push Token após login e trata taps / foreground.
+ * O unregister no servidor fica no logout (antes de limpar tokens).
  */
 export function PushBootstrap() {
   const { user } = useAuth();
@@ -21,9 +22,8 @@ export function PushBootstrap() {
 
   useEffect(() => {
     if (!user) {
-      const prev = tokenRef.current;
       tokenRef.current = null;
-      if (prev) void unregisterPushToken(prev);
+      clearLocalPushRegistration();
       return;
     }
 
@@ -31,7 +31,16 @@ export function PushBootstrap() {
     void (async () => {
       try {
         const token = await registerForPushNotifications();
-        if (!cancelled) tokenRef.current = token;
+        if (!cancelled) {
+          tokenRef.current = token;
+          if (__DEV__ && token) {
+            console.log(`[push] Expo token registado: ${token.slice(0, 28)}…`);
+          } else if (__DEV__ && !token) {
+            console.warn(
+              "[push] Sem token (permissão negada, simulador ou falha FCM/EAS).",
+            );
+          }
+        }
       } catch (e) {
         console.warn("[push] register failed:", e);
       }

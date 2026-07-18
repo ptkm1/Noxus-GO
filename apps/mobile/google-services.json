@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "566639633660",
+    "project_id": "commercepro-6408e",
+    "storage_bucket": "commercepro-6408e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:566639633660:android:3618ebcbfcc475c5632379",
+        "android_client_info": {
+          "package_name": "com.commercepro.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDFH-8wRMXCf1UC9kBtrr-C-0WUTc62H6s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

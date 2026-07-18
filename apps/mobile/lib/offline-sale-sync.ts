@@ -4,21 +4,28 @@ import {
   claimRowsForSync,
   markOfflineSaleDead,
   markOfflineSaleSent,
+  prepareQueuedSalesForImmediateSync,
   releaseStaleSyncingClaims,
   rescheduleOfflineSaleRetry,
   resetOfflineSaleToQueued,
 } from "./offline-outbox";
+import { notifyOfflineOutboxChanged } from "./offline-outbox-events";
+import { markCacheSynced } from "./offline-read-cache";
 
 function backoffMs(attempt: number): number {
   const base = 4000 * Math.pow(2, Math.min(attempt, 8));
   return Math.min(300_000, base + Math.floor(Math.random() * 1200));
 }
 
-function extractApiError(body: unknown): string {
+function extractApiError(body: unknown, status: number): string {
   if (body && typeof body === "object") {
     const e = (body as { error?: unknown }).error;
-    if (typeof e === "string") return e;
+    if (typeof e === "string" && e.trim()) return e;
   }
+  if (status === 502 || status === 503 || status === 504) {
+    return "Proxy/tunnel indisponível. Confirma se a API e o tunnel (loca.lt/ngrok) estão ativos e tenta de novo.";
+  }
+  if (status >= 500) return "Erro temporário no servidor";
   return "Erro ao sincronizar";
 }
 
@@ -28,14 +35,23 @@ export type SalePostResult =
   | { kind: "dead"; reason: string }
   | { kind: "auth"; reason: string };
 
-export async function postSellerSale(payload: Record<string, unknown>): Promise<SalePostResult> {
+export async function postSellerSale(
+  payload: Record<string, unknown>,
+): Promise<SalePostResult> {
   const token = await getAccessToken();
-  if (!token) return { kind: "auth", reason: "Sessão expirada — entre de novo para sincronizar." };
+  if (!token)
+    return {
+      kind: "auth",
+      reason: "Sessão expirada — entre de novo para sincronizar.",
+    };
 
   let res: Response;
   try {
     const url = apiUrl("/seller/sales");
-    const h = new Headers({ "Content-Type": "application/json", Authorization: `Bearer ${token}` });
+    const h = new Headers({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    });
     if (/ngrok(-free)?\.app/i.test(url)) {
       h.set("ngrok-skip-browser-warning", "true");
     }
@@ -49,45 +65,62 @@ export async function postSellerSale(payload: Record<string, unknown>): Promise<
     return { kind: "retry", reason: msg || "Sem rede" };
   }
 
-  const body = await res.json().catch(() => ({}));
+  const rawText = await res.text().catch(() => "");
+  let body: unknown = {};
+  if (rawText) {
+    try {
+      body = JSON.parse(rawText);
+    } catch {
+      body = {};
+    }
+  }
 
   if (res.ok) {
     const id =
-      body && typeof body === "object" && typeof (body as { id?: unknown }).id === "string"
+      body &&
+      typeof body === "object" &&
+      typeof (body as { id?: unknown }).id === "string"
         ? (body as { id: string }).id
         : "";
     const status =
-      body && typeof body === "object" && typeof (body as { status?: unknown }).status === "string"
+      body &&
+      typeof body === "object" &&
+      typeof (body as { status?: unknown }).status === "string"
         ? (body as { status: string }).status
         : undefined;
     if (!id) return { kind: "retry", reason: "Resposta sem id do pedido" };
     return { kind: "success", orderId: id, status };
   }
 
+  const reason = extractApiError(body, res.status);
+
   if (res.status === 401) {
-    return { kind: "auth", reason: extractApiError(body) };
+    return { kind: "auth", reason };
   }
 
   if (res.status === 403) {
-    return { kind: "dead", reason: extractApiError(body) };
+    return { kind: "dead", reason };
   }
 
   if (res.status === 400 || res.status === 404 || res.status === 422) {
-    return { kind: "dead", reason: extractApiError(body) };
+    return { kind: "dead", reason };
   }
 
   if (res.status >= 500 || res.status === 408 || res.status === 429) {
-    return { kind: "retry", reason: `${res.status}: ${extractApiError(body)}` };
+    return { kind: "retry", reason: `${res.status}: ${reason}` };
   }
 
-  return { kind: "retry", reason: `${res.status}: ${extractApiError(body)}` };
+  return { kind: "retry", reason: `${res.status}: ${reason}` };
 }
 
 const MAX_TRANSIENT_ATTEMPTS = 14;
 
 let syncRunning = false;
 
-export async function flushOfflineSaleOutbox(qc?: QueryClient): Promise<{ processed: number }> {
+export async function flushOfflineSaleOutbox(
+  qc?: QueryClient,
+  opts?: { forceImmediate?: boolean },
+): Promise<{ processed: number }> {
   if (syncRunning) return { processed: 0 };
   const token = await getAccessToken();
   if (!token) return { processed: 0 };
@@ -96,6 +129,9 @@ export async function flushOfflineSaleOutbox(qc?: QueryClient): Promise<{ proces
   try {
     try {
       await releaseStaleSyncingClaims();
+      if (opts?.forceImmediate) {
+        await prepareQueuedSalesForImmediateSync();
+      }
     } catch {
       return { processed: 0 };
     }
@@ -126,16 +162,30 @@ export async function flushOfflineSaleOutbox(qc?: QueryClient): Promise<{ proces
       }
       const nextAttempts = row.attempts + 1;
       if (nextAttempts >= MAX_TRANSIENT_ATTEMPTS) {
-        await markOfflineSaleDead(row.localId, `Sem rede após ${nextAttempts} tentativas: ${result.reason}`);
+        await markOfflineSaleDead(
+          row.localId,
+          `Sem rede após ${nextAttempts} tentativas: ${result.reason}`,
+        );
       } else {
-        await rescheduleOfflineSaleRetry(row.localId, nextAttempts, Date.now() + backoffMs(nextAttempts), result.reason);
+        await rescheduleOfflineSaleRetry(
+          row.localId,
+          nextAttempts,
+          Date.now() + backoffMs(nextAttempts),
+          result.reason,
+        );
       }
       processed += 1;
     }
-    if (qc && processed > 0) {
-      void qc.invalidateQueries({ queryKey: ["seller", "sales"] });
-      void qc.invalidateQueries({ queryKey: ["seller", "commission-dashboard"] });
-      void qc.invalidateQueries({ queryKey: ["seller", "customer-credit"] });
+    if (processed > 0) {
+      await markCacheSynced(processed).catch(() => undefined);
+      notifyOfflineOutboxChanged();
+      if (qc) {
+        void qc.invalidateQueries({ queryKey: ["seller", "sales"] });
+        void qc.invalidateQueries({
+          queryKey: ["seller", "commission-dashboard"],
+        });
+        void qc.invalidateQueries({ queryKey: ["seller", "customer-credit"] });
+      }
     }
     return { processed };
   } finally {

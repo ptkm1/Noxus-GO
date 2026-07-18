@@ -1,9 +1,9 @@
 import { apiFetch } from "@/lib/api";
-import type {
-  CnpjCompanyData,
-  CustomerFormValues,
-  CustomerRecord,
-} from "@pedidos/shared";
+import {
+  fetchSellerCustomer,
+  sellerOfflineStaleTime,
+} from "@/lib/seller-offline-queries";
+import type { CnpjCompanyData, CustomerFormValues } from "@pedidos/shared";
 import {
   cepDigitsOnly,
   cnpjDigitsOnly,
@@ -37,7 +37,8 @@ export function useCustomerForm(customerId?: string) {
 
   const { data: initial, isLoading } = useQuery({
     queryKey: ["seller", "customer", customerId],
-    queryFn: () => apiFetch<CustomerRecord>(`/seller/customers/${customerId}`),
+    staleTime: sellerOfflineStaleTime,
+    queryFn: () => fetchSellerCustomer(customerId!),
     enabled: !!customerId,
   });
 

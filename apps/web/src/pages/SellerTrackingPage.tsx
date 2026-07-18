@@ -1,3 +1,4 @@
+import { Checkbox } from "@/components/ui/checkbox";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -283,10 +284,9 @@ export function SellerTrackingPage() {
 
               <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-3">
                 <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={showTrail}
-                    onChange={(e) => setShowTrail(e.target.checked)}
+                    onCheckedChange={(v) => setShowTrail(v === true)}
                   />
                   Mostrar trajeto
                 </label>

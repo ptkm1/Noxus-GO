@@ -75,7 +75,7 @@ import {
   buildStockHealthReport,
   buildVisitEffectiveness,
 } from "../services/management-reports.js";
-import { getWebPushPublicKey } from "../services/notify.js";
+import { getWebPushPublicKey, notifyUsers } from "../services/notify.js";
 import { sendOrderPdfReply } from "../services/order-pdf-load.js";
 import {
   computeSaleOrder,
@@ -110,6 +110,7 @@ import {
   adminPathToResource,
   buildEffectivePermissionsMatrix,
   canReadEffective,
+  canWriteEffective,
   updateOrgRolePermissions,
 } from "../services/role-permissions.js";
 import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
@@ -143,8 +144,6 @@ import {
 import { buildTeamSalesSummary } from "../services/team-sales-summary.js";
 import { decToNum } from "../util/money.js";
 import { fiscalRoutes } from "./fiscal.js";
-import { stockRoutes } from "./stock.js";
-
 const idParam = z.object({ id: z.string().min(1) });
 
 const sellerCommissionTypeSchema = z.enum([
@@ -3073,6 +3072,63 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true };
   });
 
+  /** Envia notificação in-app + push para vendedores selecionados (ADMIN/MANAGER). */
+  app.post("/notifications/send", async (req, reply) => {
+    const auth = req.auth!;
+    if (
+      !(await canWriteEffective(auth.organizationId, auth.role, "broadcast"))
+    ) {
+      return reply
+        .status(403)
+        .send({ error: "Sem permissão para notificar vendedores" });
+    }
+    const body = z
+      .object({
+        sellerIds: z.array(z.string().min(1)).min(1).max(200),
+        title: z.string().trim().min(1).max(120),
+        body: z.string().trim().min(1).max(2000),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: "Dados inválidos" });
+    }
+
+    const sellers = await prisma.seller.findMany({
+      where: {
+        id: { in: body.data.sellerIds },
+        ...sellerScopeWhere(auth),
+        active: true,
+      },
+      select: { id: true, userId: true },
+    });
+
+    if (sellers.length === 0) {
+      return reply
+        .status(404)
+        .send({ error: "Nenhum vendedor válido encontrado" });
+    }
+    if (sellers.length !== body.data.sellerIds.length) {
+      return reply.status(400).send({
+        error:
+          "Um ou mais vendedores não existem, estão inativos ou fora do seu escopo",
+      });
+    }
+
+    const userIds = sellers.map((s) => s.userId);
+    await notifyUsers({
+      userIds,
+      title: body.data.title,
+      body: body.data.body,
+      type: "GENERIC",
+    });
+
+    return {
+      ok: true,
+      sent: userIds.length,
+      sellerIds: sellers.map((s) => s.id),
+    };
+  });
+
   app.get("/push-vapid-public-key", async () => {
     const publicKey = getWebPushPublicKey();
     return { publicKey };
@@ -3955,11 +4011,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.get("/reports/margin", async (req, reply) => {
     const auth = req.auth!;
     if (isTeamLeaderAuth(auth)) {
-      return reply
-        .status(403)
-        .send({
-          error: "Relatório de margem disponível apenas para admin/gestor",
-        });
+      return reply.status(403).send({
+        error: "Relatório de margem disponível apenas para admin/gestor",
+      });
     }
     const q = z
       .object({ from: z.string().optional(), to: z.string().optional() })
@@ -4358,5 +4412,4 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   });
 
   await app.register(fiscalRoutes, { prefix: "/fiscal" });
-  await app.register(stockRoutes, { prefix: "/stock" });
 };

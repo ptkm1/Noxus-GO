@@ -3,7 +3,10 @@ import { ThemedCard } from "@/components/atoms/ThemedCard";
 import { ThemedText } from "@/components/atoms/ThemedText";
 import { MobileHeader, MobileScreen, SafeScreen } from "@/components/layout";
 import { QuickAction } from "@/components/molecules/QuickAction";
-import { apiFetch } from "@/lib/api";
+import {
+  fetchSellerCustomer,
+  sellerOfflineStaleTime,
+} from "@/lib/seller-offline-queries";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
 import { radiiPx } from "@pedidos/design-tokens";
@@ -131,9 +134,15 @@ export default function CustomerHubScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
 
-  const { data: customer, isLoading } = useQuery({
+  const {
+    data: customer,
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
     queryKey: ["seller", "customer", id],
-    queryFn: () => apiFetch<CustomerRecord>(`/seller/customers/${id}`),
+    staleTime: sellerOfflineStaleTime,
+    queryFn: () => fetchSellerCustomer(id!),
     enabled: !!id,
   });
 
@@ -156,9 +165,19 @@ export default function CustomerHubScreen() {
         subtitle="Ficha do cliente"
         showBack
       />
-      {isLoading || !customer ? (
+      {isLoading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={colors.primary} />
+        </View>
+      ) : !customer ? (
+        <View style={styles.centered}>
+          <ThemedText variant="bodySm" muted style={{ textAlign: "center" }}>
+            {isError
+              ? error instanceof Error
+                ? error.message
+                : "Não foi possível carregar o cliente."
+              : "Cliente não encontrado no cache. Liga a internet uma vez para sincronizar."}
+          </ThemedText>
         </View>
       ) : (
         <MobileScreen

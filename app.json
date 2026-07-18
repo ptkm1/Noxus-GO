@@ -2,11 +2,11 @@
   "expo": {
     "extra": {
       "eas": {
-        "projectId": "a9c668f5-9dd0-4407-be08-de451fa3d86c"
+        "projectId": "533c4fc8-7849-4180-bdb5-5d27fd5be149"
       }
     },
     "ios": {
-      "bundleIdentifier": "com.ptkmoreira.pedidos",
+      "bundleIdentifier": "com.commercepro.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }

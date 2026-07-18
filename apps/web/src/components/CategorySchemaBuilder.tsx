@@ -1,3 +1,5 @@
+import { AppSelect } from "@/components/ui/app-select";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { SchemaFieldDraft } from "../lib/categorySchemaDraft";
 import {
   addOptionToDraft,
@@ -5,7 +7,6 @@ import {
   removeOptionFromDraft,
   slugifyKeyFromLabel,
 } from "../lib/categorySchemaDraft";
-import { AppSelect } from "@/components/ui/app-select";
 import type { AttributeFieldDef } from "./DynamicCategoryAttributes";
 
 const TYPE_OPTIONS: { value: AttributeFieldDef["type"]; label: string }[] = [
@@ -31,13 +32,19 @@ export function CategorySchemaBuilder({ drafts, onChange, disabled }: Props) {
     setDrafts(drafts.map((d) => (d.id === id ? { ...d, ...patch } : d)));
   }
 
-  function patchDraftOption(fieldId: string, optionId: string, patch: { value?: string; label?: string }) {
+  function patchDraftOption(
+    fieldId: string,
+    optionId: string,
+    patch: { value?: string; label?: string },
+  ) {
     setDrafts(
       drafts.map((d) => {
         if (d.id !== fieldId) return d;
         return {
           ...d,
-          options: d.options.map((o) => (o.id === optionId ? { ...o, ...patch } : o)),
+          options: d.options.map((o) =>
+            o.id === optionId ? { ...o, ...patch } : o,
+          ),
         };
       }),
     );
@@ -55,7 +62,8 @@ export function CategorySchemaBuilder({ drafts, onChange, disabled }: Props) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          Defina quais informações extras aparecem ao cadastrar um produto nesta categoria.
+          Defina quais informações extras aparecem ao cadastrar um produto nesta
+          categoria.
         </p>
         <button
           type="button"
@@ -69,7 +77,8 @@ export function CategorySchemaBuilder({ drafts, onChange, disabled }: Props) {
 
       {drafts.length === 0 ? (
         <p className="rounded-lg border border-dashed border-border bg-background px-4 py-6 text-center text-sm text-muted-foreground">
-          Nenhum campo extra ainda. Clique em &quot;Adicionar campo&quot; para começar (ex.: Marca, Peso, Cor…).
+          Nenhum campo extra ainda. Clique em &quot;Adicionar campo&quot; para
+          começar (ex.: Marca, Peso, Cor…).
         </p>
       ) : null}
 
@@ -95,7 +104,9 @@ export function CategorySchemaBuilder({ drafts, onChange, disabled }: Props) {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="sm:col-span-2">
-                <label className="block text-xs font-medium text-muted-foreground">Nome que o usuário vê *</label>
+                <label className="block text-xs font-medium text-muted-foreground">
+                  Nome que o usuário vê *
+                </label>
                 <input
                   className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none ring-ring focus:ring-2 disabled:bg-muted"
                   placeholder="Ex.: Marca do produto"
@@ -112,7 +123,10 @@ export function CategorySchemaBuilder({ drafts, onChange, disabled }: Props) {
 
               <div className="sm:col-span-2">
                 <label className="block text-xs font-medium text-muted-foreground">
-                  Chave interna <span className="font-normal text-muted-foreground">(opcional)</span>
+                  Chave interna{" "}
+                  <span className="font-normal text-muted-foreground">
+                    (opcional)
+                  </span>
                 </label>
                 <input
                   className="mt-1 w-full rounded-lg border border-border px-3 py-2 font-mono text-xs outline-none ring-ring focus:ring-2 disabled:bg-muted"
@@ -128,7 +142,9 @@ export function CategorySchemaBuilder({ drafts, onChange, disabled }: Props) {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-muted-foreground">Tipo do campo</label>
+                <label className="block text-xs font-medium text-muted-foreground">
+                  Tipo do campo
+                </label>
                 <AppSelect
                   className="mt-1"
                   value={d.type}
@@ -147,12 +163,12 @@ export function CategorySchemaBuilder({ drafts, onChange, disabled }: Props) {
 
               <div className="flex items-end pb-2">
                 <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                  <input
-                    type="checkbox"
-                    className="size-4 rounded border-border text-primary focus-visible:ring-ring"
+                  <Checkbox
                     checked={d.required}
                     disabled={disabled}
-                    onChange={(e) => patchDraft(d.id, { required: e.target.checked })}
+                    onCheckedChange={(v) =>
+                      patchDraft(d.id, { required: v === true })
+                    }
                   />
                   Obrigatório
                 </label>
@@ -160,27 +176,37 @@ export function CategorySchemaBuilder({ drafts, onChange, disabled }: Props) {
 
               <div>
                 <label className="block text-xs font-medium text-muted-foreground">
-                  Grupo na tela <span className="font-normal text-muted-foreground">(opcional)</span>
+                  Grupo na tela{" "}
+                  <span className="font-normal text-muted-foreground">
+                    (opcional)
+                  </span>
                 </label>
                 <input
                   className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none ring-ring focus:ring-2 disabled:bg-muted"
                   placeholder="Ex.: Identidade, Embalagem"
                   value={d.section}
                   disabled={disabled}
-                  onChange={(e) => patchDraft(d.id, { section: e.target.value })}
+                  onChange={(e) =>
+                    patchDraft(d.id, { section: e.target.value })
+                  }
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-medium text-muted-foreground">
-                  Dica no campo <span className="font-normal text-muted-foreground">(opcional)</span>
+                  Dica no campo{" "}
+                  <span className="font-normal text-muted-foreground">
+                    (opcional)
+                  </span>
                 </label>
                 <input
                   className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none ring-ring focus:ring-2 disabled:bg-muted"
                   placeholder="Ex.: 500 ml"
                   value={d.placeholder}
                   disabled={disabled}
-                  onChange={(e) => patchDraft(d.id, { placeholder: e.target.value })}
+                  onChange={(e) =>
+                    patchDraft(d.id, { placeholder: e.target.value })
+                  }
                 />
               </div>
             </div>
@@ -188,34 +214,46 @@ export function CategorySchemaBuilder({ drafts, onChange, disabled }: Props) {
             {d.type === "number" ? (
               <div className="mt-3 grid gap-3 border-t border-border pt-3 sm:grid-cols-3">
                 <div>
-                  <label className="block text-xs font-medium text-muted-foreground">Mínimo</label>
+                  <label className="block text-xs font-medium text-muted-foreground">
+                    Mínimo
+                  </label>
                   <input
                     type="text"
                     className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none ring-ring focus:ring-2 disabled:bg-muted"
                     value={d.minStr}
                     disabled={disabled}
-                    onChange={(e) => patchDraft(d.id, { minStr: e.target.value })}
+                    onChange={(e) =>
+                      patchDraft(d.id, { minStr: e.target.value })
+                    }
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-muted-foreground">Máximo</label>
+                  <label className="block text-xs font-medium text-muted-foreground">
+                    Máximo
+                  </label>
                   <input
                     type="text"
                     className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none ring-ring focus:ring-2 disabled:bg-muted"
                     value={d.maxStr}
                     disabled={disabled}
-                    onChange={(e) => patchDraft(d.id, { maxStr: e.target.value })}
+                    onChange={(e) =>
+                      patchDraft(d.id, { maxStr: e.target.value })
+                    }
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-muted-foreground">Incremento</label>
+                  <label className="block text-xs font-medium text-muted-foreground">
+                    Incremento
+                  </label>
                   <input
                     type="text"
                     className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm outline-none ring-ring focus:ring-2 disabled:bg-muted"
                     placeholder="ex.: 0.01"
                     value={d.stepStr}
                     disabled={disabled}
-                    onChange={(e) => patchDraft(d.id, { stepStr: e.target.value })}
+                    onChange={(e) =>
+                      patchDraft(d.id, { stepStr: e.target.value })
+                    }
                   />
                 </div>
               </div>
@@ -224,7 +262,9 @@ export function CategorySchemaBuilder({ drafts, onChange, disabled }: Props) {
             {d.type === "select" ? (
               <div className="mt-3 border-t border-border pt-3">
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-muted-foreground">Opções da lista</span>
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    Opções da lista
+                  </span>
                   <button
                     type="button"
                     disabled={disabled}
@@ -236,7 +276,10 @@ export function CategorySchemaBuilder({ drafts, onChange, disabled }: Props) {
                 </div>
                 <ul className="space-y-2">
                   {d.options.map((opt) => (
-                    <li key={opt.id} className="flex flex-wrap items-end gap-2 rounded-lg bg-card p-2 ring-1 ring-border">
+                    <li
+                      key={opt.id}
+                      className="flex flex-wrap items-end gap-2 rounded-lg bg-card p-2 ring-1 ring-border"
+                    >
                       <div className="min-w-[100px] flex-1">
                         <label className="block text-[10px] font-medium uppercase text-muted-foreground">
                           Código
@@ -247,7 +290,9 @@ export function CategorySchemaBuilder({ drafts, onChange, disabled }: Props) {
                           value={opt.value}
                           disabled={disabled}
                           onChange={(e) =>
-                            patchDraftOption(d.id, opt.id, { value: e.target.value })
+                            patchDraftOption(d.id, opt.id, {
+                              value: e.target.value,
+                            })
                           }
                         />
                       </div>
@@ -261,14 +306,18 @@ export function CategorySchemaBuilder({ drafts, onChange, disabled }: Props) {
                           value={opt.label}
                           disabled={disabled}
                           onChange={(e) =>
-                            patchDraftOption(d.id, opt.id, { label: e.target.value })
+                            patchDraftOption(d.id, opt.id, {
+                              label: e.target.value,
+                            })
                           }
                         />
                       </div>
                       <button
                         type="button"
                         disabled={disabled || d.options.length <= 1}
-                        onClick={() => patchDraft(d.id, removeOptionFromDraft(d, opt.id))}
+                        onClick={() =>
+                          patchDraft(d.id, removeOptionFromDraft(d, opt.id))
+                        }
                         className="shrink-0 rounded px-2 py-1 text-xs text-destructive hover:bg-red-50 disabled:opacity-40"
                         title="Remover opção"
                       >
@@ -278,7 +327,8 @@ export function CategorySchemaBuilder({ drafts, onChange, disabled }: Props) {
                   ))}
                 </ul>
                 <p className="mt-2 text-[11px] text-muted-foreground">
-                  O código é gravado nos dados do produto; o texto é o que aparece nas listas e formulários.
+                  O código é gravado nos dados do produto; o texto é o que
+                  aparece nas listas e formulários.
                 </p>
               </div>
             ) : null}

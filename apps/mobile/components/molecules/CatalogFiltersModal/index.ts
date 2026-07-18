@@ -1,1 +1,4 @@
-export { CatalogFiltersModal } from "./CatalogFiltersModal";
+export {
+  CatalogFiltersModal,
+  type CatalogFiltersApplyPayload,
+} from "./CatalogFiltersModal";

@@ -25,9 +25,13 @@ import type {
   SaleCustomer,
   SaleProduct,
 } from "../../lib/sale/types";
+import {
+  fetchSellerCustomers,
+  sellerOfflineStaleTime,
+} from "../../lib/seller-offline-queries";
 import { findProductByBarcode } from "../../lib/utils/barcode";
 import { computeCatalogTileWidths } from "../../lib/utils/catalog-layout";
-import { filterCustomersByName } from "../../lib/utils/product-search";
+import { useNetInfoOnline } from "../useNetInfoOnline";
 import { useSellerProductCatalog } from "../useSellerProductCatalog";
 
 type SubmitSaleResult =
@@ -45,7 +49,6 @@ export function useQuickSaleScreen() {
   const layout = computeCatalogTileWidths(useWindowDimensions().width);
 
   const [customerId, setCustomerId] = useState<string | undefined>();
-  const [customerQuery, setCustomerQuery] = useState("");
   const [cart, setCart] = useState<Record<string, CartLine>>({});
   const [barcodeOpen, setBarcodeOpen] = useState(false);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
@@ -56,6 +59,7 @@ export function useQuickSaleScreen() {
     new Map(),
   );
 
+  const isOnline = useNetInfoOnline();
   const catalog = useSellerProductCatalog({ customerId });
   const { products } = catalog;
 
@@ -67,7 +71,8 @@ export function useQuickSaleScreen() {
 
   const { data: customers = [] } = useQuery({
     queryKey: ["seller", "customers"],
-    queryFn: () => apiFetch<SaleCustomer[]>("/seller/customers"),
+    staleTime: sellerOfflineStaleTime,
+    queryFn: () => fetchSellerCustomers() as Promise<SaleCustomer[]>,
   });
 
   useEffect(() => {
@@ -105,11 +110,6 @@ export function useQuickSaleScreen() {
     void AsyncStorage.setItem(LAST_CUSTOMER_STORAGE_KEY, customerId);
     setLastCustomerId(customerId);
   }, [customerId]);
-
-  const filteredCustomers = useMemo(
-    () => filterCustomersByName(customers, customerQuery),
-    [customers, customerQuery],
-  );
 
   const lastCustomerEntity = useMemo(() => {
     if (!lastCustomerId) return null;
@@ -301,7 +301,9 @@ export function useQuickSaleScreen() {
 
   const emptyCatalogMessage =
     products.length === 0
-      ? "Nenhum produto liberado pelo admin."
+      ? !isOnline
+        ? "Sem catálogo em cache. Liga a internet uma vez para sincronizar."
+        : "Nenhum produto liberado pelo admin."
       : "Nenhum resultado para esta pesquisa ou categoria.";
 
   return {
@@ -309,9 +311,7 @@ export function useQuickSaleScreen() {
     layout,
     customerId,
     setCustomerId,
-    customerQuery,
-    setCustomerQuery,
-    filteredCustomers,
+    customers,
     lastCustomerEntity,
     catalog,
     cartLines,

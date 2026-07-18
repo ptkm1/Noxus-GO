@@ -6,6 +6,7 @@ import {
 } from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -400,12 +401,12 @@ export function SellersPage() {
                       )}
                     </TableCell>
                     <TableCell className="px-4 py-3">
-                      <input
-                        type="checkbox"
-                        defaultChecked={s.active}
-                        onChange={(e) =>
-                          patch.mutate({ id: s.id, active: e.target.checked })
+                      <Checkbox
+                        checked={s.active}
+                        onCheckedChange={(v) =>
+                          patch.mutate({ id: s.id, active: v === true })
                         }
+                        aria-label={`Ativo: ${s.user.name}`}
                       />
                     </TableCell>
                     <TableCell className="px-4 py-3 text-right">

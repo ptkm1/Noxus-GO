@@ -11,5 +11,8 @@ dist
 .DS_Store
 apps/mobile/ios
 apps/mobile/android
+# Chave privada FCM V1 (NÃO o google-services.json)
+**/firebase-adminsdk-*.json
+**/*-firebase-adminsdk-*.json
 coverage
 .prisma

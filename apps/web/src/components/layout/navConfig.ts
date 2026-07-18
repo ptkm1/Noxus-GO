@@ -3,6 +3,7 @@ import { canRead, type PermissionResource } from "@pedidos/shared";
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
+  Bell,
   FileText,
   LayoutDashboard,
   Lightbulb,
@@ -56,6 +57,12 @@ export const DASHBOARD_NAV: NavItem[] = [
   },
   { to: "/estoque", label: "Estoque", icon: Warehouse, resource: "stock" },
   { to: "/vendedores", label: "Vendedores", icon: Users, resource: "sellers" },
+  {
+    to: "/notificar-vendedores",
+    label: "Notificar vendedores",
+    icon: Bell,
+    resource: "broadcast",
+  },
   { to: "/usuarios", label: "Usuários", icon: UserCog, resource: "users" },
   { to: "/equipes", label: "Equipes", icon: UsersRound, resource: "teams" },
   {
@@ -141,6 +148,7 @@ export function resourceForPath(pathname: string): PermissionResource | null {
   if (pathname.startsWith("/fornecedores")) return "suppliers";
   if (pathname.startsWith("/estoque")) return "stock";
   if (pathname.startsWith("/vendedores")) return "sellers";
+  if (pathname.startsWith("/notificar-vendedores")) return "broadcast";
   if (pathname.startsWith("/usuarios")) return "users";
   if (pathname.startsWith("/equipes")) return "teams";
   if (pathname.startsWith("/comissao")) return "commissions";

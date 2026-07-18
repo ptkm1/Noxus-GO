@@ -1,9 +1,10 @@
+import { FormField, FormGrid, FormSection } from "@/components/forms";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { fieldControlClass } from "@/lib/field-styles";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { FormField, FormGrid, FormSection } from "@/components/forms";
-import { fieldControlClass } from "@/lib/field-styles";
 import { apiFetch } from "../lib/api";
 import { notifySuccess } from "../lib/app-notifications";
 
@@ -36,7 +37,9 @@ export function FiscalCadastrosPanel() {
   const [ncmCsosn, setNcmCsosn] = useState("102");
   const [ncmIcms, setNcmIcms] = useState("");
 
-  const [opDirection, setOpDirection] = useState<"OUTBOUND" | "INBOUND">("OUTBOUND");
+  const [opDirection, setOpDirection] = useState<"OUTBOUND" | "INBOUND">(
+    "OUTBOUND",
+  );
   const [opCfop, setOpCfop] = useState("");
   const [opDesc, setOpDesc] = useState("");
   const [opNature, setOpNature] = useState("");
@@ -77,7 +80,8 @@ export function FiscalCadastrosPanel() {
         method: "PATCH",
         body: JSON.stringify({ active }),
       }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "fiscal", "ncm"] }),
+    onSuccess: () =>
+      void qc.invalidateQueries({ queryKey: ["admin", "fiscal", "ncm"] }),
   });
 
   const createOp = useMutation({
@@ -99,7 +103,9 @@ export function FiscalCadastrosPanel() {
       setOpNature("");
       setOpMovesStock(false);
       notifySuccess("Operação fiscal cadastrada.");
-      void qc.invalidateQueries({ queryKey: ["admin", "fiscal", "operations"] });
+      void qc.invalidateQueries({
+        queryKey: ["admin", "fiscal", "operations"],
+      });
     },
   });
 
@@ -109,7 +115,10 @@ export function FiscalCadastrosPanel() {
         method: "PATCH",
         body: JSON.stringify({ active }),
       }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "fiscal", "operations"] }),
+    onSuccess: () =>
+      void qc.invalidateQueries({
+        queryKey: ["admin", "fiscal", "operations"],
+      }),
   });
 
   return (
@@ -117,19 +126,36 @@ export function FiscalCadastrosPanel() {
       <FormSection title="Cadastro NCM">
         <FormGrid cols={3}>
           <FormField label="Código NCM (8 dígitos)">
-            <Input value={ncmCode} onChange={(e) => setNcmCode(e.target.value)} placeholder="27101932" />
+            <Input
+              value={ncmCode}
+              onChange={(e) => setNcmCode(e.target.value)}
+              placeholder="27101932"
+            />
           </FormField>
           <FormField label="Descrição" className="sm:col-span-2">
-            <Input value={ncmDesc} onChange={(e) => setNcmDesc(e.target.value)} />
+            <Input
+              value={ncmDesc}
+              onChange={(e) => setNcmDesc(e.target.value)}
+            />
           </FormField>
           <FormField label="CSOSN padrão">
-            <Input value={ncmCsosn} onChange={(e) => setNcmCsosn(e.target.value)} />
+            <Input
+              value={ncmCsosn}
+              onChange={(e) => setNcmCsosn(e.target.value)}
+            />
           </FormField>
           <FormField label="Alíquota ICMS %">
-            <Input value={ncmIcms} onChange={(e) => setNcmIcms(e.target.value)} />
+            <Input
+              value={ncmIcms}
+              onChange={(e) => setNcmIcms(e.target.value)}
+            />
           </FormField>
         </FormGrid>
-        <Button className="mt-3" disabled={createNcm.isPending} onClick={() => createNcm.mutate()}>
+        <Button
+          className="mt-3"
+          disabled={createNcm.isPending}
+          onClick={() => createNcm.mutate()}
+        >
           Adicionar NCM
         </Button>
         <div className="mt-4 overflow-x-auto rounded-lg border border-border">
@@ -148,14 +174,20 @@ export function FiscalCadastrosPanel() {
                 <tr key={n.id} className="border-t border-border">
                   <td className="px-3 py-2 font-mono">{n.code}</td>
                   <td className="px-3 py-2">{n.description}</td>
-                  <td className="px-3 py-2 text-center">{n.defaultCsosn ?? "—"}</td>
-                  <td className="px-3 py-2 text-center">{n.active ? "Ativo" : "Inativo"}</td>
+                  <td className="px-3 py-2 text-center">
+                    {n.defaultCsosn ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    {n.active ? "Ativo" : "Inativo"}
+                  </td>
                   <td className="px-3 py-2 text-right">
                     <Button
                       size="sm"
                       variant="ghost"
                       disabled={toggleNcm.isPending}
-                      onClick={() => toggleNcm.mutate({ id: n.id, active: !n.active })}
+                      onClick={() =>
+                        toggleNcm.mutate({ id: n.id, active: !n.active })
+                      }
                     >
                       {n.active ? "Desativar" : "Ativar"}
                     </Button>
@@ -173,33 +205,47 @@ export function FiscalCadastrosPanel() {
             <select
               className={fieldControlClass}
               value={opDirection}
-              onChange={(e) => setOpDirection(e.target.value as "OUTBOUND" | "INBOUND")}
+              onChange={(e) =>
+                setOpDirection(e.target.value as "OUTBOUND" | "INBOUND")
+              }
             >
               <option value="OUTBOUND">Saída</option>
               <option value="INBOUND">Entrada</option>
             </select>
           </FormField>
           <FormField label="CFOP">
-            <Input value={opCfop} onChange={(e) => setOpCfop(e.target.value)} placeholder="5102" maxLength={4} />
+            <Input
+              value={opCfop}
+              onChange={(e) => setOpCfop(e.target.value)}
+              placeholder="5102"
+              maxLength={4}
+            />
           </FormField>
           <FormField label="Descrição">
             <Input value={opDesc} onChange={(e) => setOpDesc(e.target.value)} />
           </FormField>
           <FormField label="Natureza" className="sm:col-span-2">
-            <Input value={opNature} onChange={(e) => setOpNature(e.target.value)} placeholder="Venda de mercadoria" />
+            <Input
+              value={opNature}
+              onChange={(e) => setOpNature(e.target.value)}
+              placeholder="Venda de mercadoria"
+            />
           </FormField>
           <FormField label="Movimenta estoque">
             <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={opMovesStock}
-                onChange={(e) => setOpMovesStock(e.target.checked)}
+                onCheckedChange={(v) => setOpMovesStock(v === true)}
               />
               Sim
             </label>
           </FormField>
         </FormGrid>
-        <Button className="mt-3" disabled={createOp.isPending} onClick={() => createOp.mutate()}>
+        <Button
+          className="mt-3"
+          disabled={createOp.isPending}
+          onClick={() => createOp.mutate()}
+        >
           Adicionar operação
         </Button>
         <div className="mt-4 overflow-x-auto rounded-lg border border-border">
@@ -216,16 +262,22 @@ export function FiscalCadastrosPanel() {
             <tbody>
               {operations.map((o) => (
                 <tr key={o.id} className="border-t border-border">
-                  <td className="px-3 py-2">{o.direction === "OUTBOUND" ? "Saída" : "Entrada"}</td>
+                  <td className="px-3 py-2">
+                    {o.direction === "OUTBOUND" ? "Saída" : "Entrada"}
+                  </td>
                   <td className="px-3 py-2 text-center font-mono">{o.cfop}</td>
                   <td className="px-3 py-2">{o.description}</td>
-                  <td className="px-3 py-2 text-center">{o.active ? "Ativo" : "Inativo"}</td>
+                  <td className="px-3 py-2 text-center">
+                    {o.active ? "Ativo" : "Inativo"}
+                  </td>
                   <td className="px-3 py-2 text-right">
                     <Button
                       size="sm"
                       variant="ghost"
                       disabled={toggleOp.isPending}
-                      onClick={() => toggleOp.mutate({ id: o.id, active: !o.active })}
+                      onClick={() =>
+                        toggleOp.mutate({ id: o.id, active: !o.active })
+                      }
                     >
                       {o.active ? "Desativar" : "Ativar"}
                     </Button>

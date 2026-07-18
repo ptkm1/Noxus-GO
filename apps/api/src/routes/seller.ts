@@ -7,11 +7,6 @@ import {
   notifyAdminsCreditPending,
   notifySaleConfirmed,
 } from "../services/admin-notifications.js";
-import { getWebPushPublicKey } from "../services/notify.js";
-import {
-  handleRegisterPushDevice,
-  handleUnregisterPushDevice,
-} from "../services/push-device-routes.js";
 import { buildSellerCommissionDashboard } from "../services/commission-dashboard.js";
 import {
   buildSellerCustomerCreditSnapshot,
@@ -25,6 +20,7 @@ import {
   type CustomerBodyInput,
 } from "../services/customer-validation.js";
 import { isGoogleRoutesConfigured } from "../services/google-routes.js";
+import { getWebPushPublicKey } from "../services/notify.js";
 import {
   loadOrderForPdf,
   sendOrderPdfReply,
@@ -39,6 +35,10 @@ import {
   assertSufficientStock,
   StockError,
 } from "../services/product-stock.js";
+import {
+  handleRegisterPushDevice,
+  handleUnregisterPushDevice,
+} from "../services/push-device-routes.js";
 import { buildRouteDirections } from "../services/route-directions.js";
 import { greedyNearestRoute, haversineKm } from "../services/route-plan.js";
 import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
@@ -211,7 +211,10 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       })
       .safeParse(req.body);
     if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+      return reply.status(400).send({
+        error: "Dados inválidos",
+        details: body.error.flatten(),
+      });
 
     const clientMutationId = body.data.clientMutationId?.trim();
     if (clientMutationId) {

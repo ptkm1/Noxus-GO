@@ -1,7 +1,7 @@
-/* Pedidos / Commerce Pro — Web Push service worker */
+/* CommercePro — Web Push service worker */
 /* eslint-disable no-undef */
 self.addEventListener("push", (event) => {
-  let payload = { title: "Pedidos", body: "", data: {} };
+  let payload = { title: "CommercePro", body: "", data: {} };
   try {
     if (event.data) {
       payload = { ...payload, ...event.data.json() };
@@ -10,7 +10,7 @@ self.addEventListener("push", (event) => {
     /* ignore */
   }
 
-  const title = payload.title || "Pedidos";
+  const title = payload.title || "CommercePro";
   const options = {
     body: payload.body || "",
     data: payload.data || {},
@@ -34,8 +34,9 @@ self.addEventListener("notificationclick", (event) => {
   const url = new URL(path, self.location.origin).href;
 
   event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(
-      (clientList) => {
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clientList) => {
         for (const client of clientList) {
           if ("focus" in client) {
             return client.focus().then((focused) => {
@@ -49,7 +50,6 @@ self.addEventListener("notificationclick", (event) => {
         if (self.clients.openWindow) {
           return self.clients.openWindow(url);
         }
-      },
-    ),
+      }),
   );
 });
