@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import type { CustomerFormValues, CustomerRecord } from "@pedidos/shared";
 import {
   customerToForm,
@@ -28,7 +29,6 @@ import {
   formatCpfMask,
   validateCustomerForm,
 } from "@pedidos/shared";
-import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { CustomerFormFields } from "../components/CustomerFormFields";

@@ -2833,12 +2833,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
     const complete = parseCompleteCustomerBody(merged);
     if (!complete.success) {
-      return reply
-        .status(400)
-        .send({
-          error: "Cadastro incompleto — preencha todos os campos obrigatórios.",
-          details: complete.error.flatten(),
-        });
+      return reply.status(400).send({
+        error: "Cadastro incompleto — preencha todos os campos obrigatórios.",
+        details: complete.error.flatten(),
+      });
     }
 
     try {
@@ -4166,7 +4164,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       const seller = await prisma.seller.findFirst({
         where: { id: d.sellerId, organizationId: auth.organizationId },
       });
-      if (!seller) return reply.status(400).send({ error: "Vendedor inválido" });
+      if (!seller)
+        return reply.status(400).send({ error: "Vendedor inválido" });
       sellerId = d.sellerId;
     } else if (d.scope === "TEAM") {
       if (!d.teamId)

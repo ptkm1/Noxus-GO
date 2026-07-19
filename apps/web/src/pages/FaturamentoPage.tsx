@@ -1,3 +1,4 @@
+import { AuditLogPanel } from "@/components/AuditLogPanel";
 import { FormField, FormGrid, FormSection } from "@/components/forms";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -16,7 +17,6 @@ import {
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { AuditLogPanel } from "@/components/AuditLogPanel";
 import { FiscalCadastrosPanel } from "../components/FiscalCadastrosPanel";
 import {
   apiFetch,
@@ -158,12 +158,16 @@ export function FaturamentoPage() {
 
   const batchableOrders = eligibleOrders.filter(isBatchEmitable);
   const batchableIds = batchableOrders.map((o) => o.id);
-  const selectedBatchOrders = batchableOrders.filter((o) => selectedOrderIds.has(o.id));
+  const selectedBatchOrders = batchableOrders.filter((o) =>
+    selectedOrderIds.has(o.id),
+  );
   const hasOrderSelection = selectedBatchOrders.length > 0;
   const allBatchableSelected =
-    batchableIds.length > 0 && batchableIds.every((id) => selectedOrderIds.has(id));
+    batchableIds.length > 0 &&
+    batchableIds.every((id) => selectedOrderIds.has(id));
   const someBatchableSelected =
-    batchableIds.some((id) => selectedOrderIds.has(id)) && !allBatchableSelected;
+    batchableIds.some((id) => selectedOrderIds.has(id)) &&
+    !allBatchableSelected;
   const batchEmitBusy = batchEmitProgress != null;
 
   useEffect(() => {
@@ -173,7 +177,10 @@ export function FaturamentoPage() {
       let changed = false;
       const next = new Set<string>();
       for (const id of prev) {
-        if (valid.has(id) && eligibleOrders.some((o) => o.id === id && isBatchEmitable(o))) {
+        if (
+          valid.has(id) &&
+          eligibleOrders.some((o) => o.id === id && isBatchEmitable(o))
+        ) {
           next.add(id);
         } else {
           changed = true;
@@ -208,9 +215,12 @@ export function FaturamentoPage() {
       return;
     }
     if (order.fiscalInvoice?.status === "DRAFT") {
-      await apiFetch(`/admin/fiscal/outbound/invoices/${order.fiscalInvoice.id}/transmit`, {
-        method: "POST",
-      });
+      await apiFetch(
+        `/admin/fiscal/outbound/invoices/${order.fiscalInvoice.id}/transmit`,
+        {
+          method: "POST",
+        },
+      );
       return;
     }
     throw new Error("Pedido não elegível para emissão em lote.");
@@ -691,9 +701,14 @@ export function FaturamentoPage() {
                     <tr>
                       <th className="w-10 px-4 py-3">
                         <Checkbox
-                          checked={selectAllState(allBatchableSelected, someBatchableSelected)}
+                          checked={selectAllState(
+                            allBatchableSelected,
+                            someBatchableSelected,
+                          )}
                           disabled={batchableIds.length === 0 || batchEmitBusy}
-                          onCheckedChange={(v) => toggleAllBatchable(v === true)}
+                          onCheckedChange={(v) =>
+                            toggleAllBatchable(v === true)
+                          }
                           aria-label="Selecionar todos os elegíveis"
                         />
                       </th>
@@ -771,9 +786,7 @@ export function FaturamentoPage() {
                             ) : o.fiscalInvoice?.status === "DRAFT" ? (
                               <Button
                                 size="sm"
-                                disabled={
-                                  transmit.isPending || batchEmitBusy
-                                }
+                                disabled={transmit.isPending || batchEmitBusy}
                                 onClick={() =>
                                   transmit.mutate(o.fiscalInvoice!.id)
                                 }
