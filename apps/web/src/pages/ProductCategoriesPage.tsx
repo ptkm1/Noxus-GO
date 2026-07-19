@@ -1,4 +1,5 @@
 import {
+  FormErrorBanner,
   FormField,
   FormGrid,
   FormSheet,
@@ -15,8 +16,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { CategorySchemaBuilder } from "../components/CategorySchemaBuilder";
 import { apiFetch } from "../lib/api";
@@ -49,6 +51,7 @@ export function ProductCategoriesPage() {
   const [commissionPercent, setCommissionPercent] = useState("");
   const [schemaDrafts, setSchemaDrafts] = useState<SchemaFieldDraft[]>([]);
   const [formHint, setFormHint] = useState<string | null>(null);
+  const [showValidation, setShowValidation] = useState(false);
 
   function resetForm() {
     setEditing(null);
@@ -57,6 +60,7 @@ export function ProductCategoriesPage() {
     setCommissionPercent("");
     setSchemaDrafts([]);
     setFormHint(null);
+    setShowValidation(false);
   }
 
   function openCreate() {
@@ -73,6 +77,7 @@ export function ProductCategoriesPage() {
     );
     setSchemaDrafts(parseSchemaToDrafts(c.attributeSchema));
     setFormHint(null);
+    setShowValidation(false);
     setSheetOpen(true);
   }
 
@@ -145,6 +150,15 @@ export function ProductCategoriesPage() {
   }
 
   function submitSave() {
+    setShowValidation(true);
+    const fieldErrs: Record<string, string> = {};
+    if (!code.trim()) fieldErrs.code = "Código é obrigatório.";
+    if (!name.trim()) fieldErrs.name = "Nome é obrigatório.";
+    if (Object.keys(fieldErrs).length > 0) {
+      setFormHint(null);
+      return;
+    }
+
     const built = buildSchemaFromDrafts(schemaDrafts);
     if (!built.ok) {
       setFormHint(built.message);
@@ -175,7 +189,19 @@ export function ProductCategoriesPage() {
   }
 
   const savePending = editing ? update.isPending : create.isPending;
-  const canSave = Boolean(code.trim() && name.trim());
+
+  const fieldErrors = useMemo(() => {
+    if (!showValidation) return {} as Record<string, string>;
+    const e: Record<string, string> = {};
+    if (!code.trim()) e.code = "Código é obrigatório.";
+    if (!name.trim()) e.name = "Nome é obrigatório.";
+    return e;
+  }, [showValidation, code, name]);
+
+  useScrollToFirstError(
+    Object.keys(fieldErrors).length > 0 ? fieldErrors : formHint,
+    { enabled: showValidation || Boolean(formHint) },
+  );
 
   return (
     <div className="space-y-6">
@@ -218,7 +244,6 @@ export function ProductCategoriesPage() {
             onSubmit={submitSave}
             submitLabel={editing ? "Salvar alterações" : "Cadastrar"}
             pending={savePending}
-            disabled={!canSave}
           />
         }
       >
@@ -228,18 +253,26 @@ export function ProductCategoriesPage() {
             htmlFor="cat-code"
             required
             hint="Ex.: FOOD"
+            error={fieldErrors.code}
           >
             <Input
               id="cat-code"
               placeholder="FOOD"
+              aria-invalid={fieldErrors.code ? true : undefined}
               value={code}
               onChange={(e) => setCode(e.target.value)}
             />
           </FormField>
-          <FormField label="Nome exibido" htmlFor="cat-name" required>
+          <FormField
+            label="Nome exibido"
+            htmlFor="cat-name"
+            required
+            error={fieldErrors.name}
+          >
             <Input
               id="cat-name"
               placeholder="Alimentos"
+              aria-invalid={fieldErrors.name ? true : undefined}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -270,9 +303,7 @@ export function ProductCategoriesPage() {
           />
         </div>
         {formHint ? (
-          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-destructive">
-            {formHint}
-          </p>
+          <FormErrorBanner message={formHint} className="mt-3" />
         ) : null}
       </FormSheet>
 

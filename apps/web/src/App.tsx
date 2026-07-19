@@ -7,6 +7,7 @@ import {
   Route,
   Routes,
   useLocation,
+  useParams,
 } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { ConfirmProvider } from "./components/confirm";
@@ -90,6 +91,7 @@ const TEAM_LEADER_ROUTE_PREFIXES = [
   "/",
   "/rastreio",
   "/visitas",
+  "/pedidos",
   "/vendas",
   "/insights",
   "/relatorios",
@@ -104,6 +106,16 @@ function TeamLeaderRouteGuard() {
   );
   if (!allowed) return <Navigate to="/" replace />;
   return <Outlet />;
+}
+
+function LegacyVendasRedirect() {
+  const { orderId } = useParams<{ orderId?: string }>();
+  return (
+    <Navigate
+      to={orderId ? `/pedidos/${orderId}` : "/pedidos"}
+      replace
+    />
+  );
 }
 
 /** ADMIN/MANAGER: rota visível se canRead efetivo do recurso. */
@@ -222,8 +234,10 @@ function AppRoutes() {
             <Route path="relatorios/gestao" element={<ReportsPage />} />
             <Route path="visitas" element={<CustomerVisitsPage />} />
             <Route path="rastreio" element={<SellerTrackingPage />} />
-            <Route path="vendas" element={<OrdersPage />} />
-            <Route path="vendas/:orderId" element={<OrderDetailPage />} />
+            <Route path="pedidos" element={<OrdersPage />} />
+            <Route path="pedidos/:orderId" element={<OrderDetailPage />} />
+            <Route path="vendas" element={<LegacyVendasRedirect />} />
+            <Route path="vendas/:orderId" element={<LegacyVendasRedirect />} />
             <Route path="insights" element={<InsightsPage />} />
             <Route
               path="indicadores"

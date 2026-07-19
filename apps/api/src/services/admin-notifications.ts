@@ -30,7 +30,7 @@ async function notifyAdminsCreditPendingEmail(params: {
   const seller = params.order.seller.user.name;
   const subject = "[Pedidos] Pedido aguardando aprovação de crédito";
   const webBase = (process.env.WEB_APP_ORIGIN ?? "").replace(/\/$/, "");
-  const detailPath = `/vendas/${params.order.id}`;
+  const detailPath = `/pedidos/${params.order.id}`;
   const detailLink =
     webBase.length > 0
       ? `<p><a href="${escapeHtml(webBase + detailPath)}">Abrir pedido no painel</a></p>`
@@ -39,7 +39,7 @@ async function notifyAdminsCreditPendingEmail(params: {
   const html = `
 <!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;line-height:1.5;color:#1e293b">
   <p><strong>${escapeHtml(seller)}</strong> · ${escapeHtml(cust)} · <strong>R$ ${escapeHtml(total.toFixed(2))}</strong></p>
-  <p>Aprove ou recuse em <strong>Vendas</strong> no painel admin.</p>
+  <p>Aprove ou recuse em <strong>Pedidos</strong> no painel admin.</p>
   ${detailLink}
 </body></html>`.trim();
 
@@ -77,7 +77,7 @@ export async function notifyAdminsCreditPending(params: {
   const cust = params.order.customer?.name ?? "Cliente sem nome";
   const seller = params.order.seller.user.name;
   const title = "Pedido aguardando crédito";
-  const body = `${seller} · ${cust} · R$ ${total.toFixed(2)} — aprove em Vendas.`;
+  const body = `${seller} · ${cust} · R$ ${total.toFixed(2)} — aprove em Pedidos.`;
 
   await notifyUsers({
     userIds,
@@ -87,7 +87,7 @@ export async function notifyAdminsCreditPending(params: {
     data: {
       orderId: params.order.id,
       sellerId: params.order.sellerId,
-      href: `/vendas/${params.order.id}`,
+      href: `/pedidos/${params.order.id}`,
     },
   });
 
@@ -142,40 +142,37 @@ export async function notifySaleConfirmed(params: {
     data: {
       orderId: params.order.id,
       sellerId: params.order.sellerId,
-      href: `/vendas/${params.order.id}`,
+      href: `/pedidos/${params.order.id}`,
     },
   });
 }
 
-/** Meta mensal criada/alterada → utilizador do vendedor. */
+/** Meta mensal criada/alterada → utilizadores dos vendedores no escopo. */
 export async function notifySellerGoalUpdated(params: {
-  sellerId: string;
   organizationId: string;
   goalId: string;
   year: number;
   month: number;
   targetAmount: number;
   title?: string;
+  /** Destinatários (userIds). Se vazio, não notifica. */
+  userIds: string[];
+  sellerId?: string | null;
+  scope?: string;
 }): Promise<void> {
-  const seller = await prisma.seller.findFirst({
-    where: {
-      id: params.sellerId,
-      organizationId: params.organizationId,
-    },
-    select: { userId: true, user: { select: { name: true } } },
-  });
-  if (!seller) return;
+  if (params.userIds.length === 0) return;
 
   const label = params.title?.trim() || "Meta do mês";
   const period = `${String(params.month).padStart(2, "0")}/${params.year}`;
 
   await notifyUsers({
-    userIds: [seller.userId],
+    userIds: params.userIds,
     title: "Meta atualizada",
     body: `${label} · ${period} · R$ ${params.targetAmount.toFixed(2)}`,
     type: "GOAL_UPDATED",
     data: {
-      sellerId: params.sellerId,
+      ...(params.sellerId ? { sellerId: params.sellerId } : {}),
+      ...(params.scope ? { scope: params.scope } : {}),
       goalId: params.goalId,
       href: "/commission",
     },

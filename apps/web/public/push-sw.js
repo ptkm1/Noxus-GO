@@ -28,7 +28,7 @@ self.addEventListener("notificationclick", (event) => {
   if (typeof data.href === "string" && data.href.startsWith("/")) {
     path = data.href;
   } else if (typeof data.orderId === "string" && data.orderId) {
-    path = `/vendas/${data.orderId}`;
+    path = `/pedidos/${data.orderId}`;
   }
 
   const url = new URL(path, self.location.origin).href;

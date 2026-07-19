@@ -2,6 +2,7 @@ import { AddressFieldsGroup } from "@/components/AddressFieldsGroup";
 import { CnpjLookupField } from "@/components/CnpjLookupField";
 import { FormField, FormGrid } from "@/components/forms";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type {
@@ -14,8 +15,10 @@ import {
   cepDigitsOnly,
   cnpjDigitsOnly,
   cpfDigitsOnly,
+  FIELD_NOT_APPLICABLE,
   formatCnpjMask,
   formatCpfMask,
+  isFieldNotApplicable,
   suggestedTradeName,
 } from "@pedidos/shared";
 
@@ -128,6 +131,7 @@ export function CustomerFormFields({
             <FormField
               label="Nome fantasia"
               htmlFor="cust-trade"
+              required
               error={errors.tradeName}
               className="sm:col-span-2"
             >
@@ -175,19 +179,30 @@ export function CustomerFormFields({
         <AddressFieldsGroup
           values={values}
           onChange={onChange}
-          stateRegistrationError={errors.stateRegistration}
+          errors={errors}
         />
       </div>
 
       <FormGrid cols={2}>
-        <FormField label="Telefone" htmlFor="cust-phone">
+        <FormField
+          label="Telefone"
+          htmlFor="cust-phone"
+          required
+          error={errors.phone}
+        >
           <Input
             id="cust-phone"
+            aria-invalid={errors.phone ? true : undefined}
             value={values.phone}
             onChange={(e) => onChange({ phone: e.target.value })}
           />
         </FormField>
-        <FormField label="E-mail" htmlFor="cust-email" error={errors.email}>
+        <FormField
+          label="E-mail"
+          htmlFor="cust-email"
+          required
+          error={errors.email}
+        >
           <Input
             id="cust-email"
             type="email"
@@ -199,10 +214,13 @@ export function CustomerFormFields({
         <FormField
           label="Comprador"
           htmlFor="cust-buyer"
+          required
+          error={errors.buyerName}
           className="sm:col-span-2"
         >
           <Input
             id="cust-buyer"
+            aria-invalid={errors.buyerName ? true : undefined}
             value={values.buyerName}
             onChange={(e) => onChange({ buyerName: e.target.value })}
           />
@@ -210,13 +228,40 @@ export function CustomerFormFields({
         <FormField
           label="Observação"
           htmlFor="cust-notes"
+          required
+          error={errors.notes}
           className="sm:col-span-2"
         >
-          <Input
-            id="cust-notes"
-            value={values.notes}
-            onChange={(e) => onChange({ notes: e.target.value })}
-          />
+          <div className="rounded-md border border-input bg-background overflow-hidden">
+            <Input
+              id="cust-notes"
+              className="border-0 rounded-none shadow-none focus-visible:ring-0"
+              aria-invalid={errors.notes ? true : undefined}
+              disabled={isFieldNotApplicable(values.notes)}
+              placeholder={
+                isFieldNotApplicable(values.notes)
+                  ? FIELD_NOT_APPLICABLE
+                  : "Observações do cliente"
+              }
+              value={isFieldNotApplicable(values.notes) ? "" : values.notes}
+              onChange={(e) => onChange({ notes: e.target.value })}
+            />
+            <label
+              htmlFor="cust-notes-none"
+              className="flex items-center gap-2 px-3 pb-2.5 pt-0.5 text-sm text-muted-foreground cursor-pointer"
+            >
+              <Checkbox
+                id="cust-notes-none"
+                checked={isFieldNotApplicable(values.notes)}
+                onCheckedChange={(checked) => {
+                  onChange({
+                    notes: checked ? FIELD_NOT_APPLICABLE : "",
+                  });
+                }}
+              />
+              Não possui observação
+            </label>
+          </div>
         </FormField>
       </FormGrid>
     </div>

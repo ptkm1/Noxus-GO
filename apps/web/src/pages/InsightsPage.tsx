@@ -52,7 +52,22 @@ type DistributorInsights = {
       orderCount: number;
       totalAmount: number;
     }>;
+    products: Array<{
+      productId: string;
+      productName: string;
+      quantity: number;
+      totalAmount: number;
+      orderCount: number;
+    }>;
+    suppliers: Array<{
+      supplierId: string | null;
+      tradeName: string;
+      quantity: number;
+      totalAmount: number;
+      orderCount: number;
+    }>;
   };
+  sellersWithoutPositivacaoToday: Array<{ sellerId: string; name: string }>;
   sellersWithoutCustomers: Array<{ sellerId: string; name: string }>;
   sellersPortfolioAttention: Array<{
     sellerId: string;
@@ -437,8 +452,16 @@ export function InsightsPage() {
             <p className="mt-1 text-sky-900/85">{ins.hints.note}</p>
             <ul className="mt-2 list-inside list-disc text-xs text-sky-900/75">
               <li>
-                Carteira “parada”: sem compra há mais de{" "}
-                {ins.hints.visitProxyDays} dias neste vendedor.
+                Rankings do dia: pedidos confirmados hoje (vendedor, produto e
+                fornecedor).
+              </li>
+              <li>
+                Sem positivação: vendedor ativo sem nenhum pedido confirmado no
+                dia.
+              </li>
+              <li>
+                Carteira parada: sem compra há mais de {ins.hints.visitProxyDays}{" "}
+                dias neste vendedor.
               </li>
               <li>
                 Produto parado: sem venda há {ins.hints.stagnantProductDays}+
@@ -451,59 +474,188 @@ export function InsightsPage() {
             </ul>
           </div>
 
-          {/* Quem vendeu menos hoje */}
+          {/* Rankings do dia */}
           <section className="space-y-3">
-            <h2 className="text-lg font-semibold text-foreground">
-              Quem vendeu menos hoje?
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Pedidos confirmados — lista do menor para o maior faturamento.
-            </p>
-            <p className="text-xs capitalize text-muted-foreground">
-              {ins.today.label}
-            </p>
-            <div className="rounded-xl border border-border bg-card">
-              <Table className="min-w-[520px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="px-4">Vendedor</TableHead>
-                    <TableHead className="px-4">Pedidos</TableHead>
-                    <TableHead className="px-4">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {ins.today.sellers.length === 0 ? (
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">
+                Rankings de vendas do dia
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Pedidos confirmados — ordenados do maior para o menor
+                faturamento.
+              </p>
+              <p className="text-xs capitalize text-muted-foreground">
+                {ins.today.label}
+              </p>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-1 xl:grid-cols-3">
+              <div className="rounded-xl border border-border bg-card">
+                <div className="border-b border-border px-4 py-3">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Por vendedor
+                  </h3>
+                </div>
+                <Table className="min-w-[280px]">
+                  <TableHeader>
                     <TableRow>
-                      <TableCell
-                        colSpan={3}
-                        className="px-4 py-6 text-center text-muted-foreground"
-                      >
-                        Nenhum vendedor ativo — cadastre vendedores primeiro.
-                      </TableCell>
+                      <TableHead className="px-3 w-10">#</TableHead>
+                      <TableHead className="px-3">Vendedor</TableHead>
+                      <TableHead className="px-3">Pedidos</TableHead>
+                      <TableHead className="px-3">Total</TableHead>
                     </TableRow>
-                  ) : (
-                    ins.today.sellers.map((row) => (
-                      <TableRow key={row.sellerId}>
-                        <TableCell className="px-4 py-3 font-medium text-foreground">
-                          {row.name}
-                          {row.orderCount === 0 ? (
-                            <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-warning">
-                              Zerado hoje
-                            </span>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="px-4 py-3 text-muted-foreground">
-                          {row.orderCount}
-                        </TableCell>
-                        <TableCell className="px-4 py-3 font-medium tabular-nums text-foreground">
-                          R$ {fmtMoney(row.totalAmount)}
+                  </TableHeader>
+                  <TableBody>
+                    {ins.today.sellers.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={4}
+                          className="px-3 py-6 text-center text-muted-foreground"
+                        >
+                          Nenhum vendedor ativo.
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+                    ) : (
+                      ins.today.sellers.map((row, idx) => (
+                        <TableRow key={row.sellerId}>
+                          <TableCell className="px-3 py-2 tabular-nums text-muted-foreground">
+                            {idx + 1}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 font-medium text-foreground">
+                            {row.name}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 text-muted-foreground">
+                            {row.orderCount}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 font-medium tabular-nums text-foreground">
+                            R$ {fmtMoney(row.totalAmount)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="rounded-xl border border-border bg-card">
+                <div className="border-b border-border px-4 py-3">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Por produto
+                  </h3>
+                </div>
+                <Table className="min-w-[280px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="px-3 w-10">#</TableHead>
+                      <TableHead className="px-3">Produto</TableHead>
+                      <TableHead className="px-3">Qtd</TableHead>
+                      <TableHead className="px-3">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(ins.today.products ?? []).length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={4}
+                          className="px-3 py-6 text-center text-muted-foreground"
+                        >
+                          Nenhuma venda de produto hoje.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      (ins.today.products ?? []).map((row, idx) => (
+                        <TableRow key={row.productId}>
+                          <TableCell className="px-3 py-2 tabular-nums text-muted-foreground">
+                            {idx + 1}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 font-medium text-foreground">
+                            {row.productName}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 tabular-nums text-muted-foreground">
+                            {row.quantity}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 font-medium tabular-nums text-foreground">
+                            R$ {fmtMoney(row.totalAmount)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="rounded-xl border border-border bg-card">
+                <div className="border-b border-border px-4 py-3">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Por fornecedor
+                  </h3>
+                </div>
+                <Table className="min-w-[280px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="px-3 w-10">#</TableHead>
+                      <TableHead className="px-3">Fornecedor</TableHead>
+                      <TableHead className="px-3">Qtd</TableHead>
+                      <TableHead className="px-3">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(ins.today.suppliers ?? []).length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={4}
+                          className="px-3 py-6 text-center text-muted-foreground"
+                        >
+                          Nenhuma venda com fornecedor hoje.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      (ins.today.suppliers ?? []).map((row, idx) => (
+                        <TableRow key={row.supplierId ?? `none-${idx}`}>
+                          <TableCell className="px-3 py-2 tabular-nums text-muted-foreground">
+                            {idx + 1}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 font-medium text-foreground">
+                            {row.tradeName}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 tabular-nums text-muted-foreground">
+                            {row.quantity}
+                          </TableCell>
+                          <TableCell className="px-3 py-2 font-medium tabular-nums text-foreground">
+                            R$ {fmtMoney(row.totalAmount)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
+          </section>
+
+          {/* Sem positivação hoje */}
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold text-foreground">
+              Vendedores sem positivação hoje
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Vendedores ativos sem nenhum pedido confirmado no dia.
+            </p>
+            {(ins.sellersWithoutPositivacaoToday ?? []).length === 0 ? (
+              <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
+                Todos os vendedores ativos positivaram hoje.
+              </p>
+            ) : (
+              <ul className="flex flex-wrap gap-2">
+                {(ins.sellersWithoutPositivacaoToday ?? []).map((s) => (
+                  <li key={s.sellerId}>
+                    <span className="inline-flex rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-950">
+                      {s.name}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           {/* Sem carteira */}
@@ -530,14 +682,14 @@ export function InsightsPage() {
             </section>
           ) : null}
 
-          {/* Carteira parada */}
+          {/* Carteira parada — mantida como contexto operacional */}
           <section className="space-y-3">
             <h2 className="text-lg font-semibold text-foreground">
-              Qual vendedor está “sem ir ao cliente”?
+              Carteira parada
             </h2>
             <p className="text-sm text-muted-foreground">
-              Na prática: clientes na carteira dele sem pedido confirmado há
-              mais de {ins.hints.visitProxyDays} dias.
+              Clientes na carteira sem pedido confirmado há mais de{" "}
+              {ins.hints.visitProxyDays} dias.
             </p>
             {ins.sellersPortfolioAttention.length === 0 ? (
               <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">

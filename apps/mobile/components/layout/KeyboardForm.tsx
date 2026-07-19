@@ -1,5 +1,5 @@
 import { useTheme } from "@/lib/theme";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { useEffect, useState } from "react";
 import {
   Keyboard,
@@ -26,6 +26,8 @@ type Props = {
   onRefresh?: () => void;
   /** Padding inferior do scroll (além do spacer do teclado). */
   bottomPadding?: number;
+  /** Ref do ScrollView — útil para rolar até erros de validação. */
+  scrollRef?: RefObject<ScrollView | null>;
 };
 
 /**
@@ -41,6 +43,7 @@ export function KeyboardForm({
   refreshing,
   onRefresh,
   bottomPadding = 24,
+  scrollRef,
 }: Props) {
   const { colors } = useTheme();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -79,6 +82,7 @@ export function KeyboardForm({
       keyboardVerticalOffset={offset}
     >
       <ScrollView
+        ref={scrollRef}
         style={[styles.fill, { backgroundColor: colors.background }]}
         contentContainerStyle={[
           styles.content,

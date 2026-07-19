@@ -236,6 +236,7 @@ export function adminPathToResource(
     return "fiscal";
   if (path.startsWith("/customers") || path.startsWith("/credit"))
     return "customers";
+  if (/^\/orders\/[^/]+\/pdf-80mm$/.test(path)) return "orders_print_80mm";
   if (path.startsWith("/orders")) return "orders";
   if (
     path.startsWith("/sellers") ||

@@ -5,6 +5,10 @@ import {
   orderPdfFilename,
   type OrderPdfInput,
 } from "./order-pdf.js";
+import {
+  buildOrderPdf80mm,
+  orderPdf80mmFilename,
+} from "./order-pdf-80mm.js";
 
 const orderPdfInclude = {
   seller: { include: { user: { select: { name: true, email: true } } } },
@@ -48,6 +52,18 @@ export async function sendOrderPdfReply(
 ) {
   const pdf = await buildOrderPdf(toPdfInput(order));
   const filename = orderPdfFilename(order);
+  return reply
+    .header("Content-Type", "application/pdf")
+    .header("Content-Disposition", `inline; filename="${filename}"`)
+    .send(pdf);
+}
+
+export async function sendOrderPdf80mmReply(
+  reply: FastifyReply,
+  order: NonNullable<Awaited<ReturnType<typeof loadOrderForPdf>>>,
+) {
+  const pdf = await buildOrderPdf80mm(toPdfInput(order));
+  const filename = orderPdf80mmFilename(order);
   return reply
     .header("Content-Type", "application/pdf")
     .header("Content-Disposition", `inline; filename="${filename}"`)

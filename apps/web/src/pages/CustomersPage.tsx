@@ -1,3 +1,4 @@
+import { AuditLogPanel } from "@/components/AuditLogPanel";
 import {
   FormField,
   FormGrid,
@@ -26,6 +27,7 @@ import {
   formatCpfMask,
   validateCustomerForm,
 } from "@pedidos/shared";
+import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { CustomerFormFields } from "../components/CustomerFormFields";
@@ -228,6 +230,8 @@ export function CustomersPage() {
     [form, showValidation],
   );
 
+  useScrollToFirstError(formErrors, { enabled: showValidation });
+
   function trySubmit() {
     const errors = validateCustomerForm(form);
     if (Object.keys(errors).length > 0) {
@@ -387,6 +391,15 @@ export function CustomersPage() {
         ) : null}
 
         {editing ? <CustomerTitlesPanel customerId={editing.id} /> : null}
+        {editing ? (
+          <AuditLogPanel
+            className="mt-6"
+            entityType="Customer"
+            entityId={editing.id}
+            enabled={sheetOpen}
+            take={25}
+          />
+        ) : null}
       </FormSheet>
 
       {isLoading ? (

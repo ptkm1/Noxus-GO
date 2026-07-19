@@ -315,7 +315,13 @@ export async function buildCommissionStatement(params: {
   const goals = await prisma.sellerMonthlyGoal.findMany({
     where: { organizationId: params.organizationId, year, month },
   });
-  const goalBySeller = new Map(goals.map((g) => [g.sellerId, g]));
+  const sellerGoal = new Map(
+    goals.filter((g) => g.scope === "SELLER" && g.sellerId).map((g) => [g.sellerId!, g]),
+  );
+  const teamGoal = new Map(
+    goals.filter((g) => g.scope === "TEAM" && g.teamId).map((g) => [g.teamId!, g]),
+  );
+  const allGoal = goals.find((g) => g.scope === "ALL") ?? null;
 
   const items = await prisma.orderItem.findMany({
     where: {
@@ -357,15 +363,42 @@ export async function buildCommissionStatement(params: {
     agg.set(sid, row);
   }
 
+  const sellersWithTeam = await prisma.seller.findMany({
+    where: { organizationId: params.organizationId },
+    select: { id: true, teamId: true },
+  });
+  const teamIdBySeller = new Map(sellersWithTeam.map((s) => [s.id, s.teamId]));
+
+  const teamRevenue = new Map<string, number>();
+  let orgRevenue = 0;
+  for (const s of sellers) {
+    const rev = roundMoney(agg.get(s.id)?.revenue ?? 0);
+    orgRevenue = roundMoney(orgRevenue + rev);
+    const tid = teamIdBySeller.get(s.id);
+    if (tid) {
+      teamRevenue.set(tid, roundMoney((teamRevenue.get(tid) ?? 0) + rev));
+    }
+  }
+
   const rows = sellers
     .map((s) => {
       const a = agg.get(s.id);
       const revenue = roundMoney(a?.revenue ?? 0);
       const commission = roundMoney(a?.commission ?? 0);
-      const goal = goalBySeller.get(s.id);
+      const tid = teamIdBySeller.get(s.id);
+      const goal =
+        sellerGoal.get(s.id) ??
+        (tid ? teamGoal.get(tid) : undefined) ??
+        allGoal;
       const target = goal ? decToNum(goal.targetAmount) : null;
+      let achieved = revenue;
+      if (goal?.scope === "TEAM" && tid) {
+        achieved = teamRevenue.get(tid) ?? 0;
+      } else if (goal?.scope === "ALL") {
+        achieved = orgRevenue;
+      }
       const goalPct =
-        target != null && target > 0 ? roundMoney((revenue / target) * 100) : null;
+        target != null && target > 0 ? roundMoney((achieved / target) * 100) : null;
       return {
         sellerId: s.id,
         name: s.user.name,
@@ -374,6 +407,7 @@ export async function buildCommissionStatement(params: {
         commission,
         goalTarget: target != null ? roundMoney(target) : null,
         goalPct,
+        goalScope: goal?.scope ?? null,
       };
     })
     .filter((r) => r.orderCount > 0 || r.commission > 0 || r.goalTarget != null)

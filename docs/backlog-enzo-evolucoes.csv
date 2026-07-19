@@ -1,0 +1,27 @@
+ID;Área;Item;Status;Onda;Prioridade;Esforço;Responsável;Como implementar;Arquivos
+P01;Pedidos;Filtros nos pedidos para faturar;Pendente;W2;Alta;M;Enzo;Estender GET /fiscal/outbound/orders com query e barra de filtros na NF-e de Saída;FaturamentoPage.tsx | fiscal.ts | fiscal-outbound.ts
+P02;Pedidos;Opção de transmissão em lote (NF-e);Pendente;W2;Alta;G;Enzo;Multi-select + POST batch transmit sequencial com progresso e erros por NF-e;FaturamentoPage.tsx | fiscal.ts | fiscal-outbound.ts
+P03;Pedidos;Número/ID do pedido como 1º campo na tabela de vendas;Feito;W0;Baixa;P;Enzo;Já existe coluna Código após checkbox;OrdersPage.tsx | order-code.ts
+P04;Pedidos;Filtros: nº pedido cidade fantasia razão social vendedor;Pendente;W1;Alta;M;Enzo;Filtros na UI /vendas + ampliar GET /admin/orders com join Customer;OrdersPage.tsx | admin.ts
+P05;Pedidos;Coluna Cidade na tabela;Pendente;W1;Alta;P;Enzo;Incluir customer.city no payload e coluna na OrdersPage;OrdersPage.tsx | admin.ts
+P06;Pedidos;Renomear aba para Pedidos;Pendente;W1;Média;P;Enzo;Trocar labels; manter rota /vendas ou redirect /pedidos;navConfig.ts | OrdersPage.tsx | DashboardHome.tsx
+P07;Pedidos;Inclusão / exclusão / status / nº do pedido;Parcial;W2;Alta;M;Enzo;Status e nº ok; definir exclusão da fila de faturamento;OrdersPage.tsx | FaturamentoPage.tsx | schema Order
+P08;Pedidos;Evoluir layout do pedido + logo;Parcial;W3;Média;M;Enzo;Reusar logo fiscal no order-pdf;order-pdf.ts | danfe-logo.ts
+P09;Pedidos;Multi-seleção de pedidos (checkbox);Feito;W0;Baixa;P;Enzo;Já na lista de Vendas;OrdersPage.tsx
+P10;Pedidos;Botão imprimir vários pedidos;Feito;W0;Baixa;P;Enzo;Já implementado;OrdersPage.tsx
+P11;Pedidos;Botão baixar PDF de vários pedidos;Feito;W0;Baixa;P;Enzo;Já implementado;OrdersPage.tsx
+P12;Pedidos;Permissão de impressão 80mm (térmica);Pendente;W3;Média;G;Enzo;Layout PDF 80mm + permissão RBAC + ?format=80mm;order-pdf.ts | permissions.ts | OrdersPage
+P13;Pedidos;Relatório de pedidos ± % lucro + seleção manual;Parcial;W3;Média;M;Enzo;Toggle includeProfit + orderIds[] no PDF de relatórios;ReportOrdersPage | orders.pdf
+P14;Pedidos;Atenção / revisão de itens no pedido;Pendente;W4;Média;G;Enzo;Flags needsReview por regra (NCM custo estoque) + UI;OrderDetailPage | OrderItem | admin
+C01;Clientes;Campos obrigatórios + opção não possui;Parcial;W4;Alta;M;Enzo;Ampliar validateCustomerForm com Não possui como IE;customer-form.ts | CustomerFormFields | wizard
+C02;Clientes;Remover conceito de pré-cadastro;Parcial;W4;Média;P;Enzo;Remover copy Pré-cadastro na UI;CustomersPage.tsx | mobile
+C03;Clientes;Fluxo auto-cadastro vs aprovação do gestor;Pendente;W4;Alta;G;Enzo;Setting AUTO|REQUIRE_APPROVAL + status PENDING + fila admin;schema | seller.ts | CustomersPage
+C04;Clientes;APP gravar lat/lng no cadastro;Parcial;W4;Alta;P;Enzo;Auto-capturar GPS no submit com fallback manual;useCustomerForm.ts | CustomerFormWizard
+PR01;Produtos;NCM pertence ao produto;Feito;W0;Baixa;P;Enzo;Já no schema/form;Product schema | ProductFormPage
+PR02;Produtos;Revisar regra de negócio do NCM;Parcial;W5;Alta;M;Enzo;Definir obrigatoriedade e unificar texto vs FiscalNcm;product-form.ts | fiscal validation
+PR03;Produtos;Seletor de produto com imagem;Feito;W0;Baixa;P;Enzo;ProductCombobox já mostra thumb;ProductCombobox.tsx
+PR04;Produtos;Tabela de preços filtrar produto + código;Feito;W0;Baixa;P;Enzo;Já filtra nome/SKU/código;PriceTablesPage.tsx
+U01;UX;Melhoria de layout tela a tela;Pendente;W5;Média;G;Enzo;Checklist por rota e padronizar FormSheet/empty states;pages/* | FormSheet | design-tokens
+U02;UX;Padronizar modais de confirmação;Parcial;W1;Média;P;Enzo;Unificar ConfirmProvider e confirmAction;app-notifications.tsx | confirm/*
+I01;IA / Dashboards;Aba Indicadores de desempenho KPIs;Parcial;W5;Média;M;Enzo;Consolidar KPIs + Insights numa aba clara no menu;InsightsPage | ManagementReportsPanel | navConfig
+I02;IA / Dashboards;Estudar Insights com IA;Parcial;W6;Baixa;G;Enzo;Spike técnico LLM + dados agregados após W1-W5;InsightsPage | management-reports

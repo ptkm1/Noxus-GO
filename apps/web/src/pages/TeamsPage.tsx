@@ -1,4 +1,5 @@
 import {
+  FormErrorBanner,
   FormField,
   FormGrid,
   FormSheet,
@@ -16,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
@@ -62,6 +64,7 @@ export function TeamsPage() {
   const [leaderSellerId, setLeaderSellerId] = useState("");
   const [memberSellerIds, setMemberSellerIds] = useState<string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
+  const [showValidation, setShowValidation] = useState(false);
 
   const availableSellers = useMemo(() => {
     return sellers.filter((s) => !s.team || s.team.id === editingId);
@@ -73,6 +76,7 @@ export function TeamsPage() {
     setLeaderSellerId("");
     setMemberSellerIds([]);
     setFormError(null);
+    setShowValidation(false);
   }
 
   function openCreate() {
@@ -86,6 +90,7 @@ export function TeamsPage() {
     setLeaderSellerId(team.leaderSellerId);
     setMemberSellerIds(team.members.map((m) => m.id));
     setFormError(null);
+    setShowValidation(false);
     setSheetOpen(true);
   }
 
@@ -147,6 +152,26 @@ export function TeamsPage() {
     leaderSellerId.length > 0 &&
     ensureLeaderInMembers(leaderSellerId, memberSellerIds).length > 0;
 
+  const fieldErrors = useMemo(() => {
+    if (!showValidation) return {} as Record<string, string>;
+    const e: Record<string, string> = {};
+    if (!name.trim()) e.name = "Nome da equipe é obrigatório.";
+    if (!leaderSellerId) e.leaderSellerId = "Selecione o líder.";
+    return e;
+  }, [showValidation, name, leaderSellerId]);
+
+  useScrollToFirstError(
+    Object.keys(fieldErrors).length > 0 ? fieldErrors : formError,
+    { enabled: showValidation || Boolean(formError) },
+  );
+
+  function trySubmit() {
+    setShowValidation(true);
+    setFormError(null);
+    if (!canSave) return;
+    save.mutate();
+  }
+
   return (
     <div className="space-y-8">
       <div className="flex items-start justify-between gap-4">
@@ -175,13 +200,9 @@ export function TeamsPage() {
         footer={
           <FormSheetActions
             onCancel={closeSheet}
-            onSubmit={() => {
-              setFormError(null);
-              save.mutate();
-            }}
+            onSubmit={trySubmit}
             submitLabel={editingId ? "Salvar alterações" : "Criar equipe"}
             pending={save.isPending}
-            disabled={!canSave}
           />
         }
       >
@@ -190,17 +211,24 @@ export function TeamsPage() {
             label="Nome da equipe"
             htmlFor="team-name"
             required
+            error={fieldErrors.name}
             className="sm:col-span-2"
           >
             <Input
               id="team-name"
+              aria-invalid={fieldErrors.name ? true : undefined}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Ex.: Equipe Sul"
             />
           </FormField>
 
-          <FormField label="Líder" htmlFor="team-leader" required>
+          <FormField
+            label="Líder"
+            htmlFor="team-leader"
+            required
+            error={fieldErrors.leaderSellerId}
+          >
             <AppSelect
               id="team-leader"
               value={leaderSellerId}
@@ -252,9 +280,7 @@ export function TeamsPage() {
           </FormField>
         </FormGrid>
 
-        {formError ? (
-          <p className="mt-3 text-sm text-destructive">{formError}</p>
-        ) : null}
+        <FormErrorBanner message={formError} className="mt-3" />
       </FormSheet>
 
       {isLoading ? (

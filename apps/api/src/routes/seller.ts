@@ -2,6 +2,11 @@ import type { OrderStatus } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
+import {
+  AUDIT_ACTION,
+  AUDIT_ENTITY,
+  auditFromAuth,
+} from "../services/audit-log.js";
 import { prisma } from "../db.js";
 import {
   notifyAdminsCreditPending,
@@ -21,14 +26,16 @@ import {
 import {
   customerBodySchema,
   customerPatchSchema,
+  parseCompleteCustomerBody,
   toCustomerPrismaData,
-  type CustomerBodyInput,
 } from "../services/customer-validation.js";
 import { isGoogleRoutesConfigured } from "../services/google-routes.js";
 import {
   loadOrderForPdf,
+  sendOrderPdf80mmReply,
   sendOrderPdfReply,
 } from "../services/order-pdf-load.js";
+import { canReadEffective } from "../services/role-permissions.js";
 import {
   computeSaleOrder,
   OrderPricingError,
@@ -187,6 +194,28 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!order) return reply.status(404).send({ error: "Não encontrado" });
     return sendOrderPdfReply(reply, order);
+  });
+
+  app.get("/sales/:id/pdf-80mm", async (req, reply) => {
+    const auth = req.auth!;
+    const allowed = await canReadEffective(
+      auth.organizationId,
+      auth.role,
+      "orders_print_80mm",
+    );
+    if (!allowed) {
+      return reply
+        .status(403)
+        .send({ error: "Sem permissão para imprimir pedido em layout 80mm" });
+    }
+    const { id } = idParam.parse(req.params);
+    const order = await loadOrderForPdf({
+      id,
+      organizationId: auth.organizationId,
+      sellerId: auth.sellerId!,
+    });
+    if (!order) return reply.status(404).send({ error: "Não encontrado" });
+    return sendOrderPdf80mmReply(reply, order);
   });
 
   app.post("/sales", async (req, reply) => {
@@ -372,6 +401,20 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         });
       }
 
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.CREATE,
+        entityType: AUDIT_ENTITY.Order,
+        entityId: order.id,
+        metadata: {
+          status: order.status,
+          sellerId: order.sellerId,
+          customerId: order.customerId,
+          itemCount: order.items.length,
+          totalAmount: Number(order.totalAmount),
+          source: "seller",
+        },
+      });
+
       return order;
     } catch (e) {
       if (e instanceof OrderPricingError)
@@ -543,13 +586,20 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         .send({ error: "Dados inválidos", details: body.error.flatten() });
 
     try {
-      return await prisma.customer.create({
+      const created = await prisma.customer.create({
         data: {
           organizationId: auth.organizationId,
           sellerId: auth.sellerId,
           ...toCustomerPrismaData(body.data),
         } as Prisma.CustomerUncheckedCreateInput,
       });
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.CREATE,
+        entityType: AUDIT_ENTITY.Customer,
+        entityId: created.id,
+        metadata: { name: created.name, source: "seller" },
+      });
+      return created;
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -581,7 +631,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
 
-    const merged: CustomerBodyInput = {
+    const merged = {
       name: body.data.name ?? existing.name,
       email: body.data.email !== undefined ? body.data.email : existing.email,
       phone: body.data.phone !== undefined ? body.data.phone : existing.phone,
@@ -592,7 +642,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       documentType:
         body.data.documentType !== undefined
           ? body.data.documentType
-          : (existing.documentType as CustomerBodyInput["documentType"]),
+          : existing.documentType,
       cnpj: body.data.cnpj !== undefined ? body.data.cnpj : existing.cnpj,
       cpf: body.data.cpf !== undefined ? body.data.cpf : existing.cpf,
       legalName:
@@ -629,13 +679,32 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       notes: body.data.notes !== undefined ? body.data.notes : existing.notes,
     };
 
+    const complete = parseCompleteCustomerBody(merged);
+    if (!complete.success) {
+      return reply.status(400).send({
+        error: "Cadastro incompleto — preencha todos os campos obrigatórios.",
+        details: complete.error.flatten(),
+      });
+    }
+
     try {
-      return await prisma.customer.update({
+      const updated = await prisma.customer.update({
         where: { id },
         data: toCustomerPrismaData(
-          merged,
+          complete.data,
         ) as Prisma.CustomerUncheckedUpdateInput,
       });
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.UPDATE,
+        entityType: AUDIT_ENTITY.Customer,
+        entityId: id,
+        metadata: {
+          name: updated.name,
+          fields: Object.keys(body.data),
+          source: "seller",
+        },
+      });
+      return updated;
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&

@@ -27,6 +27,7 @@ export function ReportFormLayout({
   generating,
   onClear,
   generateDisabled,
+  className,
 }: {
   title: string;
   children: ReactNode;
@@ -34,9 +35,10 @@ export function ReportFormLayout({
   generating?: boolean;
   onClear: () => void;
   generateDisabled?: boolean;
+  className?: string;
 }) {
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
+    <div className={cn("mx-auto max-w-3xl space-y-8", className)}>
       <div className="space-y-2">
         <ReportBreadcrumb current={title} />
         <h1 className="text-2xl font-semibold text-foreground">{title}</h1>

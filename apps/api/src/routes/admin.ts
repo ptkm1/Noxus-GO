@@ -28,12 +28,17 @@ import {
   notifySaleConfirmed,
   notifySellerGoalUpdated,
 } from "../services/admin-notifications.js";
-import { writeAuditLog } from "../services/audit-log.js";
+import {
+  AUDIT_ACTION,
+  AUDIT_ENTITY,
+  auditFromAuth,
+  writeAuditLog,
+} from "../services/audit-log.js";
 import {
   customerBodySchema,
   customerPatchSchema,
+  parseCompleteCustomerBody,
   toCustomerPrismaData,
-  type CustomerBodyInput,
 } from "../services/customer-validation.js";
 import { buildDistributorInsights } from "../services/distributor-insights.js";
 import {
@@ -76,7 +81,10 @@ import {
   buildVisitEffectiveness,
 } from "../services/management-reports.js";
 import { getWebPushPublicKey } from "../services/notify.js";
-import { sendOrderPdfReply } from "../services/order-pdf-load.js";
+import {
+  sendOrderPdf80mmReply,
+  sendOrderPdfReply,
+} from "../services/order-pdf-load.js";
 import {
   computeSaleOrder,
   OrderPricingError,
@@ -126,6 +134,11 @@ import { getSellerLocationHistory } from "../services/seller-location-history.js
 import { registerSellerLocationClient } from "../services/seller-location-ws.js";
 import { listAdminSellerLocations } from "../services/seller-locations-admin.js";
 import {
+  buildGoalScopeKey,
+  goalInclude,
+  notifyUserIdsForGoal,
+} from "../services/seller-monthly-goals.js";
+import {
   applyManualStockEntry,
   listExpiringLots,
   listStockMovements,
@@ -143,8 +156,6 @@ import {
 import { buildTeamSalesSummary } from "../services/team-sales-summary.js";
 import { decToNum } from "../util/money.js";
 import { fiscalRoutes } from "./fiscal.js";
-import { stockRoutes } from "./stock.js";
-
 const idParam = z.object({ id: z.string().min(1) });
 
 const sellerCommissionTypeSchema = z.enum([
@@ -618,7 +629,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .send({ error: "Região inválida para escopo da tabela" });
     }
 
-    return prisma.priceTable.create({
+    const created = await prisma.priceTable.create({
       data: {
         name: d.name,
         organizationId: auth.organizationId,
@@ -630,6 +641,13 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         regionId: d.regionId ?? null,
       },
     });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.CREATE,
+      entityType: AUDIT_ENTITY.PriceTable,
+      entityId: created.id,
+      metadata: { name: created.name },
+    });
+    return created;
   });
 
   app.patch("/price-tables/:id", async (req, reply) => {
@@ -683,7 +701,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .send({ error: "Região inválida para escopo da tabela" });
     }
 
-    return prisma.priceTable.update({
+    const updated = await prisma.priceTable.update({
       where: { id },
       data: {
         name: d.name ?? undefined,
@@ -705,6 +723,13 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         regionId: d.regionId === undefined ? undefined : d.regionId,
       },
     });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.UPDATE,
+      entityType: AUDIT_ENTITY.PriceTable,
+      entityId: id,
+      metadata: { fields: Object.keys(body.data) },
+    });
+    return updated;
   });
 
   app.delete("/price-tables/:id", async (req, reply) => {
@@ -715,6 +740,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
     await prisma.priceTable.delete({ where: { id } });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.DELETE,
+      entityType: AUDIT_ENTITY.PriceTable,
+      entityId: id,
+      metadata: { name: existing.name },
+    });
     return reply.status(204).send();
   });
 
@@ -961,7 +992,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(400).send({ error: "Dados inválidos" });
 
     try {
-      return await createSupplier(auth.organizationId, body.data);
+      const created = await createSupplier(auth.organizationId, body.data);
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.CREATE,
+        entityType: AUDIT_ENTITY.Supplier,
+        entityId: created.id,
+        metadata: { tradeName: created.tradeName, cnpj: created.cnpj },
+      });
+      return created;
     } catch (e) {
       if (e instanceof SupplierError)
         return reply.status(400).send({ error: e.message });
@@ -988,6 +1026,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       const supplier = await updateSupplier(auth.organizationId, id, body.data);
       if (!supplier)
         return reply.status(404).send({ error: "Fornecedor não encontrado" });
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.UPDATE,
+        entityType: AUDIT_ENTITY.Supplier,
+        entityId: id,
+        metadata: { fields: Object.keys(body.data) },
+      });
       return supplier;
     } catch (e) {
       if (e instanceof SupplierError)
@@ -1003,6 +1047,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       const ok = await deleteSupplier(auth.organizationId, id);
       if (!ok)
         return reply.status(404).send({ error: "Fornecedor não encontrado" });
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.DELETE,
+        entityType: AUDIT_ENTITY.Supplier,
+        entityId: id,
+      });
       return reply.status(204).send();
     } catch (e) {
       if (e instanceof SupplierError)
@@ -1472,11 +1521,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       })),
     );
 
-    await writeAuditLog({
-      organizationId: auth.organizationId,
-      userId: auth.sub,
-      action: "PERMISSIONS_MATRIX_UPDATE",
-      entityType: "OrganizationRolePermission",
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.PERMISSIONS_UPDATE,
+      entityType: AUDIT_ENTITY.OrganizationRolePermission,
       entityId: auth.organizationId,
       metadata: { updateCount: updates.length },
     });
@@ -1491,6 +1538,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         take: z.coerce.number().int().positive().optional(),
         skip: z.coerce.number().int().nonnegative().optional(),
         entityType: z.string().optional(),
+        entityId: z.string().optional(),
+        action: z.string().optional(),
+        matricula: z.string().optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
       })
       .safeParse(req.query);
     const take = Math.min(q.success ? (q.data.take ?? 50) : 50, 200);
@@ -1498,7 +1550,27 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const where: Prisma.AuditLogWhereInput = {
       organizationId: auth.organizationId,
     };
-    if (q.success && q.data.entityType) where.entityType = q.data.entityType;
+    if (q.success) {
+      if (q.data.entityType) where.entityType = q.data.entityType;
+      if (q.data.entityId) where.entityId = q.data.entityId;
+      if (q.data.action) where.action = q.data.action;
+      if (q.data.matricula?.trim()) {
+        where.userMatricula = {
+          contains: q.data.matricula.trim(),
+          mode: "insensitive",
+        };
+      }
+      const createdAt: Prisma.DateTimeFilter = {};
+      if (q.data.from?.trim()) {
+        const from = new Date(q.data.from);
+        if (!Number.isNaN(from.getTime())) createdAt.gte = from;
+      }
+      if (q.data.to?.trim()) {
+        const to = new Date(q.data.to);
+        if (!Number.isNaN(to.getTime())) createdAt.lte = to;
+      }
+      if (Object.keys(createdAt).length > 0) where.createdAt = createdAt;
+    }
     const [items, total] = await Promise.all([
       prisma.auditLog.findMany({
         where,
@@ -1675,8 +1747,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         organizationId: auth.organizationId,
         userId: auth.sub,
         userMatricula: actor?.matricula ?? null,
-        action: "product.create",
-        entityType: "Product",
+        action: AUDIT_ACTION.CREATE,
+        entityType: AUDIT_ENTITY.Product,
         entityId: created.id,
         metadata: { name: created.name, stockQty: initialQty },
       });
@@ -1811,7 +1883,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     }
 
     try {
-      return await prisma.product.update({
+      const updated = await prisma.product.update({
         where: { id },
         data: {
           name: body.data.name,
@@ -1886,6 +1958,13 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         },
         include: productRelationsInclude,
       });
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.UPDATE,
+        entityType: AUDIT_ENTITY.Product,
+        entityId: id,
+        metadata: { name: updated.name, fields: Object.keys(body.data) },
+      });
+      return updated;
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -1907,16 +1986,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
     await prisma.product.delete({ where: { id } });
-    const actor = await prisma.user.findUnique({
-      where: { id: auth.sub },
-      select: { matricula: true },
-    });
-    await writeAuditLog({
-      organizationId: auth.organizationId,
-      userId: auth.sub,
-      userMatricula: actor?.matricula ?? null,
-      action: "product.delete",
-      entityType: "Product",
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.DELETE,
+      entityType: AUDIT_ENTITY.Product,
       entityId: id,
       metadata: { name: existing.name },
     });
@@ -2015,6 +2087,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         minQuantity: d.minQuantity ?? null,
       },
       include: promotionRelationInclude,
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.CREATE,
+      entityType: AUDIT_ENTITY.ProductPromotion,
+      entityId: row.id,
+      metadata: { productId, scope: d.scope, kind: d.kind, value: d.value },
     });
     return serializeProductPromotion(row);
   });
@@ -2134,6 +2212,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         },
         include: promotionRelationInclude,
       });
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.UPDATE,
+        entityType: AUDIT_ENTITY.ProductPromotion,
+        entityId: p.promotionId,
+        metadata: { productId: p.productId, fields: Object.keys(body.data) },
+      });
       return serializeProductPromotion(row);
     },
   );
@@ -2157,6 +2241,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       });
       if (!existing) return reply.status(404).send({ error: "Não encontrado" });
       await prisma.productPromotion.delete({ where: { id: par.promotionId } });
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.DELETE,
+        entityType: AUDIT_ENTITY.ProductPromotion,
+        entityId: par.promotionId,
+        metadata: { productId: par.productId },
+      });
       return reply.status(204).send();
     },
   );
@@ -2238,8 +2328,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       organizationId: auth.organizationId,
       userId: auth.sub,
       userMatricula: actor?.matricula ?? null,
-      action: "user.create",
-      entityType: "User",
+      action: AUDIT_ACTION.CREATE,
+      entityType: AUDIT_ENTITY.User,
       entityId: created.id,
       metadata: { email: created.email, role: created.role },
     });
@@ -2277,6 +2367,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
     try {
       const team = await createSalesTeam(auth.organizationId, body.data);
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.CREATE,
+        entityType: AUDIT_ENTITY.SalesTeam,
+        entityId: team.id,
+        metadata: { name: team.name },
+      });
       return serializeSalesTeam(team);
     } catch (e) {
       if (e instanceof SalesTeamError)
@@ -2302,6 +2398,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       const team = await updateSalesTeam(auth.organizationId, id, body.data);
       if (!team)
         return reply.status(404).send({ error: "Equipe não encontrada" });
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.UPDATE,
+        entityType: AUDIT_ENTITY.SalesTeam,
+        entityId: id,
+        metadata: { fields: Object.keys(body.data) },
+      });
       return serializeSalesTeam(team);
     } catch (e) {
       if (e instanceof SalesTeamError)
@@ -2315,6 +2417,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(req.params);
     const ok = await deleteSalesTeam(auth.organizationId, id);
     if (!ok) return reply.status(404).send({ error: "Equipe não encontrada" });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.DELETE,
+      entityType: AUDIT_ENTITY.SalesTeam,
+      entityId: id,
+    });
     return reply.status(204).send();
   });
 
@@ -2598,12 +2705,19 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     }
 
     try {
-      return await prisma.customer.create({
+      const created = await prisma.customer.create({
         data: {
           organizationId: auth.organizationId,
           ...toCustomerPrismaData(body.data, { includeCredit: true }),
         } as Prisma.CustomerUncheckedCreateInput,
       });
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.CREATE,
+        entityType: AUDIT_ENTITY.Customer,
+        entityId: created.id,
+        metadata: { name: created.name },
+      });
+      return created;
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -2638,7 +2752,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       if (!r) return reply.status(400).send({ error: "Região inválida" });
     }
 
-    const merged: CustomerBodyInput = {
+    const merged = {
       name: body.data.name ?? existing.name,
       email: body.data.email !== undefined ? body.data.email : existing.email,
       phone: body.data.phone !== undefined ? body.data.phone : existing.phone,
@@ -2669,7 +2783,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       documentType:
         body.data.documentType !== undefined
           ? body.data.documentType
-          : (existing.documentType as CustomerBodyInput["documentType"]),
+          : existing.documentType,
       cnpj: body.data.cnpj !== undefined ? body.data.cnpj : existing.cnpj,
       cpf: body.data.cpf !== undefined ? body.data.cpf : existing.cpf,
       legalName:
@@ -2716,13 +2830,32 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           : existing.creditBlocked,
     };
 
+    const complete = parseCompleteCustomerBody(merged);
+    if (!complete.success) {
+      return reply
+        .status(400)
+        .send({
+          error: "Cadastro incompleto — preencha todos os campos obrigatórios.",
+          details: complete.error.flatten(),
+        });
+    }
+
     try {
-      return await prisma.customer.update({
+      const updated = await prisma.customer.update({
         where: { id },
-        data: toCustomerPrismaData(merged, {
+        data: toCustomerPrismaData(complete.data, {
           includeCredit: true,
         }) as Prisma.CustomerUncheckedUpdateInput,
+      });      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.UPDATE,
+        entityType: AUDIT_ENTITY.Customer,
+        entityId: id,
+        metadata: {
+          name: updated.name,
+          fields: Object.keys(body.data),
+        },
       });
+      return updated;
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -2744,6 +2877,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
     await prisma.customer.delete({ where: { id } });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.DELETE,
+      entityType: AUDIT_ENTITY.Customer,
+      entityId: id,
+      metadata: { name: existing.name },
+    });
     return reply.status(204).send();
   });
 
@@ -3103,6 +3242,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         status: z
           .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
           .optional(),
+        /** Número/código do pedido (número exato ou prefixo do id). */
+        orderNumber: z.string().optional(),
+        /** Alias de orderNumber. */
+        q: z.string().optional(),
+        city: z.string().optional(),
+        tradeName: z.string().optional(),
+        legalName: z.string().optional(),
+        /** Alias de legalName (também busca em customer.name). */
+        name: z.string().optional(),
       })
       .safeParse(req.query);
 
@@ -3112,6 +3260,44 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (q.success) {
       if (q.data.sellerId) where.sellerId = q.data.sellerId;
       if (q.data.status) where.status = q.data.status as OrderStatus;
+
+      const codeRaw = (q.data.orderNumber ?? q.data.q)?.trim();
+      if (codeRaw) {
+        const digits = codeRaw.replace(/^#/, "").trim();
+        if (/^\d+$/.test(digits)) {
+          where.orderNumber = Number(digits);
+        } else if (digits) {
+          where.id = { startsWith: digits, mode: "insensitive" };
+        }
+      }
+
+      const customerAnd: Prisma.CustomerWhereInput[] = [];
+      const city = q.data.city?.trim();
+      if (city) {
+        customerAnd.push({
+          city: { contains: city, mode: "insensitive" },
+        });
+      }
+      const tradeName = q.data.tradeName?.trim();
+      if (tradeName) {
+        customerAnd.push({
+          tradeName: { contains: tradeName, mode: "insensitive" },
+        });
+      }
+      const legalTerm = (q.data.legalName ?? q.data.name)?.trim();
+      if (legalTerm) {
+        customerAnd.push({
+          OR: [
+            { legalName: { contains: legalTerm, mode: "insensitive" } },
+            { name: { contains: legalTerm, mode: "insensitive" } },
+          ],
+        });
+      }
+      if (customerAnd.length === 1) {
+        where.customer = customerAnd[0];
+      } else if (customerAnd.length > 1) {
+        where.customer = { AND: customerAnd };
+      }
     }
 
     return prisma.order.findMany({
@@ -3174,6 +3360,33 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return sendOrderPdfReply(reply, order);
   });
 
+  app.get("/orders/:id/pdf-80mm", async (req, reply) => {
+    const auth = req.auth!;
+    const allowed = await canReadEffective(
+      auth.organizationId,
+      auth.role,
+      "orders_print_80mm",
+    );
+    if (!allowed) {
+      return reply
+        .status(403)
+        .send({ error: "Sem permissão para imprimir pedido em layout 80mm" });
+    }
+    const { id } = idParam.parse(req.params);
+    const scoped = orderScopeWhere(auth);
+    const order = await prisma.order.findFirst({
+      where: { id, ...scoped },
+      include: {
+        seller: { include: { user: { select: { name: true, email: true } } } },
+        customer: true,
+        items: { include: { product: { select: { sku: true } } } },
+        organization: { select: { name: true, displayName: true } },
+      },
+    });
+    if (!order) return reply.status(404).send({ error: "Não encontrado" });
+    return sendOrderPdf80mmReply(reply, order);
+  });
+
   app.patch("/orders/:id/status", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
@@ -3221,6 +3434,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       },
     });
 
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.STATUS_CHANGE,
+      entityType: AUDIT_ENTITY.Order,
+      entityId: id,
+      metadata: {
+        fromStatus: existing.status,
+        toStatus: body.data.status,
+      },
+    });
+
     if (body.data.status === "CONFIRMED" && existing.status !== "CONFIRMED") {
       void notifySaleConfirmed({
         organizationId: auth.organizationId,
@@ -3238,6 +3461,42 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     }
 
     return updated;
+  });
+
+  app.delete("/orders/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const existing = await prisma.order.findFirst({
+      where: { id, organizationId: auth.organizationId },
+    });
+    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+
+    try {
+      if (existing.status === "CONFIRMED") {
+        await applyStockOnStatusChange(
+          id,
+          existing.status,
+          "CANCELLED",
+          auth.sub,
+        );
+      }
+    } catch (e) {
+      if (e instanceof StockError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+
+    await prisma.order.delete({ where: { id } });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.DELETE,
+      entityType: AUDIT_ENTITY.Order,
+      entityId: id,
+      metadata: {
+        orderNumber: existing.orderNumber,
+        status: existing.status,
+      },
+    });
+    return reply.status(204).send();
   });
 
   app.post("/orders", async (req, reply) => {
@@ -3349,6 +3608,19 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           },
         });
       }
+
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.CREATE,
+        entityType: AUDIT_ENTITY.Order,
+        entityId: order.id,
+        metadata: {
+          status: order.status,
+          sellerId: order.sellerId,
+          customerId: order.customerId,
+          itemCount: order.items.length,
+          totalAmount: Number(order.totalAmount),
+        },
+      });
 
       return order;
     } catch (e) {
@@ -3780,12 +4052,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return reply.status(204).send();
   });
 
-  /* --- Metas mensais por vendedor --- */
+  /* --- Metas mensais (vendedor / equipe / todos) --- */
   app.get("/seller-monthly-goals", async (req) => {
     const auth = req.auth!;
     const q = z
       .object({
         sellerId: z.string().optional(),
+        teamId: z.string().optional(),
+        scope: z.enum(["SELLER", "TEAM", "ALL"]).optional(),
         year: z.coerce.number().int().optional(),
         month: z.coerce.number().int().min(1).max(12).optional(),
       })
@@ -3795,15 +4069,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     };
     if (q.success) {
       if (q.data.sellerId) where.sellerId = q.data.sellerId;
+      if (q.data.teamId) where.teamId = q.data.teamId;
+      if (q.data.scope) where.scope = q.data.scope;
       if (q.data.year != null) where.year = q.data.year;
       if (q.data.month != null) where.month = q.data.month;
     }
     return prisma.sellerMonthlyGoal.findMany({
       where,
-      orderBy: [{ year: "desc" }, { month: "desc" }, { sellerId: "asc" }],
-      include: {
-        seller: { include: { user: { select: { name: true } } } },
-      },
+      orderBy: [{ year: "desc" }, { month: "desc" }, { scope: "asc" }],
+      include: goalInclude,
     });
   });
 
@@ -3811,7 +4085,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const body = z
       .object({
-        sellerId: z.string(),
+        scope: z.enum(["SELLER", "TEAM", "ALL"]).default("SELLER"),
+        sellerId: z.string().optional(),
+        teamId: z.string().optional(),
         year: z.number().int().min(2000).max(2100),
         month: z.number().int().min(1).max(12),
         title: z.string().min(1).optional(),
@@ -3822,23 +4098,44 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(400).send({ error: "Dados inválidos" });
 
     const d = body.data;
-    const seller = await prisma.seller.findFirst({
-      where: { id: d.sellerId, organizationId: auth.organizationId },
-    });
-    if (!seller) return reply.status(400).send({ error: "Vendedor inválido" });
+    let sellerId: string | null = null;
+    let teamId: string | null = null;
+
+    if (d.scope === "SELLER") {
+      if (!d.sellerId)
+        return reply.status(400).send({ error: "Vendedor obrigatório" });
+      const seller = await prisma.seller.findFirst({
+        where: { id: d.sellerId, organizationId: auth.organizationId },
+      });
+      if (!seller) return reply.status(400).send({ error: "Vendedor inválido" });
+      sellerId = d.sellerId;
+    } else if (d.scope === "TEAM") {
+      if (!d.teamId)
+        return reply.status(400).send({ error: "Equipe obrigatória" });
+      const team = await prisma.salesTeam.findFirst({
+        where: { id: d.teamId, organizationId: auth.organizationId },
+      });
+      if (!team) return reply.status(400).send({ error: "Equipe inválida" });
+      teamId = d.teamId;
+    }
+
+    const scopeKey = buildGoalScopeKey(d.scope, sellerId, teamId);
 
     const goal = await prisma.sellerMonthlyGoal.upsert({
       where: {
-        organizationId_sellerId_year_month: {
+        organizationId_scopeKey_year_month: {
           organizationId: auth.organizationId,
-          sellerId: d.sellerId,
+          scopeKey,
           year: d.year,
           month: d.month,
         },
       },
       create: {
         organizationId: auth.organizationId,
-        sellerId: d.sellerId,
+        scope: d.scope,
+        scopeKey,
+        sellerId,
+        teamId,
         year: d.year,
         month: d.month,
         title: d.title?.trim() ?? "Meta do mês",
@@ -3848,19 +4145,20 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         title: d.title?.trim(),
         targetAmount: d.targetAmount,
       },
-      include: {
-        seller: { include: { user: { select: { name: true } } } },
-      },
+      include: goalInclude,
     });
 
+    const userIds = await notifyUserIdsForGoal(auth.organizationId, goal);
     void notifySellerGoalUpdated({
-      sellerId: goal.sellerId,
       organizationId: auth.organizationId,
       goalId: goal.id,
       year: goal.year,
       month: goal.month,
       targetAmount: Number(goal.targetAmount),
       title: goal.title,
+      userIds,
+      sellerId: goal.sellerId,
+      scope: goal.scope,
     });
 
     return goal;
@@ -3889,19 +4187,20 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         title: body.data.title?.trim(),
         targetAmount: body.data.targetAmount ?? undefined,
       },
-      include: {
-        seller: { include: { user: { select: { name: true } } } },
-      },
+      include: goalInclude,
     });
 
+    const userIds = await notifyUserIdsForGoal(auth.organizationId, goal);
     void notifySellerGoalUpdated({
-      sellerId: goal.sellerId,
       organizationId: auth.organizationId,
       goalId: goal.id,
       year: goal.year,
       month: goal.month,
       targetAmount: Number(goal.targetAmount),
       title: goal.title,
+      userIds,
+      sellerId: goal.sellerId,
+      scope: goal.scope,
     });
 
     return goal;
@@ -4179,6 +4478,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         romaneio: z
           .union([z.literal("1"), z.literal("true"), z.literal("0")])
           .optional(),
+        includeProfitPercent: z
+          .union([z.literal("1"), z.literal("true"), z.literal("0")])
+          .optional(),
+        /** Comma-separated or repeated query: orderIds=a,b or orderIds=a&orderIds=b */
+        orderIds: z.union([z.string(), z.array(z.string())]).optional(),
       })
       .passthrough()
       .safeParse(req.query);
@@ -4186,6 +4490,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const extras = readExtraParams(
       (q.success ? q.data : req.query) as Record<string, unknown>,
     );
+    const orderIdsRaw = filters.orderIds;
+    const orderIds = orderIdsRaw
+      ? (Array.isArray(orderIdsRaw) ? orderIdsRaw : orderIdsRaw.split(","))
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : undefined;
     const pdf = await buildOrdersPdf({
       organizationId: auth.organizationId,
       sellerId: filters.sellerId,
@@ -4194,6 +4504,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       to: filters.to,
       status: filters.status,
       romaneio: filters.romaneio === "1" || filters.romaneio === "true",
+      includeProfitPercent:
+        filters.includeProfitPercent === "1" ||
+        filters.includeProfitPercent === "true",
+      orderIds: orderIds?.length ? orderIds : undefined,
       extras,
     });
     const filename =
@@ -4358,5 +4672,4 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   });
 
   await app.register(fiscalRoutes, { prefix: "/fiscal" });
-  await app.register(stockRoutes, { prefix: "/stock" });
 };

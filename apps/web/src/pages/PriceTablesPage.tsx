@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
@@ -72,6 +73,7 @@ export function PriceTablesPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
+  const [showCreateValidation, setShowCreateValidation] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [productId, setProductId] = useState("");
@@ -89,6 +91,7 @@ export function PriceTablesPage() {
 
   function resetCreateForm() {
     setName("");
+    setShowCreateValidation(false);
   }
 
   function resetDetailForm() {
@@ -132,6 +135,20 @@ export function PriceTablesPage() {
     },
   });
 
+  const createFieldErrors = useMemo(() => {
+    if (!showCreateValidation) return {} as Record<string, string>;
+    return !name.trim() ? { name: "Nome é obrigatório." } : {};
+  }, [showCreateValidation, name]);
+
+  useScrollToFirstError(createFieldErrors, {
+    enabled: showCreateValidation,
+  });
+
+  function tryCreateTable() {
+    setShowCreateValidation(true);
+    if (!name.trim()) return;
+    createTable.mutate();
+  }
   const addItem = useMutation({
     mutationFn: () =>
       apiFetch(`/admin/price-tables/${selectedId}/items`, {
@@ -208,19 +225,22 @@ export function PriceTablesPage() {
         footer={
           <FormSheetActions
             onCancel={closeCreate}
-            onSubmit={() => {
-              if (name) createTable.mutate();
-            }}
+            onSubmit={tryCreateTable}
             submitLabel="Criar tabela"
             pending={createTable.isPending}
-            disabled={!name}
           />
         }
       >
-        <FormField label="Nome" htmlFor="pt-name" required>
+        <FormField
+          label="Nome"
+          htmlFor="pt-name"
+          required
+          error={createFieldErrors.name}
+        >
           <Input
             id="pt-name"
             placeholder="Nome da nova tabela"
+            aria-invalid={createFieldErrors.name ? true : undefined}
             value={name}
             onChange={(e) => setName(e.target.value)}
           />

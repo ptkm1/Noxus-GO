@@ -1,6 +1,8 @@
 import { useAuth } from "@/auth/AuthContext";
+import { AuditLogPanel } from "@/components/AuditLogPanel";
 import { ProductListCell } from "@/components/ProductCombobox";
 import {
+  FormErrorBanner,
   FormField,
   FormGrid,
   FormSheet,
@@ -18,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -138,6 +141,7 @@ export function StockPage() {
       void qc.invalidateQueries({ queryKey: ["admin", "stock-movements"] });
       void qc.invalidateQueries({ queryKey: ["admin", "stock-expiring"] });
       void qc.invalidateQueries({ queryKey: ["admin", "products"] });
+      void qc.invalidateQueries({ queryKey: ["admin", "audit-logs"] });
       closeSheet();
     },
     onError: (e: Error) => setFormError(e.message),
@@ -150,6 +154,8 @@ export function StockPage() {
     lotCode.trim() &&
     expiresAt &&
     password.length > 0;
+
+  useScrollToFirstError(formError, { enabled: Boolean(formError) });
 
   return (
     <div className="space-y-6">
@@ -282,6 +288,14 @@ export function StockPage() {
         </div>
       )}
 
+      <div className="surface-card p-6">
+        <AuditLogPanel
+          title="Histórico de movimentações (auditoria)"
+          action="STOCK_ENTRY"
+          take={40}
+        />
+      </div>
+
       <FormSheet
         open={sheetOpen}
         onOpenChange={(open) => {
@@ -381,11 +395,10 @@ export function StockPage() {
               placeholder="Confirme sua senha"
             />
           </FormField>
-          {formError ? (
-            <p className="sm:col-span-2 text-sm text-destructive">
-              {formError}
-            </p>
-          ) : null}
+          <FormErrorBanner
+            message={formError}
+            className="sm:col-span-2"
+          />
         </FormGrid>
       </FormSheet>
     </div>

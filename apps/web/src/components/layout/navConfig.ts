@@ -82,7 +82,7 @@ export const DASHBOARD_NAV: NavItem[] = [
     icon: Navigation,
     resource: "tracking",
   },
-  { to: "/vendas", label: "Vendas", icon: ShoppingCart, resource: "orders" },
+  { to: "/pedidos", label: "Pedidos", icon: ShoppingCart, resource: "orders" },
   { to: "/fiscal", label: "Fiscal", icon: Receipt, resource: "fiscal" },
   {
     to: "/faturamento",
@@ -124,7 +124,7 @@ export const TEAM_LEADER_NAV: NavItem[] = [
     icon: MapPin,
     resource: "visits",
   },
-  { to: "/vendas", label: "Vendas", icon: ShoppingCart, resource: "orders" },
+  { to: "/pedidos", label: "Pedidos", icon: ShoppingCart, resource: "orders" },
   {
     to: "/insights",
     label: "Insights da equipe",
@@ -148,7 +148,8 @@ export function resourceForPath(pathname: string): PermissionResource | null {
     return "customers";
   if (pathname.startsWith("/visitas")) return "visits";
   if (pathname.startsWith("/rastreio")) return "tracking";
-  if (pathname.startsWith("/vendas")) return "orders";
+  if (pathname.startsWith("/pedidos") || pathname.startsWith("/vendas"))
+    return "orders";
   if (pathname.startsWith("/fiscal") || pathname.startsWith("/faturamento"))
     return "fiscal";
   if (

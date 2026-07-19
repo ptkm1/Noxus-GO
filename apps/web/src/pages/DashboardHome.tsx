@@ -98,8 +98,8 @@ const adminCards: DashCard[] = [
     icon: MapPin,
   },
   {
-    to: "/vendas",
-    title: "Vendas",
+    to: "/pedidos",
+    title: "Pedidos",
     description: "Lista e detalhes com itens e status",
     icon: ShoppingCart,
   },
@@ -143,8 +143,8 @@ const managerCards: DashCard[] = [
     icon: MapPin,
   },
   {
-    to: "/vendas",
-    title: "Vendas",
+    to: "/pedidos",
+    title: "Pedidos",
     description: "Pedidos da equipe (leitura)",
     icon: ShoppingCart,
   },
@@ -164,8 +164,8 @@ const teamLeaderCards: DashCard[] = [
     icon: MapPin,
   },
   {
-    to: "/vendas",
-    title: "Vendas",
+    to: "/pedidos",
+    title: "Pedidos",
     description: "Pedidos confirmados da equipe",
     icon: ShoppingCart,
   },
@@ -299,8 +299,8 @@ export function DashboardHome() {
           <strong className="text-primary">{pendingCount}</strong>{" "}
           <span className="text-foreground">
             venda(s) aguardando análise de crédito.{" "}
-            <Link to="/vendas" className="font-medium text-primary underline">
-              Ver vendas
+            <Link to="/pedidos" className="font-medium text-primary underline">
+              Ver pedidos
             </Link>
           </span>
         </div>

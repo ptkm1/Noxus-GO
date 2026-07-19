@@ -94,6 +94,7 @@ export default function ProfileScreen() {
 
   const mtd = commission?.mtd.confirmedRevenue ?? 0;
   const goalTarget = commission?.goal?.targetAmount ?? 0;
+  const goalCurrent = commission?.goal?.achievedAmount ?? mtd;
   const rank = commission?.ranking.position;
   const totalSellers = commission?.ranking.totalSellers ?? 0;
 
@@ -144,8 +145,12 @@ export default function ProfileScreen() {
 
         {goalTarget > 0 ? (
           <ProgressStat
-            title={commission?.goal?.title ?? "Meta do mês"}
-            current={mtd}
+            title={
+              commission?.goal?.scopeLabel
+                ? `${commission.goal.title} · ${commission.goal.scopeLabel}`
+                : (commission?.goal?.title ?? "Meta do mês")
+            }
+            current={goalCurrent}
             target={goalTarget}
             formatValue={(v) => `R$ ${fmtMoney(v)}`}
           />

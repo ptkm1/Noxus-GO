@@ -50,7 +50,12 @@ export function FormSheet({
             <SheetDescription>{description}</SheetDescription>
           ) : null}
         </SheetHeader>
-        <div className="flex-1 overflow-y-auto px-4 py-4">{children}</div>
+        <div
+          data-form-sheet-scroll
+          className="flex-1 overflow-y-auto px-4 py-4"
+        >
+          {children}
+        </div>
         {footer ? (
           <SheetFooter className="border-t border-border sm:flex-row sm:justify-end">
             {footer}

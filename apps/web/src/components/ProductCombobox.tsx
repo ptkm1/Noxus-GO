@@ -7,7 +7,7 @@ import {
 import { fieldControlClass } from "@/lib/field-styles";
 import { cn } from "@/lib/utils";
 import { Check, ChevronsUpDown, Package, Search } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 
 export type ProductComboboxItem = {
   id: string;
@@ -108,6 +108,9 @@ export function matchesProductQuery(
   return name.includes(q) || sku.includes(q) || barcode.includes(q);
 }
 
+const MODAL_HOST_SELECTOR =
+  '[data-slot="sheet-content"], [data-slot="dialog-content"]';
+
 export function ProductCombobox({
   id,
   value,
@@ -121,8 +124,14 @@ export function ProductCombobox({
   className,
 }: Props) {
   const listId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  /** Portal into Sheet/Dialog content so RemoveScroll shards + pointer-events apply. */
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(
+    null,
+  );
 
   const selected = useMemo(
     () => products.find((p) => p.id === value) ?? null,
@@ -141,15 +150,25 @@ export function ProductCombobox({
   }
 
   return (
+    // modal + portal into Sheet/Dialog: body gets pointer-events:none and Dialog
+    // RemoveScroll only allows wheel on content shards — portaling to body breaks both.
     <Popover
+      modal
       open={open}
       onOpenChange={(next) => {
+        if (next) {
+          const host = triggerRef.current?.closest(MODAL_HOST_SELECTOR);
+          setPortalContainer(host instanceof HTMLElement ? host : null);
+        } else {
+          setPortalContainer(null);
+          setQuery("");
+        }
         setOpen(next);
-        if (!next) setQuery("");
       }}
     >
       <PopoverTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           id={id}
           aria-haspopup="listbox"
@@ -176,8 +195,15 @@ export function ProductCombobox({
         </button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-(--radix-popover-trigger-width) min-w-[280px] p-0"
+        container={portalContainer}
+        className="pointer-events-auto z-[100] w-(--radix-popover-trigger-width) min-w-[280px] p-0"
         align="start"
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          searchRef.current?.focus();
+        }}
+        onWheel={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
       >
         <div className="space-y-1.5 border-b border-border p-2">
           <label
@@ -189,12 +215,12 @@ export function ProductCombobox({
           <div className="relative">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              ref={searchRef}
               id={`${listId}-search`}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={searchPlaceholder}
               className="h-8 pl-8"
-              autoFocus
               aria-label="Buscar por nome, SKU ou código de barras"
               aria-autocomplete="list"
               aria-controls={listId}
@@ -205,7 +231,9 @@ export function ProductCombobox({
           id={listId}
           role="listbox"
           aria-label="Produtos"
-          className="max-h-64 overflow-y-auto p-1"
+          className="max-h-64 overflow-y-auto overscroll-contain p-1"
+          onWheel={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
         >
           {emptyLabel != null ? (
             <button
