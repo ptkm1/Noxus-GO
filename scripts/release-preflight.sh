@@ -53,16 +53,26 @@ fi
 
 echo "==> Alvo: $HOST"
 echo "==> Status das migrations"
+# migrate status exit 1 = há pendências (esperado); não abortar o script.
+set +e
 pnpm exec dotenv -v DATABASE_URL="$DATABASE_URL" -- \
   prisma migrate status --config apps/api/prisma.config.ts
+STATUS_RC=$?
+set -e
+if [[ "$STATUS_RC" -gt 1 ]]; then
+  echo "migrate status falhou (rc=$STATUS_RC)" >&2
+  exit "$STATUS_RC"
+fi
 
 if [[ "$DO_MIGRATE" -eq 1 ]]; then
   echo "==> migrate deploy"
   pnpm exec dotenv -v DATABASE_URL="$DATABASE_URL" -- \
     prisma migrate deploy --config apps/api/prisma.config.ts
   echo "==> Status após migrate"
+  set +e
   pnpm exec dotenv -v DATABASE_URL="$DATABASE_URL" -- \
     prisma migrate status --config apps/api/prisma.config.ts
+  set -e
 else
   echo "(pula migrate — passe --migrate para aplicar)"
 fi
