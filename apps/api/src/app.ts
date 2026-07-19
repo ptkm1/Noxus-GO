@@ -1,11 +1,12 @@
-import Fastify, { type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
+import Fastify, { type FastifyRequest } from "fastify";
 import { verifyAccessToken, type AccessPayload } from "./auth/jwt.js";
-import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
-import { sellerRoutes } from "./routes/seller.js";
+import { authRoutes } from "./routes/auth.js";
 import { integrationsRoutes } from "./routes/integrations.js";
+import { jobsRoutes } from "./routes/jobs.js";
+import { sellerRoutes } from "./routes/seller.js";
 
 const API_PREFIX = "/api/v1";
 
@@ -25,6 +26,7 @@ export async function buildApp() {
     allowedHeaders: [
       "content-type",
       "authorization",
+      "x-cron-secret",
       "ngrok-skip-browser-warning",
     ],
   });
@@ -49,6 +51,7 @@ export async function buildApp() {
     async (r) => {
       await r.register(authRoutes, { prefix: "/auth" });
       await r.register(integrationsRoutes, { prefix: "/integrations" });
+      await r.register(jobsRoutes, { prefix: "/jobs" });
     },
     { prefix: v1 },
   );

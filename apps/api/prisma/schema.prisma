@@ -195,6 +195,7 @@ model Organization {
   fiscalOperations      FiscalOperation[]
   fiscalInvoices        FiscalInvoice[]
   productStocks         ProductStock[]
+  stockExpiryAlerts     StockExpiryAlert[]
 }
 
 /// Matriz de permissões por organização (defaults seedados; ADMIN edita via painel).
@@ -497,12 +498,28 @@ model ProductLot {
   expiresAt      DateTime
   qty            Int            @default(0)
   movements      StockMovement[]
+  expiryAlerts   StockExpiryAlert[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
   @@unique([productId, lotCode])
   @@index([organizationId, expiresAt])
   @@index([productId, expiresAt])
+}
+
+/// Dedupe de push de validade: um aviso por lote × limiar (30/7/3/0 dias).
+model StockExpiryAlert {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lotId          String
+  lot            ProductLot   @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  /// Limiar cruzado: 30 | 7 | 3 | 0 (vencido).
+  thresholdDays  Int
+  notifiedAt     DateTime     @default(now())
+
+  @@unique([lotId, thresholdDays])
+  @@index([organizationId, notifiedAt])
 }
 
 /// Ledger de movimentações de estoque.

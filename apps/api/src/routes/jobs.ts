@@ -1,0 +1,48 @@
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { runStockExpiryAlerts } from "../services/stock-expiry-alerts.js";
+
+function readCronSecret(req: {
+  headers: Record<string, string | string[] | undefined>;
+}): string | null {
+  const headerSecret = req.headers["x-cron-secret"];
+  if (typeof headerSecret === "string" && headerSecret.trim()) {
+    return headerSecret.trim();
+  }
+  const auth = req.headers.authorization;
+  if (typeof auth === "string" && auth.startsWith("Bearer ")) {
+    return auth.slice(7).trim();
+  }
+  return null;
+}
+
+function assertCronSecret(
+  reply: { code: (n: number) => { send: (b: unknown) => unknown } },
+  provided: string | null,
+): boolean {
+  const expected = process.env.CRON_SECRET?.trim();
+  if (!expected) {
+    void reply.code(503).send({
+      error: "CRON_SECRET não configurado no servidor",
+    });
+    return false;
+  }
+  if (!provided || provided !== expected) {
+    void reply.code(401).send({ error: "Não autorizado" });
+    return false;
+  }
+  return true;
+}
+
+export async function jobsRoutes(app: FastifyInstance) {
+  app.post("/stock-expiry", async (req, reply) => {
+    if (!assertCronSecret(reply, readCronSecret(req))) return;
+    const body = z
+      .object({ organizationId: z.string().optional() })
+      .safeParse(req.body ?? {});
+    const result = await runStockExpiryAlerts({
+      organizationId: body.success ? body.data.organizationId : undefined,
+    });
+    return result;
+  });
+}

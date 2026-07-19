@@ -1,6 +1,7 @@
-import "./load-env.js";
 import { buildApp } from "./app.js";
 import { prisma } from "./db.js";
+import "./load-env.js";
+import { scheduleStockExpiryCron } from "./services/stock-expiry-cron.js";
 
 const port = Number(process.env.API_PORT ?? 4000);
 const host = process.env.API_HOST ?? "0.0.0.0";
@@ -33,6 +34,7 @@ try {
     `[db] ${userCount} utilizador(es). Se for 0, na raiz do repo: pnpm db:seed`,
   );
   app.log.info(`API http://${host}:${port}`);
+  scheduleStockExpiryCron(app.log);
 } catch (err) {
   app.log.error(err);
   process.exit(1);

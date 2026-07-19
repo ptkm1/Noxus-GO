@@ -29,6 +29,7 @@ export async function listStockProducts(params: {
   supplierId?: string;
   categoryId?: string;
   q?: string;
+  productIds?: string[];
   stockQtyMin?: number;
   stockQtyMax?: number;
   productLine?: string;
@@ -37,6 +38,9 @@ export async function listStockProducts(params: {
   const where: Prisma.ProductWhereInput = {
     organizationId: params.organizationId,
   };
+  if (params.productIds?.length) {
+    where.id = { in: params.productIds };
+  }
   if (params.supplierId) where.supplierId = params.supplierId;
   if (params.categoryId) where.categoryId = params.categoryId;
   if (params.q?.trim()) {

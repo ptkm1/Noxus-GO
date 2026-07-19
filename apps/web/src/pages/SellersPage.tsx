@@ -1,4 +1,6 @@
+import { useConfirm } from "@/components/confirm";
 import {
+  FormErrorBanner,
   FormField,
   FormGrid,
   FormSheet,
@@ -24,7 +26,7 @@ import {
   type SellerCommissionType,
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { apiFetch } from "../lib/api";
@@ -43,10 +45,20 @@ type Seller = {
   team: { id: string; name: string } | null;
 };
 
+function selectAllState(
+  allSelected: boolean,
+  someSelected: boolean,
+): boolean | "indeterminate" {
+  if (allSelected) return true;
+  if (someSelected) return "indeterminate";
+  return false;
+}
+
 export function SellersPage() {
   const { user } = useAuth();
   const admin = isWebAdmin(user?.role);
   const qc = useQueryClient();
+  const { confirm } = useConfirm();
 
   const { data: sellers = [], isLoading } = useQuery({
     queryKey: ["admin", "sellers"],
@@ -61,6 +73,7 @@ export function SellersPage() {
   });
 
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -68,15 +81,44 @@ export function SellersPage() {
   const [commissionType, setCommissionType] =
     useState<SellerCommissionType>("FIXED");
   const [commission, setCommission] = useState("10");
+  const [managerUserId, setManagerUserId] = useState("");
+  const [active, setActive] = useState(true);
+  const [formError, setFormError] = useState<string | null>(null);
   const [showValidation, setShowValidation] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkManager, setBulkManager] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const sellerIds = useMemo(() => sellers.map((s) => s.id), [sellers]);
+  const selectedSellers = useMemo(
+    () => sellers.filter((s) => selectedIds.has(s.id)),
+    [sellers, selectedIds],
+  );
+  const hasSelection = selectedIds.size > 0;
+  const allSelected =
+    sellerIds.length > 0 && sellerIds.every((id) => selectedIds.has(id));
+  const someSelected =
+    sellerIds.some((id) => selectedIds.has(id)) && !allSelected;
+
+  useEffect(() => {
+    const valid = new Set(sellerIds);
+    setSelectedIds((prev) => {
+      const next = new Set([...prev].filter((id) => valid.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [sellerIds]);
 
   function resetForm() {
+    setEditingId(null);
     setEmail("");
     setPassword("");
     setName("");
     setMatricula("");
     setCommissionType("FIXED");
     setCommission("10");
+    setManagerUserId("");
+    setActive(true);
+    setFormError(null);
     setShowValidation(false);
   }
 
@@ -85,29 +127,89 @@ export function SellersPage() {
     setSheetOpen(true);
   }
 
+  function openEdit(s: Seller) {
+    setEditingId(s.id);
+    setEmail(s.user.email);
+    setPassword("");
+    setName(s.user.name);
+    setMatricula(s.user.matricula ?? "");
+    setCommissionType(s.commissionType ?? "FIXED");
+    setCommission(String(Number(s.commissionPercent)));
+    setManagerUserId(s.managerUserId ?? "");
+    setActive(s.active);
+    setFormError(null);
+    setShowValidation(false);
+    setSheetOpen(true);
+  }
+
   function closeSheet() {
     setSheetOpen(false);
     resetForm();
   }
 
-  const create = useMutation({
-    mutationFn: () =>
-      apiFetch("/admin/sellers", {
+  function toggleSeller(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleAll(checked: boolean) {
+    setSelectedIds(checked ? new Set(sellerIds) : new Set());
+  }
+
+  function invalidateSellers() {
+    void qc.invalidateQueries({ queryKey: ["admin", "sellers"] });
+  }
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (editingId) {
+        const payload: Record<string, unknown> = {
+          name: name.trim(),
+          email: email.trim(),
+          matricula: matricula.trim() || null,
+          commissionType,
+          active,
+          managerUserId: managerUserId === "" ? null : managerUserId,
+        };
+        if (commissionType === "FIXED") {
+          payload.commissionPercent = Number(commission);
+        }
+        if (password.length > 0) payload.password = password;
+        return apiFetch(`/admin/sellers/${editingId}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+      }
+      return apiFetch("/admin/sellers", {
         method: "POST",
         body: JSON.stringify({
-          email,
+          email: email.trim(),
           password,
-          name,
+          name: name.trim(),
           ...(matricula.trim() ? { matricula: matricula.trim() } : {}),
           commissionType,
           ...(commissionType === "FIXED"
             ? { commissionPercent: Number(commission) }
             : {}),
         }),
-      }),
+      });
+    },
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["admin", "sellers"] });
+      invalidateSellers();
       closeSheet();
+    },
+    onError: (err) => {
+      setFormError(
+        err instanceof Error
+          ? err.message
+          : editingId
+            ? "Erro ao atualizar vendedor"
+            : "Erro ao criar vendedor",
+      );
     },
   });
 
@@ -128,27 +230,136 @@ export function SellersPage() {
           managerUserId: body.managerUserId,
         }),
       }),
-    onSuccess: () =>
-      void qc.invalidateQueries({ queryKey: ["admin", "sellers"] }),
+    onSuccess: () => invalidateSellers(),
+    onError: (err) => {
+      setActionError(
+        err instanceof Error ? err.message : "Erro ao atualizar vendedor",
+      );
+    },
   });
 
-  const canSave = Boolean(email && password && name);
+  const remove = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/admin/sellers/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      setActionError(null);
+      invalidateSellers();
+    },
+    onError: (err) => {
+      setActionError(
+        err instanceof Error ? err.message : "Erro ao excluir vendedor",
+      );
+    },
+  });
+
+  const batchDelete = useMutation({
+    mutationFn: (ids: string[]) =>
+      apiFetch<{ deleted: number }>("/admin/sellers/batch-delete", {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      }),
+    onSuccess: () => {
+      setActionError(null);
+      setSelectedIds(new Set());
+      invalidateSellers();
+    },
+    onError: (err) => {
+      setActionError(
+        err instanceof Error ? err.message : "Erro ao excluir vendedores",
+      );
+    },
+  });
+
+  const batchPatch = useMutation({
+    mutationFn: (body: {
+      ids: string[];
+      active?: boolean;
+      managerUserId?: string | null;
+    }) =>
+      apiFetch<{ updated: number }>("/admin/sellers/batch", {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      setActionError(null);
+      setBulkManager("");
+      setSelectedIds(new Set());
+      invalidateSellers();
+    },
+    onError: (err) => {
+      setBulkManager("");
+      setActionError(
+        err instanceof Error ? err.message : "Erro ao atualizar vendedores",
+      );
+    },
+  });
+
+  const batchBusy = batchDelete.isPending || batchPatch.isPending;
 
   const fieldErrors = useMemo(() => {
     if (!showValidation) return {} as Record<string, string>;
     const e: Record<string, string> = {};
     if (!name.trim()) e.name = "Nome é obrigatório.";
     if (!email.trim()) e.email = "Email é obrigatório.";
-    if (!password) e.password = "Senha é obrigatória.";
+    if (!editingId && password.length < 6) {
+      e.password = "Senha deve ter no mínimo 6 caracteres.";
+    } else if (editingId && password.length > 0 && password.length < 6) {
+      e.password = "Senha deve ter no mínimo 6 caracteres.";
+    }
     return e;
-  }, [showValidation, name, email, password]);
+  }, [showValidation, name, email, password, editingId]);
 
-  useScrollToFirstError(fieldErrors, { enabled: showValidation });
+  useScrollToFirstError(
+    Object.keys(fieldErrors).length > 0 ? fieldErrors : formError,
+    { enabled: showValidation || Boolean(formError) },
+  );
 
   function trySubmit() {
     setShowValidation(true);
-    if (!canSave) return;
-    create.mutate();
+    setFormError(null);
+    if (!name.trim() || !email.trim()) return;
+    if (!editingId && password.length < 6) return;
+    if (editingId && password.length > 0 && password.length < 6) return;
+    save.mutate();
+  }
+
+  async function confirmDeleteOne(s: Seller) {
+    if (s.user.id === user?.id) {
+      setActionError("Não é possível excluir a própria conta");
+      return;
+    }
+    const ok = await confirm({
+      title: "Excluir vendedor?",
+      description: `“${s.user.name}” (${s.user.email}) será removido permanentemente.`,
+      confirmLabel: "Excluir",
+      tone: "destructive",
+    });
+    if (ok) remove.mutate(s.id);
+  }
+
+  async function confirmBatchDelete() {
+    if (!hasSelection || batchBusy) return;
+    const ok = await confirm({
+      title: "Excluir vendedores selecionados?",
+      description: `${selectedSellers.length} vendedor(es) serão removidos permanentemente.`,
+      confirmLabel: "Excluir",
+      tone: "destructive",
+    });
+    if (ok) batchDelete.mutate([...selectedIds]);
+  }
+
+  function applyBatchManager(v: string) {
+    if (!hasSelection || batchBusy) return;
+    setBulkManager(v);
+    batchPatch.mutate({
+      ids: [...selectedIds],
+      managerUserId: v === "" ? null : v,
+    });
+  }
+
+  function applyBatchActive(nextActive: boolean) {
+    if (!hasSelection || batchBusy) return;
+    batchPatch.mutate({ ids: [...selectedIds], active: nextActive });
   }
 
   if (!admin) {
@@ -174,14 +385,18 @@ export function SellersPage() {
           if (!open) closeSheet();
           else setSheetOpen(true);
         }}
-        title="Novo vendedor"
-        description="O admin define email e senha inicial (sem cadastro público)."
+        title={editingId ? "Editar vendedor" : "Novo vendedor"}
+        description={
+          editingId
+            ? "Atualize dados, comissão, gestor ou defina uma nova senha."
+            : "O admin define email e senha inicial (sem cadastro público)."
+        }
         footer={
           <FormSheetActions
             onCancel={closeSheet}
             onSubmit={trySubmit}
-            submitLabel="Criar vendedor"
-            pending={create.isPending}
+            submitLabel={editingId ? "Salvar" : "Criar vendedor"}
+            pending={save.isPending}
           />
         }
       >
@@ -227,19 +442,52 @@ export function SellersPage() {
           <FormField
             label="Senha"
             htmlFor="seller-password"
-            required
-            hint="Mínimo 6 caracteres"
+            required={!editingId}
+            hint={
+              editingId
+                ? "Deixe em branco para manter a senha atual"
+                : "Mínimo 6 caracteres"
+            }
             error={fieldErrors.password}
           >
             <Input
               id="seller-password"
               type="password"
-              placeholder="Senha inicial"
+              placeholder={
+                editingId ? "Nova senha (opcional)" : "Senha inicial"
+              }
               aria-invalid={fieldErrors.password ? true : undefined}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           </FormField>
+          {editingId ? (
+            <>
+              <FormField label="Gestor" htmlFor="seller-manager">
+                <AppSelect
+                  id="seller-manager"
+                  value={managerUserId}
+                  emptyLabel="— Sem gestor —"
+                  placeholder="— Sem gestor —"
+                  options={managers.map((m) => ({
+                    value: m.id,
+                    label: m.name,
+                  }))}
+                  onValueChange={setManagerUserId}
+                />
+              </FormField>
+              <FormField label="Ativo" htmlFor="seller-active-edit">
+                <label className="flex h-10 items-center gap-2 text-sm">
+                  <Checkbox
+                    id="seller-active-edit"
+                    checked={active}
+                    onCheckedChange={(v) => setActive(v === true)}
+                  />
+                  Vendedor ativo
+                </label>
+              </FormField>
+            </>
+          ) : null}
         </FormGrid>
 
         <FormField
@@ -333,15 +581,81 @@ export function SellersPage() {
             .
           </p>
         ) : null}
+        <FormErrorBanner message={formError} className="mt-3" />
       </FormSheet>
+
+      {!isLoading && sellers.length > 0 ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            {hasSelection
+              ? `${selectedSellers.length} vendedor(es) selecionado(s)`
+              : "Selecione vendedores para alterar gestor, ativar/desativar ou excluir em lote"}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <AppSelect
+              value={bulkManager}
+              disabled={!hasSelection || batchBusy}
+              placeholder="Alterar gestor…"
+              emptyLabel="— Sem gestor —"
+              triggerClassName="w-[12rem]"
+              options={managers.map((m) => ({
+                value: m.id,
+                label: m.name,
+              }))}
+              onValueChange={(v) => applyBatchManager(v)}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!hasSelection || batchBusy}
+              onClick={() => applyBatchActive(true)}
+            >
+              Ativar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!hasSelection || batchBusy}
+              onClick={() => applyBatchActive(false)}
+            >
+              Desativar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              disabled={!hasSelection || batchBusy}
+              onClick={() => void confirmBatchDelete()}
+            >
+              {batchDelete.isPending ? "Excluindo…" : "Excluir selecionados"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {actionError ? (
+        <p className="text-sm text-destructive">{actionError}</p>
+      ) : null}
 
       {isLoading ? (
         <p className="text-muted-foreground">Carregando…</p>
+      ) : sellers.length === 0 ? (
+        <p className="text-muted-foreground">Nenhum vendedor cadastrado.</p>
       ) : (
         <div className="rounded-xl border border-border bg-card">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10 px-4">
+                  <Checkbox
+                    checked={selectAllState(allSelected, someSelected)}
+                    disabled={batchBusy}
+                    onCheckedChange={(v) => toggleAll(v === true)}
+                    aria-label="Selecionar todos"
+                  />
+                </TableHead>
                 <TableHead className="px-4">Nome</TableHead>
                 <TableHead className="px-4">Matrícula</TableHead>
                 <TableHead className="px-4">Email</TableHead>
@@ -356,8 +670,20 @@ export function SellersPage() {
             <TableBody>
               {sellers.map((s) => {
                 const type = s.commissionType ?? "FIXED";
+                const selected = selectedIds.has(s.id);
                 return (
-                  <TableRow key={s.id}>
+                  <TableRow
+                    key={s.id}
+                    className={cn(selected && "bg-muted/40")}
+                  >
+                    <TableCell className="px-4 py-3">
+                      <Checkbox
+                        checked={selected}
+                        disabled={batchBusy}
+                        onCheckedChange={(v) => toggleSeller(s.id, v === true)}
+                        aria-label={`Selecionar ${s.user.name}`}
+                      />
+                    </TableCell>
                     <TableCell className="px-4 py-3">{s.user.name}</TableCell>
                     <TableCell className="px-4 py-3 text-muted-foreground">
                       {s.user.matricula ?? "—"}
@@ -369,6 +695,7 @@ export function SellersPage() {
                         emptyLabel="— Sem gestor —"
                         placeholder="— Sem gestor —"
                         triggerClassName="max-w-[180px]"
+                        disabled={batchBusy}
                         options={managers.map((m) => ({
                           value: m.id,
                           label: m.name,
@@ -388,6 +715,7 @@ export function SellersPage() {
                       <AppSelect
                         value={type}
                         triggerClassName="max-w-[200px] text-xs"
+                        disabled={batchBusy}
                         options={[
                           ...SELLER_COMMISSION_TYPES.filter(
                             (t) => !t.comingSoon,
@@ -415,13 +743,17 @@ export function SellersPage() {
                           className="w-20 rounded border px-2 py-1"
                           defaultValue={Number(s.commissionPercent)}
                           key={`${s.id}-${s.commissionPercent}-fixed`}
+                          disabled={batchBusy}
                           onBlur={(e) => {
                             const v = Number(e.target.value);
                             if (
                               !Number.isNaN(v) &&
                               v !== Number(s.commissionPercent)
                             ) {
-                              patch.mutate({ id: s.id, commissionPercent: v });
+                              patch.mutate({
+                                id: s.id,
+                                commissionPercent: v,
+                              });
                             }
                           }}
                         />
@@ -432,18 +764,35 @@ export function SellersPage() {
                     <TableCell className="px-4 py-3">
                       <Checkbox
                         checked={s.active}
+                        disabled={batchBusy}
                         onCheckedChange={(v) =>
                           patch.mutate({ id: s.id, active: v === true })
                         }
                         aria-label={`Ativo: ${s.user.name}`}
                       />
                     </TableCell>
-                    <TableCell className="px-4 py-3 text-right">
+                    <TableCell className="px-4 py-3 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        className="mr-3 text-primary hover:underline"
+                        disabled={batchBusy}
+                        onClick={() => openEdit(s)}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        className="mr-3 text-destructive hover:underline disabled:opacity-40"
+                        disabled={batchBusy || remove.isPending}
+                        onClick={() => void confirmDeleteOne(s)}
+                      >
+                        Excluir
+                      </button>
                       <Link
                         to={`/vendedores/${s.id}/produtos`}
                         className="text-primary hover:underline"
                       >
-                        Liberar produtos
+                        Produtos
                       </Link>
                     </TableCell>
                   </TableRow>

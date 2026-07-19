@@ -10,6 +10,7 @@ import {
 } from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,7 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, downloadPdf, printPdf } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Package } from "lucide-react";
@@ -57,6 +58,23 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("pt-BR");
 }
 
+function selectAllState(
+  allSelected: boolean,
+  someSelected: boolean,
+): boolean | "indeterminate" {
+  if (allSelected) return true;
+  if (someSelected) return "indeterminate";
+  return false;
+}
+
+function daysUntilExpiry(iso: string): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const exp = new Date(iso);
+  exp.setHours(0, 0, 0, 0);
+  return Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 export function StockPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -64,6 +82,9 @@ export function StockPage() {
   const [categoryId, setCategoryId] = useState("");
   const [q, setQ] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<StockProduct | null>(
     null,
   );
@@ -98,6 +119,107 @@ export function StockPage() {
     queryKey: ["admin", "suppliers"],
     queryFn: () => apiFetch<Supplier[]>("/admin/suppliers"),
   });
+
+  const productIds = useMemo(() => products.map((p) => p.id), [products]);
+  const selectedProducts = useMemo(
+    () => products.filter((p) => selectedIds.has(p.id)),
+    [products, selectedIds],
+  );
+  const hasSelection = selectedIds.size > 0;
+  const allSelected =
+    productIds.length > 0 && productIds.every((id) => selectedIds.has(id));
+  const someSelected =
+    productIds.some((id) => selectedIds.has(id)) && !allSelected;
+
+  const alertProducts = useMemo(
+    () => selectedProducts.filter((p) => p.hasExpiringSoon),
+    [selectedProducts],
+  );
+
+  const alertLots = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const horizon = new Date(today);
+    horizon.setDate(horizon.getDate() + 30);
+    const rows: {
+      productId: string;
+      productName: string;
+      lot: StockLot;
+      days: number;
+      expired: boolean;
+    }[] = [];
+    for (const p of alertProducts) {
+      for (const lot of p.lots) {
+        const exp = new Date(lot.expiresAt);
+        if (exp > horizon) continue;
+        const days = daysUntilExpiry(lot.expiresAt);
+        rows.push({
+          productId: p.id,
+          productName: p.name,
+          lot,
+          days,
+          expired: days < 0,
+        });
+      }
+    }
+    return rows.sort((a, b) => a.days - b.days);
+  }, [alertProducts]);
+
+  function toggleAll(checked: boolean) {
+    setSelectedIds(checked ? new Set(productIds) : new Set());
+  }
+
+  function toggleProduct(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function stockPdfPath(ids: string[]) {
+    const params = new URLSearchParams();
+    if (supplierId) params.set("supplierId", supplierId);
+    if (categoryId) params.set("categoryId", categoryId);
+    if (q.trim()) params.set("q", q.trim());
+    params.set("productIds", ids.join(","));
+    return `/admin/reports/stock.pdf?${params.toString()}`;
+  }
+
+  async function exportSelectedPdf() {
+    if (!hasSelection) return;
+    setPdfBusy(true);
+    try {
+      await downloadPdf(
+        stockPdfPath([...selectedIds]),
+        "relatorio-estoque-selecionados.pdf",
+      );
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
+  async function printSelectedPdf() {
+    if (!hasSelection) return;
+    setPdfBusy(true);
+    try {
+      await printPdf(stockPdfPath([...selectedIds]));
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
+  async function exportAlertPdf() {
+    const ids = alertProducts.map((p) => p.id);
+    if (!ids.length) return;
+    setPdfBusy(true);
+    try {
+      await downloadPdf(stockPdfPath(ids), "relatorio-estoque-validade.pdf");
+    } finally {
+      setPdfBusy(false);
+    }
+  }
 
   function openEntry(product: StockProduct) {
     setSelectedProduct(product);
@@ -211,6 +333,45 @@ export function StockPage() {
         </FormField>
       </div>
 
+      {!isLoading && products.length > 0 ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            {hasSelection
+              ? `${selectedProducts.length} produto(s) selecionado(s)`
+              : "Selecione produtos para exportar, imprimir ou ver alertas de validade"}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!hasSelection || pdfBusy}
+              onClick={() => void exportSelectedPdf()}
+            >
+              Exportar PDF
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!hasSelection || pdfBusy}
+              onClick={() => void printSelectedPdf()}
+            >
+              Imprimir
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!hasSelection}
+              onClick={() => setAlertsOpen(true)}
+            >
+              Alertas de validade
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       {isLoading ? (
         <p className="text-muted-foreground">Carregando estoque…</p>
       ) : products.length === 0 ? (
@@ -223,6 +384,13 @@ export function StockPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={selectAllState(allSelected, someSelected)}
+                    onCheckedChange={(v) => toggleAll(v === true)}
+                    aria-label="Selecionar todos"
+                  />
+                </TableHead>
                 <TableHead>Produto</TableHead>
                 <TableHead>Grupo</TableHead>
                 <TableHead>Fornecedor</TableHead>
@@ -232,57 +400,71 @@ export function StockPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {products.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell>
-                    <ProductListCell product={p} />
-                  </TableCell>
-                  <TableCell>{p.category?.name ?? "—"}</TableCell>
-                  <TableCell>{p.supplier?.tradeName ?? "—"}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {p.stockQty}
-                  </TableCell>
-                  <TableCell>
-                    {p.hasExpiringSoon ? (
-                      <span
-                        className={cn(
-                          "mb-1 inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400",
-                        )}
+              {products.map((p) => {
+                const selected = selectedIds.has(p.id);
+                return (
+                  <TableRow
+                    key={p.id}
+                    className={cn(selected && "bg-muted/40")}
+                  >
+                    <TableCell>
+                      <Checkbox
+                        checked={selected}
+                        onCheckedChange={(v) => toggleProduct(p.id, v === true)}
+                        aria-label={`Selecionar ${p.name}`}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <ProductListCell product={p} />
+                    </TableCell>
+                    <TableCell>{p.category?.name ?? "—"}</TableCell>
+                    <TableCell>{p.supplier?.tradeName ?? "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {p.stockQty}
+                    </TableCell>
+                    <TableCell>
+                      {p.hasExpiringSoon ? (
+                        <span
+                          className={cn(
+                            "mb-1 inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400",
+                          )}
+                        >
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          {p.expiringLotsCount} lote(s) &lt; 30 dias
+                        </span>
+                      ) : null}
+                      {p.lots.length === 0 ? (
+                        <span className="text-sm text-muted-foreground">
+                          Sem lotes
+                        </span>
+                      ) : (
+                        <ul className="space-y-0.5 text-sm">
+                          {p.lots.slice(0, 3).map((l) => (
+                            <li key={l.id}>
+                              {l.lotCode} · {l.qty} un ·{" "}
+                              {formatDate(l.expiresAt)}
+                            </li>
+                          ))}
+                          {p.lots.length > 3 ? (
+                            <li className="text-muted-foreground">
+                              +{p.lots.length - 3} lote(s)
+                            </li>
+                          ) : null}
+                        </ul>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => openEntry(p)}
                       >
-                        <AlertTriangle className="h-3.5 w-3.5" />
-                        {p.expiringLotsCount} lote(s) &lt; 30 dias
-                      </span>
-                    ) : null}
-                    {p.lots.length === 0 ? (
-                      <span className="text-sm text-muted-foreground">
-                        Sem lotes
-                      </span>
-                    ) : (
-                      <ul className="space-y-0.5 text-sm">
-                        {p.lots.slice(0, 3).map((l) => (
-                          <li key={l.id}>
-                            {l.lotCode} · {l.qty} un · {formatDate(l.expiresAt)}
-                          </li>
-                        ))}
-                        {p.lots.length > 3 ? (
-                          <li className="text-muted-foreground">
-                            +{p.lots.length - 3} lote(s)
-                          </li>
-                        ) : null}
-                      </ul>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => openEntry(p)}
-                    >
-                      Movimentar
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+                        Movimentar
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
@@ -295,6 +477,60 @@ export function StockPage() {
           take={40}
         />
       </div>
+
+      <FormSheet
+        open={alertsOpen}
+        onOpenChange={setAlertsOpen}
+        title="Alertas de validade"
+        description={
+          hasSelection
+            ? `Entre os ${selectedProducts.length} selecionado(s), ${alertProducts.length} com validade em menos de 30 dias.`
+            : undefined
+        }
+        footer={
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAlertsOpen(false)}
+            >
+              Fechar
+            </Button>
+            <Button type="button" variant="outline" asChild>
+              <Link to="/insights">Ir para Insights</Link>
+            </Button>
+            <Button
+              type="button"
+              disabled={!alertProducts.length || pdfBusy}
+              onClick={() => void exportAlertPdf()}
+            >
+              Exportar PDF só desses
+            </Button>
+          </div>
+        }
+      >
+        {alertLots.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Nenhum lote com validade crítica nos produtos selecionados.
+          </p>
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {alertLots.map((row) => (
+              <li
+                key={row.lot.id}
+                className="rounded-lg border border-border px-3 py-2"
+              >
+                <p className="font-medium text-foreground">{row.productName}</p>
+                <p className="text-muted-foreground">
+                  Lote {row.lot.lotCode} · {row.lot.qty} un ·{" "}
+                  {formatDate(row.lot.expiresAt)}
+                  {row.expired ? " · vencido" : ` · ${row.days} dia(s)`}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </FormSheet>
 
       <FormSheet
         open={sheetOpen}
@@ -395,10 +631,7 @@ export function StockPage() {
               placeholder="Confirme sua senha"
             />
           </FormField>
-          <FormErrorBanner
-            message={formError}
-            className="sm:col-span-2"
-          />
+          <FormErrorBanner message={formError} className="sm:col-span-2" />
         </FormGrid>
       </FormSheet>
     </div>

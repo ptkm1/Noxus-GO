@@ -2338,6 +2338,251 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return created;
   });
 
+  async function countOrgAdmins(organizationId: string): Promise<number> {
+    return prisma.user.count({
+      where: { organizationId, role: "ADMIN" },
+    });
+  }
+
+  async function findStaffUser(organizationId: string, id: string) {
+    return prisma.user.findFirst({
+      where: {
+        id,
+        organizationId,
+        role: { in: ["ADMIN", "MANAGER"] },
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  app.post("/users/batch-delete", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+
+    const body = z
+      .object({ ids: z.array(z.string().min(1)).min(1).max(100) })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const ids = [...new Set(body.data.ids)];
+    if (ids.includes(auth.sub)) {
+      return reply
+        .status(400)
+        .send({ error: "Não é possível excluir a própria conta" });
+    }
+
+    const targets = await prisma.user.findMany({
+      where: {
+        organizationId: auth.organizationId,
+        id: { in: ids },
+        role: { in: ["ADMIN", "MANAGER"] },
+      },
+      select: { id: true, email: true, role: true },
+    });
+    if (targets.length !== ids.length) {
+      return reply
+        .status(400)
+        .send({ error: "Um ou mais usuários não foram encontrados" });
+    }
+
+    const adminTargets = targets.filter((t) => t.role === "ADMIN").length;
+    if (
+      adminTargets > 0 &&
+      (await countOrgAdmins(auth.organizationId)) <= adminTargets
+    ) {
+      return reply
+        .status(400)
+        .send({ error: "Não é possível excluir todos os administradores" });
+    }
+
+    await prisma.user.deleteMany({
+      where: { organizationId: auth.organizationId, id: { in: ids } },
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.DELETE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: auth.organizationId,
+      metadata: {
+        batch: true,
+        count: targets.length,
+        emails: targets.map((t) => t.email),
+      },
+    });
+    return { deleted: targets.length };
+  });
+
+  app.patch("/users/batch", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+
+    const body = z
+      .object({
+        ids: z.array(z.string().min(1)).min(1).max(100),
+        role: z.enum(["ADMIN", "MANAGER"]),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const ids = [...new Set(body.data.ids)];
+    const targets = await prisma.user.findMany({
+      where: {
+        organizationId: auth.organizationId,
+        id: { in: ids },
+        role: { in: ["ADMIN", "MANAGER"] },
+      },
+      select: { id: true, email: true, role: true },
+    });
+    if (targets.length !== ids.length) {
+      return reply
+        .status(400)
+        .send({ error: "Um ou mais usuários não foram encontrados" });
+    }
+
+    if (body.data.role === "MANAGER") {
+      const demotingAdmins = targets.filter((t) => t.role === "ADMIN").length;
+      if (
+        demotingAdmins > 0 &&
+        (await countOrgAdmins(auth.organizationId)) <= demotingAdmins
+      ) {
+        return reply
+          .status(400)
+          .send({ error: "Não é possível rebaixar todos os administradores" });
+      }
+    }
+
+    await prisma.user.updateMany({
+      where: { organizationId: auth.organizationId, id: { in: ids } },
+      data: { role: body.data.role },
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.UPDATE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: auth.organizationId,
+      metadata: {
+        batch: true,
+        role: body.data.role,
+        count: targets.length,
+        emails: targets.map((t) => t.email),
+      },
+    });
+    return { updated: targets.length, role: body.data.role };
+  });
+
+  app.patch("/users/:id", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+
+    const body = z
+      .object({
+        email: z.string().email().optional(),
+        password: z.string().min(6).optional(),
+        name: z.string().min(1).optional(),
+        role: z.enum(["ADMIN", "MANAGER"]).optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
+
+    const existing = await findStaffUser(auth.organizationId, id);
+    if (!existing)
+      return reply.status(404).send({ error: "Usuário não encontrado" });
+
+    const d = body.data;
+    if (
+      d.role === "MANAGER" &&
+      existing.role === "ADMIN" &&
+      (await countOrgAdmins(auth.organizationId)) <= 1
+    ) {
+      return reply
+        .status(400)
+        .send({ error: "Não é possível rebaixar o último administrador" });
+    }
+
+    if (d.email) {
+      const email = d.email.toLowerCase();
+      if (email !== existing.email) {
+        const taken = await prisma.user.findUnique({ where: { email } });
+        if (taken)
+          return reply.status(409).send({ error: "Email já cadastrado" });
+      }
+    }
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data: {
+        name: d.name?.trim(),
+        email: d.email?.toLowerCase(),
+        role: d.role,
+        ...(d.password ? { passwordHash: await hashPassword(d.password) } : {}),
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.UPDATE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: id,
+      metadata: {
+        fields: Object.keys(d),
+        email: updated.email,
+        role: updated.role,
+      },
+    });
+
+    return updated;
+  });
+
+  app.delete("/users/:id", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+
+    if (id === auth.sub) {
+      return reply
+        .status(400)
+        .send({ error: "Não é possível excluir a própria conta" });
+    }
+
+    const existing = await findStaffUser(auth.organizationId, id);
+    if (!existing)
+      return reply.status(404).send({ error: "Usuário não encontrado" });
+
+    if (
+      existing.role === "ADMIN" &&
+      (await countOrgAdmins(auth.organizationId)) <= 1
+    ) {
+      return reply
+        .status(400)
+        .send({ error: "Não é possível excluir o último administrador" });
+    }
+
+    await prisma.user.delete({ where: { id } });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.DELETE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: id,
+      metadata: { email: existing.email, role: existing.role },
+    });
+    return reply.status(204).send();
+  });
+
   /* --- Equipes de vendas (admin) --- */
   app.get("/teams", async (req) => {
     const auth = req.auth!;
@@ -2507,6 +2752,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         include: { seller: true },
       });
 
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.CREATE,
+        entityType: AUDIT_ENTITY.User,
+        entityId: user.id,
+        metadata: {
+          sellerId: user.seller!.id,
+          email: user.email,
+          role: "SELLER",
+        },
+      });
+
       return {
         id: user.seller!.id,
         userId: user.id,
@@ -2530,6 +2786,146 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
+  const sellerInclude = {
+    user: {
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        matricula: true,
+      },
+    },
+    manager: { select: { id: true, name: true, email: true } },
+    team: { select: { id: true, name: true } },
+  } as const;
+
+  async function findOrgSeller(organizationId: string, id: string) {
+    return prisma.seller.findFirst({
+      where: { id, organizationId },
+      include: {
+        user: true,
+        ledTeam: { select: { id: true, name: true } },
+      },
+    });
+  }
+
+  app.post("/sellers/batch-delete", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({ ids: z.array(z.string().min(1)).min(1).max(100) })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const ids = [...new Set(body.data.ids)];
+    const targets = await prisma.seller.findMany({
+      where: { organizationId: auth.organizationId, id: { in: ids } },
+      include: {
+        user: { select: { id: true, email: true, name: true } },
+        ledTeam: { select: { id: true, name: true } },
+      },
+    });
+    if (targets.length !== ids.length) {
+      return reply
+        .status(400)
+        .send({ error: "Um ou mais vendedores não foram encontrados" });
+    }
+
+    const leaders = targets.filter((t) => t.ledTeam);
+    if (leaders.length > 0) {
+      return reply.status(400).send({
+        error: `Não é possível excluir líder(es) de equipe: ${leaders
+          .map((l) => l.user.name)
+          .join(", ")}. Transfira a liderança antes.`,
+      });
+    }
+
+    const userIds = targets.map((t) => t.userId);
+    await prisma.user.deleteMany({
+      where: { organizationId: auth.organizationId, id: { in: userIds } },
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.DELETE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: auth.organizationId,
+      metadata: {
+        batch: true,
+        sellers: true,
+        count: targets.length,
+        emails: targets.map((t) => t.user.email),
+      },
+    });
+    return { deleted: targets.length };
+  });
+
+  app.patch("/sellers/batch", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        ids: z.array(z.string().min(1)).min(1).max(100),
+        active: z.boolean().optional(),
+        managerUserId: z.string().min(1).nullable().optional(),
+        commissionType: sellerCommissionTypeSchema.optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const { ids: rawIds, ...patch } = body.data;
+    if (
+      patch.active === undefined &&
+      patch.managerUserId === undefined &&
+      patch.commissionType === undefined
+    ) {
+      return reply.status(400).send({ error: "Nenhuma alteração informada" });
+    }
+
+    const ids = [...new Set(rawIds)];
+    const targets = await prisma.seller.findMany({
+      where: { organizationId: auth.organizationId, id: { in: ids } },
+      select: { id: true },
+    });
+    if (targets.length !== ids.length) {
+      return reply
+        .status(400)
+        .send({ error: "Um ou mais vendedores não foram encontrados" });
+    }
+
+    if (patch.managerUserId !== undefined) {
+      const v = await validateManagerAssignment(
+        auth.organizationId,
+        patch.managerUserId,
+      );
+      if (!v.ok) return reply.status(400).send({ error: v.error });
+    }
+
+    await prisma.seller.updateMany({
+      where: { organizationId: auth.organizationId, id: { in: ids } },
+      data: {
+        ...(patch.active !== undefined ? { active: patch.active } : {}),
+        ...(patch.managerUserId !== undefined
+          ? { managerUserId: patch.managerUserId }
+          : {}),
+        ...(patch.commissionType !== undefined
+          ? { commissionType: patch.commissionType }
+          : {}),
+      },
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.UPDATE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: auth.organizationId,
+      metadata: {
+        batch: true,
+        sellers: true,
+        count: targets.length,
+        fields: Object.keys(patch),
+      },
+    });
+    return { updated: targets.length };
+  });
+
   app.patch("/sellers/:id", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
@@ -2539,6 +2935,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         commissionPercent: z.number().min(0).max(100).optional(),
         active: z.boolean().optional(),
         name: z.string().min(1).optional(),
+        email: z.string().email().optional(),
+        password: z.string().min(6).optional(),
         matricula: z.string().min(1).max(40).nullable().optional(),
         managerUserId: z.string().min(1).nullable().optional(),
       })
@@ -2546,10 +2944,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!body.success)
       return reply.status(400).send({ error: "Dados inválidos" });
 
-    const seller = await prisma.seller.findFirst({
-      where: { id, organizationId: auth.organizationId },
-      include: { user: true },
-    });
+    const seller = await findOrgSeller(auth.organizationId, id);
     if (!seller) return reply.status(404).send({ error: "Não encontrado" });
 
     if (body.data.managerUserId !== undefined) {
@@ -2558,6 +2953,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         body.data.managerUserId,
       );
       if (!v.ok) return reply.status(400).send({ error: v.error });
+    }
+
+    if (body.data.email) {
+      const email = body.data.email.toLowerCase();
+      if (email !== seller.user.email) {
+        const taken = await prisma.user.findUnique({ where: { email } });
+        if (taken)
+          return reply.status(409).send({ error: "Email já cadastrado" });
+      }
     }
 
     try {
@@ -2573,12 +2977,23 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
               : {}),
           },
         }),
-        ...(body.data.name || body.data.matricula !== undefined
+        ...(body.data.name ||
+        body.data.email ||
+        body.data.password ||
+        body.data.matricula !== undefined
           ? [
               prisma.user.update({
                 where: { id: seller.userId },
                 data: {
-                  ...(body.data.name ? { name: body.data.name } : {}),
+                  ...(body.data.name ? { name: body.data.name.trim() } : {}),
+                  ...(body.data.email
+                    ? { email: body.data.email.toLowerCase() }
+                    : {}),
+                  ...(body.data.password
+                    ? {
+                        passwordHash: await hashPassword(body.data.password),
+                      }
+                    : {}),
                   ...(body.data.matricula !== undefined
                     ? {
                         matricula: body.data.matricula?.trim() || null,
@@ -2601,13 +3016,53 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       throw e;
     }
 
-    return prisma.seller.findUnique({
-      where: { id },
-      include: {
-        user: { select: { id: true, email: true, name: true } },
-        manager: { select: { id: true, name: true, email: true } },
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.UPDATE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: seller.userId,
+      metadata: {
+        sellerId: id,
+        fields: Object.keys(body.data),
       },
     });
+
+    return prisma.seller.findUnique({
+      where: { id },
+      include: sellerInclude,
+    });
+  });
+
+  app.delete("/sellers/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+
+    const seller = await findOrgSeller(auth.organizationId, id);
+    if (!seller) return reply.status(404).send({ error: "Não encontrado" });
+
+    if (seller.ledTeam) {
+      return reply.status(400).send({
+        error: `Não é possível excluir o líder da equipe “${seller.ledTeam.name}”. Transfira a liderança antes.`,
+      });
+    }
+
+    if (seller.userId === auth.sub) {
+      return reply
+        .status(400)
+        .send({ error: "Não é possível excluir a própria conta" });
+    }
+
+    await prisma.user.delete({ where: { id: seller.userId } });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.DELETE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: seller.userId,
+      metadata: {
+        sellerId: id,
+        email: seller.user.email,
+        role: "SELLER",
+      },
+    });
+    return reply.status(204).send();
   });
 
   app.get("/sellers/:id/products", async (req, reply) => {
@@ -4626,6 +5081,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         supplierId: z.string().optional(),
         categoryId: z.string().optional(),
         q: z.string().optional(),
+        productIds: z.string().optional(),
       })
       .passthrough()
       .safeParse(req.query);
@@ -4633,11 +5089,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const extras = readExtraParams(
       (q.success ? q.data : req.query) as Record<string, unknown>,
     );
+    const productIds = filters.productIds
+      ?.split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
     const pdf = await buildStockPdf({
       organizationId: auth.organizationId,
       supplierId: filters.supplierId,
       categoryId: filters.categoryId,
       q: filters.q,
+      productIds: productIds?.length ? productIds : undefined,
       extras,
     });
     return reply
