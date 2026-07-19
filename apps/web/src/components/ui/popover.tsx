@@ -19,10 +19,14 @@ function PopoverContent({
   className,
   align = "start",
   sideOffset = 4,
+  container,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+}: React.ComponentProps<typeof PopoverPrimitive.Content> & {
+  /** Portal target — use Sheet/Dialog content when nesting so scroll/clicks work. */
+  container?: HTMLElement | null;
+}) {
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal container={container ?? undefined}>
       <PopoverPrimitive.Content
         data-slot="popover-content"
         align={align}

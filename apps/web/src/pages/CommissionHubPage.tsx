@@ -17,7 +17,8 @@ const CARDS: Array<{
   {
     to: "/comissao/metas",
     title: "Metas",
-    description: "Metas mensais por vendedor exibidas no app do vendedor.",
+    description:
+      "Metas mensais por vendedor, equipe ou todos — exibidas no app do vendedor.",
     icon: Target,
   },
 ];

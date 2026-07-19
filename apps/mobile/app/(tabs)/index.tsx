@@ -88,6 +88,7 @@ export default function HomeScreen() {
   const goal = commission?.goal;
   const mtd = commission?.mtd.confirmedRevenue ?? 0;
   const goalTarget = goal?.targetAmount ?? 0;
+  const goalCurrent = goal?.achievedAmount ?? mtd;
 
   return (
     <SafeScreen variant="tab">
@@ -135,8 +136,12 @@ export default function HomeScreen() {
 
         {goalTarget > 0 ? (
           <ProgressStat
-            title={goal?.title ?? "Meta do mês"}
-            current={mtd}
+            title={
+              goal?.scopeLabel
+                ? `${goal.title} · ${goal.scopeLabel}`
+                : (goal?.title ?? "Meta do mês")
+            }
+            current={goalCurrent}
             target={goalTarget}
             formatValue={(v) => `R$ ${fmtMoney(v)}`}
           />

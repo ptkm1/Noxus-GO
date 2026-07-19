@@ -80,7 +80,7 @@ export function NotificationsPage() {
             const openLabel =
               n.type === "GOAL_UPDATED"
                 ? "Ver detalhes"
-                : href?.startsWith("/vendas/")
+                : href?.startsWith("/pedidos/") || href?.startsWith("/vendas/")
                   ? "Abrir pedido"
                   : href
                     ? "Abrir"

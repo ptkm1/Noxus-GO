@@ -47,7 +47,7 @@ export function RecentSalesList({
   isLoading = false,
   isFetching = false,
   limit = 8,
-  viewAllHref = "/vendas",
+  viewAllHref = "/pedidos",
   subtitle = "Pedidos mais recentes da organização.",
   showSeller = true,
 }: Props) {
@@ -96,7 +96,7 @@ export function RecentSalesList({
             return (
               <li key={order.id}>
                 <Link
-                  to={`/vendas/${order.id}`}
+                  to={`/pedidos/${order.id}`}
                   className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40 sm:gap-4 sm:px-6"
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 ring-1 ring-primary/20">

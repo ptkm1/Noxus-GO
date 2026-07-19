@@ -2,7 +2,7 @@ import { prisma } from "../src/db.js";
 
 /** Cliente e vendedor do teu ambiente (ajusta aqui se mudar). */
 export const ROUTE_DEMO_CUSTOMER_ID = "cmpa81211000g6j1wbpriydcc";
-export const ROUTE_DEMO_SELLER_ID = "cmpa8120600086j1waphd0h2m";
+export const ROUTE_DEMO_SELLER_ID = "cmrbbofny0009p0ckgkirtkf4";
 
 /** Googleplex, Mountain View CA — área do screenshot de teste do mapa. */
 const DEMO_LATITUDE = 37.422;

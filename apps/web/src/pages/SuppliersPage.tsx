@@ -1,4 +1,5 @@
 import {
+  FormErrorBanner,
   FormField,
   FormGrid,
   FormSheet,
@@ -15,8 +16,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
 
 type Supplier = {
@@ -59,6 +61,7 @@ export function SuppliersPage() {
   const [cnpj, setCnpj] = useState("");
   const [tradeName, setTradeName] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [showValidation, setShowValidation] = useState(false);
 
   function resetForm() {
     setEditingId(null);
@@ -67,6 +70,7 @@ export function SuppliersPage() {
     setCnpj("");
     setTradeName("");
     setFormError(null);
+    setShowValidation(false);
   }
 
   function openCreate() {
@@ -81,6 +85,7 @@ export function SuppliersPage() {
     setCnpj(formatCnpj(s.cnpj));
     setTradeName(s.tradeName);
     setFormError(null);
+    setShowValidation(false);
     setSheetOpen(true);
   }
 
@@ -125,11 +130,34 @@ export function SuppliersPage() {
     onError: (e: Error) => setFormError(e.message),
   });
 
-  const canSave =
-    code.trim().length > 0 &&
-    legalName.trim().length > 0 &&
-    cnpj.replace(/\D/g, "").length === 14 &&
-    tradeName.trim().length > 0;
+  const fieldErrors = useMemo(() => {
+    if (!showValidation) return {} as Record<string, string>;
+    const e: Record<string, string> = {};
+    if (!code.trim()) e.code = "Código é obrigatório.";
+    if (cnpj.replace(/\D/g, "").length !== 14)
+      e.cnpj = "CNPJ deve ter 14 dígitos.";
+    if (!legalName.trim()) e.legalName = "Razão social é obrigatória.";
+    if (!tradeName.trim()) e.tradeName = "Nome fantasia é obrigatório.";
+    return e;
+  }, [showValidation, code, cnpj, legalName, tradeName]);
+
+  useScrollToFirstError(
+    Object.keys(fieldErrors).length > 0 ? fieldErrors : formError,
+    { enabled: showValidation || Boolean(formError) },
+  );
+
+  function trySubmit() {
+    setShowValidation(true);
+    setFormError(null);
+    const e: Record<string, string> = {};
+    if (!code.trim()) e.code = "Código é obrigatório.";
+    if (cnpj.replace(/\D/g, "").length !== 14)
+      e.cnpj = "CNPJ deve ter 14 dígitos.";
+    if (!legalName.trim()) e.legalName = "Razão social é obrigatória.";
+    if (!tradeName.trim()) e.tradeName = "Nome fantasia é obrigatório.";
+    if (Object.keys(e).length > 0) return;
+    save.mutate();
+  }
 
   return (
     <div className="space-y-8">
@@ -157,28 +185,36 @@ export function SuppliersPage() {
         footer={
           <FormSheetActions
             onCancel={closeSheet}
-            onSubmit={() => {
-              setFormError(null);
-              save.mutate();
-            }}
+            onSubmit={trySubmit}
             submitLabel={editingId ? "Salvar alterações" : "Cadastrar fornecedor"}
             pending={save.isPending}
-            disabled={!canSave}
           />
         }
       >
         <FormGrid cols={2}>
-          <FormField label="Código do fornecedor" htmlFor="sup-code" required>
+          <FormField
+            label="Código do fornecedor"
+            htmlFor="sup-code"
+            required
+            error={fieldErrors.code}
+          >
             <Input
               id="sup-code"
+              aria-invalid={fieldErrors.code ? true : undefined}
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="Ex.: BISC-CROC"
             />
           </FormField>
-          <FormField label="CNPJ" htmlFor="sup-cnpj" required>
+          <FormField
+            label="CNPJ"
+            htmlFor="sup-cnpj"
+            required
+            error={fieldErrors.cnpj}
+          >
             <Input
               id="sup-cnpj"
+              aria-invalid={fieldErrors.cnpj ? true : undefined}
               value={cnpj}
               onChange={(e) => setCnpj(maskCnpjInput(e.target.value))}
               placeholder="00.000.000/0000-00"
@@ -189,10 +225,12 @@ export function SuppliersPage() {
             label="Razão social"
             htmlFor="sup-legal"
             required
+            error={fieldErrors.legalName}
             className="sm:col-span-2"
           >
             <Input
               id="sup-legal"
+              aria-invalid={fieldErrors.legalName ? true : undefined}
               value={legalName}
               onChange={(e) => setLegalName(e.target.value)}
               placeholder="Ex.: Indústria e Comércio de Biscoitos Crocante"
@@ -202,10 +240,12 @@ export function SuppliersPage() {
             label="Nome fantasia"
             htmlFor="sup-trade"
             required
+            error={fieldErrors.tradeName}
             className="sm:col-span-2"
           >
             <Input
               id="sup-trade"
+              aria-invalid={fieldErrors.tradeName ? true : undefined}
               value={tradeName}
               onChange={(e) => setTradeName(e.target.value)}
               placeholder="Ex.: BISCOITOS CROCANTE"
@@ -213,9 +253,7 @@ export function SuppliersPage() {
           </FormField>
         </FormGrid>
 
-        {formError ? (
-          <p className="mt-3 text-sm text-destructive">{formError}</p>
-        ) : null}
+        <FormErrorBanner message={formError} className="mt-3" />
       </FormSheet>
 
       {isLoading ? (

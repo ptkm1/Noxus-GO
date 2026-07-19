@@ -34,6 +34,8 @@ export type CommissionDashboard = {
   };
   goal: {
     title: string;
+    scope?: "SELLER" | "TEAM" | "ALL";
+    scopeLabel?: string;
     targetAmount: number | null;
     progressPercent: number | null;
     achievedAmount: number;

@@ -128,10 +128,10 @@ export async function buildStockPdf(filters: StockPdfFilters): Promise<Buffer> {
 
     const totalUnits = products.reduce((s, p) => s + p.stockQty, 0);
     const expiringCount = products.filter((p) => p.hasExpiringSoon).length;
-    drawTableFooter(
-      doc,
-      `Produtos: ${products.length} · Com validade < 30d: ${expiringCount}`,
-      `Total unidades: ${totalUnits}`,
-    );
+    const leftFooter =
+      expiringCount > 0
+        ? `Produtos: ${products.length} · Com validade em até 30 dias: ${expiringCount}`
+        : `Produtos: ${products.length}`;
+    drawTableFooter(doc, leftFooter, `Total unidades: ${totalUnits}`);
   });
 }

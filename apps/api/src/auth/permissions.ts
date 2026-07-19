@@ -10,6 +10,7 @@ export type PermissionResource =
   | "fiscal"
   | "customers"
   | "orders"
+  | "orders_print_80mm"
   | "sellers"
   | "teams"
   | "users"
@@ -30,6 +31,7 @@ export const PERMISSION_RESOURCES: PermissionResource[] = [
   "fiscal",
   "customers",
   "orders",
+  "orders_print_80mm",
   "sellers",
   "teams",
   "users",
@@ -99,6 +101,12 @@ export const ROLE_PERMISSIONS: Record<
     SELLER: "write",
     SUPERVISOR: "none",
   },
+  orders_print_80mm: {
+    ADMIN: "read",
+    MANAGER: "none",
+    SELLER: "none",
+    SUPERVISOR: "none",
+  },
   sellers: {
     ADMIN: "write",
     MANAGER: "read",
@@ -155,7 +163,7 @@ export const ROLE_PERMISSIONS: Record<
   },
   audit: {
     ADMIN: "read",
-    MANAGER: "none",
+    MANAGER: "read",
     SELLER: "none",
     SUPERVISOR: "none",
   },
@@ -175,6 +183,7 @@ export const PERMISSION_RESOURCE_LABELS: Record<PermissionResource, string> = {
   fiscal: "Fiscal",
   customers: "Clientes",
   orders: "Pedidos / Vendas",
+  orders_print_80mm: "Imprimir pedido 80mm",
   sellers: "Vendedores",
   teams: "Equipes",
   users: "Usuários (admin/gestor)",

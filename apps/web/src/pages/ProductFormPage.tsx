@@ -1,5 +1,7 @@
+import { AuditLogPanel } from "@/components/AuditLogPanel";
 import {
   FormActions,
+  FormErrorBanner,
   FormField,
   FormGrid,
   FormSection,
@@ -10,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useProductFormPage } from "@/hooks/useProductFormPage";
+import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import { fieldControlClass } from "@/lib/field-styles";
 import { cn } from "@/lib/utils";
 import {
@@ -77,6 +80,7 @@ export function ProductFormPage() {
     attrs,
     setAttrs,
     formError,
+    fieldErrors,
     fieldError,
     categories,
     suppliers,
@@ -87,6 +91,10 @@ export function ProductFormPage() {
     onCategoryChange,
     pending,
   } = useProductFormPage();
+
+  useScrollToFirstError(
+    Object.keys(fieldErrors).length > 0 ? fieldErrors : formError,
+  );
 
   const { data: ncms = [] } = useQuery({
     queryKey: ["admin", "fiscal", "ncm"],
@@ -166,6 +174,8 @@ export function ProductFormPage() {
       </div>
 
       <form onSubmit={(e) => void handleSubmit(e)}>
+        <FormErrorBanner message={formError} className="mb-4" />
+
         {activeTab === "principal" ? (
           <FormSection
             title="Dados principais"
@@ -1003,10 +1013,6 @@ export function ProductFormPage() {
           </FormSection>
         ) : null}
 
-        {formError ? (
-          <p className="mt-4 text-sm text-destructive">{formError}</p>
-        ) : null}
-
         <FormActions className="mt-6">
           <Button type="submit" disabled={pending}>
             {pending
@@ -1023,6 +1029,15 @@ export function ProductFormPage() {
 
       {isEdit && productId ? (
         <ProductPromotionsPanel productId={productId} />
+      ) : null}
+
+      {isEdit && productId ? (
+        <AuditLogPanel
+          className="mt-8"
+          entityType="Product"
+          entityId={productId}
+          take={40}
+        />
       ) : null}
     </div>
   );

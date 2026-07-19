@@ -43,7 +43,9 @@ export async function buildCustomersPdf(
   if (filters.customerId) where.id = filters.customerId;
   if (filters.creditStatus === "blocked") where.creditBlocked = true;
   if (filters.creditStatus === "ok") where.creditBlocked = false;
-  if (filters.extras) applyCustomerExtras(where, filters.extras);
+  if (filters.extras) {
+    await applyCustomerExtras(where, filters.extras, filters.organizationId);
+  }
 
   const [org, customers] = await Promise.all([
     prisma.organization.findUnique({

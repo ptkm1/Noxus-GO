@@ -215,6 +215,7 @@ export function useProductFormPage() {
     attrs,
     setAttrs,
     formError,
+    fieldErrors,
     fieldError,
     categories,
     suppliers,

@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import { cn } from "@/lib/utils";
 import {
   SELLER_COMMISSION_TYPES,
@@ -23,7 +24,7 @@ import {
   type SellerCommissionType,
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { apiFetch } from "../lib/api";
@@ -67,6 +68,7 @@ export function SellersPage() {
   const [commissionType, setCommissionType] =
     useState<SellerCommissionType>("FIXED");
   const [commission, setCommission] = useState("10");
+  const [showValidation, setShowValidation] = useState(false);
 
   function resetForm() {
     setEmail("");
@@ -75,6 +77,7 @@ export function SellersPage() {
     setMatricula("");
     setCommissionType("FIXED");
     setCommission("10");
+    setShowValidation(false);
   }
 
   function openCreate() {
@@ -131,6 +134,23 @@ export function SellersPage() {
 
   const canSave = Boolean(email && password && name);
 
+  const fieldErrors = useMemo(() => {
+    if (!showValidation) return {} as Record<string, string>;
+    const e: Record<string, string> = {};
+    if (!name.trim()) e.name = "Nome é obrigatório.";
+    if (!email.trim()) e.email = "Email é obrigatório.";
+    if (!password) e.password = "Senha é obrigatória.";
+    return e;
+  }, [showValidation, name, email, password]);
+
+  useScrollToFirstError(fieldErrors, { enabled: showValidation });
+
+  function trySubmit() {
+    setShowValidation(true);
+    if (!canSave) return;
+    create.mutate();
+  }
+
   if (!admin) {
     return (
       <p className="text-muted-foreground">
@@ -159,10 +179,9 @@ export function SellersPage() {
         footer={
           <FormSheetActions
             onCancel={closeSheet}
-            onSubmit={() => create.mutate()}
+            onSubmit={trySubmit}
             submitLabel="Criar vendedor"
             pending={create.isPending}
-            disabled={!canSave}
           />
         }
       >
@@ -171,11 +190,13 @@ export function SellersPage() {
             label="Nome"
             htmlFor="seller-name"
             required
+            error={fieldErrors.name}
             className="sm:col-span-2"
           >
             <Input
               id="seller-name"
               placeholder="Nome"
+              aria-invalid={fieldErrors.name ? true : undefined}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -188,11 +209,17 @@ export function SellersPage() {
               onChange={(e) => setMatricula(e.target.value)}
             />
           </FormField>
-          <FormField label="Email" htmlFor="seller-email" required>
+          <FormField
+            label="Email"
+            htmlFor="seller-email"
+            required
+            error={fieldErrors.email}
+          >
             <Input
               id="seller-email"
               type="email"
               placeholder="Email"
+              aria-invalid={fieldErrors.email ? true : undefined}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
@@ -202,11 +229,13 @@ export function SellersPage() {
             htmlFor="seller-password"
             required
             hint="Mínimo 6 caracteres"
+            error={fieldErrors.password}
           >
             <Input
               id="seller-password"
               type="password"
               placeholder="Senha inicial"
+              aria-invalid={fieldErrors.password ? true : undefined}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />

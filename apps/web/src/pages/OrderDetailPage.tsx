@@ -1,4 +1,5 @@
 import { useAuth } from "@/auth/AuthContext";
+import { AuditLogPanel } from "@/components/AuditLogPanel";
 import { useConfirm } from "@/components/confirm";
 import { ProductListCell } from "@/components/ProductCombobox";
 import { AppSelect } from "@/components/ui/app-select";
@@ -16,7 +17,7 @@ import { apiFetch, downloadPdf, printPdf } from "@/lib/api";
 import { formatOrderCode } from "@/lib/order-code";
 import { isWebAdmin } from "@/lib/staff";
 import { cn } from "@/lib/utils";
-import { ORDER_STATUSES, orderStatusLabel } from "@pedidos/shared";
+import { ORDER_STATUSES, canRead, orderStatusLabel } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Download, Printer } from "lucide-react";
 import { useState } from "react";
@@ -72,7 +73,7 @@ function statusChangeHint(status: string): string {
     return " Pedidos cancelados podem estornar estoque se estavam confirmados.";
   }
   if (status === "CONFIRMED") {
-    return " Confirmar a venda pode baixar estoque.";
+    return " Confirmar o pedido pode baixar estoque.";
   }
   return "";
 }
@@ -81,6 +82,9 @@ export function OrderDetailPage() {
   const { orderId } = useParams<{ orderId: string }>();
   const { user } = useAuth();
   const canWrite = isWebAdmin(user?.role);
+  const canPrint80mm = Boolean(
+    user && canRead(user.role, "orders_print_80mm", user.permissions),
+  );
   const { confirm } = useConfirm();
   const qc = useQueryClient();
   const [pdfPending, setPdfPending] = useState(false);
@@ -123,6 +127,19 @@ export function OrderDetailPage() {
     }
   }
 
+  async function handlePrint80mm() {
+    if (!orderId) return;
+    setPdfErr(null);
+    setPdfPending(true);
+    try {
+      await printPdf(`/admin/orders/${orderId}/pdf-80mm`);
+    } catch {
+      setPdfErr("Não foi possível gerar o cupom 80mm para impressão.");
+    } finally {
+      setPdfPending(false);
+    }
+  }
+
   async function handleDownloadPdf() {
     if (!orderId || !order) return;
     setPdfErr(null);
@@ -142,7 +159,7 @@ export function OrderDetailPage() {
   async function handleStatusChange(status: string) {
     if (!order || status === order.status) return;
     const ok = await confirm({
-      title: "Alterar status da venda?",
+      title: "Alterar status do pedido?",
       description: `O status será alterado de “${orderStatusLabel(order.status)}” para “${orderStatusLabel(status)}”.${statusChangeHint(status)}`,
       confirmLabel: "Alterar status",
       tone: status === "CANCELLED" ? "destructive" : "default",
@@ -156,9 +173,9 @@ export function OrderDetailPage() {
   const backLink = (
     <div className="flex flex-wrap items-center gap-3">
       <Button variant="ghost" size="sm" className="-ml-2 gap-1.5" asChild>
-        <Link to="/vendas">
+        <Link to="/pedidos">
           <ArrowLeft className="size-4" />
-          Todas as vendas
+          Todos os pedidos
         </Link>
       </Button>
     </div>
@@ -187,7 +204,7 @@ export function OrderDetailPage() {
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                Venda {code}
+                Pedido {code}
               </h1>
               <Badge
                 variant="outline"
@@ -216,6 +233,18 @@ export function OrderDetailPage() {
                 <Printer className="size-4" />
                 {pdfPending ? "Gerando…" : "Imprimir"}
               </Button>
+              {canPrint80mm ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handlePrint80mm()}
+                  disabled={pdfPending}
+                >
+                  <Printer className="size-4" />
+                  Imprimir 80mm
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
@@ -358,6 +387,10 @@ export function OrderDetailPage() {
             {formatMoney(order.totalAmount)}
           </span>
         </div>
+      </div>
+
+      <div className="surface-card p-6">
+        <AuditLogPanel entityType="Order" entityId={order.id} take={40} />
       </div>
     </div>
   );

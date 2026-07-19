@@ -16,6 +16,7 @@ import {
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { AuditLogPanel } from "@/components/AuditLogPanel";
 import { FiscalCadastrosPanel } from "../components/FiscalCadastrosPanel";
 import {
   apiFetch,
@@ -25,12 +26,13 @@ import {
 } from "../lib/api";
 import { getErrorMessage } from "../lib/api-error";
 import {
+  confirmAction,
   notifyError,
   notifySuccess,
   promptAction,
 } from "../lib/app-notifications";
 
-type Tab = "saida" | "entrada" | "cadastros" | "config";
+type Tab = "saida" | "entrada" | "cadastros" | "config" | "historico";
 
 type EligibleOrder = {
   id: string;
@@ -48,6 +50,21 @@ type EligibleOrder = {
     number: number | null;
   } | null;
 };
+
+/** Pedidos que podem entrar no lote: criar rascunho + transmitir, ou só transmitir draft. */
+function isBatchEmitable(o: EligibleOrder): boolean {
+  if (o.canEmit === true) return true;
+  return o.fiscalInvoice?.status === "DRAFT";
+}
+
+function selectAllState(
+  allSelected: boolean,
+  someSelected: boolean,
+): boolean | "indeterminate" {
+  if (allSelected) return true;
+  if (someSelected) return "indeterminate";
+  return false;
+}
 
 type FiscalInvoice = {
   id: string;
@@ -111,6 +128,13 @@ export function FaturamentoPage() {
   const [productMappings, setProductMappings] = useState<
     Record<string, string>
   >({});
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [batchEmitProgress, setBatchEmitProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
 
   const { data: settings, refetch: refetchSettings } = useQuery({
     queryKey: ["admin", "fiscal", "settings"],
@@ -131,6 +155,119 @@ export function FaturamentoPage() {
     queryFn: () => apiFetch<EligibleOrder[]>("/admin/fiscal/outbound/orders"),
     enabled: tab === "saida",
   });
+
+  const batchableOrders = eligibleOrders.filter(isBatchEmitable);
+  const batchableIds = batchableOrders.map((o) => o.id);
+  const selectedBatchOrders = batchableOrders.filter((o) => selectedOrderIds.has(o.id));
+  const hasOrderSelection = selectedBatchOrders.length > 0;
+  const allBatchableSelected =
+    batchableIds.length > 0 && batchableIds.every((id) => selectedOrderIds.has(id));
+  const someBatchableSelected =
+    batchableIds.some((id) => selectedOrderIds.has(id)) && !allBatchableSelected;
+  const batchEmitBusy = batchEmitProgress != null;
+
+  useEffect(() => {
+    setSelectedOrderIds((prev) => {
+      if (prev.size === 0) return prev;
+      const valid = new Set(eligibleOrders.map((o) => o.id));
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (valid.has(id) && eligibleOrders.some((o) => o.id === id && isBatchEmitable(o))) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [eligibleOrders]);
+
+  function toggleOrder(id: string, checked: boolean) {
+    setSelectedOrderIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleAllBatchable(checked: boolean) {
+    setSelectedOrderIds(checked ? new Set(batchableIds) : new Set());
+  }
+
+  async function emitAndTransmitOrder(order: EligibleOrder) {
+    if (order.canEmit === true) {
+      const invoice = await apiFetch<{ id: string }>(
+        `/admin/fiscal/outbound/from-order/${order.id}`,
+        { method: "POST" },
+      );
+      await apiFetch(`/admin/fiscal/outbound/invoices/${invoice.id}/transmit`, {
+        method: "POST",
+      });
+      return;
+    }
+    if (order.fiscalInvoice?.status === "DRAFT") {
+      await apiFetch(`/admin/fiscal/outbound/invoices/${order.fiscalInvoice.id}/transmit`, {
+        method: "POST",
+      });
+      return;
+    }
+    throw new Error("Pedido não elegível para emissão em lote.");
+  }
+
+  async function handleBatchEmit() {
+    if (!hasOrderSelection || batchEmitBusy) return;
+
+    const ok = await confirmAction({
+      title: `Emitir NF-e de ${selectedBatchOrders.length} pedido(s)?`,
+      message:
+        "Para cada pedido selecionado: cria o rascunho (se ainda não houver) e transmite à SEFAZ. Falhas em um item não interrompem os demais.",
+      confirmLabel: "Emitir em lote",
+    });
+    if (!ok) return;
+
+    const targets = [...selectedBatchOrders];
+    let success = 0;
+    const failures: { label: string; error: string }[] = [];
+
+    setBatchEmitProgress({ current: 0, total: targets.length });
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        const order = targets[i]!;
+        setBatchEmitProgress({ current: i + 1, total: targets.length });
+        const label = order.customer?.name ?? order.id.slice(0, 8);
+        try {
+          await emitAndTransmitOrder(order);
+          success += 1;
+        } catch (e) {
+          failures.push({ label, error: getErrorMessage(e) });
+        }
+      }
+    } finally {
+      setBatchEmitProgress(null);
+      setSelectedOrderIds(new Set());
+      void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
+    }
+
+    if (failures.length === 0) {
+      notifySuccess(
+        `${success} NF-e transmitida(s) com sucesso.`,
+        "Emissão em lote",
+      );
+    } else if (success === 0) {
+      notifyError(
+        failures.map((f) => `${f.label}: ${f.error}`).join("\n"),
+        "Nenhuma NF-e emitida",
+      );
+    } else {
+      notifyError(
+        `${success} ok · ${failures.length} falha(s):\n` +
+          failures.map((f) => `${f.label}: ${f.error}`).join("\n"),
+        "Emissão em lote parcial",
+      );
+    }
+  }
 
   const { data: outboundInvoices = [] } = useQuery({
     queryKey: ["admin", "fiscal", "outbound-invoices"],
@@ -496,6 +633,7 @@ export function FaturamentoPage() {
     { id: "entrada", label: "NF-e de Entrada" },
     { id: "cadastros", label: "NCM / CFOP" },
     { id: "config", label: "Configurações" },
+    { id: "historico", label: "Histórico" },
   ];
 
   return (
@@ -523,6 +661,27 @@ export function FaturamentoPage() {
         <div className="space-y-8">
           <section>
             <h2 className="mb-3 text-lg font-medium">Pedidos confirmados</h2>
+
+            <div className="mb-3 flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <p className="text-sm text-muted-foreground">
+                {hasOrderSelection
+                  ? `${selectedBatchOrders.length} pedido(s) selecionado(s)`
+                  : batchableIds.length > 0
+                    ? "Selecione pedidos prontos para emitir ou transmitir NF-e em lote"
+                    : "Nenhum pedido elegível para emissão em lote no momento"}
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                disabled={!hasOrderSelection || batchEmitBusy}
+                onClick={() => void handleBatchEmit()}
+              >
+                {batchEmitProgress
+                  ? `Emitindo ${batchEmitProgress.current}/${batchEmitProgress.total}…`
+                  : "Emitir NF-e em lote"}
+              </Button>
+            </div>
+
             {loadingOrders ? (
               <p className="text-muted-foreground">Carregando…</p>
             ) : (
@@ -530,6 +689,14 @@ export function FaturamentoPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-background text-left text-muted-foreground">
                     <tr>
+                      <th className="w-10 px-4 py-3">
+                        <Checkbox
+                          checked={selectAllState(allBatchableSelected, someBatchableSelected)}
+                          disabled={batchableIds.length === 0 || batchEmitBusy}
+                          onCheckedChange={(v) => toggleAllBatchable(v === true)}
+                          aria-label="Selecionar todos os elegíveis"
+                        />
+                      </th>
                       <th className="px-4 py-3">Pedido</th>
                       <th className="px-4 py-3">Cliente</th>
                       <th className="px-4 py-3">Vendedor</th>
@@ -539,59 +706,85 @@ export function FaturamentoPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {eligibleOrders.map((o) => (
-                      <tr key={o.id} className="border-t border-border">
-                        <td className="px-4 py-3 font-mono text-xs">
-                          {o.id.slice(0, 8)}…
-                        </td>
-                        <td className="px-4 py-3">{o.customer?.name ?? "—"}</td>
-                        <td className="px-4 py-3">{o.seller.user.name}</td>
-                        <td className="px-4 py-3">
-                          R$ {Number(o.totalAmount).toFixed(2)}
-                        </td>
-                        <td className="px-4 py-3">
-                          {o.fiscalStatus === "NONE"
-                            ? "Sem nota"
-                            : FISCAL_INVOICE_STATUS_LABELS[
-                                o.fiscalStatus as FiscalInvoiceStatus
-                              ]}
-                        </td>
-                        <td className="px-4 py-3">
-                          {o.fiscalStatus === "NONE" ||
-                          o.fiscalStatus === "REJECTED" ? (
-                            <div className="space-y-1">
-                              {o.readinessIssues &&
-                                o.readinessIssues.length > 0 && (
-                                  <p className="max-w-xs text-xs text-amber-600">
-                                    {o.readinessIssues
-                                      .map((i) => i.message)
-                                      .join(" · ")}
-                                  </p>
-                                )}
+                    {eligibleOrders.map((o) => {
+                      const batchable = isBatchEmitable(o);
+                      const selected = selectedOrderIds.has(o.id);
+                      return (
+                        <tr
+                          key={o.id}
+                          className={cn(
+                            "border-t border-border",
+                            selected && "bg-muted/40",
+                          )}
+                        >
+                          <td className="px-4 py-3">
+                            <Checkbox
+                              checked={selected}
+                              disabled={!batchable || batchEmitBusy}
+                              onCheckedChange={(v) =>
+                                toggleOrder(o.id, v === true)
+                              }
+                              aria-label={`Selecionar pedido ${o.id.slice(0, 8)}`}
+                            />
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs">
+                            {o.id.slice(0, 8)}…
+                          </td>
+                          <td className="px-4 py-3">
+                            {o.customer?.name ?? "—"}
+                          </td>
+                          <td className="px-4 py-3">{o.seller.user.name}</td>
+                          <td className="px-4 py-3">
+                            R$ {Number(o.totalAmount).toFixed(2)}
+                          </td>
+                          <td className="px-4 py-3">
+                            {o.fiscalStatus === "NONE"
+                              ? "Sem nota"
+                              : FISCAL_INVOICE_STATUS_LABELS[
+                                  o.fiscalStatus as FiscalInvoiceStatus
+                                ]}
+                          </td>
+                          <td className="px-4 py-3">
+                            {o.fiscalStatus === "NONE" ||
+                            o.fiscalStatus === "REJECTED" ? (
+                              <div className="space-y-1">
+                                {o.readinessIssues &&
+                                  o.readinessIssues.length > 0 && (
+                                    <p className="max-w-xs text-xs text-amber-600">
+                                      {o.readinessIssues
+                                        .map((i) => i.message)
+                                        .join(" · ")}
+                                    </p>
+                                  )}
+                                <Button
+                                  size="sm"
+                                  disabled={
+                                    emitFromOrder.isPending ||
+                                    o.canEmit === false ||
+                                    batchEmitBusy
+                                  }
+                                  onClick={() => emitFromOrder.mutate(o.id)}
+                                >
+                                  Emitir NF-e
+                                </Button>
+                              </div>
+                            ) : o.fiscalInvoice?.status === "DRAFT" ? (
                               <Button
                                 size="sm"
                                 disabled={
-                                  emitFromOrder.isPending || o.canEmit === false
+                                  transmit.isPending || batchEmitBusy
                                 }
-                                onClick={() => emitFromOrder.mutate(o.id)}
+                                onClick={() =>
+                                  transmit.mutate(o.fiscalInvoice!.id)
+                                }
                               >
-                                Emitir NF-e
+                                Transmitir
                               </Button>
-                            </div>
-                          ) : o.fiscalInvoice?.status === "DRAFT" ? (
-                            <Button
-                              size="sm"
-                              disabled={transmit.isPending}
-                              onClick={() =>
-                                transmit.mutate(o.fiscalInvoice!.id)
-                              }
-                            >
-                              Transmitir
-                            </Button>
-                          ) : null}
-                        </td>
-                      </tr>
-                    ))}
+                            ) : null}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1014,6 +1207,25 @@ export function FaturamentoPage() {
       )}
 
       {tab === "cadastros" && <FiscalCadastrosPanel />}
+
+      {tab === "historico" && (
+        <div className="space-y-6">
+          <div className="surface-card p-6">
+            <AuditLogPanel
+              title="Histórico de NF-e"
+              entityType="FiscalInvoice"
+              take={50}
+            />
+          </div>
+          <div className="surface-card p-6">
+            <AuditLogPanel
+              title="Histórico de configuração fiscal"
+              entityType="FiscalConfig"
+              take={30}
+            />
+          </div>
+        </div>
+      )}
 
       {tab === "config" && (
         <div className="space-y-6">

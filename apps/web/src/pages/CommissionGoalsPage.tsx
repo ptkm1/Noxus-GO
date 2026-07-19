@@ -37,21 +37,55 @@ function monthLabel(m: number): string {
   );
 }
 
+type GoalScope = "SELLER" | "TEAM" | "ALL";
+
 type Seller = {
   id: string;
   active: boolean;
   user: { name: string; email: string };
 };
 
+type SalesTeam = {
+  id: string;
+  name: string;
+  memberCount: number;
+};
+
 type MonthlyGoalRow = {
   id: string;
-  sellerId: string;
+  scope: GoalScope;
+  sellerId: string | null;
+  teamId: string | null;
   year: number;
   month: number;
   title: string;
   targetAmount: unknown;
-  seller: { user: { name: string } };
+  seller: { user: { name: string } } | null;
+  team: { id: string; name: string; _count: { members: number } } | null;
 };
+
+function scopeTypeLabel(scope: GoalScope): string {
+  switch (scope) {
+    case "SELLER":
+      return "Vendedor";
+    case "TEAM":
+      return "Equipe";
+    case "ALL":
+      return "Todos";
+  }
+}
+
+function appliesToLabel(g: MonthlyGoalRow): string {
+  if (g.scope === "SELLER") {
+    return g.seller?.user.name ?? "Vendedor";
+  }
+  if (g.scope === "TEAM") {
+    const n = g.team?._count.members;
+    const name = g.team?.name ?? "Equipe";
+    return n != null ? `${name} (${n} vendedores)` : name;
+  }
+  return "Todos os vendedores";
+}
 
 export function CommissionGoalsPage() {
   const qc = useQueryClient();
@@ -63,18 +97,27 @@ export function CommissionGoalsPage() {
     queryFn: () => apiFetch<Seller[]>("/admin/sellers"),
   });
 
+  const { data: teams = [] } = useQuery({
+    queryKey: ["admin", "teams"],
+    queryFn: () => apiFetch<SalesTeam[]>("/admin/teams"),
+  });
+
   const activeSellers = useMemo(() => sellers.filter((s) => s.active), [sellers]);
 
   const [goalYear, setGoalYear] = useState(today.getFullYear());
   const [goalMonth, setGoalMonth] = useState(today.getMonth() + 1);
+  const [goalScopeFilter, setGoalScopeFilter] = useState<string>("");
   const [goalSellerFilter, setGoalSellerFilter] = useState<string>("");
+  const [goalTeamFilter, setGoalTeamFilter] = useState<string>("");
 
   const goalsQueryKey = [
     "admin",
     "seller-monthly-goals",
     goalYear,
     goalMonth,
+    goalScopeFilter,
     goalSellerFilter,
+    goalTeamFilter,
   ] as const;
 
   const { data: goalsRaw = [], isLoading: goalsLoading } = useQuery({
@@ -84,28 +127,37 @@ export function CommissionGoalsPage() {
         year: String(goalYear),
         month: String(goalMonth),
       });
+      if (goalScopeFilter) q.set("scope", goalScopeFilter);
       if (goalSellerFilter) q.set("sellerId", goalSellerFilter);
+      if (goalTeamFilter) q.set("teamId", goalTeamFilter);
       return apiFetch<MonthlyGoalRow[]>(`/admin/seller-monthly-goals?${q}`);
     },
   });
 
   const goals = useMemo(
     () =>
-      [...goalsRaw].sort((a, b) =>
-        a.seller.user.name.localeCompare(b.seller.user.name, "pt-BR"),
-      ),
+      [...goalsRaw].sort((a, b) => {
+        const scopeOrder = { SELLER: 0, TEAM: 1, ALL: 2 } as const;
+        const byScope = scopeOrder[a.scope] - scopeOrder[b.scope];
+        if (byScope !== 0) return byScope;
+        return appliesToLabel(a).localeCompare(appliesToLabel(b), "pt-BR");
+      }),
     [goalsRaw],
   );
 
   const [goalSheetOpen, setGoalSheetOpen] = useState(false);
+  const [mgScope, setMgScope] = useState<GoalScope>("SELLER");
   const [mgSellerId, setMgSellerId] = useState("");
+  const [mgTeamId, setMgTeamId] = useState("");
   const [mgYear, setMgYear] = useState(today.getFullYear());
   const [mgMonth, setMgMonth] = useState(today.getMonth() + 1);
   const [mgTitle, setMgTitle] = useState("Meta do mês");
   const [mgTarget, setMgTarget] = useState("");
 
   function resetGoalForm() {
+    setMgScope("SELLER");
     setMgSellerId("");
+    setMgTeamId("");
     setMgYear(today.getFullYear());
     setMgMonth(today.getMonth() + 1);
     setMgTitle("Meta do mês");
@@ -127,7 +179,9 @@ export function CommissionGoalsPage() {
       apiFetch("/admin/seller-monthly-goals", {
         method: "POST",
         body: JSON.stringify({
-          sellerId: mgSellerId,
+          scope: mgScope,
+          ...(mgScope === "SELLER" ? { sellerId: mgSellerId } : {}),
+          ...(mgScope === "TEAM" ? { teamId: mgTeamId } : {}),
           year: mgYear,
           month: mgMonth,
           title: mgTitle.trim() || "Meta do mês",
@@ -162,7 +216,12 @@ export function CommissionGoalsPage() {
       void qc.invalidateQueries({ queryKey: ["admin", "seller-monthly-goals"] }),
   });
 
-  const canSaveGoal = Boolean(mgSellerId && mgTarget);
+  const canSaveGoal = Boolean(
+    mgTarget &&
+      (mgScope === "ALL" ||
+        (mgScope === "SELLER" && mgSellerId) ||
+        (mgScope === "TEAM" && mgTeamId)),
+  );
 
   return (
     <div className="space-y-8">
@@ -177,8 +236,9 @@ export function CommissionGoalsPage() {
           </nav>
           <h1 className="text-2xl font-semibold text-foreground">Metas</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            Uma meta por vendedor e mês civil. Salvar novamente atualiza valor e
-            título (upsert).
+            Defina metas por vendedor, por equipe ou para todos os vendedores no
+            mês civil. Salvar novamente no mesmo escopo e período atualiza valor
+            e título (upsert).
           </p>
         </div>
         <Button type="button" className="shrink-0" onClick={openGoalCreate}>
@@ -209,19 +269,54 @@ export function CommissionGoalsPage() {
             onValueChange={(v) => setGoalMonth(Number(v))}
           />
         </FormField>
-        <FormField label="Vendedor" htmlFor="goal-seller-filter" className="sm:col-span-2">
+        <FormField label="Escopo" htmlFor="goal-scope-filter">
           <AppSelect
-            id="goal-seller-filter"
-            value={goalSellerFilter}
-            emptyLabel="Todos neste mês"
-            placeholder="Todos neste mês"
-            options={activeSellers.map((s) => ({
-              value: s.id,
-              label: s.user.name,
-            }))}
-            onValueChange={setGoalSellerFilter}
+            id="goal-scope-filter"
+            value={goalScopeFilter}
+            emptyLabel="Todos os escopos"
+            placeholder="Todos os escopos"
+            options={[
+              { value: "SELLER", label: "Vendedor" },
+              { value: "TEAM", label: "Equipe" },
+              { value: "ALL", label: "Todos" },
+            ]}
+            onValueChange={(v) => {
+              setGoalScopeFilter(v);
+              if (v !== "SELLER") setGoalSellerFilter("");
+              if (v !== "TEAM") setGoalTeamFilter("");
+            }}
           />
         </FormField>
+        {goalScopeFilter === "SELLER" || !goalScopeFilter ? (
+          <FormField label="Vendedor" htmlFor="goal-seller-filter">
+            <AppSelect
+              id="goal-seller-filter"
+              value={goalSellerFilter}
+              emptyLabel="Qualquer"
+              placeholder="Qualquer"
+              options={activeSellers.map((s) => ({
+                value: s.id,
+                label: s.user.name,
+              }))}
+              onValueChange={setGoalSellerFilter}
+            />
+          </FormField>
+        ) : null}
+        {goalScopeFilter === "TEAM" || !goalScopeFilter ? (
+          <FormField label="Equipe" htmlFor="goal-team-filter">
+            <AppSelect
+              id="goal-team-filter"
+              value={goalTeamFilter}
+              emptyLabel="Qualquer"
+              placeholder="Qualquer"
+              options={teams.map((t) => ({
+                value: t.id,
+                label: t.name,
+              }))}
+              onValueChange={setGoalTeamFilter}
+            />
+          </FormField>
+        ) : null}
       </FilterBar>
 
       <FormSheet
@@ -231,7 +326,7 @@ export function CommissionGoalsPage() {
           else setGoalSheetOpen(true);
         }}
         title="Definir ou atualizar meta"
-        description="Uma meta por vendedor e mês civil (upsert)."
+        description="Escolha o escopo: um vendedor, uma equipe ou todos os vendedores."
         footer={
           <FormSheetActions
             onCancel={closeGoalSheet}
@@ -243,19 +338,64 @@ export function CommissionGoalsPage() {
         }
       >
         <FormGrid cols={2}>
-          <FormField label="Vendedor" htmlFor="mg-seller" required className="sm:col-span-2">
+          <FormField label="Escopo" htmlFor="mg-scope" required className="sm:col-span-2">
             <AppSelect
-              id="mg-seller"
-              value={mgSellerId}
-              emptyLabel="Selecione…"
-              placeholder="Selecione…"
-              options={activeSellers.map((s) => ({
-                value: s.id,
-                label: s.user.name,
-              }))}
-              onValueChange={setMgSellerId}
+              id="mg-scope"
+              value={mgScope}
+              options={[
+                { value: "SELLER", label: "Vendedor" },
+                { value: "TEAM", label: "Equipe" },
+                { value: "ALL", label: "Todos os vendedores" },
+              ]}
+              onValueChange={(v) => setMgScope(v as GoalScope)}
             />
           </FormField>
+          {mgScope === "SELLER" ? (
+            <FormField
+              label="Vendedor"
+              htmlFor="mg-seller"
+              required
+              className="sm:col-span-2"
+            >
+              <AppSelect
+                id="mg-seller"
+                value={mgSellerId}
+                emptyLabel="Selecione…"
+                placeholder="Selecione…"
+                options={activeSellers.map((s) => ({
+                  value: s.id,
+                  label: s.user.name,
+                }))}
+                onValueChange={setMgSellerId}
+              />
+            </FormField>
+          ) : null}
+          {mgScope === "TEAM" ? (
+            <FormField
+              label="Equipe"
+              htmlFor="mg-team"
+              required
+              className="sm:col-span-2"
+            >
+              <AppSelect
+                id="mg-team"
+                value={mgTeamId}
+                emptyLabel="Selecione…"
+                placeholder="Selecione…"
+                options={teams.map((t) => ({
+                  value: t.id,
+                  label: `${t.name} (${t.memberCount})`,
+                }))}
+                onValueChange={setMgTeamId}
+              />
+            </FormField>
+          ) : null}
+          {mgScope === "ALL" ? (
+            <p className="sm:col-span-2 text-sm text-muted-foreground">
+              O progresso soma o faturamento confirmado de todos os vendedores
+              ativos da organização.
+            </p>
+          ) : null}
           <FormField label="Ano" htmlFor="mg-year">
             <Input
               id="mg-year"
@@ -305,10 +445,11 @@ export function CommissionGoalsPage() {
         <p className="text-muted-foreground">Carregando metas…</p>
       ) : (
         <div className="rounded-xl border border-border bg-card">
-          <Table className="min-w-[720px]">
+          <Table className="min-w-[820px]">
             <TableHeader>
               <TableRow>
-                <TableHead className="px-4">Vendedor</TableHead>
+                <TableHead className="px-4">Escopo</TableHead>
+                <TableHead className="px-4">Aplica-se a</TableHead>
                 <TableHead className="px-4">Período</TableHead>
                 <TableHead className="px-4">Título</TableHead>
                 <TableHead className="px-4">Meta (R$)</TableHead>
@@ -319,7 +460,7 @@ export function CommissionGoalsPage() {
               {goals.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     className="px-4 py-8 text-center text-muted-foreground"
                   >
                     Nenhuma meta para este filtro.
@@ -328,7 +469,12 @@ export function CommissionGoalsPage() {
               ) : (
                 goals.map((g) => (
                   <TableRow key={g.id}>
-                    <TableCell className="px-4 py-3">{g.seller.user.name}</TableCell>
+                    <TableCell className="px-4 py-3">
+                      {scopeTypeLabel(g.scope)}
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      {appliesToLabel(g)}
+                    </TableCell>
                     <TableCell className="px-4 py-3 capitalize">
                       {monthLabel(g.month)} {g.year}
                     </TableCell>
@@ -367,7 +513,7 @@ export function CommissionGoalsPage() {
                           void confirm({
                             title: "Remover meta?",
                             description:
-                              "Esta meta de comissão será excluída permanentemente.",
+                              "Esta meta será excluída permanentemente.",
                             confirmLabel: "Remover",
                             tone: "destructive",
                           }).then((ok) => {

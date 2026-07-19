@@ -1,6 +1,6 @@
 import type { OrderStatus } from "@prisma/client";
 import { prisma } from "../db.js";
-import { writeAuditLog } from "./audit-log.js";
+import { AUDIT_ACTION, AUDIT_ENTITY, writeAuditLog } from "./audit-log.js";
 import { consumeLotsFefo } from "./stock-ledger.js";
 
 export class StockError extends Error {
@@ -144,8 +144,10 @@ export async function applyStockOnStatusChange(
         organizationId: order.organizationId,
         userId: userId ?? null,
         userMatricula: actor?.matricula ?? null,
-        action: confirming ? "stock.sale" : "stock.sale_reversal",
-        entityType: "Order",
+        action: confirming
+          ? AUDIT_ACTION.STOCK_SALE
+          : AUDIT_ACTION.STOCK_SALE_REVERSAL,
+        entityType: AUDIT_ENTITY.Order,
         entityId: order.id,
         metadata: {
           fromStatus,

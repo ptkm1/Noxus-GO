@@ -13,6 +13,11 @@ import {
   transmitOutboundInvoice,
 } from "../services/fiscal-outbound.js";
 import { loadInvoiceForDanfe, sendDanfePdfReply } from "../services/nfe-danfe-load.js";
+import {
+  AUDIT_ACTION,
+  AUDIT_ENTITY,
+  auditFromAuth,
+} from "../services/audit-log.js";
 
 const idParam = z.object({ id: z.string().min(1) });
 
@@ -84,11 +89,18 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
       .safeParse(req.body);
     if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
 
-    return prisma.organizationFiscalConfig.upsert({
+    const config = await prisma.organizationFiscalConfig.upsert({
       where: { organizationId: auth.organizationId },
       create: { organizationId: auth.organizationId, ...body.data },
       update: body.data,
     });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.FISCAL_SETTINGS,
+      entityType: AUDIT_ENTITY.FiscalConfig,
+      entityId: config.id,
+      metadata: { fields: Object.keys(body.data) },
+    });
+    return config;
   });
 
   app.post("/certificate", async (req, reply) => {
@@ -136,6 +148,16 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         certificatePasswordEncrypted: encryptedPassword,
         certificateExpiresAt: meta.expiresAt,
         certificateCnpj: meta.cnpj,
+      },
+    });
+
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.FISCAL_CERTIFICATE,
+      entityType: AUDIT_ENTITY.FiscalConfig,
+      entityId: auth.organizationId,
+      metadata: {
+        certificateCnpj: meta.cnpj,
+        expiresAt: meta.expiresAt ? meta.expiresAt.toISOString() : null,
       },
     });
 
@@ -188,6 +210,13 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
       },
     });
 
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.FISCAL_LOGO,
+      entityType: AUDIT_ENTITY.FiscalConfig,
+      entityId: auth.organizationId,
+      metadata: { mimeType: parsed.mimeType, op: "upload" },
+    });
+
     return { ok: true, mimeType: parsed.mimeType };
   });
 
@@ -197,6 +226,12 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     await prisma.organizationFiscalConfig.updateMany({
       where: { organizationId: auth.organizationId },
       data: { danfeLogoBytes: null, danfeLogoMimeType: null },
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.FISCAL_LOGO,
+      entityType: AUDIT_ENTITY.FiscalConfig,
+      entityId: auth.organizationId,
+      metadata: { op: "delete" },
     });
     return { ok: true };
   });
@@ -322,6 +357,12 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
       const summary = result.issues.map((i) => i.message).join("; ");
       return reply.status(400).send({ error: summary, issues: result.issues });
     }
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.NFE_EMIT,
+      entityType: AUDIT_ENTITY.FiscalInvoice,
+      entityId: result.invoice.id,
+      metadata: { orderId, status: result.invoice.status },
+    });
     return result.invoice;
   });
 
@@ -331,6 +372,16 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(req.params);
     const result = await transmitOutboundInvoice(auth.organizationId, id);
     if (!result.ok) return reply.status(400).send({ error: result.error });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.NFE_TRANSMIT,
+      entityType: AUDIT_ENTITY.FiscalInvoice,
+      entityId: id,
+      metadata: {
+        status: result.invoice.status,
+        accessKey: result.invoice.accessKey,
+        number: result.invoice.number,
+      },
+    });
     return result.invoice;
   });
 
@@ -370,6 +421,12 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     if (!body.success) return reply.status(400).send({ error: "Justificativa obrigatória (mín. 15 caracteres)" });
     const result = await cancelOutboundInvoice(auth.organizationId, id, body.data.justification);
     if (!result.ok) return reply.status(400).send({ error: result.error });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.NFE_CANCEL,
+      entityType: AUDIT_ENTITY.FiscalInvoice,
+      entityId: id,
+      metadata: { direction: "OUTBOUND", justification: body.data.justification },
+    });
     return result.invoice;
   });
 
@@ -394,6 +451,12 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     if (!body.success) return reply.status(400).send({ error: "XML obrigatório" });
     const result = await importInboundNfeXml(auth.organizationId, body.data.xml);
     if (!result.ok) return reply.status(400).send({ error: result.error });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.NFE_IMPORT,
+      entityType: AUDIT_ENTITY.FiscalInvoice,
+      entityId: result.invoice.id,
+      metadata: { direction: "INBOUND", status: result.invoice.status },
+    });
     return result.invoice;
   });
 
@@ -412,6 +475,12 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
       auth.sub,
     );
     if (!result.ok) return reply.status(400).send({ error: result.error });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.NFE_CONFIRM_IMPORT,
+      entityType: AUDIT_ENTITY.FiscalInvoice,
+      entityId: id,
+      metadata: { mappingCount: Object.keys(body.data.productMappings).length },
+    });
     return result;
   });
 
@@ -428,6 +497,12 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
       auth.sub,
     );
     if (!result.ok) return reply.status(400).send({ error: result.error });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.NFE_CANCEL,
+      entityType: AUDIT_ENTITY.FiscalInvoice,
+      entityId: id,
+      metadata: { direction: "INBOUND", justification: body.data.justification },
+    });
     return result.invoice;
   });
 

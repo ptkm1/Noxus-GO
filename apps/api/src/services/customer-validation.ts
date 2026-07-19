@@ -8,40 +8,50 @@ import type { CustomerDocumentType } from "@prisma/client";
 import { z } from "zod";
 import { buildCustomerAddressNote } from "./customer-address.js";
 
+const requiredStr = z.string().trim().min(1, "Campo obrigatório.");
 const optionalStr = z.string().trim().optional().nullable();
 
 const customerFieldsSchema = z.object({
   name: z.string().trim().min(1),
-  email: z.union([z.string().email(), z.literal(""), z.null()]).optional(),
-  phone: optionalStr,
+  email: z.string().trim().email("E-mail inválido."),
+  phone: requiredStr,
   sellerId: z.string().optional().nullable(),
   regionId: z.string().optional().nullable(),
   latitude: z.number().gte(-90).lte(90).nullable().optional(),
   longitude: z.number().gte(-180).lte(180).nullable().optional(),
-  addressNote: z.string().max(500).nullable().optional(),
-  documentType: z.enum(["CNPJ", "CPF"]).optional().nullable(),
+  addressNote: requiredStr.max(500),
+  documentType: z.enum(["CNPJ", "CPF"]),
   cnpj: optionalStr,
   cpf: optionalStr,
   legalName: optionalStr,
   tradeName: optionalStr,
-  cep: optionalStr,
-  street: optionalStr,
-  number: optionalStr,
-  neighborhood: optionalStr,
-  state: z.union([z.string().length(2), z.literal(""), z.null()]).optional(),
-  city: optionalStr,
-  cityIbgeCode: optionalStr,
-  stateRegistration: optionalStr,
-  buyerName: optionalStr,
-  notes: z.string().max(2000).optional().nullable(),
+  cep: requiredStr,
+  street: requiredStr,
+  number: requiredStr,
+  neighborhood: requiredStr,
+  state: z.string().trim().length(2, "UF inválida."),
+  city: requiredStr,
+  cityIbgeCode: requiredStr,
+  stateRegistration: requiredStr,
+  buyerName: requiredStr,
+  notes: requiredStr.max(2000),
   creditLimit: z.number().positive().nullable().optional(),
   creditBlocked: z.boolean().optional(),
 });
 
-type CustomerFields = z.infer<typeof customerFieldsSchema>;
+type CustomerRefineInput = {
+  documentType?: "CNPJ" | "CPF" | null;
+  cnpj?: string | null;
+  cpf?: string | null;
+  legalName?: string | null;
+  tradeName?: string | null;
+  state?: string | null;
+  cep?: string | null;
+  stateRegistration?: string | null;
+};
 
 function refineCustomerDocument(
-  data: Partial<CustomerFields>,
+  data: CustomerRefineInput,
   ctx: z.RefinementCtx,
   opts?: { partial?: boolean },
 ) {
@@ -63,6 +73,25 @@ function refineCustomerDocument(
         message: "CNPJ inválido.",
         path: ["cnpj"],
       });
+    }
+
+    if (!partial || data.legalName !== undefined) {
+      if (!(data.legalName ?? "").trim()) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Razão social obrigatória.",
+          path: ["legalName"],
+        });
+      }
+    }
+    if (!partial || data.tradeName !== undefined) {
+      if (!(data.tradeName ?? "").trim()) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Nome fantasia obrigatório.",
+          path: ["tradeName"],
+        });
+      }
     }
   }
 
@@ -94,12 +123,12 @@ function refineCustomerDocument(
   }
 
   if (!partial) {
-    const ie = (data.stateRegistration ?? "").trim();
-    if (!ie) {
+    const cepDigits = (data.cep ?? "").replace(/\D/g, "");
+    if (cepDigits.length !== 8) {
       ctx.addIssue({
         code: "custom",
-        message: "Inscrição estadual obrigatória.",
-        path: ["stateRegistration"],
+        message: "CEP deve ter 8 dígitos.",
+        path: ["cep"],
       });
     }
   }
@@ -110,6 +139,37 @@ export const customerBodySchema = customerFieldsSchema.superRefine(
 );
 
 export type CustomerBodyInput = z.infer<typeof customerBodySchema>;
+
+/** Normaliza nulls do banco e valida o cadastro completo (create/save). */
+export function parseCompleteCustomerBody(raw: unknown) {
+  if (!raw || typeof raw !== "object") {
+    return customerBodySchema.safeParse(raw);
+  }
+  const o = raw as Record<string, unknown>;
+  const filled = {
+    ...o,
+    name: o.name ?? "",
+    email: o.email ?? "",
+    phone: o.phone ?? "",
+    addressNote: o.addressNote ?? "",
+    documentType: o.documentType ?? "CNPJ",
+    cnpj: o.cnpj ?? null,
+    cpf: o.cpf ?? null,
+    legalName: o.legalName ?? null,
+    tradeName: o.tradeName ?? null,
+    cep: o.cep ?? "",
+    street: o.street ?? "",
+    number: o.number ?? "",
+    neighborhood: o.neighborhood ?? "",
+    state: o.state ?? "",
+    city: o.city ?? "",
+    cityIbgeCode: o.cityIbgeCode ?? "",
+    stateRegistration: o.stateRegistration ?? "",
+    buyerName: o.buyerName ?? "",
+    notes: o.notes ?? "",
+  };
+  return customerBodySchema.safeParse(filled);
+}
 
 function emptyToNull(v: string | null | undefined): string | null {
   if (v == null) return null;
@@ -198,9 +258,28 @@ export function toCustomerPrismaData(
   return out;
 }
 
+/** Patch parcial: campos enviados são validados; ausentes não são exigidos. */
 export const customerPatchSchema = customerFieldsSchema
   .partial()
-  .extend({ name: z.string().trim().min(1).optional() })
+  .extend({
+    name: z.string().trim().min(1).optional(),
+    email: z
+      .union([z.string().email(), z.literal(""), z.null()])
+      .optional(),
+    phone: optionalStr,
+    addressNote: z.string().max(500).nullable().optional(),
+    cep: optionalStr,
+    street: optionalStr,
+    number: optionalStr,
+    neighborhood: optionalStr,
+    state: z.union([z.string().length(2), z.literal(""), z.null()]).optional(),
+    city: optionalStr,
+    cityIbgeCode: optionalStr,
+    stateRegistration: optionalStr,
+    buyerName: optionalStr,
+    notes: z.string().max(2000).optional().nullable(),
+    documentType: z.enum(["CNPJ", "CPF"]).optional().nullable(),
+  })
   .superRefine((data, ctx) =>
     refineCustomerDocument(data, ctx, { partial: true }),
   );
