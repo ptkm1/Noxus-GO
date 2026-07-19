@@ -12,8 +12,8 @@ import {
   validateCustomerFormStep,
 } from "@pedidos/shared";
 import { useLocalSearchParams } from "expo-router";
-import { useMemo, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
 
 const STEP_TITLES = ["Documento", "Endereço", "Contato"];
 
@@ -46,6 +46,7 @@ export default function CustomerFormScreen() {
   } = useCustomerForm(customerId);
 
   const [showValidation, setShowValidation] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
   const isLast = step === 2;
 
   const visibleErrors = useMemo(() => {
@@ -53,6 +54,24 @@ export default function CustomerFormScreen() {
     if (isLast) return validateCustomerForm(form);
     return validateCustomerFormStep(step, form);
   }, [showValidation, isLast, step, form]);
+
+  const errorScrollKey = useMemo(
+    () =>
+      Object.entries(visibleErrors)
+        .filter(([, v]) => Boolean(v))
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `${k}:${v}`)
+        .join("|"),
+    [visibleErrors],
+  );
+
+  useEffect(() => {
+    if (!errorScrollKey) return;
+    const id = requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [errorScrollKey, step]);
 
   function onContinue() {
     const stepErrors = validateCustomerFormStep(step, form);
@@ -117,6 +136,7 @@ export default function CustomerFormScreen() {
         showBack
       />
       <KeyboardForm
+        scrollRef={scrollRef}
         contentContainerStyle={{ gap: 20 }}
         bottomPadding={20}
         footer={footer}

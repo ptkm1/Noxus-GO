@@ -1,3 +1,4 @@
+import { AuditLogPanel } from "@/components/AuditLogPanel";
 import { useConfirm } from "@/components/confirm";
 import {
   FormField,
@@ -18,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import type { CustomerFormValues, CustomerRecord } from "@pedidos/shared";
 import {
   customerToForm,
@@ -229,6 +231,8 @@ export function CustomersPage() {
     [form, showValidation],
   );
 
+  useScrollToFirstError(formErrors, { enabled: showValidation });
+
   function trySubmit() {
     const errors = validateCustomerForm(form);
     if (Object.keys(errors).length > 0) {
@@ -386,6 +390,15 @@ export function CustomersPage() {
         ) : null}
 
         {editing ? <CustomerTitlesPanel customerId={editing.id} /> : null}
+        {editing ? (
+          <AuditLogPanel
+            className="mt-6"
+            entityType="Customer"
+            entityId={editing.id}
+            enabled={sheetOpen}
+            take={25}
+          />
+        ) : null}
       </FormSheet>
 
       {isLoading ? (

@@ -12,6 +12,29 @@ export const STAGNANT_PRODUCT_DAYS = 30;
 /** Cliente sem compra confirmada há pelo menos tantos dias. */
 export const CHURN_CUSTOMER_DAYS = 30;
 
+export type TodaySellerRank = {
+  sellerId: string;
+  name: string;
+  orderCount: number;
+  totalAmount: number;
+};
+
+export type TodayProductRank = {
+  productId: string;
+  productName: string;
+  quantity: number;
+  totalAmount: number;
+  orderCount: number;
+};
+
+export type TodaySupplierRank = {
+  supplierId: string | null;
+  tradeName: string;
+  quantity: number;
+  totalAmount: number;
+  orderCount: number;
+};
+
 export type DistributorInsights = {
   generatedAt: string;
   hints: {
@@ -22,13 +45,15 @@ export type DistributorInsights = {
   };
   today: {
     label: string;
-    sellers: Array<{
-      sellerId: string;
-      name: string;
-      orderCount: number;
-      totalAmount: number;
-    }>;
+    /** Ranking do dia por vendedor (maior faturamento primeiro). */
+    sellers: TodaySellerRank[];
+    /** Ranking do dia por produto. */
+    products: TodayProductRank[];
+    /** Ranking do dia por fornecedor. */
+    suppliers: TodaySupplierRank[];
   };
+  /** Vendedores ativos sem nenhum pedido confirmado hoje (sem positivação). */
+  sellersWithoutPositivacaoToday: Array<{ sellerId: string; name: string }>;
   /** Vendedores ativos sem nenhum cliente vinculado. */
   sellersWithoutCustomers: Array<{ sellerId: string; name: string }>;
   /** Vendedores com clientes na carteira há tempo sem compra confirmada (proxy de visita). */
@@ -103,7 +128,16 @@ export async function buildDistributorInsights(
   const churnCutoff = new Date(now.getTime() - CHURN_CUSTOMER_DAYS * DAY_MS);
   const newCustomerGrace = new Date(now.getTime() - CHURN_CUSTOMER_DAYS * DAY_MS);
 
-  const [activeSellers, sellerCustomerLast, todayAgg, customers, ordersPerCustomer] = await Promise.all([
+  const day = calendarDayBounds(now);
+
+  const [
+    activeSellers,
+    sellerCustomerLast,
+    todayAgg,
+    todayOrders,
+    customers,
+    ordersPerCustomer,
+  ] = await Promise.all([
     prisma.seller.findMany({
       where: { organizationId, active: true },
       include: { user: { select: { name: true } } },
@@ -124,12 +158,36 @@ export async function buildDistributorInsights(
         organizationId,
         status: "CONFIRMED",
         createdAt: {
-          gte: calendarDayBounds(now).start,
-          lte: calendarDayBounds(now).end,
+          gte: day.start,
+          lte: day.end,
         },
       },
       _sum: { totalAmount: true },
       _count: true,
+    }),
+    prisma.order.findMany({
+      where: {
+        organizationId,
+        status: "CONFIRMED",
+        createdAt: { gte: day.start, lte: day.end },
+      },
+      select: {
+        id: true,
+        items: {
+          select: {
+            quantity: true,
+            unitPrice: true,
+            productId: true,
+            productName: true,
+            product: {
+              select: {
+                supplierId: true,
+                supplier: { select: { id: true, tradeName: true } },
+              },
+            },
+          },
+        },
+      },
     }),
     prisma.customer.findMany({
       where: { organizationId },
@@ -183,7 +241,98 @@ export async function buildDistributorInsights(
       totalAmount: row?.totalAmount ?? 0,
     };
   });
-  todaySellers.sort((a, b) => a.totalAmount - b.totalAmount || a.orderCount - b.orderCount);
+  todaySellers.sort(
+    (a, b) =>
+      b.totalAmount - a.totalAmount ||
+      b.orderCount - a.orderCount ||
+      a.name.localeCompare(b.name, "pt-BR"),
+  );
+
+  const sellersWithoutPositivacaoToday = todaySellers
+    .filter((s) => s.orderCount === 0)
+    .map((s) => ({ sellerId: s.sellerId, name: s.name }));
+
+  type ProductAgg = {
+    productId: string;
+    productName: string;
+    quantity: number;
+    totalAmount: number;
+    orderIds: Set<string>;
+  };
+  type SupplierAgg = {
+    supplierId: string | null;
+    tradeName: string;
+    quantity: number;
+    totalAmount: number;
+    orderIds: Set<string>;
+  };
+
+  const productMap = new Map<string, ProductAgg>();
+  const supplierMap = new Map<string, SupplierAgg>();
+
+  for (const order of todayOrders) {
+    for (const item of order.items) {
+      const lineTotal = roundMoney(item.quantity * decToNum(item.unitPrice));
+      const pKey = item.productId;
+      const pPrev = productMap.get(pKey) ?? {
+        productId: item.productId,
+        productName: item.productName,
+        quantity: 0,
+        totalAmount: 0,
+        orderIds: new Set<string>(),
+      };
+      pPrev.quantity += item.quantity;
+      pPrev.totalAmount = roundMoney(pPrev.totalAmount + lineTotal);
+      pPrev.orderIds.add(order.id);
+      productMap.set(pKey, pPrev);
+
+      const supplierId = item.product.supplierId ?? null;
+      const sKey = supplierId ?? "__none__";
+      const sPrev = supplierMap.get(sKey) ?? {
+        supplierId,
+        tradeName: item.product.supplier?.tradeName ?? "Sem fornecedor",
+        quantity: 0,
+        totalAmount: 0,
+        orderIds: new Set<string>(),
+      };
+      sPrev.quantity += item.quantity;
+      sPrev.totalAmount = roundMoney(sPrev.totalAmount + lineTotal);
+      sPrev.orderIds.add(order.id);
+      supplierMap.set(sKey, sPrev);
+    }
+  }
+
+  const todayProducts: TodayProductRank[] = [...productMap.values()]
+    .map((p) => ({
+      productId: p.productId,
+      productName: p.productName,
+      quantity: p.quantity,
+      totalAmount: p.totalAmount,
+      orderCount: p.orderIds.size,
+    }))
+    .sort(
+      (a, b) =>
+        b.totalAmount - a.totalAmount ||
+        b.quantity - a.quantity ||
+        a.productName.localeCompare(b.productName, "pt-BR"),
+    )
+    .slice(0, 40);
+
+  const todaySuppliers: TodaySupplierRank[] = [...supplierMap.values()]
+    .map((s) => ({
+      supplierId: s.supplierId,
+      tradeName: s.tradeName,
+      quantity: s.quantity,
+      totalAmount: s.totalAmount,
+      orderCount: s.orderIds.size,
+    }))
+    .sort(
+      (a, b) =>
+        b.totalAmount - a.totalAmount ||
+        b.quantity - a.quantity ||
+        a.tradeName.localeCompare(b.tradeName, "pt-BR"),
+    )
+    .slice(0, 40);
 
   const sellersPortfolioAttention: DistributorInsights["sellersPortfolioAttention"] = [];
   const sellersWithoutCustomers: DistributorInsights["sellersWithoutCustomers"] = [];
@@ -332,7 +481,10 @@ export async function buildDistributorInsights(
     today: {
       label: todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1),
       sellers: todaySellers,
+      products: todayProducts,
+      suppliers: todaySuppliers,
     },
+    sellersWithoutPositivacaoToday,
     sellersWithoutCustomers,
     sellersPortfolioAttention,
     stagnantProducts,

@@ -1,3 +1,4 @@
+export { FormErrorBanner } from "./FormErrorBanner";
 export {
   FilterBar,
   FormActions,

@@ -34,10 +34,10 @@ export function notificationHref(
     return n.data.href;
   }
   if (n.data && typeof n.data.orderId === "string" && n.data.orderId.length > 0) {
-    return `/vendas/${n.data.orderId}`;
+    return `/pedidos/${n.data.orderId}`;
   }
   const m = n.body.match(/ORDER_ID:([^\s\n]+)/);
-  return m?.[1] ? `/vendas/${m[1]}` : null;
+  return m?.[1] ? `/pedidos/${m[1]}` : null;
 }
 
 export function notificationBodyDisplay(body: string): string {

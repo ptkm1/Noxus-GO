@@ -1,6 +1,5 @@
 import { ThemedButton } from "@/components/atoms/ThemedButton";
 import { ThemedText } from "@/components/atoms/ThemedText";
-import { ThemedTextInput } from "@/components/atoms/ThemedTextInput";
 import { FilterChipRow } from "@/components/molecules/FilterChipRow";
 import { FormSelectField } from "@/components/molecules/FormSelectField";
 import { useCepLookup } from "@/hooks/useCepLookup";
@@ -15,11 +14,15 @@ import {
   cepDigitsOnly,
   cnpjDigitsOnly,
   cpfDigitsOnly,
+  FIELD_NOT_APPLICABLE,
   formatCepMask,
   formatCnpjMask,
   formatCpfMask,
+  isFieldNotApplicable,
   isStateRegistrationUnavailable,
+  isStreetNumberSn,
   STATE_REGISTRATION_UNAVAILABLE,
+  STREET_NUMBER_SN,
 } from "@pedidos/shared";
 import { MapPin } from "lucide-react-native";
 import { useEffect } from "react";
@@ -58,6 +61,48 @@ function FieldLabel({ children }: { children: string }) {
     <ThemedText variant="caption" muted>
       {children}
     </ThemedText>
+  );
+}
+
+function NoneCheckbox({
+  checked,
+  label,
+  onToggle,
+}: {
+  checked: boolean;
+  label: string;
+  onToggle: () => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      style={styles.ieCheckRow}
+      onPress={onToggle}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+    >
+      <View
+        style={[
+          styles.ieCheckbox,
+          {
+            borderColor: colors.primary,
+            backgroundColor: checked ? colors.primary : "transparent",
+          },
+        ]}
+      >
+        {checked ? (
+          <ThemedText
+            variant="caption"
+            style={{ color: colors.primaryForeground, fontWeight: "800" }}
+          >
+            ✓
+          </ThemedText>
+        ) : null}
+      </View>
+      <ThemedText variant="caption" muted style={{ flex: 1 }}>
+        {label}
+      </ThemedText>
+    </Pressable>
   );
 }
 
@@ -167,7 +212,7 @@ export function CustomerFormWizard({
             />
             <FieldError message={errors.legalName} />
 
-            <FieldLabel>Nome fantasia</FieldLabel>
+            <FieldLabel>Nome fantasia *</FieldLabel>
             <ThemedTextInput
               invalid={!!errors.tradeName}
               value={form.tradeName}
@@ -205,10 +250,11 @@ export function CustomerFormWizard({
     return (
       <View style={styles.gap}>
         <ThemedText variant="titleSm">Endereço</ThemedText>
-        <FieldLabel>CEP</FieldLabel>
+        <FieldLabel>CEP *</FieldLabel>
         <View style={styles.row}>
           <ThemedTextInput
             style={[styles.flex, { fontFamily: "monospace" }]}
+            invalid={!!errors.cep}
             value={formatCepMask(cepDigitsOnly(form.cep))}
             onChangeText={(t) => onChange({ cep: cepDigitsOnly(t) })}
             keyboardType="number-pad"
@@ -223,41 +269,105 @@ export function CustomerFormWizard({
             Buscar
           </ThemedButton>
         </View>
+        <FieldError message={errors.cep} />
         {cepError ? (
           <ThemedText variant="caption" style={{ color: colors.danger }}>
             {cepError}
           </ThemedText>
         ) : null}
 
-        <FieldLabel>Endereço</FieldLabel>
+        <FieldLabel>Endereço *</FieldLabel>
         <ThemedTextInput
+          invalid={!!errors.street}
           value={form.street}
           onChangeText={(t) => onChange({ street: t })}
         />
+        <FieldError message={errors.street} />
 
-        <FieldLabel>Bairro</FieldLabel>
+        <FieldLabel>Bairro *</FieldLabel>
         <ThemedTextInput
+          invalid={!!errors.neighborhood}
           value={form.neighborhood}
           onChangeText={(t) => onChange({ neighborhood: t })}
         />
+        <FieldError message={errors.neighborhood} />
 
-        <FieldLabel>Número</FieldLabel>
-        <ThemedTextInput
-          value={form.number}
-          onChangeText={(t) => onChange({ number: t })}
-        />
+        <FieldLabel>Número *</FieldLabel>
+        <View
+          style={[
+            styles.ieField,
+            {
+              backgroundColor: colors.inputBackground,
+              borderColor: errors.number ? colors.danger : colors.inputBorder,
+            },
+          ]}
+        >
+          <ThemedTextInput
+            style={styles.ieInput}
+            invalid={!!errors.number}
+            value={isStreetNumberSn(form.number) ? "" : form.number}
+            editable={!isStreetNumberSn(form.number)}
+            placeholder={
+              isStreetNumberSn(form.number) ? STREET_NUMBER_SN : "Número"
+            }
+            onChangeText={(t) => onChange({ number: t })}
+          />
+          <NoneCheckbox
+            checked={isStreetNumberSn(form.number)}
+            label="Sem número (S/N)"
+            onToggle={() =>
+              onChange({
+                number: isStreetNumberSn(form.number) ? "" : STREET_NUMBER_SN,
+              })
+            }
+          />
+        </View>
+        <FieldError message={errors.number} />
 
-        <FieldLabel>Complemento</FieldLabel>
-        <ThemedTextInput
-          value={form.addressNote}
-          onChangeText={(t) => onChange({ addressNote: t })}
-          placeholder="Apto, sala, referência…"
-        />
+        <FieldLabel>Complemento *</FieldLabel>
+        <View
+          style={[
+            styles.ieField,
+            {
+              backgroundColor: colors.inputBackground,
+              borderColor: errors.addressNote
+                ? colors.danger
+                : colors.inputBorder,
+            },
+          ]}
+        >
+          <ThemedTextInput
+            style={styles.ieInput}
+            invalid={!!errors.addressNote}
+            value={
+              isFieldNotApplicable(form.addressNote) ? "" : form.addressNote
+            }
+            editable={!isFieldNotApplicable(form.addressNote)}
+            placeholder={
+              isFieldNotApplicable(form.addressNote)
+                ? FIELD_NOT_APPLICABLE
+                : "Apto, sala, referência…"
+            }
+            onChangeText={(t) => onChange({ addressNote: t })}
+          />
+          <NoneCheckbox
+            checked={isFieldNotApplicable(form.addressNote)}
+            label="Não possui complemento"
+            onToggle={() =>
+              onChange({
+                addressNote: isFieldNotApplicable(form.addressNote)
+                  ? ""
+                  : FIELD_NOT_APPLICABLE,
+              })
+            }
+          />
+        </View>
+        <FieldError message={errors.addressNote} />
 
         <View style={styles.row}>
           <View style={styles.flex}>
             <FormSelectField
-              label="UF"
+              label="UF *"
               value={form.state}
               options={ufs.map((u) => ({
                 value: u.sigla,
@@ -267,10 +377,11 @@ export function CustomerFormWizard({
                 onChange({ state: uf, city: "", cityIbgeCode: "" })
               }
             />
+            <FieldError message={errors.state} />
           </View>
           <View style={[styles.flex, { flex: 1.4 }]}>
             <FormSelectField
-              label="Cidade"
+              label="Cidade *"
               value={citySelectValue}
               disabled={!form.state}
               placeholder={
@@ -292,6 +403,7 @@ export function CustomerFormWizard({
                 });
               }}
             />
+            <FieldError message={errors.city ?? errors.cityIbgeCode} />
           </View>
         </View>
 
@@ -323,9 +435,10 @@ export function CustomerFormWizard({
             }
             onChangeText={(t) => onChange({ stateRegistration: t })}
           />
-          <Pressable
-            style={styles.ieCheckRow}
-            onPress={() => {
+          <NoneCheckbox
+            checked={isStateRegistrationUnavailable(form.stateRegistration)}
+            label="Não sei a inscrição estadual"
+            onToggle={() => {
               if (isStateRegistrationUnavailable(form.stateRegistration)) {
                 onChange({ stateRegistration: "" });
               } else {
@@ -334,47 +447,19 @@ export function CustomerFormWizard({
                 });
               }
             }}
-            accessibilityRole="checkbox"
-            accessibilityState={{
-              checked: isStateRegistrationUnavailable(form.stateRegistration),
-            }}
-          >
-            <View
-              style={[
-                styles.ieCheckbox,
-                {
-                  borderColor: colors.primary,
-                  backgroundColor: isStateRegistrationUnavailable(
-                    form.stateRegistration,
-                  )
-                    ? colors.primary
-                    : "transparent",
-                },
-              ]}
-            >
-              {isStateRegistrationUnavailable(form.stateRegistration) ? (
-                <ThemedText
-                  variant="caption"
-                  style={{ color: colors.primaryForeground, fontWeight: "800" }}
-                >
-                  ✓
-                </ThemedText>
-              ) : null}
-            </View>
-            <ThemedText variant="caption" muted style={{ flex: 1 }}>
-              Não sei a inscrição estadual
-            </ThemedText>
-          </Pressable>
+          />
         </View>
         <FieldError message={errors.stateRegistration} />
 
-        <FieldLabel>Código município (IBGE)</FieldLabel>
+        <FieldLabel>Código município (IBGE) *</FieldLabel>
         <ThemedTextInput
+          invalid={!!errors.cityIbgeCode}
           value={form.cityIbgeCode}
           onChangeText={(t) => onChange({ cityIbgeCode: t.replace(/\D/g, "") })}
           keyboardType="number-pad"
-          placeholder="Preenchido pelo CEP"
+          placeholder="Preenchido ao escolher a cidade"
         />
+        <FieldError message={errors.cityIbgeCode} />
 
         {onCaptureLocation ? (
           <View style={styles.locationBlock}>
@@ -409,14 +494,16 @@ export function CustomerFormWizard({
   return (
     <View style={styles.gap}>
       <ThemedText variant="titleSm">Contato</ThemedText>
-      <FieldLabel>Telefone</FieldLabel>
+      <FieldLabel>Telefone *</FieldLabel>
       <ThemedTextInput
+        invalid={!!errors.phone}
         value={form.phone}
         onChangeText={(t) => onChange({ phone: t })}
         keyboardType="phone-pad"
       />
+      <FieldError message={errors.phone} />
 
-      <FieldLabel>E-mail</FieldLabel>
+      <FieldLabel>E-mail *</FieldLabel>
       <ThemedTextInput
         invalid={!!errors.email}
         value={form.email}
@@ -426,19 +513,50 @@ export function CustomerFormWizard({
       />
       <FieldError message={errors.email} />
 
-      <FieldLabel>Comprador</FieldLabel>
+      <FieldLabel>Comprador *</FieldLabel>
       <ThemedTextInput
+        invalid={!!errors.buyerName}
         value={form.buyerName}
         onChangeText={(t) => onChange({ buyerName: t })}
       />
+      <FieldError message={errors.buyerName} />
 
-      <FieldLabel>Observação</FieldLabel>
-      <ThemedTextInput
-        value={form.notes}
-        onChangeText={(t) => onChange({ notes: t })}
-        multiline
-        style={{ minHeight: 80, textAlignVertical: "top" }}
-      />
+      <FieldLabel>Observação *</FieldLabel>
+      <View
+        style={[
+          styles.ieField,
+          {
+            backgroundColor: colors.inputBackground,
+            borderColor: errors.notes ? colors.danger : colors.inputBorder,
+          },
+        ]}
+      >
+        <ThemedTextInput
+          style={[styles.ieInput, { minHeight: 80, textAlignVertical: "top" }]}
+          invalid={!!errors.notes}
+          value={isFieldNotApplicable(form.notes) ? "" : form.notes}
+          editable={!isFieldNotApplicable(form.notes)}
+          placeholder={
+            isFieldNotApplicable(form.notes)
+              ? FIELD_NOT_APPLICABLE
+              : "Observações do cliente"
+          }
+          multiline
+          onChangeText={(t) => onChange({ notes: t })}
+        />
+        <NoneCheckbox
+          checked={isFieldNotApplicable(form.notes)}
+          label="Não possui observação"
+          onToggle={() =>
+            onChange({
+              notes: isFieldNotApplicable(form.notes)
+                ? ""
+                : FIELD_NOT_APPLICABLE,
+            })
+          }
+        />
+      </View>
+      <FieldError message={errors.notes} />
     </View>
   );
 }

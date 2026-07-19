@@ -1,9 +1,11 @@
 import { useAuth } from "@/auth/AuthContext";
 import { useConfirm } from "@/components/confirm";
+import { FilterBar, FormField } from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -16,11 +18,13 @@ import { apiFetch, downloadPdf, printPdf } from "@/lib/api";
 import { formatOrderCode } from "@/lib/order-code";
 import { isWebAdmin } from "@/lib/staff";
 import { cn } from "@/lib/utils";
-import { ORDER_STATUSES, orderStatusLabel } from "@pedidos/shared";
+import { ORDER_STATUSES, canRead, orderStatusLabel } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Printer, ShoppingCart } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+
+type Seller = { id: string; user: { name: string } };
 
 type Order = {
   id: string;
@@ -29,7 +33,12 @@ type Order = {
   totalAmount: unknown;
   createdAt: string;
   seller: { user: { name: string } };
-  customer: { name: string } | null;
+  customer: {
+    name: string;
+    city?: string | null;
+    tradeName?: string | null;
+    legalName?: string | null;
+  } | null;
   items: {
     id: string;
     productName: string;
@@ -37,6 +46,15 @@ type Order = {
     unitPrice: unknown;
   }[];
 };
+
+function useDebouncedValue<T>(value: T, delayMs = 300): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
 
 function statusBadgeClass(status: string): string {
   switch (status) {
@@ -63,7 +81,7 @@ function statusChangeHint(status: string): string {
     return " Pedidos cancelados podem estornar estoque se estavam confirmados.";
   }
   if (status === "CONFIRMED") {
-    return " Confirmar a venda pode baixar estoque.";
+    return " Confirmar o pedido pode baixar estoque.";
   }
   return "";
 }
@@ -80,6 +98,9 @@ function selectAllState(
 export function OrdersPage() {
   const { user } = useAuth();
   const canWrite = isWebAdmin(user?.role);
+  const canPrint80mm = Boolean(
+    user && canRead(user.role, "orders_print_80mm", user.permissions),
+  );
   const { confirm, alert } = useConfirm();
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -89,16 +110,72 @@ export function OrdersPage() {
   const [bulkStatus, setBulkStatus] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const [orderNumber, setOrderNumber] = useState("");
+  const [city, setCity] = useState("");
+  const [tradeName, setTradeName] = useState("");
+  const [legalName, setLegalName] = useState("");
+  const [sellerId, setSellerId] = useState("");
+
+  const debouncedOrderNumber = useDebouncedValue(orderNumber);
+  const debouncedCity = useDebouncedValue(city);
+  const debouncedTradeName = useDebouncedValue(tradeName);
+  const debouncedLegalName = useDebouncedValue(legalName);
+
+  const { data: sellers = [] } = useQuery({
+    queryKey: ["admin", "sellers"],
+    queryFn: () => apiFetch<Seller[]>("/admin/sellers"),
+  });
+
+  const listQueryKey = useMemo(
+    () => [
+      "admin",
+      "orders",
+      statusFilter ?? "all",
+      debouncedOrderNumber.trim(),
+      debouncedCity.trim(),
+      debouncedTradeName.trim(),
+      debouncedLegalName.trim(),
+      sellerId,
+    ],
+    [
+      statusFilter,
+      debouncedOrderNumber,
+      debouncedCity,
+      debouncedTradeName,
+      debouncedLegalName,
+      sellerId,
+    ],
+  );
+
   const { data: orders = [], isLoading } = useQuery({
-    queryKey: ["admin", "orders", statusFilter ?? "all"],
+    queryKey: listQueryKey,
     queryFn: () => {
-      const q =
-        statusFilter && statusFilter !== ""
-          ? `?status=${encodeURIComponent(statusFilter)}`
-          : "";
-      return apiFetch<Order[]>(`/admin/orders${q}`);
+      const params = new URLSearchParams();
+      if (statusFilter) params.set("status", statusFilter);
+      const code = debouncedOrderNumber.trim();
+      if (code) params.set("orderNumber", code);
+      const cityVal = debouncedCity.trim();
+      if (cityVal) params.set("city", cityVal);
+      const trade = debouncedTradeName.trim();
+      if (trade) params.set("tradeName", trade);
+      const legal = debouncedLegalName.trim();
+      if (legal) params.set("legalName", legal);
+      if (sellerId) params.set("sellerId", sellerId);
+      const qs = params.toString();
+      return apiFetch<Order[]>(`/admin/orders${qs ? `?${qs}` : ""}`);
     },
   });
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [
+    statusFilter,
+    debouncedOrderNumber,
+    debouncedCity,
+    debouncedTradeName,
+    debouncedLegalName,
+    sellerId,
+  ]);
 
   const visibleIds = useMemo(() => orders.map((o) => o.id), [orders]);
   const allSelected =
@@ -118,7 +195,6 @@ export function OrdersPage() {
       else p.delete("status");
       return p;
     });
-    setSelectedIds(new Set());
   }
 
   function toggleOne(id: string, checked: boolean) {
@@ -155,6 +231,12 @@ export function OrdersPage() {
     onSuccess: () => invalidateOrders(),
   });
 
+  const removeOrder = useMutation({
+    mutationFn: (orderId: string) =>
+      apiFetch(`/admin/orders/${orderId}`, { method: "DELETE" }),
+    onSuccess: () => invalidateOrders(),
+  });
+
   async function applyStatusChange(orderIds: string[], status: string) {
     if (!canWrite || orderIds.length === 0) return;
 
@@ -163,8 +245,8 @@ export function OrdersPage() {
     if (needsConfirm) {
       const title =
         orderIds.length > 1
-          ? `Alterar status de ${orderIds.length} vendas?`
-          : "Alterar status da venda?";
+          ? `Alterar status de ${orderIds.length} pedidos?`
+          : "Alterar status do pedido?";
       const ok = await confirm({
         title,
         description: `O status será alterado para “${orderStatusLabel(status)}”.${statusChangeHint(status)}`,
@@ -204,7 +286,7 @@ export function OrdersPage() {
         );
       }
     } catch {
-      setActionError("Não foi possível baixar o PDF de uma ou mais vendas.");
+      setActionError("Não foi possível baixar o PDF de um ou mais pedidos.");
     } finally {
       setPdfPending(false);
     }
@@ -218,7 +300,7 @@ export function OrdersPage() {
       if (selectedOrders.length > 1) {
         await alert({
           title: "Impressão em sequência",
-          description: `${selectedOrders.length} vendas serão enviadas à impressão uma a uma. Confirme cada diálogo do navegador.`,
+          description: `${selectedOrders.length} pedidos serão enviados à impressão um a um. Confirme cada diálogo do navegador.`,
           tone: "default",
         });
       }
@@ -226,7 +308,31 @@ export function OrdersPage() {
         await printPdf(`/admin/orders/${o.id}/pdf`);
       }
     } catch {
-      setActionError("Não foi possível imprimir uma ou mais vendas.");
+      setActionError("Não foi possível imprimir um ou mais pedidos.");
+    } finally {
+      setPdfPending(false);
+    }
+  }
+
+  async function handlePrint80mm() {
+    if (!hasSelection) return;
+    setActionError(null);
+    setPdfPending(true);
+    try {
+      if (selectedOrders.length > 1) {
+        await alert({
+          title: "Impressão 80mm em sequência",
+          description: `${selectedOrders.length} cupons 80mm serão enviados à impressão um a um. Confirme cada diálogo do navegador.`,
+          tone: "default",
+        });
+      }
+      for (const o of selectedOrders) {
+        await printPdf(`/admin/orders/${o.id}/pdf-80mm`);
+      }
+    } catch {
+      setActionError(
+        "Não foi possível imprimir o cupom 80mm de um ou mais pedidos.",
+      );
     } finally {
       setPdfPending(false);
     }
@@ -238,7 +344,7 @@ export function OrdersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">Vendas</h1>
+            <h1 className="text-2xl font-semibold text-foreground">Pedidos</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Liste, filtre, exporte e altere o status dos pedidos sem abrir cada
           detalhe.
@@ -269,11 +375,59 @@ export function OrdersPage() {
         </Button>
       </div>
 
+      <FilterBar className="p-4 lg:grid-cols-5">
+        <FormField label="Nº do pedido" htmlFor="orders-filter-number">
+          <Input
+            id="orders-filter-number"
+            placeholder="Número ou código"
+            value={orderNumber}
+            onChange={(e) => setOrderNumber(e.target.value)}
+          />
+        </FormField>
+        <FormField label="Cidade" htmlFor="orders-filter-city">
+          <Input
+            id="orders-filter-city"
+            placeholder="Cidade"
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+          />
+        </FormField>
+        <FormField label="Nome fantasia" htmlFor="orders-filter-trade">
+          <Input
+            id="orders-filter-trade"
+            placeholder="Nome fantasia"
+            value={tradeName}
+            onChange={(e) => setTradeName(e.target.value)}
+          />
+        </FormField>
+        <FormField label="Razão social" htmlFor="orders-filter-legal">
+          <Input
+            id="orders-filter-legal"
+            placeholder="Razão social"
+            value={legalName}
+            onChange={(e) => setLegalName(e.target.value)}
+          />
+        </FormField>
+        <FormField label="Vendedor" htmlFor="orders-filter-seller">
+          <AppSelect
+            id="orders-filter-seller"
+            value={sellerId}
+            onValueChange={setSellerId}
+            emptyLabel="Todos"
+            placeholder="Todos"
+            options={sellers.map((s) => ({
+              value: s.id,
+              label: s.user.name,
+            }))}
+          />
+        </FormField>
+      </FilterBar>
+
       <div className="surface-card flex flex-col gap-3 p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
           {hasSelection
-            ? `${selectedOrders.length} venda(s) selecionada(s)`
-            : "Selecione vendas para exportar, imprimir ou mudar o status"}
+            ? `${selectedOrders.length} pedido(s) selecionado(s)`
+            : "Selecione pedidos para exportar, imprimir ou mudar o status"}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -296,6 +450,18 @@ export function OrdersPage() {
             <Printer className="size-4" />
             Imprimir
           </Button>
+          {canPrint80mm ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!hasSelection || pdfPending}
+              onClick={() => void handlePrint80mm()}
+            >
+              <Printer className="size-4" />
+              Imprimir 80mm
+            </Button>
+          ) : null}
           {canWrite ? (
             <AppSelect
               value={bulkStatus}
@@ -327,7 +493,7 @@ export function OrdersPage() {
       {!isLoading && orders.length === 0 ? (
         <div className="surface-card flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
           <ShoppingCart className="h-12 w-12 text-primary/40" />
-          <p className="text-muted-foreground">Nenhuma venda encontrada.</p>
+          <p className="text-muted-foreground">Nenhum pedido encontrado.</p>
         </div>
       ) : null}
 
@@ -348,6 +514,7 @@ export function OrdersPage() {
                 <TableHead className="px-4">Status</TableHead>
                 <TableHead className="px-4">Vendedor</TableHead>
                 <TableHead className="px-4">Cliente</TableHead>
+                <TableHead className="px-4">Cidade</TableHead>
                 <TableHead className="px-4">Itens</TableHead>
                 <TableHead className="px-4 text-right">Total</TableHead>
                 <TableHead className="px-4" />
@@ -366,7 +533,7 @@ export function OrdersPage() {
                       <Checkbox
                         checked={selected}
                         onCheckedChange={(v) => toggleOne(o.id, v === true)}
-                        aria-label={`Selecionar venda ${code}`}
+                        aria-label={`Selecionar pedido ${code}`}
                       />
                     </TableCell>
                     <TableCell className="px-4 py-3 font-medium tabular-nums">
@@ -403,7 +570,12 @@ export function OrdersPage() {
                       {o.seller.user.name}
                     </TableCell>
                     <TableCell className="px-4 py-3">
-                      {o.customer?.name ?? "—"}
+                      {o.customer?.tradeName?.trim() ||
+                        o.customer?.name ||
+                        "—"}
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      {o.customer?.city?.trim() ? o.customer.city : "—"}
                     </TableCell>
                     <TableCell className="px-4 py-3 text-muted-foreground tabular-nums">
                       {o.items.length}
@@ -412,14 +584,41 @@ export function OrdersPage() {
                       {formatMoney(o.totalAmount)}
                     </TableCell>
                     <TableCell className="px-4 py-3 text-right">
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="h-auto p-0"
-                        asChild
+                      <Link
+                        to={`/pedidos/${o.id}`}
+                        className="text-primary"
                       >
-                        <Link to={`/vendas/${o.id}`}>Detalhe</Link>
-                      </Button>
+                        Editar
+                      </Link>
+                      {canWrite ? (
+                        <button
+                          type="button"
+                          className="ml-3 text-destructive"
+                          disabled={removeOrder.isPending}
+                          onClick={() => {
+                            void confirm({
+                              title: "Excluir pedido?",
+                              description: `O pedido ${code} será removido permanentemente. Pedidos confirmados estornam estoque ao excluir.`,
+                              confirmLabel: "Excluir",
+                              tone: "destructive",
+                            }).then((ok) => {
+                              if (!ok) return;
+                              setActionError(null);
+                              removeOrder.mutate(o.id, {
+                                onError: (e) => {
+                                  setActionError(
+                                    e instanceof Error
+                                      ? e.message
+                                      : "Não foi possível excluir o pedido.",
+                                  );
+                                },
+                              });
+                            });
+                          }}
+                        >
+                          Excluir
+                        </button>
+                      ) : null}
                     </TableCell>
                   </TableRow>
                 );

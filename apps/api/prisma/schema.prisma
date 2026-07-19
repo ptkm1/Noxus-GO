@@ -60,6 +60,13 @@ enum SellerCommissionType {
   BY_SUPPLIER
 }
 
+/// Escopo de aplicação da meta mensal de faturamento.
+enum SellerMonthlyGoalScope {
+  SELLER
+  TEAM
+  ALL
+}
+
 enum FiscalDocumentDirection {
   OUTBOUND
   INBOUND
@@ -268,6 +275,7 @@ model SalesTeam {
   leaderSellerId String       @unique
   leaderSeller   Seller       @relation("TeamLeader", fields: [leaderSellerId], references: [id], onDelete: Restrict)
   members        Seller[]     @relation("TeamMembers")
+  monthlyGoals   SellerMonthlyGoal[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -639,21 +647,31 @@ model CommissionProgressiveTier {
   @@index([organizationId, sellerId])
 }
 
-/// Meta de faturamento por vendedor e mês civil.
+/// Meta de faturamento mensal (vendedor, equipe ou todos os vendedores).
 model SellerMonthlyGoal {
-  id               String       @id @default(cuid())
+  id               String                 @id @default(cuid())
   organizationId   String
-  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  sellerId         String
-  seller           Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  scope            SellerMonthlyGoalScope @default(SELLER)
+  /// Chave estável para upsert: SELLER:<id> | TEAM:<id> | ALL
+  scopeKey         String
+  /// Obrigatório quando scope = SELLER.
+  sellerId         String?
+  seller           Seller?                @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  /// Obrigatório quando scope = TEAM.
+  teamId           String?
+  team             SalesTeam?             @relation(fields: [teamId], references: [id], onDelete: Cascade)
   year             Int
   month            Int
-  title            String       @default("Meta do mês")
-  targetAmount     Decimal      @db.Decimal(14, 2)
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  title            String                 @default("Meta do mês")
+  targetAmount     Decimal                @db.Decimal(14, 2)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
 
-  @@unique([organizationId, sellerId, year, month])
+  @@unique([organizationId, scopeKey, year, month])
+  @@index([organizationId, year, month])
+  @@index([organizationId, sellerId])
+  @@index([organizationId, teamId])
 }
 
 model PriceTableItem {

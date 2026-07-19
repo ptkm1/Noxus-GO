@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { prisma } from "../../db.js";
 
 /** Lê query params `x_*` enviados pelos filtros adicionais da UI. */
 export function readExtraParams(
@@ -14,9 +15,35 @@ export function readExtraParams(
   return out;
 }
 
-export function applyCustomerExtras(
+/** Intersect `where.id` with ids (empty list → no matching rows). */
+function intersectWhereIds(where: Prisma.CustomerWhereInput, ids: string[]) {
+  if (typeof where.id === "string") {
+    where.id = ids.includes(where.id) ? where.id : { in: [] };
+    return;
+  }
+  where.id = { in: ids };
+}
+
+/**
+ * Filter by comparing the column as text. Works whether the DB column is
+ * `text` or a Postgres enum (avoids `operator does not exist: text = "Enum"`).
+ */
+async function restrictCustomerIdsByDocumentType(
+  organizationId: string,
+  documentType: "CNPJ" | "CPF",
+): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "Customer"
+    WHERE "organizationId" = ${organizationId}
+      AND "documentType"::text = ${documentType}
+  `;
+  return rows.map((r) => r.id);
+}
+
+export async function applyCustomerExtras(
   where: Prisma.CustomerWhereInput,
   x: Record<string, string>,
+  organizationId: string,
 ) {
   if (x.city) {
     where.city = { contains: x.city, mode: "insensitive" };
@@ -31,7 +58,12 @@ export function applyCustomerExtras(
     where.phone = { contains: x.phone, mode: "insensitive" };
   }
   if (x.documentType === "CNPJ" || x.documentType === "CPF") {
-    where.documentType = x.documentType;
+    // Prisma enum equality fails when the column is still `text` in PG.
+    const ids = await restrictCustomerIdsByDocumentType(
+      organizationId,
+      x.documentType,
+    );
+    intersectWhereIds(where, ids);
   }
   if (x.tradeName) {
     where.tradeName = { contains: x.tradeName, mode: "insensitive" };

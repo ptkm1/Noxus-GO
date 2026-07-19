@@ -109,8 +109,8 @@ export function hrefFromNotificationData(
   if (!data) return null;
   if (typeof data.href === "string" && data.href.length > 0) {
     const href = data.href;
-    if (href.startsWith("/vendas/")) {
-      const id = href.replace("/vendas/", "");
+    if (href.startsWith("/vendas/") || href.startsWith("/pedidos/")) {
+      const id = href.replace(/^\/(vendas|pedidos)\//, "");
       return `/(tabs)/vendas/${id}`;
     }
     if (href === "/commission" || href.startsWith("/commission")) {

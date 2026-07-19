@@ -5,12 +5,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { useCepLookup } from "@/hooks/useCepLookup";
 import { useIbgeMunicipios, useIbgeUfs } from "@/hooks/useIbgeLocations";
-import type { CepAddressData, CustomerFormValues } from "@pedidos/shared";
+import type { CepAddressData, CustomerFormErrors, CustomerFormValues } from "@pedidos/shared";
 import {
   cepDigitsOnly,
+  FIELD_NOT_APPLICABLE,
   formatCepMask,
+  isFieldNotApplicable,
   isStateRegistrationUnavailable,
+  isStreetNumberSn,
   STATE_REGISTRATION_UNAVAILABLE,
+  STREET_NUMBER_SN,
 } from "@pedidos/shared";
 import { useEffect } from "react";
 
@@ -21,19 +25,20 @@ type Props = {
     | "street"
     | "number"
     | "neighborhood"
+    | "addressNote"
     | "state"
     | "city"
     | "cityIbgeCode"
     | "stateRegistration"
   >;
   onChange: (patch: Partial<CustomerFormValues>) => void;
-  stateRegistrationError?: string;
+  errors?: CustomerFormErrors;
 };
 
 export function AddressFieldsGroup({
   values,
   onChange,
-  stateRegistrationError,
+  errors = {},
 }: Props) {
   const { data: ufs = [], isLoading: ufsLoading } = useIbgeUfs();
   const { data: municipios = [], isLoading: citiesLoading } = useIbgeMunicipios(
@@ -93,13 +98,14 @@ export function AddressFieldsGroup({
 
   return (
     <div className="space-y-4">
-      <FormField label="CEP" htmlFor="cust-cep">
+      <FormField label="CEP" htmlFor="cust-cep" required error={errors.cep}>
         <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
           <Input
             id="cust-cep"
             inputMode="numeric"
             placeholder="00000-000"
             className="font-mono"
+            aria-invalid={errors.cep ? true : undefined}
             value={formatCepMask(cepDigitsOnly(values.cep))}
             onChange={(e) => onChange({ cep: cepDigitsOnly(e.target.value) })}
             onKeyDown={(e) => {
@@ -127,29 +133,108 @@ export function AddressFieldsGroup({
         <FormField
           label="Endereço"
           htmlFor="cust-street"
+          required
+          error={errors.street}
           className="sm:col-span-2"
         >
           <Input
             id="cust-street"
+            aria-invalid={errors.street ? true : undefined}
             value={values.street}
             onChange={(e) => onChange({ street: e.target.value })}
           />
         </FormField>
-        <FormField label="Bairro" htmlFor="cust-neighborhood">
+        <FormField
+          label="Bairro"
+          htmlFor="cust-neighborhood"
+          required
+          error={errors.neighborhood}
+        >
           <Input
             id="cust-neighborhood"
+            aria-invalid={errors.neighborhood ? true : undefined}
             value={values.neighborhood}
             onChange={(e) => onChange({ neighborhood: e.target.value })}
           />
         </FormField>
-        <FormField label="Número" htmlFor="cust-number">
-          <Input
-            id="cust-number"
-            value={values.number}
-            onChange={(e) => onChange({ number: e.target.value })}
-          />
+        <FormField
+          label="Número"
+          htmlFor="cust-number"
+          required
+          error={errors.number}
+        >
+          <div className="rounded-md border border-input bg-background overflow-hidden">
+            <Input
+              id="cust-number"
+              className="border-0 rounded-none shadow-none focus-visible:ring-0"
+              aria-invalid={errors.number ? true : undefined}
+              disabled={isStreetNumberSn(values.number)}
+              placeholder={
+                isStreetNumberSn(values.number) ? STREET_NUMBER_SN : "Número"
+              }
+              value={isStreetNumberSn(values.number) ? "" : values.number}
+              onChange={(e) => onChange({ number: e.target.value })}
+            />
+            <label
+              htmlFor="cust-number-sn"
+              className="flex items-center gap-2 px-3 pb-2.5 pt-0.5 text-sm text-muted-foreground cursor-pointer"
+            >
+              <Checkbox
+                id="cust-number-sn"
+                checked={isStreetNumberSn(values.number)}
+                onCheckedChange={(checked) => {
+                  onChange({
+                    number: checked ? STREET_NUMBER_SN : "",
+                  });
+                }}
+              />
+              Sem número (S/N)
+            </label>
+          </div>
         </FormField>
-        <FormField label="UF" htmlFor="cust-uf">
+        <FormField
+          label="Complemento"
+          htmlFor="cust-complement"
+          required
+          error={errors.addressNote}
+          className="sm:col-span-2"
+        >
+          <div className="rounded-md border border-input bg-background overflow-hidden">
+            <Input
+              id="cust-complement"
+              className="border-0 rounded-none shadow-none focus-visible:ring-0"
+              aria-invalid={errors.addressNote ? true : undefined}
+              disabled={isFieldNotApplicable(values.addressNote)}
+              placeholder={
+                isFieldNotApplicable(values.addressNote)
+                  ? FIELD_NOT_APPLICABLE
+                  : "Apto, sala, referência…"
+              }
+              value={
+                isFieldNotApplicable(values.addressNote)
+                  ? ""
+                  : values.addressNote
+              }
+              onChange={(e) => onChange({ addressNote: e.target.value })}
+            />
+            <label
+              htmlFor="cust-complement-none"
+              className="flex items-center gap-2 px-3 pb-2.5 pt-0.5 text-sm text-muted-foreground cursor-pointer"
+            >
+              <Checkbox
+                id="cust-complement-none"
+                checked={isFieldNotApplicable(values.addressNote)}
+                onCheckedChange={(checked) => {
+                  onChange({
+                    addressNote: checked ? FIELD_NOT_APPLICABLE : "",
+                  });
+                }}
+              />
+              Não possui complemento
+            </label>
+          </div>
+        </FormField>
+        <FormField label="UF" htmlFor="cust-uf" required error={errors.state}>
           <AppSelect
             id="cust-uf"
             value={values.state}
@@ -162,7 +247,12 @@ export function AddressFieldsGroup({
             onValueChange={onStateChange}
           />
         </FormField>
-        <FormField label="Cidade" htmlFor="cust-city">
+        <FormField
+          label="Cidade"
+          htmlFor="cust-city"
+          required
+          error={errors.city ?? errors.cityIbgeCode}
+        >
           <AppSelect
             id="cust-city"
             value={citySelectValue}
@@ -183,12 +273,13 @@ export function AddressFieldsGroup({
           label="Inscrição estadual"
           htmlFor="cust-ie"
           required
-          error={stateRegistrationError}
+          error={errors.stateRegistration}
         >
           <div className="rounded-md border border-input bg-background overflow-hidden">
             <Input
               id="cust-ie"
               className="border-0 rounded-none shadow-none focus-visible:ring-0"
+              aria-invalid={errors.stateRegistration ? true : undefined}
               disabled={isStateRegistrationUnavailable(
                 values.stateRegistration,
               )}
@@ -228,12 +319,15 @@ export function AddressFieldsGroup({
         <FormField
           label="Cód. município"
           htmlFor="cust-ibge"
+          required
+          error={errors.cityIbgeCode}
           hint="Preenchido ao escolher a cidade"
         >
           <Input
             id="cust-ibge"
             readOnly
             className="bg-muted"
+            aria-invalid={errors.cityIbgeCode ? true : undefined}
             value={values.cityIbgeCode}
           />
         </FormField>

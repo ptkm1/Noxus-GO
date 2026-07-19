@@ -1,4 +1,5 @@
 import {
+  FormErrorBanner,
   FormField,
   FormGrid,
   FormSheet,
@@ -16,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -183,6 +185,8 @@ export function FiscalFixedExpensesPage() {
     Number(form.dayOfMonth) >= 1 &&
     Number(form.dayOfMonth) <= 28;
 
+  useScrollToFirstError(formError, { enabled: Boolean(formError) });
+
   return (
     <div className="space-y-8">
       <div className="flex items-start justify-between gap-4">
@@ -323,9 +327,7 @@ export function FiscalFixedExpensesPage() {
             </label>
           </FormField>
         </FormGrid>
-        {formError ? (
-          <p className="mt-3 text-sm text-destructive">{formError}</p>
-        ) : null}
+        <FormErrorBanner message={formError} className="mt-3" />
       </FormSheet>
 
       {isLoading ? (

@@ -117,7 +117,11 @@ export default function CommissionScreen() {
 
             {data.goal && data.goal.targetAmount != null ? (
               <ProgressStat
-                title={data.goal.title}
+                title={
+                  data.goal.scopeLabel
+                    ? `${data.goal.title} · ${data.goal.scopeLabel}`
+                    : data.goal.title
+                }
                 current={data.goal.achievedAmount}
                 target={data.goal.targetAmount}
                 formatValue={(v) => `R$ ${fmtMoney(v)}`}

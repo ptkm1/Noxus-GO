@@ -11,6 +11,10 @@ import {
   resolveCommissionBaselinePercent,
   resolveProgressiveCommissionPercent,
 } from "./commission-resolve.js";
+import {
+  goalAchievedAmount,
+  resolveApplicableGoalForSeller,
+} from "./seller-monthly-goals.js";
 
 function roundMoney(n: number): number {
   return Math.round(n * 100) / 100;
@@ -85,20 +89,21 @@ export async function buildSellerCommissionDashboard(
     },
   });
 
-  const goal = await prisma.sellerMonthlyGoal.findUnique({
-    where: {
-      organizationId_sellerId_year_month: {
-        organizationId,
-        sellerId,
-        year,
-        month,
-      },
-    },
-  });
+  const goal = await resolveApplicableGoalForSeller(
+    organizationId,
+    sellerId,
+    year,
+    month,
+  );
 
   const goalTarget = goal ? decToNum(goal.targetAmount) : null;
+  const achievedAmount = goal
+    ? await goalAchievedAmount(organizationId, goal, start, end)
+    : mtdRevenue;
   const goalProgressPercent =
-    goalTarget != null && goalTarget > 0 ? roundMoney(Math.min(100, (mtdRevenue / goalTarget) * 100)) : null;
+    goalTarget != null && goalTarget > 0
+      ? roundMoney(Math.min(100, (achievedAmount / goalTarget) * 100))
+      : null;
 
   const rankingFull = await sellerRankingForPeriod(organizationId, start, end);
   const myRow = rankingFull.find((r) => r.sellerId === sellerId);
@@ -140,9 +145,18 @@ export async function buildSellerCommissionDashboard(
     goal: goal
       ? {
           title: goal.title,
+          scope: goal.scope,
+          scopeLabel:
+            goal.scope === "SELLER"
+              ? "Vendedor"
+              : goal.scope === "TEAM"
+                ? goal.team?.name
+                  ? `Equipe ${goal.team.name}`
+                  : "Equipe"
+                : "Todos os vendedores",
           targetAmount: goalTarget,
           progressPercent: goalProgressPercent,
-          achievedAmount: mtdRevenue,
+          achievedAmount,
         }
       : null,
     ranking: {

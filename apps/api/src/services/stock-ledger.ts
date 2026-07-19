@@ -1,6 +1,6 @@
 import type { Prisma, StockMovementType } from "@prisma/client";
 import { prisma } from "../db.js";
-import { writeAuditLog } from "./audit-log.js";
+import { AUDIT_ACTION, AUDIT_ENTITY, writeAuditLog } from "./audit-log.js";
 import { StockError } from "./product-stock.js";
 
 export type ManualStockEntryInput = {
@@ -289,10 +289,11 @@ export async function applyManualStockEntry(
         organizationId: input.organizationId,
         userId: input.userId,
         userMatricula: input.userMatricula,
-        action: `stock.${input.type.toLowerCase()}`,
-        entityType: "Product",
+        action: AUDIT_ACTION.STOCK_ENTRY,
+        entityType: AUDIT_ENTITY.Product,
         entityId: input.productId,
         metadata: {
+          movementType: input.type,
           movementId: movement.id,
           lotId: lot.id,
           lotCode,
