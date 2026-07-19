@@ -163,7 +163,7 @@ export const ROLE_PERMISSIONS: Record<
   },
   audit: {
     ADMIN: "read",
-    MANAGER: "read",
+    MANAGER: "none",
     SELLER: "none",
     SUPERVISOR: "none",
   },

@@ -5,6 +5,7 @@ import {
   BarChart3,
   Bell,
   FileText,
+  History,
   LayoutDashboard,
   Lightbulb,
   MapPin,
@@ -115,6 +116,12 @@ export const DASHBOARD_NAV: NavItem[] = [
     icon: Shield,
     resource: "permissions",
   },
+  {
+    to: "/auditoria",
+    label: "Auditoria",
+    icon: History,
+    resource: "audit",
+  },
 ];
 
 export const TEAM_LEADER_NAV: NavItem[] = [
@@ -167,6 +174,7 @@ export function resourceForPath(pathname: string): PermissionResource | null {
   )
     return "reports";
   if (pathname.startsWith("/permissoes")) return "permissions";
+  if (pathname.startsWith("/auditoria")) return "audit";
   return null;
 }
 

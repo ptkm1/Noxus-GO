@@ -18,6 +18,7 @@ import { AppNotificationsProvider } from "./lib/app-notifications";
 import { createAppQueryClient } from "./lib/query-client";
 import { isWebStaff, isWebTeamLeader } from "./lib/staff";
 import { ThemeProvider } from "./lib/theme";
+import { AuditLogsPage } from "./pages/AuditLogsPage";
 import { BroadcastNotificationsPage } from "./pages/BroadcastNotificationsPage";
 import { CommissionGoalsPage } from "./pages/CommissionGoalsPage";
 import { CommissionHubPage } from "./pages/CommissionHubPage";
@@ -111,12 +112,7 @@ function TeamLeaderRouteGuard() {
 
 function LegacyVendasRedirect() {
   const { orderId } = useParams<{ orderId?: string }>();
-  return (
-    <Navigate
-      to={orderId ? `/pedidos/${orderId}` : "/pedidos"}
-      replace
-    />
-  );
+  return <Navigate to={orderId ? `/pedidos/${orderId}` : "/pedidos"} replace />;
 }
 
 /** ADMIN/MANAGER: rota visível se canRead efetivo do recurso. */
@@ -228,6 +224,7 @@ function AppRoutes() {
             <Route path="clientes" element={<CustomersPage />} />
             <Route path="notificacoes" element={<NotificationsPage />} />
             <Route path="permissoes" element={<PermissionsPage />} />
+            <Route path="auditoria" element={<AuditLogsPage />} />
             <Route path="relatorios" element={<ReportsHubPage />} />
             <Route
               path="relatorios/clientes"
