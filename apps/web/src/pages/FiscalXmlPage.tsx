@@ -28,6 +28,7 @@ export function FiscalXmlPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadingAll, setDownloadingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const qs = new URLSearchParams();
@@ -60,6 +61,25 @@ export function FiscalXmlPage() {
       setError(e instanceof Error ? e.message : "Falha ao baixar XML");
     } finally {
       setDownloadingId(null);
+    }
+  }
+
+  async function handleDownloadAll() {
+    setError(null);
+    setDownloadingAll(true);
+    try {
+      const fromPart = from.replace(/-/g, "") || "inicio";
+      const toPart = to.replace(/-/g, "") || "fim";
+      await downloadXml(
+        `/admin/fiscal/orders/nfe.zip${query ? `?${query}` : ""}`,
+        `nfe-xml-${fromPart}-${toPart}.zip`,
+      );
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Falha ao baixar ZIP com os XMLs",
+      );
+    } finally {
+      setDownloadingAll(false);
     }
   }
 
@@ -100,6 +120,15 @@ export function FiscalXmlPage() {
           disabled={isFetching}
         >
           Filtrar
+        </Button>
+        <Button
+          type="button"
+          onClick={() => void handleDownloadAll()}
+          disabled={downloadingAll || isLoading || orders.length === 0}
+        >
+          {downloadingAll
+            ? "Gerando ZIP…"
+            : `Baixar todos (${orders.length})`}
         </Button>
       </div>
 

@@ -68,6 +68,7 @@ import {
 } from "../services/fiscal/fixed-expenses.js";
 import {
   buildNfeXml,
+  buildNfeXmlZip,
   listFiscalOrders,
   NfeXmlError,
 } from "../services/fiscal/nfe-xml.js";
@@ -1331,6 +1332,32 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!q.success)
       return reply.status(400).send({ error: "Filtros inválidos" });
     return listFiscalOrders(req.auth!.organizationId, q.data);
+  });
+
+  app.get("/fiscal/orders/nfe.zip", async (req, reply) => {
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+      })
+      .safeParse(req.query);
+    if (!q.success)
+      return reply.status(400).send({ error: "Filtros inválidos" });
+    try {
+      const { zip, filename } = await buildNfeXmlZip(
+        req.auth!.organizationId,
+        q.data,
+      );
+      return reply
+        .header("Content-Type", "application/zip")
+        .header("Content-Disposition", `attachment; filename="${filename}"`)
+        .send(zip);
+    } catch (e) {
+      if (e instanceof NfeXmlError) {
+        return reply.status(400).send({ error: e.message });
+      }
+      throw e;
+    }
   });
 
   app.get("/orders/:id/nfe.xml", async (req, reply) => {

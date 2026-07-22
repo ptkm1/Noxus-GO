@@ -32,6 +32,14 @@ import {
   promptAction,
 } from "../lib/app-notifications";
 
+function useDebouncedValue<T>(value: T, delayMs = 300): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
 type Tab = "saida" | "entrada" | "cadastros" | "config" | "historico";
 
 type EligibleOrder = {
@@ -77,7 +85,15 @@ type FiscalInvoice = {
   issuedAt: string | null;
   stockApplied: boolean;
   supplier?: { tradeName?: string; legalName?: string; cnpj?: string } | null;
-  order?: { customer: { name: string } | null } | null;
+  order?: {
+    id: string;
+    orderNumber: number | null;
+    customer: {
+      name: string;
+      tradeName?: string | null;
+      legalName?: string | null;
+    } | null;
+  } | null;
   items: {
     id: string;
     description: string;
@@ -131,6 +147,8 @@ export function FaturamentoPage() {
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(
     new Set(),
   );
+  const [outboundInvoiceSearch, setOutboundInvoiceSearch] = useState("");
+  const debouncedOutboundInvoiceSearch = useDebouncedValue(outboundInvoiceSearch);
   const [batchEmitProgress, setBatchEmitProgress] = useState<{
     current: number;
     total: number;
@@ -279,11 +297,26 @@ export function FaturamentoPage() {
     }
   }
 
-  const { data: outboundInvoices = [] } = useQuery({
-    queryKey: ["admin", "fiscal", "outbound-invoices"],
-    queryFn: () => apiFetch<FiscalInvoice[]>("/admin/fiscal/outbound/invoices"),
-    enabled: tab === "saida",
-  });
+  const { data: outboundInvoices = [], isFetching: fetchingOutboundInvoices } =
+    useQuery({
+      queryKey: [
+        "admin",
+        "fiscal",
+        "outbound-invoices",
+        debouncedOutboundInvoiceSearch,
+      ],
+      queryFn: () => {
+        const qs = new URLSearchParams();
+        if (debouncedOutboundInvoiceSearch.trim()) {
+          qs.set("q", debouncedOutboundInvoiceSearch.trim());
+        }
+        const query = qs.toString();
+        return apiFetch<FiscalInvoice[]>(
+          `/admin/fiscal/outbound/invoices${query ? `?${query}` : ""}`,
+        );
+      },
+      enabled: tab === "saida",
+    });
 
   const { data: inboundInvoices = [] } = useQuery({
     queryKey: ["admin", "fiscal", "inbound-invoices"],
@@ -806,11 +839,28 @@ export function FaturamentoPage() {
 
           <section>
             <h2 className="mb-3 text-lg font-medium">NF-e emitidas</h2>
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <Input
+                value={outboundInvoiceSearch}
+                onChange={(e) => setOutboundInvoiceSearch(e.target.value)}
+                placeholder="Buscar por nº da nota, cliente ou pedido…"
+                className="max-w-md"
+                aria-label="Buscar NF-e de saída"
+              />
+              {fetchingOutboundInvoices ? (
+                <span className="text-xs text-muted-foreground">Buscando…</span>
+              ) : outboundInvoiceSearch.trim() ? (
+                <span className="text-xs text-muted-foreground">
+                  {outboundInvoices.length} resultado(s)
+                </span>
+              ) : null}
+            </div>
             <div className="overflow-x-auto rounded-xl border border-border bg-card">
               <table className="w-full text-sm">
                 <thead className="bg-background text-left text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3">Nº</th>
+                    <th className="px-4 py-3">Pedido</th>
                     <th className="px-4 py-3">Cliente</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Total</th>
@@ -819,73 +869,104 @@ export function FaturamentoPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {outboundInvoices.map((inv) => (
-                    <tr key={inv.id} className="border-t border-border">
-                      <td className="px-4 py-3">
-                        {inv.series}/{inv.number}
-                      </td>
-                      <td className="px-4 py-3">
-                        {inv.order?.customer?.name ?? "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        {FISCAL_INVOICE_STATUS_LABELS[inv.status]}
-                      </td>
-                      <td className="px-4 py-3">
-                        R$ {Number(inv.totalAmount).toFixed(2)}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs">
-                        {inv.accessKey?.slice(0, 12) ?? "—"}…
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          {canShowDanfe(inv.status) && (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  void handleDanfe(
-                                    inv.id,
-                                    inv.number,
-                                    "download",
-                                  )
-                                }
-                              >
-                                DANFE
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() =>
-                                  void handleDanfe(inv.id, inv.number, "print")
-                                }
-                              >
-                                Imprimir
-                              </Button>
-                            </>
-                          )}
-                          {inv.status === "AUTHORIZED" && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="text-destructive"
-                              disabled={cancelOutbound.isPending}
-                              onClick={() =>
-                                promptCancel((justification) =>
-                                  cancelOutbound.mutate({
-                                    invoiceId: inv.id,
-                                    justification,
-                                  }),
-                                )
-                              }
-                            >
-                              Cancelar
-                            </Button>
-                          )}
-                        </div>
+                  {outboundInvoices.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-4 py-6 text-muted-foreground"
+                      >
+                        {outboundInvoiceSearch.trim()
+                          ? "Nenhuma NF-e encontrada para a busca."
+                          : "Nenhuma NF-e emitida ainda."}
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    outboundInvoices.map((inv) => {
+                      const customerLabel =
+                        inv.order?.customer?.tradeName ||
+                        inv.order?.customer?.name ||
+                        inv.order?.customer?.legalName ||
+                        "—";
+                      const orderLabel =
+                        inv.order?.orderNumber != null
+                          ? String(inv.order.orderNumber)
+                          : inv.order?.id
+                            ? `${inv.order.id.slice(0, 8)}…`
+                            : "—";
+                      return (
+                        <tr key={inv.id} className="border-t border-border">
+                          <td className="px-4 py-3">
+                            {inv.series}/{inv.number}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs">
+                            {orderLabel}
+                          </td>
+                          <td className="px-4 py-3">{customerLabel}</td>
+                          <td className="px-4 py-3">
+                            {FISCAL_INVOICE_STATUS_LABELS[inv.status]}
+                          </td>
+                          <td className="px-4 py-3">
+                            R$ {Number(inv.totalAmount).toFixed(2)}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs">
+                            {inv.accessKey?.slice(0, 12) ?? "—"}…
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-2">
+                              {canShowDanfe(inv.status) && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                      void handleDanfe(
+                                        inv.id,
+                                        inv.number,
+                                        "download",
+                                      )
+                                    }
+                                  >
+                                    DANFE
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() =>
+                                      void handleDanfe(
+                                        inv.id,
+                                        inv.number,
+                                        "print",
+                                      )
+                                    }
+                                  >
+                                    Imprimir
+                                  </Button>
+                                </>
+                              )}
+                              {inv.status === "AUTHORIZED" && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-destructive"
+                                  disabled={cancelOutbound.isPending}
+                                  onClick={() =>
+                                    promptCancel((justification) =>
+                                      cancelOutbound.mutate({
+                                        invoiceId: inv.id,
+                                        justification,
+                                      }),
+                                    )
+                                  }
+                                >
+                                  Cancelar
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
