@@ -136,12 +136,15 @@ export function useCustomerForm(customerId?: string) {
           body: JSON.stringify(payload),
         });
       }
-      return apiFetch("/seller/customers", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      return apiFetch<{ id: string; approvalStatus?: string }>(
+        "/seller/customers",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      );
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ["seller", "customers"] });
       if (customerId) {
         void qc.invalidateQueries({
@@ -149,7 +152,20 @@ export function useCustomerForm(customerId?: string) {
         });
         router.back();
       } else {
-        router.replace("/(tabs)/customers");
+        const pending =
+          data &&
+          typeof data === "object" &&
+          "approvalStatus" in data &&
+          data.approvalStatus === "PENDING";
+        if (pending) {
+          Alert.alert(
+            "Cadastro enviado",
+            "Aguardando validação do escritório. O cliente só poderá ser usado em vendas após a aprovação.",
+            [{ text: "OK", onPress: () => router.replace("/(tabs)/customers") }],
+          );
+        } else {
+          router.replace("/(tabs)/customers");
+        }
       }
     },
     onError: (e: Error) => Alert.alert("Erro ao salvar", e.message),

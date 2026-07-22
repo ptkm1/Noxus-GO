@@ -183,8 +183,9 @@ export function auditEntityHref(
   entityId: string | null,
 ): string | null {
   if (!entityId) {
-    if (entityType === "FiscalConfig") return "/fiscal";
-    if (entityType === "OrganizationRolePermission") return "/permissoes";
+    if (entityType === "FiscalConfig") return "/faturamento";
+    if (entityType === "OrganizationRolePermission")
+      return "/configuracoes?abrir=permissoes";
     return null;
   }
   switch (entityType) {
@@ -205,9 +206,9 @@ export function auditEntityHref(
     case "FiscalInvoice":
       return `/faturamento`;
     case "FiscalConfig":
-      return `/fiscal`;
+      return `/faturamento`;
     case "OrganizationRolePermission":
-      return `/permissoes`;
+      return `/configuracoes?abrir=permissoes`;
     default:
       return null;
   }

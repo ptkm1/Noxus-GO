@@ -222,6 +222,42 @@ export default function CustomerHubScreen() {
                     {docLabel(customer)} · {formatDoc(customer)}
                   </ThemedText>
                 </View>
+                {customer.approvalStatus === "PENDING" ? (
+                  <View
+                    style={[
+                      styles.badge,
+                      {
+                        backgroundColor: colorWithAlpha(colors.warning, 0.15),
+                        borderColor: colorWithAlpha(colors.warning, 0.4),
+                      },
+                    ]}
+                  >
+                    <ThemedText
+                      variant="caption"
+                      style={{ color: colors.warning, fontWeight: "700" }}
+                    >
+                      Aguardando validação
+                    </ThemedText>
+                  </View>
+                ) : null}
+                {customer.approvalStatus === "REJECTED" ? (
+                  <View
+                    style={[
+                      styles.badge,
+                      {
+                        backgroundColor: colorWithAlpha(colors.danger, 0.12),
+                        borderColor: colorWithAlpha(colors.danger, 0.35),
+                      },
+                    ]}
+                  >
+                    <ThemedText
+                      variant="caption"
+                      style={{ color: colors.danger, fontWeight: "700" }}
+                    >
+                      Cadastro rejeitado
+                    </ThemedText>
+                  </View>
+                ) : null}
                 {customer.creditBlocked ? (
                   <View
                     style={[
@@ -244,29 +280,42 @@ export default function CustomerHubScreen() {
             </View>
           </View>
 
-          <ThemedButton
-            size="lg"
-            style={styles.primaryBtn}
-            onPress={() =>
-              router.push({
-                pathname: "/quick-sale",
-                params: { customerId: id },
-              })
-            }
-          >
-            <View style={styles.btnInner}>
-              <ShoppingCart size={18} color={colors.primaryForeground} />
-              <ThemedText
-                variant="body"
-                style={{
-                  color: colors.primaryForeground,
-                  fontWeight: "700",
-                }}
-              >
-                Fazer pedido
-              </ThemedText>
-            </View>
-          </ThemedButton>
+          {customer.approvalStatus === "PENDING" ||
+          customer.approvalStatus === "REJECTED" ? (
+            <ThemedText
+              variant="bodySm"
+              muted
+              style={{ textAlign: "center", marginBottom: 8 }}
+            >
+              {customer.approvalStatus === "PENDING"
+                ? "Aguardando validação do escritório — vendas indisponíveis."
+                : "Cadastro rejeitado — vendas indisponíveis."}
+            </ThemedText>
+          ) : (
+            <ThemedButton
+              size="lg"
+              style={styles.primaryBtn}
+              onPress={() =>
+                router.push({
+                  pathname: "/quick-sale",
+                  params: { customerId: id },
+                })
+              }
+            >
+              <View style={styles.btnInner}>
+                <ShoppingCart size={18} color={colors.primaryForeground} />
+                <ThemedText
+                  variant="body"
+                  style={{
+                    color: colors.primaryForeground,
+                    fontWeight: "700",
+                  }}
+                >
+                  Fazer pedido
+                </ThemedText>
+              </View>
+            </ThemedButton>
+          )}
 
           <View style={styles.actions}>
             <QuickAction

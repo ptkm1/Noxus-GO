@@ -50,7 +50,7 @@ export function NotificationsPage() {
         <div>
           <h1 className="text-2xl font-semibold">Alertas</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Notificações da organização (vendas, crédito, metas).
+            Notificações da organização (vendas, crédito, metas, clientes).
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

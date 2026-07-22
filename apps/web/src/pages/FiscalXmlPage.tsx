@@ -67,8 +67,8 @@ export function FiscalXmlPage() {
     <div className="space-y-8">
       <div className="space-y-2">
         <nav className="text-sm text-muted-foreground">
-          <Link to="/fiscal" className="hover:text-foreground">
-            Fiscal
+          <Link to="/faturamento" className="hover:text-foreground">
+            Faturamento
           </Link>
           <span className="mx-1.5">›</span>
           <span className="text-foreground">Exportar XML NF-e</span>

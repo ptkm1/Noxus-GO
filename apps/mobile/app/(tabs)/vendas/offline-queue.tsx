@@ -12,8 +12,17 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 export default function OfflineQueueScreen() {
   const { colors } = useTheme();
   const { orderSyncMode } = useOrderSyncMode();
-  const { rows, loading, syncing, busyId, syncNow, retryRow, discardRow } =
-    useOfflineQueueScreen();
+  const {
+    rows,
+    loading,
+    syncing,
+    busyId,
+    canEditQueued,
+    syncNow,
+    retryRow,
+    discardRow,
+    editRow,
+  } = useOfflineQueueScreen();
   const actionsBusy = syncing || busyId != null;
   const manual = orderSyncMode === "MANUAL";
 
@@ -33,6 +42,9 @@ export default function OfflineQueueScreen() {
           {manual
             ? "Envio manual ativo: os pedidos ficam nesta fila até você tocar em Sincronizar agora — mesmo com internet."
             : "Pedidos guardados sem rede são enviados quando a ligação volta. Em caso de erro de política, pode tentar de novo ou apagar."}
+          {canEditQueued
+            ? " Editar só está disponível antes da sincronização; após o envio o pedido não pode mais ser alterado."
+            : ""}
         </ThemedText>
 
         <ThemedButton
@@ -52,6 +64,9 @@ export default function OfflineQueueScreen() {
         ) : (
           rows.map((row) => {
             const rowBusy = busyId === row.localId;
+            const canEditRow =
+              canEditQueued &&
+              (row.state === "queued" || row.state === "dead");
             return (
               <ThemedCard key={row.localId}>
                 <ThemedText
@@ -90,6 +105,19 @@ export default function OfflineQueueScreen() {
                 <View style={styles.actions}>
                   {rowBusy ? (
                     <ActivityIndicator color={colors.primary} size="small" />
+                  ) : null}
+                  {canEditRow ? (
+                    <Pressable
+                      disabled={actionsBusy}
+                      onPress={() => editRow(row.localId)}
+                      style={actionsBusy ? styles.actionDis : undefined}
+                    >
+                      <ThemedText
+                        style={{ color: colors.primary, fontWeight: "600" }}
+                      >
+                        Editar (antes do envio)
+                      </ThemedText>
+                    </Pressable>
                   ) : null}
                   {row.state === "dead" ? (
                     <Pressable
@@ -131,6 +159,7 @@ const styles = StyleSheet.create({
     gap: 16,
     marginTop: 12,
     alignItems: "center",
+    flexWrap: "wrap",
   },
   actionDis: { opacity: 0.45 },
 });

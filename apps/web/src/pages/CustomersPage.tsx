@@ -22,6 +22,7 @@ import {
 import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import type { CustomerFormValues, CustomerRecord } from "@pedidos/shared";
 import {
+  canWrite,
   customerToForm,
   emptyCustomerForm,
   formToCustomerPayload,
@@ -31,11 +32,17 @@ import {
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { useAuth } from "../auth/AuthContext";
 import { CustomerFormFields } from "../components/CustomerFormFields";
 import { CustomerTitlesPanel } from "../components/CustomerTitlesPanel";
 import { apiFetch } from "../lib/api";
 
 type Seller = { id: string; user: { name: string } };
+
+type PendingCustomer = CustomerRecord & {
+  seller?: { user: { name: string } } | null;
+  createdAt?: string;
+};
 
 function customerHasMapCoords(c: CustomerRecord): boolean {
   return (
@@ -58,12 +65,42 @@ function formatCityUf(c: CustomerRecord): string {
   return "—";
 }
 
+function approvalBadge(status: CustomerRecord["approvalStatus"]) {
+  if (status === "PENDING") {
+    return (
+      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-950">
+        Aguardando validação
+      </span>
+    );
+  }
+  if (status === "REJECTED") {
+    return (
+      <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-900">
+        Rejeitado
+      </span>
+    );
+  }
+  return null;
+}
+
 export function CustomersPage() {
+  const { user } = useAuth();
   const qc = useQueryClient();
   const { confirm, alert } = useConfirm();
+  const canApprove = Boolean(
+    user &&
+      (user.role === "ADMIN" ||
+        canWrite(user.role, "customers", user.permissions)),
+  );
+
   const { data: customers = [], isLoading } = useQuery({
     queryKey: ["admin", "customers"],
     queryFn: () => apiFetch<CustomerRecord[]>("/admin/customers"),
+  });
+  const { data: pending = [], isLoading: pendingLoading } = useQuery({
+    queryKey: ["admin", "customers", "pending-approval"],
+    queryFn: () =>
+      apiFetch<PendingCustomer[]>("/admin/customers/pending-approval"),
   });
   const { data: sellers = [] } = useQuery({
     queryKey: ["admin", "sellers"],
@@ -87,6 +124,42 @@ export function CustomersPage() {
       }),
     onSuccess: () =>
       void qc.invalidateQueries({ queryKey: ["admin", "pricing-settings"] }),
+  });
+
+  const approve = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/admin/customers/${id}/approve`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin", "customers"] });
+    },
+    onError: (e: Error) => {
+      void alert({
+        title: "Não foi possível aprovar",
+        description: e.message,
+        tone: "danger",
+      });
+    },
+  });
+
+  const reject = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+      apiFetch(`/admin/customers/${id}/reject`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin", "customers"] });
+    },
+    onError: (e: Error) => {
+      void alert({
+        title: "Não foi possível rejeitar",
+        description: e.message,
+        tone: "danger",
+      });
+    },
   });
 
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -243,7 +316,20 @@ export function CustomersPage() {
     else create.mutate();
   }
 
+  async function handleReject(c: PendingCustomer) {
+    const ok = await confirm({
+      title: `Rejeitar cadastro de ${c.name}?`,
+      description:
+        "O vendedor verá o status rejeitado. O cliente não poderá ser usado em vendas.",
+      confirmLabel: "Rejeitar",
+      tone: "destructive",
+    });
+    if (!ok) return;
+    reject.mutate({ id: c.id });
+  }
+
   const savePending = editing ? update.isPending : create.isPending;
+  const actionBusy = approve.isPending || reject.isPending;
 
   return (
     <div className="space-y-6">
@@ -253,6 +339,66 @@ export function CustomersPage() {
           Novo cliente
         </Button>
       </div>
+
+      {!pendingLoading && pending.length > 0 ? (
+        <FormSection
+          id="pendentes"
+          title={`Cadastros pendentes (${pending.length})`}
+          description="Clientes criados pelo vendedor aguardando validação do escritório."
+          className="border-amber-200 bg-amber-50/70 dark:border-amber-900/40 dark:bg-amber-950/30"
+        >
+          <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+            {pending.map((c) => (
+              <div
+                key={c.id}
+                className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground">{c.name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {formatDocument(c)}
+                    {c.city || c.state ? ` · ${formatCityUf(c)}` : ""}
+                    {c.seller?.user.name
+                      ? ` · Vendedor: ${c.seller.user.name}`
+                      : ""}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openEdit(c)}
+                  >
+                    Ver
+                  </Button>
+                  {canApprove ? (
+                    <>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={actionBusy}
+                        onClick={() => approve.mutate(c.id)}
+                      >
+                        Aprovar
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        disabled={actionBusy}
+                        onClick={() => void handleReject(c)}
+                      >
+                        Rejeitar
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </FormSection>
+      ) : null}
 
       <FormSection
         title="Quando o cliente está “ruim” no crédito"
@@ -414,6 +560,7 @@ export function CustomersPage() {
                 <TableHead className="px-4">Telefone</TableHead>
                 <TableHead className="px-4">Vendedor</TableHead>
                 <TableHead className="px-4">Mapa</TableHead>
+                <TableHead className="px-4">Status</TableHead>
                 <TableHead className="px-4">Crédito</TableHead>
                 <TableHead className="px-4" />
               </TableRow>
@@ -441,6 +588,11 @@ export function CustomersPage() {
                       </span>
                     ) : (
                       <span className="text-muted-foreground">Não</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="px-4 py-3">
+                    {approvalBadge(c.approvalStatus) ?? (
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
                   <TableCell className="px-4 py-3">

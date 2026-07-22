@@ -85,6 +85,7 @@ export {
   validateCustomerFormStep,
 } from "./customer-form.js";
 export type {
+  CustomerApprovalStatus,
   CustomerDocumentType,
   CustomerFormErrors,
   CustomerFormValues,

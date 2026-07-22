@@ -22,9 +22,13 @@ import {
 import type { SaleProduct } from "./sale/types";
 
 export type OrderSyncMode = "AUTO" | "MANUAL";
+export type CustomerRegistrationMode = "AUTO" | "REQUIRE_APPROVAL";
 
 export type SellerOrgSettings = {
   orderSyncMode: OrderSyncMode;
+  sellerShowUnassignedCustomers?: boolean;
+  customerRegistrationMode?: CustomerRegistrationMode;
+  sellerCanEditQueuedSales?: boolean;
 };
 
 export const SELLER_PRODUCTS_BASE_KEY = ["seller", "products", ""] as const;
@@ -51,7 +55,31 @@ function normalizeOrgSettings(raw: unknown): SellerOrgSettings {
     (raw as { orderSyncMode?: unknown }).orderSyncMode === "MANUAL"
       ? "MANUAL"
       : "AUTO";
-  return { orderSyncMode: mode };
+  const showUnassigned = !(
+    raw &&
+    typeof raw === "object" &&
+    (raw as { sellerShowUnassignedCustomers?: unknown })
+      .sellerShowUnassignedCustomers === false
+  );
+  const registrationMode =
+    raw &&
+    typeof raw === "object" &&
+    (raw as { customerRegistrationMode?: unknown }).customerRegistrationMode ===
+      "REQUIRE_APPROVAL"
+      ? "REQUIRE_APPROVAL"
+      : "AUTO";
+  const canEditQueued = Boolean(
+    raw &&
+      typeof raw === "object" &&
+      (raw as { sellerCanEditQueuedSales?: unknown })
+        .sellerCanEditQueuedSales === true,
+  );
+  return {
+    orderSyncMode: mode,
+    sellerShowUnassignedCustomers: showUnassigned,
+    customerRegistrationMode: registrationMode,
+    sellerCanEditQueuedSales: canEditQueued,
+  };
 }
 
 export async function fetchSellerOrgSettings(): Promise<SellerOrgSettings> {

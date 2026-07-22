@@ -9,6 +9,7 @@ import { SyncStatusBanner } from "@/components/molecules/SyncStatusBanner";
 import { TopSuppliersBlock } from "@/components/molecules/TopSuppliersBlock";
 import { useAuth } from "@/context/AuthContext";
 import { useSalesListScreen } from "@/hooks/screens/useSalesListScreen";
+import { useManualSaleSync } from "@/hooks/useManualSaleSync";
 import { useNetInfoOnline } from "@/hooks/useNetInfoOnline";
 import { useSyncStatusMeta } from "@/hooks/useSyncStatusMeta";
 import { apiFetch } from "@/lib/api";
@@ -27,11 +28,12 @@ import {
   DollarSign,
   Package,
   Plus,
+  RefreshCw,
   ShoppingCart,
   TrendingUp,
   Users,
 } from "lucide-react-native";
-import { Pressable, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -63,6 +65,16 @@ export default function HomeScreen() {
   });
 
   const unread = notifications.filter((n) => !n.read).length;
+  const {
+    syncNow,
+    syncing,
+    showSyncButton,
+    queueCount,
+  } = useManualSaleSync({
+    onAfterSync: () => {
+      void refetch();
+    },
+  });
   const firstName = user?.name?.split(" ")[0] ?? "Vendedor";
   const initials =
     user?.name
@@ -90,6 +102,11 @@ export default function HomeScreen() {
   const goalTarget = goal?.targetAmount ?? 0;
   const goalCurrent = goal?.achievedAmount ?? mtd;
 
+  const syncA11yLabel =
+    queueCount > 0
+      ? `Sincronizar agora, ${queueCount} pedido${queueCount === 1 ? "" : "s"} na fila`
+      : "Sincronizar agora";
+
   return (
     <SafeScreen variant="tab">
       <MobileHeader
@@ -114,12 +131,35 @@ export default function HomeScreen() {
           </Pressable>
         }
         rightAction={
-          <HeaderIconButton
-            badge={unread}
-            onPress={() => router.push("/(tabs)/notifications")}
-          >
-            <Bell color={colors.text} size={20} />
-          </HeaderIconButton>
+          <View style={styles.headerActions}>
+            {showSyncButton ? (
+              <HeaderIconButton
+                badge={queueCount}
+                disabled={syncing}
+                accessibilityLabel={
+                  syncing ? "Sincronizando pedidos" : syncA11yLabel
+                }
+                onPress={() => void syncNow()}
+              >
+                {syncing ? (
+                  <ActivityIndicator color={colors.primary} size="small" />
+                ) : (
+                  <RefreshCw color={colors.text} size={20} />
+                )}
+              </HeaderIconButton>
+            ) : null}
+            <HeaderIconButton
+              badge={unread}
+              accessibilityLabel={
+                unread > 0
+                  ? `Notificações, ${unread} não lida${unread === 1 ? "" : "s"}`
+                  : "Notificações"
+              }
+              onPress={() => router.push("/(tabs)/notifications")}
+            >
+              <Bell color={colors.text} size={20} />
+            </HeaderIconButton>
+          </View>
         }
       />
       <MobileScreen
@@ -237,6 +277,11 @@ const styles = StyleSheet.create({
     borderRadius: radiiPx.md,
     alignItems: "center",
     justifyContent: "center",
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   statGrid: {
     flexDirection: "row",

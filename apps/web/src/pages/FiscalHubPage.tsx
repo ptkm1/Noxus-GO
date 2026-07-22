@@ -1,9 +1,4 @@
-import {
-  FileSpreadsheet,
-  Landmark,
-  Receipt,
-  type LucideIcon,
-} from "lucide-react";
+import { Landmark, Receipt, type LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const CARDS: Array<{
@@ -13,25 +8,18 @@ const CARDS: Array<{
   icon: LucideIcon;
 }> = [
   {
-    to: "/fiscal/despesas-fixas",
+    to: "/financeiro/despesas-fixas",
     title: "Despesas fixas",
     description:
       "Templates recorrentes (aluguel, impostos, etc.) com dia do mês e valor.",
     icon: Landmark,
   },
   {
-    to: "/fiscal/contas-a-pagar",
+    to: "/financeiro/contas-a-pagar",
     title: "Contas a pagar",
     description:
       "Lançamentos com fornecedor, vencimento, descontos, juros e status.",
     icon: Receipt,
-  },
-  {
-    to: "/fiscal/xml",
-    title: "Exportar XML NF-e",
-    description:
-      "Gera XML provisório a partir de pedidos confirmados (sem emissão SEFAZ).",
-    icon: FileSpreadsheet,
   },
 ];
 
@@ -44,12 +32,11 @@ export function FiscalHubPage() {
             Início
           </Link>
           <span className="mx-1.5">›</span>
-          <span className="text-foreground">Fiscal</span>
+          <span className="text-foreground">Financeiro</span>
         </nav>
-        <h1 className="text-2xl font-semibold text-foreground">Fiscal</h1>
+        <h1 className="text-2xl font-semibold text-foreground">Financeiro</h1>
         <p className="max-w-2xl text-sm text-muted-foreground">
-          Despesas operacionais e exportação de XML NF-e provisório. A emissão
-          real com certificado fica para um ciclo futuro.
+          Despesas operacionais e contas a pagar da organização.
         </p>
       </div>
 

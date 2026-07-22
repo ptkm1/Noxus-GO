@@ -30,6 +30,7 @@ export type SaleCustomer = {
   tradeName?: string | null;
   city?: string | null;
   state?: string | null;
+  approvalStatus?: "APPROVED" | "PENDING" | "REJECTED";
 };
 
 export type PaymentCondition = {

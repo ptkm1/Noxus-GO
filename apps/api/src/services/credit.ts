@@ -1,6 +1,10 @@
 import type { CreditPolicy, CreditTitleStatus, Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { decToNum } from "../util/money.js";
+import {
+  getSellerShowUnassignedCustomers,
+  sellerCustomerSellableWhere,
+} from "./seller-customer-access.js";
 
 export type CreditViolation = { code: string; message: string };
 
@@ -99,7 +103,9 @@ export async function computeCreditViolations(input: {
   }
 
   const creditLimit =
-    customer.creditLimit != null ? roundMoney(decToNum(customer.creditLimit)) : null;
+    customer.creditLimit != null
+      ? roundMoney(decToNum(customer.creditLimit))
+      : null;
 
   if (creditLimit != null) {
     if (openBalance > creditLimit + EPS) {
@@ -141,7 +147,9 @@ export async function evaluateOrderCredit(params: {
   return { violations, policy, action };
 }
 
-export function violationsToJson(violations: CreditViolation[]): Prisma.InputJsonValue {
+export function violationsToJson(
+  violations: CreditViolation[],
+): Prisma.InputJsonValue {
   return violations as unknown as Prisma.InputJsonValue;
 }
 
@@ -184,11 +192,17 @@ export async function buildSellerCustomerCreditSnapshot(params: {
     notes: string | null;
   }>;
 }> {
+  const showUnassigned = await getSellerShowUnassignedCustomers(
+    params.organizationId,
+  );
   const cust = await prisma.customer.findFirst({
     where: {
       id: params.customerId,
-      organizationId: params.organizationId,
-      OR: [{ sellerId: null }, { sellerId: params.sellerId }],
+      ...sellerCustomerSellableWhere(
+        params.organizationId,
+        params.sellerId,
+        showUnassigned,
+      ),
     },
     select: {
       id: true,
@@ -226,7 +240,8 @@ export async function buildSellerCustomerCreditSnapshot(params: {
     const paid = decToNum(t.paidAmount);
     const remaining =
       t.status === "OPEN" ? Math.max(0, roundMoney(amt - paid)) : 0;
-    const overdue = t.status === "OPEN" && remaining > EPS && t.dueDate < today0;
+    const overdue =
+      t.status === "OPEN" && remaining > EPS && t.dueDate < today0;
     return {
       id: t.id,
       reference: t.reference,
@@ -243,7 +258,9 @@ export async function buildSellerCustomerCreditSnapshot(params: {
 
   const serialized = allTitles.map(serialize);
   const titlesOpen = serialized.filter((x) => x.status === "OPEN");
-  const titlesHistory = serialized.filter((x) => x.status !== "OPEN").slice(0, 25);
+  const titlesHistory = serialized
+    .filter((x) => x.status !== "OPEN")
+    .slice(0, 25);
 
   let overdueAmount = 0;
   let overdueCount = 0;
@@ -261,7 +278,8 @@ export async function buildSellerCustomerCreditSnapshot(params: {
   return {
     customerId: cust.id,
     creditBlocked: cust.creditBlocked,
-    creditLimit: cust.creditLimit != null ? roundMoney(decToNum(cust.creditLimit)) : null,
+    creditLimit:
+      cust.creditLimit != null ? roundMoney(decToNum(cust.creditLimit)) : null,
     creditPolicy: org?.creditPolicy ?? "WARN_ONLY",
     openBalance,
     overdueCount,

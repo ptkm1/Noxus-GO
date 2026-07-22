@@ -118,6 +118,8 @@ type ClienteCardProps = {
   inadimplente?: boolean;
   favorito?: boolean;
   curvaABC?: "A" | "B" | "C";
+  statusLabel?: string | null;
+  statusTone?: "warning" | "danger" | null;
   onPress?: () => void;
 };
 
@@ -128,6 +130,8 @@ export function ClienteCard({
   inadimplente,
   favorito,
   curvaABC,
+  statusLabel,
+  statusTone,
   onPress,
 }: ClienteCardProps) {
   const { colors } = useTheme();
@@ -138,6 +142,12 @@ export function ClienteCard({
       : curvaABC === "B"
         ? colorWithAlpha(colors.primary, 0.1)
         : colors.surfaceMuted;
+  const statusColor =
+    statusTone === "danger"
+      ? colors.danger
+      : statusTone === "warning"
+        ? colors.warning
+        : colors.primary;
 
   return (
     <Pressable
@@ -165,6 +175,14 @@ export function ClienteCard({
         <ThemedText variant="bodySm" muted numberOfLines={1}>
           {endereco}
         </ThemedText>
+        {statusLabel ? (
+          <ThemedText
+            variant="caption"
+            style={{ marginTop: 4, fontWeight: "600", color: statusColor }}
+          >
+            {statusLabel}
+          </ThemedText>
+        ) : null}
         {ultimaCompra ? (
           <ThemedText variant="caption" muted style={{ marginTop: 4 }}>
             Última compra: {ultimaCompra}

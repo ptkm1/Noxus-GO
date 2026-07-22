@@ -192,8 +192,8 @@ export function FiscalFixedExpensesPage() {
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-2">
           <nav className="text-sm text-muted-foreground">
-            <Link to="/fiscal" className="hover:text-foreground">
-              Fiscal
+            <Link to="/financeiro" className="hover:text-foreground">
+              Financeiro
             </Link>
             <span className="mx-1.5">›</span>
             <span className="text-foreground">Despesas fixas</span>

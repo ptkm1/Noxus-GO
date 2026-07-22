@@ -5,7 +5,6 @@ import {
   BarChart3,
   Bell,
   FileText,
-  History,
   LayoutDashboard,
   Lightbulb,
   MapPin,
@@ -13,7 +12,6 @@ import {
   Package,
   Receipt,
   Settings,
-  Shield,
   ShoppingCart,
   Table,
   Target,
@@ -99,7 +97,12 @@ export const DASHBOARD_NAV: NavItem[] = [
     resource: "tracking",
   },
   { to: "/pedidos", label: "Pedidos", icon: ShoppingCart, resource: "orders" },
-  { to: "/fiscal", label: "Fiscal", icon: Receipt, resource: "fiscal" },
+  {
+    to: "/financeiro",
+    label: "Financeiro",
+    icon: Receipt,
+    resource: "fiscal",
+  },
   {
     to: "/faturamento",
     label: "Faturamento",
@@ -117,18 +120,6 @@ export const DASHBOARD_NAV: NavItem[] = [
     label: "Insights",
     icon: Lightbulb,
     resource: "reports",
-  },
-  {
-    to: "/permissoes",
-    label: "Permissões",
-    icon: Shield,
-    resource: "permissions",
-  },
-  {
-    to: "/auditoria",
-    label: "Auditoria",
-    icon: History,
-    resource: "audit",
   },
   {
     to: "/configuracoes",
@@ -180,7 +171,11 @@ export function resourceForPath(pathname: string): PermissionResource | null {
   if (pathname.startsWith("/rastreio")) return "tracking";
   if (pathname.startsWith("/pedidos") || pathname.startsWith("/vendas"))
     return "orders";
-  if (pathname.startsWith("/fiscal") || pathname.startsWith("/faturamento"))
+  if (
+    pathname.startsWith("/financeiro") ||
+    pathname.startsWith("/fiscal") ||
+    pathname.startsWith("/faturamento")
+  )
     return "fiscal";
   if (
     pathname.startsWith("/relatorios") ||
@@ -188,11 +183,8 @@ export function resourceForPath(pathname: string): PermissionResource | null {
     pathname.startsWith("/indicadores")
   )
     return "reports";
-  if (
-    pathname.startsWith("/permissoes") ||
-    pathname.startsWith("/configuracoes")
-  )
-    return "permissions";
+  if (pathname.startsWith("/configuracoes")) return null;
+  if (pathname.startsWith("/permissoes")) return "permissions";
   if (pathname.startsWith("/auditoria")) return "audit";
   return null;
 }
@@ -204,7 +196,13 @@ export function navForRole(
   if (!user) return [];
 
   return DASHBOARD_NAV.filter((item) => {
-    if (item.to === "/configuracoes" && user.role !== "ADMIN") return false;
+    if (item.to === "/configuracoes") {
+      return (
+        user.role === "ADMIN" ||
+        canRead(user.role, "permissions", user.permissions) ||
+        canRead(user.role, "audit", user.permissions)
+      );
+    }
     return canRead(user.role, item.resource, user.permissions);
   });
 }

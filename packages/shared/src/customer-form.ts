@@ -26,6 +26,8 @@ export type CustomerFormValues = {
   notes: string;
 };
 
+export type CustomerApprovalStatus = "APPROVED" | "PENDING" | "REJECTED";
+
 export type CustomerRecord = CustomerFormValues & {
   id: string;
   sellerId?: string | null;
@@ -33,6 +35,11 @@ export type CustomerRecord = CustomerFormValues & {
   creditBlocked?: boolean;
   latitude?: unknown;
   longitude?: unknown;
+  approvalStatus?: CustomerApprovalStatus;
+  approvalNote?: string | null;
+  approvedAt?: string | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
 };
 
 export function emptyCustomerForm(

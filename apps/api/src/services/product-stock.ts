@@ -12,6 +12,41 @@ export class StockError extends Error {
 
 type OrderLine = { productId: string; quantity: number };
 
+export type ProductStockLevel = {
+  productId: string;
+  name: string;
+  stockQty: number;
+  blockSaleWhenOutOfStock: boolean;
+};
+
+export async function getProductStockLevels(
+  organizationId: string,
+  productIds: string[],
+): Promise<ProductStockLevel[]> {
+  const unique = [...new Set(productIds.filter(Boolean))];
+  if (unique.length === 0) return [];
+
+  const products = await prisma.product.findMany({
+    where: {
+      organizationId,
+      id: { in: unique },
+    },
+    select: {
+      id: true,
+      name: true,
+      stockQty: true,
+      blockSaleWhenOutOfStock: true,
+    },
+  });
+
+  return products.map((p) => ({
+    productId: p.id,
+    name: p.name,
+    stockQty: p.stockQty,
+    blockSaleWhenOutOfStock: p.blockSaleWhenOutOfStock,
+  }));
+}
+
 export async function assertSufficientStock(
   organizationId: string,
   items: OrderLine[],
@@ -26,20 +61,11 @@ export async function assertSufficientStock(
     );
   }
 
-  const products = await prisma.product.findMany({
-    where: {
-      organizationId,
-      id: { in: [...qtyByProduct.keys()] },
-    },
-    select: {
-      id: true,
-      name: true,
-      stockQty: true,
-      blockSaleWhenOutOfStock: true,
-    },
-  });
-
-  const byId = new Map(products.map((p) => [p.id, p]));
+  const products = await getProductStockLevels(
+    organizationId,
+    [...qtyByProduct.keys()],
+  );
+  const byId = new Map(products.map((p) => [p.productId, p]));
   const errors: string[] = [];
 
   for (const [productId, qty] of qtyByProduct) {

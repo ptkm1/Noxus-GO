@@ -10,6 +10,12 @@ import {
   resetOfflineSaleToQueued,
 } from "./offline-outbox";
 import { notifyOfflineOutboxChanged } from "./offline-outbox-events";
+import {
+  buildStockAvailabilityMaps,
+  checkStockForSale,
+  fetchRemoteProductStock,
+  reserveStockForSale,
+} from "./offline-sale-stock-check";
 import { markCacheSynced } from "./offline-read-cache";
 
 function backoffMs(attempt: number): number {
@@ -117,15 +123,28 @@ const MAX_TRANSIENT_ATTEMPTS = 14;
 
 let syncRunning = false;
 
+export type FlushOfflineSaleResult = {
+  processed: number;
+  sent: number;
+  stockBlocked: number;
+};
+
 export async function flushOfflineSaleOutbox(
   qc?: QueryClient,
   opts?: { forceImmediate?: boolean },
-): Promise<{ processed: number }> {
-  if (syncRunning) return { processed: 0 };
+): Promise<FlushOfflineSaleResult> {
+  const empty: FlushOfflineSaleResult = {
+    processed: 0,
+    sent: 0,
+    stockBlocked: 0,
+  };
+  if (syncRunning) return empty;
   const token = await getAccessToken();
-  if (!token) return { processed: 0 };
+  if (!token) return empty;
   syncRunning = true;
   let processed = 0;
+  let sent = 0;
+  let stockBlocked = 0;
   try {
     try {
       await releaseStaleSyncingClaims();
@@ -133,11 +152,37 @@ export async function flushOfflineSaleOutbox(
         await prepareQueuedSalesForImmediateSync();
       }
     } catch {
-      return { processed: 0 };
+      return empty;
     }
     const now = Date.now();
     const rows = await claimRowsForSync(now, 10);
+
+    let stockMaps: ReturnType<typeof buildStockAvailabilityMaps> | null = null;
+    if (opts?.forceImmediate && rows.length > 0) {
+      const productIds = rows.flatMap((r) =>
+        r.payload.items.map((i) => i.productId),
+      );
+      const remote = await fetchRemoteProductStock(productIds);
+      if (remote) {
+        stockMaps = buildStockAvailabilityMaps(remote);
+      }
+    }
+
     for (const row of rows) {
+      if (stockMaps) {
+        const stockError = checkStockForSale(
+          row,
+          stockMaps.available,
+          stockMaps.blockedIds,
+        );
+        if (stockError) {
+          await resetOfflineSaleToQueued(row.localId, stockError);
+          stockBlocked += 1;
+          processed += 1;
+          continue;
+        }
+      }
+
       const payload = {
         customerId: row.payload.customerId,
         paymentConditionId: row.payload.paymentConditionId,
@@ -149,8 +194,16 @@ export async function flushOfflineSaleOutbox(
       };
       const result = await postSellerSale(payload);
       if (result.kind === "success") {
+        if (stockMaps) {
+          reserveStockForSale(
+            row,
+            stockMaps.available,
+            stockMaps.blockedIds,
+          );
+        }
         await markOfflineSaleSent(row.localId);
         processed += 1;
+        sent += 1;
         continue;
       }
       if (result.kind === "dead") {
@@ -187,9 +240,12 @@ export async function flushOfflineSaleOutbox(
           queryKey: ["seller", "commission-dashboard"],
         });
         void qc.invalidateQueries({ queryKey: ["seller", "customer-credit"] });
+        if (sent > 0) {
+          void qc.invalidateQueries({ queryKey: ["seller", "products"] });
+        }
       }
     }
-    return { processed };
+    return { processed, sent, stockBlocked };
   } finally {
     syncRunning = false;
   }

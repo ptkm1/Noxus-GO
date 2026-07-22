@@ -422,10 +422,19 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const org = await prisma.organization.findUnique({
       where: { id: auth.organizationId },
-      select: { orderSyncMode: true },
+      select: {
+        orderSyncMode: true,
+        sellerShowUnassignedCustomers: true,
+        customerRegistrationMode: true,
+        sellerCanEditQueuedSales: true,
+      },
     });
     return {
       orderSyncMode: org?.orderSyncMode ?? ("AUTO" as const),
+      sellerShowUnassignedCustomers: org?.sellerShowUnassignedCustomers ?? true,
+      customerRegistrationMode:
+        org?.customerRegistrationMode ?? ("AUTO" as const),
+      sellerCanEditQueuedSales: org?.sellerCanEditQueuedSales ?? false,
     };
   });
 
@@ -434,20 +443,62 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({
         orderSyncMode: z.enum(["AUTO", "MANUAL"]).optional(),
+        sellerShowUnassignedCustomers: z.boolean().optional(),
+        customerRegistrationMode: z
+          .enum(["AUTO", "REQUIRE_APPROVAL"])
+          .optional(),
+        sellerCanEditQueuedSales: z.boolean().optional(),
       })
       .safeParse(req.body);
     if (!body.success)
       return reply.status(400).send({ error: "Dados inválidos" });
 
-    if (body.data.orderSyncMode === undefined) {
+    if (
+      body.data.orderSyncMode === undefined &&
+      body.data.sellerShowUnassignedCustomers === undefined &&
+      body.data.customerRegistrationMode === undefined &&
+      body.data.sellerCanEditQueuedSales === undefined
+    ) {
       return reply.status(400).send({ error: "Nada para atualizar" });
     }
 
-    await prisma.organization.update({
+    const updated = await prisma.organization.update({
       where: { id: auth.organizationId },
-      data: { orderSyncMode: body.data.orderSyncMode },
+      data: {
+        ...(body.data.orderSyncMode !== undefined
+          ? { orderSyncMode: body.data.orderSyncMode }
+          : {}),
+        ...(body.data.sellerShowUnassignedCustomers !== undefined
+          ? {
+              sellerShowUnassignedCustomers:
+                body.data.sellerShowUnassignedCustomers,
+            }
+          : {}),
+        ...(body.data.customerRegistrationMode !== undefined
+          ? {
+              customerRegistrationMode: body.data.customerRegistrationMode,
+            }
+          : {}),
+        ...(body.data.sellerCanEditQueuedSales !== undefined
+          ? {
+              sellerCanEditQueuedSales: body.data.sellerCanEditQueuedSales,
+            }
+          : {}),
+      },
+      select: {
+        orderSyncMode: true,
+        sellerShowUnassignedCustomers: true,
+        customerRegistrationMode: true,
+        sellerCanEditQueuedSales: true,
+      },
     });
-    return { ok: true, orderSyncMode: body.data.orderSyncMode };
+    return {
+      ok: true,
+      orderSyncMode: updated.orderSyncMode,
+      sellerShowUnassignedCustomers: updated.sellerShowUnassignedCustomers,
+      customerRegistrationMode: updated.customerRegistrationMode,
+      sellerCanEditQueuedSales: updated.sellerCanEditQueuedSales,
+    };
   });
 
   /**
@@ -3269,12 +3320,19 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.get("/customers", async (req) => {
     const auth = req.auth!;
     const q = z
-      .object({ sellerId: z.string().optional() })
+      .object({
+        sellerId: z.string().optional(),
+        approvalStatus: z
+          .enum(["APPROVED", "PENDING", "REJECTED"])
+          .optional(),
+      })
       .safeParse(req.query);
     const where: Prisma.CustomerWhereInput = {
       organizationId: auth.organizationId,
     };
     if (q.success && q.data.sellerId) where.sellerId = q.data.sellerId;
+    if (q.success && q.data.approvalStatus)
+      where.approvalStatus = q.data.approvalStatus;
     return prisma.customer.findMany({
       where,
       orderBy: { name: "asc" },
@@ -3283,6 +3341,125 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         region: { select: { id: true, code: true, name: true } },
       },
     });
+  });
+
+  app.get("/customers/pending-approval", async (req) => {
+    const auth = req.auth!;
+    return prisma.customer.findMany({
+      where: {
+        organizationId: auth.organizationId,
+        approvalStatus: "PENDING",
+      },
+      orderBy: { createdAt: "asc" },
+      include: {
+        seller: { include: { user: { select: { name: true } } } },
+        region: { select: { id: true, code: true, name: true } },
+      },
+    });
+  });
+
+  app.post("/customers/:id/approve", async (req, reply) => {
+    const auth = req.auth!;
+    if (
+      auth.role === "MANAGER" &&
+      !(await canWriteEffective(auth.organizationId, auth.role, "customers"))
+    ) {
+      return reply
+        .status(403)
+        .send({ error: "Sem permissão para aprovar clientes" });
+    }
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({ note: z.string().trim().max(500).optional() })
+      .safeParse(req.body ?? {});
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const existing = await prisma.customer.findFirst({
+      where: { id, organizationId: auth.organizationId },
+    });
+    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+    if (existing.approvalStatus !== "PENDING") {
+      return reply
+        .status(400)
+        .send({ error: "Cliente não está aguardando validação" });
+    }
+
+    const updated = await prisma.customer.update({
+      where: { id },
+      data: {
+        approvalStatus: "APPROVED",
+        approvedAt: new Date(),
+        approvedByUserId: auth.sub,
+        approvalNote: body.data.note ?? null,
+        rejectedAt: null,
+        rejectionReason: null,
+      },
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.STATUS_CHANGE,
+      entityType: AUDIT_ENTITY.Customer,
+      entityId: updated.id,
+      metadata: {
+        approvalStatus: "APPROVED",
+        name: updated.name,
+        note: body.data.note ?? null,
+      },
+    });
+    return updated;
+  });
+
+  app.post("/customers/:id/reject", async (req, reply) => {
+    const auth = req.auth!;
+    if (
+      auth.role === "MANAGER" &&
+      !(await canWriteEffective(auth.organizationId, auth.role, "customers"))
+    ) {
+      return reply
+        .status(403)
+        .send({ error: "Sem permissão para rejeitar clientes" });
+    }
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        reason: z.string().trim().max(500).optional(),
+      })
+      .safeParse(req.body ?? {});
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const existing = await prisma.customer.findFirst({
+      where: { id, organizationId: auth.organizationId },
+    });
+    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+    if (existing.approvalStatus !== "PENDING") {
+      return reply
+        .status(400)
+        .send({ error: "Cliente não está aguardando validação" });
+    }
+
+    const updated = await prisma.customer.update({
+      where: { id },
+      data: {
+        approvalStatus: "REJECTED",
+        rejectedAt: new Date(),
+        rejectionReason: body.data.reason ?? null,
+        approvedAt: null,
+        approvedByUserId: null,
+        approvalNote: null,
+      },
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.STATUS_CHANGE,
+      entityType: AUDIT_ENTITY.Customer,
+      entityId: updated.id,
+      metadata: {
+        approvalStatus: "REJECTED",
+        name: updated.name,
+        reason: body.data.reason ?? null,
+      },
+    });
+    return updated;
   });
 
   app.post("/customers", async (req, reply) => {

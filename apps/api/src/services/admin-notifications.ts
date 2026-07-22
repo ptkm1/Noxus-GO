@@ -6,6 +6,7 @@ import {
   sendTransactionalHtmlEmail,
 } from "./email-send.js";
 import { notifyUsers } from "./notify.js";
+import { canWriteEffective } from "./role-permissions.js";
 
 type OrderNotifyPayload = {
   id: string;
@@ -146,6 +147,45 @@ export async function notifySaleConfirmed(params: {
       orderId: params.order.id,
       sellerId: params.order.sellerId,
       href: `/pedidos/${params.order.id}`,
+    },
+  });
+}
+
+/** Cadastro de cliente pelo vendedor aguardando validação → admins + gestores com permissão. */
+export async function notifyAdminsCustomerPendingApproval(params: {
+  organizationId: string;
+  customer: { id: string; name: string };
+}): Promise<void> {
+  const staff = await prisma.user.findMany({
+    where: {
+      organizationId: params.organizationId,
+      role: { in: ["ADMIN", "MANAGER"] },
+    },
+    select: { id: true, role: true },
+  });
+
+  const managerCanApprove = await canWriteEffective(
+    params.organizationId,
+    "MANAGER",
+    "customers",
+  );
+
+  const userIds = staff
+    .filter((u) => u.role === "ADMIN" || managerCanApprove)
+    .map((u) => u.id);
+
+  if (!userIds.length) return;
+
+  const name = params.customer.name.trim() || "Cliente sem nome";
+
+  await notifyUsers({
+    userIds,
+    title: "Cliente aguardando validação",
+    body: `Novo cliente aguardando validação: ${name}`,
+    type: "CUSTOMER_PENDING_APPROVAL",
+    data: {
+      customerId: params.customer.id,
+      href: "/clientes#pendentes",
     },
   });
 }

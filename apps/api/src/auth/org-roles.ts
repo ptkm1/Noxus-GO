@@ -32,12 +32,14 @@ const MANAGER_GET_ALLOW = [
   /^\/push-vapid-public-key$/,
 ] as const;
 
-/** Write paths managers may use (inbox + push registration + broadcast). */
+/** Write paths managers may use (inbox + push + broadcast + aprovação de clientes). */
 const MANAGER_WRITE_ALLOW = [
   /^\/notifications\/[^/]+\/read$/,
   /^\/notifications\/read-all$/,
   /^\/notifications\/send$/,
   /^\/push-devices$/,
+  /^\/customers\/[^/]+\/approve$/,
+  /^\/customers\/[^/]+\/reject$/,
 ] as const;
 
 export function isManagerWriteAllowed(routePath: string): boolean {

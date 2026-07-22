@@ -183,7 +183,9 @@ export function useQuickSaleScreen() {
 
   const lastCustomerEntity = useMemo(() => {
     if (!lastCustomerId) return null;
-    return customers.find((c) => c.id === lastCustomerId) ?? null;
+    const c = customers.find((x) => x.id === lastCustomerId) ?? null;
+    if (c?.approvalStatus && c.approvalStatus !== "APPROVED") return null;
+    return c;
   }, [customers, lastCustomerId]);
 
   const filteredCustomers = useMemo(() => {
@@ -194,6 +196,7 @@ export function useQuickSaleScreen() {
     const city = customerSearch.city.trim().toLowerCase();
 
     return customers.filter((c) => {
+      if (c.approvalStatus && c.approvalStatus !== "APPROVED") return false;
       if (
         code &&
         !c.id.toLowerCase().includes(code) &&

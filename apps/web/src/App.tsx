@@ -18,7 +18,6 @@ import { AppNotificationsProvider } from "./lib/app-notifications";
 import { createAppQueryClient } from "./lib/query-client";
 import { isWebStaff, isWebTeamLeader } from "./lib/staff";
 import { ThemeProvider } from "./lib/theme";
-import { AuditLogsPage } from "./pages/AuditLogsPage";
 import { BroadcastNotificationsPage } from "./pages/BroadcastNotificationsPage";
 import { CommissionGoalsPage } from "./pages/CommissionGoalsPage";
 import { CommissionHubPage } from "./pages/CommissionHubPage";
@@ -38,7 +37,6 @@ import { NotificationsPage } from "./pages/NotificationsPage";
 import { OrderDetailPage } from "./pages/OrderDetailPage";
 import { OrdersPage } from "./pages/OrdersPage";
 import { PaymentConditionsPage } from "./pages/PaymentConditionsPage";
-import { PermissionsPage } from "./pages/PermissionsPage";
 import { PriceTablesPage } from "./pages/PriceTablesPage";
 import { ProductCategoriesPage } from "./pages/ProductCategoriesPage";
 import { ProductFormPage } from "./pages/ProductFormPage";
@@ -202,17 +200,33 @@ function AppRoutes() {
               path="condicoes-pagamento"
               element={<PaymentConditionsPage />}
             />
-            <Route path="fiscal" element={<FiscalHubPage />} />
+            <Route path="financeiro" element={<FiscalHubPage />} />
             <Route
-              path="fiscal/despesas-fixas"
+              path="financeiro/despesas-fixas"
               element={<FiscalFixedExpensesPage />}
             />
             <Route
-              path="fiscal/contas-a-pagar"
+              path="financeiro/contas-a-pagar"
               element={<FiscalAccountsPayablePage />}
             />
-            <Route path="fiscal/xml" element={<FiscalXmlPage />} />
             <Route path="faturamento" element={<FaturamentoPage />} />
+            <Route path="faturamento/xml" element={<FiscalXmlPage />} />
+            <Route
+              path="fiscal"
+              element={<Navigate to="/financeiro" replace />}
+            />
+            <Route
+              path="fiscal/despesas-fixas"
+              element={<Navigate to="/financeiro/despesas-fixas" replace />}
+            />
+            <Route
+              path="fiscal/contas-a-pagar"
+              element={<Navigate to="/financeiro/contas-a-pagar" replace />}
+            />
+            <Route
+              path="fiscal/xml"
+              element={<Navigate to="/faturamento/xml" replace />}
+            />
             <Route path="comissao" element={<CommissionHubPage />} />
             <Route path="comissao/faixas" element={<CommissionTiersPage />} />
             <Route path="comissao/metas" element={<CommissionGoalsPage />} />
@@ -229,9 +243,17 @@ function AppRoutes() {
             <Route path="equipes" element={<TeamsPage />} />
             <Route path="clientes" element={<CustomersPage />} />
             <Route path="notificacoes" element={<NotificationsPage />} />
-            <Route path="permissoes" element={<PermissionsPage />} />
+            <Route
+              path="permissoes"
+              element={
+                <Navigate to="/configuracoes?abrir=permissoes" replace />
+              }
+            />
+            <Route
+              path="auditoria"
+              element={<Navigate to="/configuracoes?abrir=auditoria" replace />}
+            />
             <Route path="configuracoes" element={<SystemSettingsPage />} />
-            <Route path="auditoria" element={<AuditLogsPage />} />
             <Route path="relatorios" element={<ReportsHubPage />} />
             <Route
               path="relatorios/clientes"

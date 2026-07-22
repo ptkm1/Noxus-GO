@@ -108,6 +108,55 @@ export async function deleteOfflineSaleRow(localId: string): Promise<void> {
   notifyOfflineOutboxChanged();
 }
 
+export async function getOfflineSaleRow(
+  localId: string,
+): Promise<OfflineQueueRow | null> {
+  return runOfflineDb(async (db) => {
+    const row = await db.getFirstAsync<{
+      local_id: string;
+      payload: string;
+      state: string;
+      attempts: number;
+      next_retry_at_ms: number;
+      last_error: string | null;
+      server_order_id: string | null;
+      created_at_ms: number;
+      updated_at_ms: number;
+    }>(`SELECT * FROM offline_sale_outbox WHERE local_id = ?`, [localId]);
+    return row ? rowFromDb(row) : null;
+  }, null);
+}
+
+/**
+ * Atualiza o payload (itens/snapshot) de um pedido ainda na fila local.
+ * Falha se o registo não existir (já sincronizado/apagado) ou estiver em
+ * syncing/sent — pedidos enviados ao servidor não são editáveis.
+ */
+export async function updateOfflineSalePayload(
+  localId: string,
+  payload: OfflineSaleQueuePayload,
+): Promise<boolean> {
+  const ok = await runOfflineDb(async (db) => {
+    const existing = await db.getFirstAsync<{ state: string }>(
+      `SELECT state FROM offline_sale_outbox WHERE local_id = ?`,
+      [localId],
+    );
+    if (!existing) return false;
+    if (existing.state !== "queued" && existing.state !== "dead") return false;
+    const now = Date.now();
+    await db.runAsync(
+      `UPDATE offline_sale_outbox
+       SET payload = ?, state = 'queued', attempts = 0, next_retry_at_ms = 0,
+           last_error = NULL, updated_at_ms = ?
+       WHERE local_id = ?`,
+      [JSON.stringify(payload), now, localId],
+    );
+    return true;
+  }, false);
+  if (ok) notifyOfflineOutboxChanged();
+  return ok;
+}
+
 export async function claimRowsForSync(
   nowMs: number,
   batch = 8,

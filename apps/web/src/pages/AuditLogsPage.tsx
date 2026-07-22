@@ -44,7 +44,11 @@ function dayEndIso(isoDate: string): string | undefined {
   return d.toISOString();
 }
 
-export function AuditLogsPage() {
+type AuditLogsPanelProps = {
+  embedded?: boolean;
+};
+
+export function AuditLogsPanel({ embedded = false }: AuditLogsPanelProps) {
   const [action, setAction] = useState("");
   const [entityType, setEntityType] = useState("");
   const [matricula, setMatricula] = useState("");
@@ -105,12 +109,18 @@ export function AuditLogsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">Auditoria</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+      {embedded ? (
+        <p className="text-sm text-muted-foreground">
           Histórico de criações, edições e exclusões no painel e no app.
         </p>
-      </div>
+      ) : (
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Auditoria</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Histórico de criações, edições e exclusões no painel e no app.
+          </p>
+        </div>
+      )}
 
       <div className="surface-card grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <FormField label="Ação" htmlFor="audit-action">
@@ -211,7 +221,7 @@ export function AuditLogsPage() {
             <TableBody>
               {items.map((row) => {
                 const href = auditEntityHref(row.entityType, row.entityId);
-                const matricula =
+                const mat =
                   row.userMatricula?.trim() ||
                   row.user?.matricula?.trim() ||
                   null;
@@ -261,9 +271,9 @@ export function AuditLogsPage() {
                             {row.user.email}
                           </span>
                         ) : null}
-                        {matricula ? (
+                        {mat ? (
                           <span className="font-mono text-xs text-muted-foreground">
-                            {matricula}
+                            {mat}
                           </span>
                         ) : null}
                       </div>
@@ -311,4 +321,8 @@ export function AuditLogsPage() {
       ) : null}
     </div>
   );
+}
+
+export function AuditLogsPage() {
+  return <AuditLogsPanel />;
 }

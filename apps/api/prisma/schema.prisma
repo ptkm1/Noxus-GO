@@ -32,6 +32,19 @@ enum OrderSyncMode {
   MANUAL
 }
 
+/// Cadastro de cliente pelo vendedor: imediato ou aguarda validação no escritório.
+enum CustomerRegistrationMode {
+  AUTO
+  REQUIRE_APPROVAL
+}
+
+/// Estado de validação do cadastro do cliente (escritório).
+enum CustomerApprovalStatus {
+  APPROVED
+  PENDING
+  REJECTED
+}
+
 enum CreditTitleStatus {
   OPEN
   PAID
@@ -170,6 +183,12 @@ model Organization {
   defaultMaxSellerDiscountPercent Decimal @default(50) @db.Decimal(5, 2)
   /// AUTO = tenta enviar na hora + auto-flush da fila; MANUAL = sempre fila local até sync manual.
   orderSyncMode    OrderSyncMode      @default(AUTO)
+  /// Se false, vendedores só veem clientes atribuídos a eles (sem “carteira” / sellerId null).
+  sellerShowUnassignedCustomers Boolean @default(true)
+  /// AUTO = cadastro do vendedor já aprovado; REQUIRE_APPROVAL = fica pendente até o escritório validar.
+  customerRegistrationMode CustomerRegistrationMode @default(AUTO)
+  /// Se true, o vendedor pode editar quantidades de vendas na fila offline antes de sincronizar.
+  sellerCanEditQueuedSales Boolean @default(false)
   /// TODO futuro: CNPJ do emitente para NF-e real / certificado.
   cnpj             String?
   /// TODO futuro: Inscrição estadual do emitente.
@@ -244,6 +263,7 @@ model User {
   pushDevices    PushDevice[]
   stockMovements StockMovement[]
   auditLogs      AuditLog[]
+  approvedCustomers Customer[] @relation("CustomerApprovedBy")
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -766,8 +786,18 @@ model Customer {
   stateRegistration String?
   buyerName      String?
   notes          String?
+  /// Validação do cadastro (default APPROVED para clientes já existentes / criados pelo admin).
+  approvalStatus CustomerApprovalStatus @default(APPROVED)
+  approvalNote   String?
+  approvedAt     DateTime?
+  approvedByUserId String?
+  approvedBy     User?              @relation("CustomerApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  rejectedAt     DateTime?
+  rejectionReason String?
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
+
+  @@index([organizationId, approvalStatus])
 
   @@unique([organizationId, cnpj])
   @@unique([organizationId, cpf])
@@ -898,7 +928,7 @@ model Notification {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String
   body      String
-  /// SALE_CONFIRMED | CREDIT_PENDING | GOAL_UPDATED | CREDIT_RESOLVED | …
+  /// SALE_CONFIRMED | CREDIT_PENDING | GOAL_UPDATED | CREDIT_RESOLVED | CUSTOMER_PENDING_APPROVAL | …
   type      String   @default("GENERIC")
   data      Json?
   read      Boolean  @default(false)
