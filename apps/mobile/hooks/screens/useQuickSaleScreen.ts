@@ -187,6 +187,14 @@ export function useQuickSaleScreen() {
     queryFn: () => fetchSellerCustomers() as Promise<SaleCustomer[]>,
   });
 
+  useEffect(() => {
+    if (!customerId || customers.length === 0) return;
+    const c = customers.find((x) => x.id === customerId);
+    if (c?.approvalStatus && c.approvalStatus !== "APPROVED") {
+      setCustomerIdState(undefined);
+    }
+  }, [customerId, customers]);
+
   const { data: paymentConditions = [] } = useQuery({
     queryKey: ["seller", "payment-conditions"],
     staleTime: sellerOfflineStaleTime,
