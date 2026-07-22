@@ -140,6 +140,8 @@ export async function flushOfflineSaleOutbox(
     for (const row of rows) {
       const payload = {
         customerId: row.payload.customerId,
+        paymentConditionId: row.payload.paymentConditionId,
+        operation: row.payload.operation ?? "SALE",
         status: row.payload.status,
         notes: row.payload.notes,
         items: row.payload.items,

@@ -195,6 +195,33 @@ async function main() {
   await upsertFiscalDemoData(org.id);
   await upsertDemoFiscalLookups(org.id);
 
+  const paymentConditionsSeed = [
+    { code: "1", name: "A VISTA", days: 0, sortOrder: 1 },
+    { code: "8", name: "BL 7 DIAS", days: 7, sortOrder: 2 },
+    { code: "5", name: "BL 14 DIAS", days: 14, sortOrder: 3 },
+    { code: "6", name: "BL 14/21 DIAS", days: 14, sortOrder: 4 },
+    { code: "13", name: "BL 14/21/28 DIAS", days: 14, sortOrder: 5 },
+    { code: "2", name: "BL 21 DIAS", days: 21, sortOrder: 6 },
+    { code: "10", name: "BL 21/28", days: 21, sortOrder: 7 },
+    { code: "4", name: "BL 28 DIAS", days: 28, sortOrder: 8 },
+    { code: "3", name: "BL 7/14 DIAS", days: 7, sortOrder: 9 },
+    { code: "7", name: "BL 7/14/21 DIAS", days: 7, sortOrder: 10 },
+  ];
+  for (const pc of paymentConditionsSeed) {
+    await prisma.paymentCondition.upsert({
+      where: {
+        organizationId_code: { organizationId: org.id, code: pc.code },
+      },
+      create: { organizationId: org.id, ...pc },
+      update: {
+        name: pc.name,
+        days: pc.days,
+        sortOrder: pc.sortOrder,
+        active: true,
+      },
+    });
+  }
+
   const adminPass = await bcrypt.hash(DEMO_ADMIN_PASSWORD, 10);
   const sellerPass = await bcrypt.hash(DEMO_SELLER_PASSWORD, 10);
   const managerPass = await bcrypt.hash(DEMO_MANAGER_PASSWORD, 10);

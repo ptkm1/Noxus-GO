@@ -12,6 +12,7 @@ import {
   Navigation,
   Package,
   Receipt,
+  Settings,
   Shield,
   ShoppingCart,
   Table,
@@ -21,6 +22,7 @@ import {
   UserCog,
   Users,
   UsersRound,
+  Wallet,
   Warehouse,
 } from "lucide-react";
 
@@ -55,6 +57,12 @@ export const DASHBOARD_NAV: NavItem[] = [
     label: "Fornecedores",
     icon: Truck,
     resource: "suppliers",
+  },
+  {
+    to: "/condicoes-pagamento",
+    label: "Condições de pagamento",
+    icon: Wallet,
+    resource: "orders",
   },
   { to: "/estoque", label: "Estoque", icon: Warehouse, resource: "stock" },
   { to: "/vendedores", label: "Vendedores", icon: Users, resource: "sellers" },
@@ -122,6 +130,12 @@ export const DASHBOARD_NAV: NavItem[] = [
     icon: History,
     resource: "audit",
   },
+  {
+    to: "/configuracoes",
+    label: "Configurações",
+    icon: Settings,
+    resource: "permissions",
+  },
 ];
 
 export const TEAM_LEADER_NAV: NavItem[] = [
@@ -153,6 +167,7 @@ export function resourceForPath(pathname: string): PermissionResource | null {
   if (pathname.startsWith("/tabelas-preco")) return "price_tables";
   if (pathname.startsWith("/produtos")) return "products";
   if (pathname.startsWith("/fornecedores")) return "suppliers";
+  if (pathname.startsWith("/condicoes-pagamento")) return "orders";
   if (pathname.startsWith("/estoque")) return "stock";
   if (pathname.startsWith("/vendedores")) return "sellers";
   if (pathname.startsWith("/notificar-vendedores")) return "broadcast";
@@ -173,7 +188,11 @@ export function resourceForPath(pathname: string): PermissionResource | null {
     pathname.startsWith("/indicadores")
   )
     return "reports";
-  if (pathname.startsWith("/permissoes")) return "permissions";
+  if (
+    pathname.startsWith("/permissoes") ||
+    pathname.startsWith("/configuracoes")
+  )
+    return "permissions";
   if (pathname.startsWith("/auditoria")) return "audit";
   return null;
 }
@@ -184,7 +203,8 @@ export function navForRole(
   if (user?.isTeamLeader && user.role === "SELLER") return TEAM_LEADER_NAV;
   if (!user) return [];
 
-  return DASHBOARD_NAV.filter((item) =>
-    canRead(user.role, item.resource, user.permissions),
-  );
+  return DASHBOARD_NAV.filter((item) => {
+    if (item.to === "/configuracoes" && user.role !== "ADMIN") return false;
+    return canRead(user.role, item.resource, user.permissions);
+  });
 }

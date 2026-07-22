@@ -3,15 +3,18 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { AppState, Platform } from "react-native";
 import { useAuth } from "../context/AuthContext";
+import { useOrderSyncMode } from "../hooks/useOrderSyncMode";
 import { flushOfflineSaleOutbox } from "../lib/offline-sale-sync";
 
 /** Liga rede / volta ao primeiro plano / intervalo para drenar a fila SQLite de vendas. */
 export function OfflineSyncBootstrap() {
   const qc = useQueryClient();
   const { user, loading } = useAuth();
+  const { orderSyncMode } = useOrderSyncMode();
 
   useEffect(() => {
     if (Platform.OS === "web" || loading || !user) return;
+    if (orderSyncMode === "MANUAL") return;
 
     const run = () => {
       void flushOfflineSaleOutbox(qc).catch(() => {
@@ -36,7 +39,7 @@ export function OfflineSyncBootstrap() {
       subApp.remove();
       clearInterval(interval);
     };
-  }, [qc, user, loading]);
+  }, [qc, user, loading, orderSyncMode]);
 
   return null;
 }

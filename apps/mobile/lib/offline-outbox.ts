@@ -23,6 +23,8 @@ function rowFromDb(r: {
   } catch {
     payload = {
       clientMutationId: r.local_id,
+      customerId: "",
+      paymentConditionId: "",
       status: "CONFIRMED",
       items: [],
     };

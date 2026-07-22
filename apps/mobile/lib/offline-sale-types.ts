@@ -2,6 +2,7 @@
 
 export type OfflineSaleSnapshot = {
   customerLabel?: string;
+  paymentConditionLabel?: string;
   /** Linhas tipo "Nome × qty · R$ subtotal" */
   lineSummaries: string[];
   cartTotalApprox?: number;
@@ -9,7 +10,9 @@ export type OfflineSaleSnapshot = {
 
 export type OfflineSaleQueuePayload = {
   clientMutationId: string;
-  customerId?: string;
+  customerId: string;
+  paymentConditionId: string;
+  operation?: "SALE";
   status: "CONFIRMED";
   notes?: string;
   items: Array<{

@@ -4,27 +4,35 @@ import { ThemedText } from "@/components/atoms/ThemedText";
 import { fmtMoney } from "@/components/atoms/formatMoney";
 import { MobileHeader, MobileScreen, SafeScreen } from "@/components/layout";
 import { useOfflineQueueScreen } from "@/hooks/screens/useOfflineQueueScreen";
+import { useOrderSyncMode } from "@/hooks/useOrderSyncMode";
 import { useTheme } from "@/lib/theme";
 import { offlineQueueStateLabel } from "@/lib/utils/offline-queue-state";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
 export default function OfflineQueueScreen() {
   const { colors } = useTheme();
+  const { orderSyncMode } = useOrderSyncMode();
   const { rows, loading, syncing, busyId, syncNow, retryRow, discardRow } =
     useOfflineQueueScreen();
   const actionsBusy = syncing || busyId != null;
+  const manual = orderSyncMode === "MANUAL";
 
   return (
     <SafeScreen variant="tab">
       <MobileHeader
         title="Fila offline"
-        subtitle="Pedidos guardados sem rede"
+        subtitle={
+          manual
+            ? "Pedidos aguardando envio manual"
+            : "Pedidos guardados sem rede"
+        }
         showBack
       />
       <MobileScreen scroll noBottomInset>
         <ThemedText variant="bodySm" muted>
-          Pedidos guardados sem rede são enviados quando a ligação volta. Em
-          caso de erro de política, pode tentar de novo ou apagar.
+          {manual
+            ? "Envio manual ativo: os pedidos ficam nesta fila até você tocar em Sincronizar agora — mesmo com internet."
+            : "Pedidos guardados sem rede são enviados quando a ligação volta. Em caso de erro de política, pode tentar de novo ou apagar."}
         </ThemedText>
 
         <ThemedButton

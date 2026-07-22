@@ -417,6 +417,39 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true };
   });
 
+  /** Regras de sistema da org (sync de pedidos, etc.). */
+  app.get("/system-settings", async (req) => {
+    const auth = req.auth!;
+    const org = await prisma.organization.findUnique({
+      where: { id: auth.organizationId },
+      select: { orderSyncMode: true },
+    });
+    return {
+      orderSyncMode: org?.orderSyncMode ?? ("AUTO" as const),
+    };
+  });
+
+  app.patch("/system-settings", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        orderSyncMode: z.enum(["AUTO", "MANUAL"]).optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    if (body.data.orderSyncMode === undefined) {
+      return reply.status(400).send({ error: "Nada para atualizar" });
+    }
+
+    await prisma.organization.update({
+      where: { id: auth.organizationId },
+      data: { orderSyncMode: body.data.orderSyncMode },
+    });
+    return { ok: true, orderSyncMode: body.data.orderSyncMode };
+  });
+
   /**
    * Marca / whitelabel da própria organização (`organizationId` do token).
    * UI web: quando existir tela de configurações gerais, pode consumir este PATCH (campos todos opcionais).
@@ -945,6 +978,120 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
     await prisma.productCategory.delete({ where: { id } });
+    return reply.status(204).send();
+  });
+
+  /* --- Condições de pagamento --- */
+  app.get("/payment-conditions", async (req) => {
+    const auth = req.auth!;
+    return prisma.paymentCondition.findMany({
+      where: { organizationId: auth.organizationId },
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+    });
+  });
+
+  app.post("/payment-conditions", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        code: z.string().min(1),
+        name: z.string().min(1),
+        days: z.number().int().min(0).max(3650).optional(),
+        active: z.boolean().optional(),
+        sortOrder: z.number().int().min(0).max(9999).optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const code = body.data.code.trim();
+    if (!code.length)
+      return reply.status(400).send({ error: "Código é obrigatório" });
+
+    try {
+      return await prisma.paymentCondition.create({
+        data: {
+          organizationId: auth.organizationId,
+          code,
+          name: body.data.name.trim(),
+          days: body.data.days ?? 0,
+          active: body.data.active ?? true,
+          sortOrder: body.data.sortOrder ?? 0,
+        },
+      });
+    } catch {
+      return reply
+        .status(409)
+        .send({ error: "Já existe condição com esse código" });
+    }
+  });
+
+  app.patch("/payment-conditions/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        code: z.string().min(1).optional(),
+        name: z.string().min(1).optional(),
+        days: z.number().int().min(0).max(3650).optional(),
+        active: z.boolean().optional(),
+        sortOrder: z.number().int().min(0).max(9999).optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const existing = await prisma.paymentCondition.findFirst({
+      where: { id, organizationId: auth.organizationId },
+    });
+    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+
+    if (
+      body.data.code === undefined &&
+      body.data.name === undefined &&
+      body.data.days === undefined &&
+      body.data.active === undefined &&
+      body.data.sortOrder === undefined
+    ) {
+      return reply.status(400).send({
+        error: "Informe ao menos um campo para atualizar",
+      });
+    }
+
+    try {
+      return await prisma.paymentCondition.update({
+        where: { id },
+        data: {
+          ...(body.data.code !== undefined
+            ? { code: body.data.code.trim() }
+            : {}),
+          ...(body.data.name !== undefined
+            ? { name: body.data.name.trim() }
+            : {}),
+          ...(body.data.days !== undefined ? { days: body.data.days } : {}),
+          ...(body.data.active !== undefined
+            ? { active: body.data.active }
+            : {}),
+          ...(body.data.sortOrder !== undefined
+            ? { sortOrder: body.data.sortOrder }
+            : {}),
+        },
+      });
+    } catch {
+      return reply
+        .status(409)
+        .send({ error: "Já existe condição com esse código" });
+    }
+  });
+
+  app.delete("/payment-conditions/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const existing = await prisma.paymentCondition.findFirst({
+      where: { id, organizationId: auth.organizationId },
+    });
+    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+    await prisma.paymentCondition.delete({ where: { id } });
     return reply.status(204).send();
   });
 

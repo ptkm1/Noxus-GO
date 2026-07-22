@@ -239,7 +239,8 @@ export function adminPathToResource(
   if (path.startsWith("/customers") || path.startsWith("/credit"))
     return "customers";
   if (/^\/orders\/[^/]+\/pdf-80mm$/.test(path)) return "orders_print_80mm";
-  if (path.startsWith("/orders")) return "orders";
+  if (path.startsWith("/orders") || path.startsWith("/payment-conditions"))
+    return "orders";
   if (
     path.startsWith("/sellers") ||
     path.startsWith("/managers") ||
@@ -258,7 +259,8 @@ export function adminPathToResource(
     return "commissions";
   if (path.startsWith("/price-tables") || path.startsWith("/pricing"))
     return "price_tables";
-  if (path.startsWith("/permissions")) return "permissions";
+  if (path.startsWith("/permissions") || path.startsWith("/system-settings"))
+    return "permissions";
   if (path.startsWith("/audit")) return "audit";
   if (path.startsWith("/notifications/send")) return "broadcast";
   return null;

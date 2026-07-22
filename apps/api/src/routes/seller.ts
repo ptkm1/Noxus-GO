@@ -2,16 +2,16 @@ import type { OrderStatus } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import {
-  AUDIT_ACTION,
-  AUDIT_ENTITY,
-  auditFromAuth,
-} from "../services/audit-log.js";
 import { prisma } from "../db.js";
 import {
   notifyAdminsCreditPending,
   notifySaleConfirmed,
 } from "../services/admin-notifications.js";
+import {
+  AUDIT_ACTION,
+  AUDIT_ENTITY,
+  auditFromAuth,
+} from "../services/audit-log.js";
 import { buildSellerCommissionDashboard } from "../services/commission-dashboard.js";
 import {
   buildSellerCustomerCreditSnapshot,
@@ -31,7 +31,6 @@ import {
   sendOrderPdf80mmReply,
   sendOrderPdfReply,
 } from "../services/order-pdf-load.js";
-import { canReadEffective } from "../services/role-permissions.js";
 import {
   computeSaleOrder,
   OrderPricingError,
@@ -46,6 +45,7 @@ import {
   handleRegisterPushDevice,
   handleUnregisterPushDevice,
 } from "../services/push-device-routes.js";
+import { canReadEffective } from "../services/role-permissions.js";
 import { buildRouteDirections } from "../services/route-directions.js";
 import { greedyNearestRoute, haversineKm } from "../services/route-plan.js";
 import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
@@ -88,6 +88,18 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       logoUrl: org.logoUrl,
       primaryColor: org.primaryColor,
     };
+  });
+
+  /** Regras de sistema da org (sync de pedidos, etc.). */
+  app.get("/organization/settings", async (req, reply) => {
+    const auth = req.auth!;
+    const org = await prisma.organization.findFirst({
+      where: { id: auth.organizationId },
+      select: { orderSyncMode: true },
+    });
+    if (!org)
+      return reply.status(404).send({ error: "Organização não encontrada" });
+    return { orderSyncMode: org.orderSyncMode };
   });
 
   app.get("/me", async (req) => {
@@ -218,11 +230,45 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     return sendOrderPdf80mmReply(reply, order);
   });
 
+  app.get("/payment-conditions", async (req) => {
+    const auth = req.auth!;
+    let rows = await prisma.paymentCondition.findMany({
+      where: { organizationId: auth.organizationId, active: true },
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+    });
+    if (rows.length === 0) {
+      const defaults = [
+        { code: "1", name: "A VISTA", days: 0, sortOrder: 1 },
+        { code: "8", name: "BL 7 DIAS", days: 7, sortOrder: 2 },
+        { code: "5", name: "BL 14 DIAS", days: 14, sortOrder: 3 },
+        { code: "6", name: "BL 14/21 DIAS", days: 14, sortOrder: 4 },
+        { code: "2", name: "BL 21 DIAS", days: 21, sortOrder: 5 },
+        { code: "4", name: "BL 28 DIAS", days: 28, sortOrder: 6 },
+        { code: "3", name: "BL 7/14 DIAS", days: 7, sortOrder: 7 },
+        { code: "7", name: "BL 7/14/21 DIAS", days: 7, sortOrder: 8 },
+      ];
+      await prisma.paymentCondition.createMany({
+        data: defaults.map((d) => ({
+          organizationId: auth.organizationId,
+          ...d,
+        })),
+        skipDuplicates: true,
+      });
+      rows = await prisma.paymentCondition.findMany({
+        where: { organizationId: auth.organizationId, active: true },
+        orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+      });
+    }
+    return rows;
+  });
+
   app.post("/sales", async (req, reply) => {
     const auth = req.auth!;
     const body = z
       .object({
-        customerId: z.string().optional(),
+        customerId: z.string().min(1),
+        paymentConditionId: z.string().min(1),
+        operation: z.enum(["SALE"]).optional(),
         /** Idempotência — mesmo valor em replay devolve o mesmo pedido (offline queue). */
         clientMutationId: z.string().min(8).max(80).optional(),
         status: z.enum(["DRAFT", "CONFIRMED", "CANCELLED"]).optional(),
@@ -252,6 +298,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         include: {
           items: true,
           customer: true,
+          paymentCondition: true,
           seller: { include: { user: { select: { name: true } } } },
         },
       });
@@ -268,15 +315,26 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
-    if (body.data.customerId) {
-      const c = await prisma.customer.findFirst({
-        where: {
-          id: body.data.customerId,
-          organizationId: auth.organizationId,
-          OR: [{ sellerId: null }, { sellerId: auth.sellerId }],
-        },
-      });
-      if (!c) return reply.status(400).send({ error: "Cliente inválido" });
+    const c = await prisma.customer.findFirst({
+      where: {
+        id: body.data.customerId,
+        organizationId: auth.organizationId,
+        OR: [{ sellerId: null }, { sellerId: auth.sellerId }],
+      },
+    });
+    if (!c) return reply.status(400).send({ error: "Cliente inválido" });
+
+    const paymentCondition = await prisma.paymentCondition.findFirst({
+      where: {
+        id: body.data.paymentConditionId,
+        organizationId: auth.organizationId,
+        active: true,
+      },
+    });
+    if (!paymentCondition) {
+      return reply
+        .status(400)
+        .send({ error: "Condição de pagamento inválida" });
     }
 
     const allowed = await prisma.sellerProduct.findMany({
@@ -289,7 +347,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       const sale = await computeSaleOrder({
         organizationId: auth.organizationId,
         sellerId: auth.sellerId!,
-        customerId: body.data.customerId ?? null,
+        customerId: body.data.customerId,
         items: body.data.items.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
@@ -302,7 +360,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         "CONFIRMED") as OrderStatus;
       let creditHoldPayload: Prisma.InputJsonValue | undefined;
 
-      if (orderStatus === "CONFIRMED" && body.data.customerId) {
+      if (orderStatus === "CONFIRMED") {
         const ev = await evaluateOrderCredit({
           organizationId: auth.organizationId,
           customerId: body.data.customerId,
@@ -336,6 +394,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
           organizationId: auth.organizationId,
           sellerId: auth.sellerId!,
           customerId: body.data.customerId,
+          paymentConditionId: body.data.paymentConditionId,
+          operation: body.data.operation ?? "SALE",
           status: orderStatus,
           totalAmount: sale.netTotal,
           comboDiscountTotal: sale.comboDiscountTotal,
@@ -358,6 +418,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         include: {
           items: true,
           customer: true,
+          paymentCondition: true,
           seller: {
             include: {
               user: { select: { name: true } },

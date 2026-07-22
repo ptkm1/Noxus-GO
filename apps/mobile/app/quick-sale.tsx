@@ -7,6 +7,7 @@ import { AppToast } from "@/components/molecules/AppToast";
 import { CatalogFiltersModal } from "@/components/molecules/CatalogFiltersModal";
 import { CatalogViewModeToggle } from "@/components/molecules/CatalogViewModeToggle";
 import { CATALOG_SEARCH_PLACEHOLDER } from "@/lib/catalog-search";
+import type { QuickSaleTab } from "@/lib/sale/types";
 import {
   ChevronDown,
   ChevronUp,
@@ -17,11 +18,13 @@ import {
   Search,
   ShoppingCart,
   SlidersHorizontal,
+  X,
 } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Modal,
   Pressable,
   ScrollView,
   Text,
@@ -42,6 +45,12 @@ import type { SaleProduct } from "../lib/sale/types";
 import { useTheme } from "../lib/theme";
 import { createQuickSaleStyles } from "./_quick-sale.styles";
 
+const TABS: { id: QuickSaleTab; label: string }[] = [
+  { id: "clientes", label: "Clientes" },
+  { id: "produtos", label: "Produtos" },
+  { id: "finalizar", label: "Finalizar" },
+];
+
 export default function QuickSaleScreen() {
   const styles = useThemedStyles(createQuickSaleStyles);
   const { colors } = useTheme();
@@ -55,8 +64,7 @@ export default function QuickSaleScreen() {
 
   const cartExpandedMaxH = Math.min(windowHeight * 0.4, 280);
   const hasCart = s.cartLines.length > 0;
-  const filterActive =
-    catalog.categoryFilterIds.length > 0 || s.customerId != null;
+  const filterActive = catalog.categoryFilterIds.length > 0;
 
   useEffect(() => {
     if (!hasCart) setCartExpanded(false);
@@ -66,8 +74,9 @@ export default function QuickSaleScreen() {
     const padBottom = Math.max(s.insets.bottom, 12);
     let h = 10 + padBottom + 56;
     if (s.err || s.creditBlockedCheckout) h += 28;
-    if (hasCart) h += 52;
-    if (hasCart && cartExpanded) h += cartExpandedMaxH + 8;
+    if (hasCart && s.tab === "produtos") h += 52;
+    if (hasCart && cartExpanded && s.tab === "produtos")
+      h += cartExpandedMaxH + 8;
     return h;
   }, [
     s.insets.bottom,
@@ -76,71 +85,299 @@ export default function QuickSaleScreen() {
     hasCart,
     cartExpanded,
     cartExpandedMaxH,
+    s.tab,
   ]);
 
   const toastBottom = footerHeight + 8;
 
-  const header = (
-    <View style={styles.headerBlock}>
-      {s.customerId ? (
-        <Pressable onPress={s.openCustomerCredit} style={styles.creditLinkBtn}>
-          <Text style={styles.creditLinkTxt}>
-            {(s.customers.find((c) => c.id === s.customerId)?.name ??
-              "Cliente") + " · financeiro"}
-          </Text>
-        </Pressable>
-      ) : null}
-      {s.creditInfo && s.customerId ? (
-        <View
-          style={[
-            styles.creditBanner,
-            s.creditInfo.effectiveAction === "BLOCK"
-              ? styles.creditBannerDanger
-              : styles.creditBannerWarn,
-          ]}
-        >
-          <Text style={styles.creditBannerTitle}>Situação de crédito</Text>
-          {s.creditInfo.creditBlocked ? (
-            <Text style={styles.creditBannerTxt}>
-              • Cliente bloqueado pelo escritório.
+  const tabBar = (
+    <View style={styles.tabBar}>
+      {TABS.map((t) => {
+        const active = s.tab === t.id;
+        const locked =
+          t.id !== "clientes" && !s.customerId
+            ? true
+            : t.id === "finalizar" && !s.canAccessProducts;
+        return (
+          <Pressable
+            key={t.id}
+            style={[styles.tabItem, active && styles.tabItemActive]}
+            onPress={() => s.goTab(t.id)}
+            accessibilityState={{ selected: active, disabled: locked }}
+          >
+            <Text
+              style={[
+                styles.tabLabel,
+                active && styles.tabLabelActive,
+                locked && styles.tabLabelLocked,
+              ]}
+            >
+              {t.label}
             </Text>
-          ) : null}
-          <Text style={styles.creditBannerTxt}>
-            • Em aberto: R$ {fmtMoney(s.creditInfo.openBalance)}
-            {s.creditInfo.creditLimit != null
-              ? ` · Limite R$ ${fmtMoney(s.creditInfo.creditLimit)}`
-              : ""}
-          </Text>
-          {s.creditInfo.overdueCount > 0 ? (
-            <Text style={styles.creditBannerTxt}>
-              • {s.creditInfo.overdueCount} título(s) vencido(s) · R${" "}
-              {fmtMoney(s.creditInfo.overdueAmount)}
-            </Text>
-          ) : null}
-          {s.creditInfo.violations.map((v, i) => (
-            <Text key={`${v.code}-${i}`} style={styles.creditBannerTxt}>
-              • {v.message}
-            </Text>
-          ))}
-          {s.creditInfo.effectiveAction === "BLOCK" ? (
-            <Text style={styles.creditBannerBold}>
-              Não é possível confirmar este pedido.
-            </Text>
-          ) : s.creditInfo.effectiveAction === "APPROVAL" &&
-            s.creditInfo.violations.length > 0 ? (
-            <Text style={styles.creditBannerBold}>
-              Este pedido pode ser enviado para aprovação no escritório.
-            </Text>
-          ) : null}
-        </View>
-      ) : s.creditLoading && s.customerId ? (
-        <ActivityIndicator
-          style={{ marginVertical: 10 }}
-          color={colors.primary}
-        />
-      ) : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
 
-      <Text style={styles.sectionTitle}>Catálogo visual</Text>
+  const creditBlock =
+    s.customerId && s.creditInfo ? (
+      <View
+        style={[
+          styles.creditBanner,
+          s.creditInfo.effectiveAction === "BLOCK"
+            ? styles.creditBannerDanger
+            : styles.creditBannerWarn,
+        ]}
+      >
+        <Text style={styles.creditBannerTitle}>Situação de crédito</Text>
+        {s.creditInfo.creditBlocked ? (
+          <Text style={styles.creditBannerTxt}>
+            • Cliente bloqueado pelo escritório.
+          </Text>
+        ) : null}
+        <Text style={styles.creditBannerTxt}>
+          • Em aberto: R$ {fmtMoney(s.creditInfo.openBalance)}
+          {s.creditInfo.creditLimit != null
+            ? ` · Limite R$ ${fmtMoney(s.creditInfo.creditLimit)}`
+            : ""}
+        </Text>
+        {s.creditInfo.overdueCount > 0 ? (
+          <Text style={styles.creditBannerTxt}>
+            • {s.creditInfo.overdueCount} título(s) vencido(s) · R${" "}
+            {fmtMoney(s.creditInfo.overdueAmount)}
+          </Text>
+        ) : null}
+        {s.creditInfo.violations.map((v, i) => (
+          <Text key={`${v.code}-${i}`} style={styles.creditBannerTxt}>
+            • {v.message}
+          </Text>
+        ))}
+        {s.creditInfo.effectiveAction === "BLOCK" ? (
+          <Text style={styles.creditBannerBold}>
+            Não é possível confirmar este pedido.
+          </Text>
+        ) : s.creditInfo.effectiveAction === "APPROVAL" &&
+          s.creditInfo.violations.length > 0 ? (
+          <Text style={styles.creditBannerBold}>
+            Este pedido pode ser enviado para aprovação no escritório.
+          </Text>
+        ) : null}
+      </View>
+    ) : s.creditLoading && s.customerId ? (
+      <ActivityIndicator
+        style={{ marginVertical: 10 }}
+        color={colors.primary}
+      />
+    ) : null;
+
+  const clientesTab = (
+    <ScrollView
+      contentContainerStyle={styles.listContent}
+      keyboardShouldPersistTaps="handled"
+    >
+      {!s.selectedCustomer ? (
+        <>
+          <Text style={styles.sectionTitle}>Identificar cliente</Text>
+          <Text style={styles.microHint}>
+            A venda só pode ser iniciada após selecionar um cliente.
+          </Text>
+          <View style={styles.formGrid}>
+            <View style={styles.formFieldHalf}>
+              <Text style={styles.fieldLabel}>Código / busca</Text>
+              <ThemedTextInput
+                value={s.customerSearch.code}
+                onChangeText={(code) =>
+                  s.setCustomerSearch((prev) => ({ ...prev, code }))
+                }
+                placeholder="ID ou nome"
+                autoCapitalize="none"
+              />
+            </View>
+            <View style={styles.formFieldHalf}>
+              <Text style={styles.fieldLabel}>CNPJ / CPF</Text>
+              <ThemedTextInput
+                value={s.customerSearch.document}
+                onChangeText={(document) =>
+                  s.setCustomerSearch((prev) => ({ ...prev, document }))
+                }
+                placeholder="00.000.000/0000-00"
+                keyboardType="number-pad"
+              />
+            </View>
+            <View style={styles.formFieldFull}>
+              <Text style={styles.fieldLabel}>Razão social</Text>
+              <ThemedTextInput
+                value={s.customerSearch.legalName}
+                onChangeText={(legalName) =>
+                  s.setCustomerSearch((prev) => ({ ...prev, legalName }))
+                }
+              />
+            </View>
+            <View style={styles.formFieldFull}>
+              <Text style={styles.fieldLabel}>Nome fantasia</Text>
+              <ThemedTextInput
+                value={s.customerSearch.tradeName}
+                onChangeText={(tradeName) =>
+                  s.setCustomerSearch((prev) => ({ ...prev, tradeName }))
+                }
+              />
+            </View>
+            <View style={styles.formFieldFull}>
+              <Text style={styles.fieldLabel}>Cidade</Text>
+              <ThemedTextInput
+                value={s.customerSearch.city}
+                onChangeText={(city) =>
+                  s.setCustomerSearch((prev) => ({ ...prev, city }))
+                }
+              />
+            </View>
+          </View>
+
+          {s.lastCustomerEntity ? (
+            <Pressable
+              style={styles.lastCustomerBtn}
+              onPress={() => s.selectCustomer(s.lastCustomerEntity!.id)}
+            >
+              <Text style={styles.lastCustomerTxt}>
+                Último:{" "}
+                {s.lastCustomerEntity.tradeName || s.lastCustomerEntity.name}
+              </Text>
+            </Pressable>
+          ) : null}
+
+          <Text style={styles.subSection}>
+            Resultados ({s.filteredCustomers.length})
+          </Text>
+          {s.filteredCustomers.slice(0, 40).map((c) => (
+            <Pressable
+              key={c.id}
+              style={styles.customerResultRow}
+              onPress={() => s.selectCustomer(c.id)}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.customerResultName}>
+                  {c.tradeName || c.name}
+                </Text>
+                <Text style={styles.customerResultMeta}>
+                  {s.formatDoc(c)}
+                  {c.city ? ` · ${c.city}${c.state ? `/${c.state}` : ""}` : ""}
+                </Text>
+              </View>
+            </Pressable>
+          ))}
+          {s.filteredCustomers.length === 0 ? (
+            <Text style={styles.warn}>Nenhum cliente encontrado.</Text>
+          ) : null}
+        </>
+      ) : (
+        <>
+          {creditBlock}
+          <View style={styles.selectedCard}>
+            <View style={styles.selectedCardHeader}>
+              <Text style={styles.sectionTitle}>Cliente do pedido</Text>
+              <Pressable
+                onPress={s.clearCustomer}
+                hitSlop={10}
+                accessibilityLabel="Trocar cliente"
+              >
+                <X size={22} color={colors.danger} />
+              </Pressable>
+            </View>
+            <View style={styles.formGrid}>
+              <View style={styles.formFieldHalf}>
+                <Text style={styles.fieldLabel}>Código</Text>
+                <Text style={styles.readonlyValue}>
+                  {s.selectedCustomer.id.slice(-6).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.formFieldHalf}>
+                <Text style={styles.fieldLabel}>Documento</Text>
+                <Text style={styles.readonlyValue}>
+                  {s.formatDoc(s.selectedCustomer)}
+                </Text>
+              </View>
+              <View style={styles.formFieldFull}>
+                <Text style={styles.fieldLabel}>Razão social</Text>
+                <Text style={styles.readonlyValue}>
+                  {s.selectedCustomer.legalName || s.selectedCustomer.name}
+                </Text>
+              </View>
+              <View style={styles.formFieldFull}>
+                <Text style={styles.fieldLabel}>Nome fantasia</Text>
+                <Text style={styles.readonlyValue}>
+                  {s.selectedCustomer.tradeName || s.selectedCustomer.name}
+                </Text>
+              </View>
+              <View style={styles.formFieldFull}>
+                <Text style={styles.fieldLabel}>Cidade/UF</Text>
+                <Text style={styles.readonlyValue}>
+                  {s.selectedCustomer.city
+                    ? `${s.selectedCustomer.city}${
+                        s.selectedCustomer.state
+                          ? `/${s.selectedCustomer.state}`
+                          : ""
+                      }`
+                    : "—"}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={[styles.fieldLabel, { marginTop: 14 }]}>
+              Condição de pagamento
+            </Text>
+            <Pressable
+              style={styles.selectBtn}
+              onPress={() => s.setPaymentPickerOpen(true)}
+            >
+              <Text style={styles.selectBtnTxt} numberOfLines={1}>
+                {s.selectedPaymentCondition
+                  ? `${s.selectedPaymentCondition.code} - ${s.selectedPaymentCondition.name}`
+                  : "Selecione…"}
+              </Text>
+              <ChevronDown size={18} color={colors.textSecondary} />
+            </Pressable>
+
+            <Text style={[styles.fieldLabel, { marginTop: 12 }]}>
+              Operação do pedido
+            </Text>
+            <View style={styles.selectBtn}>
+              <Text style={styles.selectBtnTxt}>1 - VENDA</Text>
+            </View>
+
+            <Pressable
+              style={styles.creditLinkBtn}
+              onPress={s.openCustomerCredit}
+            >
+              <Text style={styles.creditLinkTxt}>
+                Mais informações / financeiro
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[styles.finalBtn, { marginTop: 12 }]}
+              onPress={() => s.goTab("produtos")}
+            >
+              <Text style={styles.finalTxt}>Continuar para produtos</Text>
+            </Pressable>
+          </View>
+        </>
+      )}
+      <View style={{ height: 100 }} />
+    </ScrollView>
+  );
+
+  const productsHeader = (
+    <View style={styles.headerBlock}>
+      {s.selectedCustomer ? (
+        <Text style={styles.customerChip}>
+          {s.selectedCustomer.tradeName || s.selectedCustomer.name}
+          {s.selectedPaymentCondition
+            ? ` · ${s.selectedPaymentCondition.name}`
+            : ""}
+        </Text>
+      ) : null}
+      <Text style={styles.sectionTitle}>Catálogo</Text>
       <View style={styles.searchRow}>
         <Search size={18} color={colors.iconMuted} style={styles.searchIcon} />
         <ThemedTextInput
@@ -174,10 +411,6 @@ export default function QuickSaleScreen() {
           />
         </Pressable>
       </View>
-      <Text style={styles.microHint}>
-        Toque na foto para adicionar 1 · dois toques rápidos somam 2. Coração
-        guarda nos favoritos (neste aparelho).
-      </Text>
 
       <CollapsibleCatalogSection
         title="Mais vendidos"
@@ -211,50 +444,115 @@ export default function QuickSaleScreen() {
     </View>
   );
 
+  const finalizarTab = (
+    <ScrollView
+      contentContainerStyle={styles.listContent}
+      keyboardShouldPersistTaps="handled"
+    >
+      <Text style={styles.sectionTitle}>Resumo do pedido</Text>
+      {s.selectedCustomer ? (
+        <View style={styles.summaryBox}>
+          <Text style={styles.summaryLine}>
+            Cliente:{" "}
+            <Text style={styles.summaryStrong}>
+              {s.selectedCustomer.tradeName || s.selectedCustomer.name}
+            </Text>
+          </Text>
+          <Text style={styles.summaryLine}>
+            Documento: {s.formatDoc(s.selectedCustomer)}
+          </Text>
+          <Text style={styles.summaryLine}>
+            Pagamento:{" "}
+            {s.selectedPaymentCondition
+              ? `${s.selectedPaymentCondition.code} - ${s.selectedPaymentCondition.name}`
+              : "—"}
+          </Text>
+          <Text style={styles.summaryLine}>Operação: 1 - VENDA</Text>
+        </View>
+      ) : null}
+      {creditBlock}
+      {s.cartLines.length === 0 ? (
+        <Text style={styles.warn}>Nenhum produto no carrinho.</Text>
+      ) : (
+        s.cartLines.map((line) => (
+          <View key={line.productId} style={styles.cartRow}>
+            <View style={styles.cartMain}>
+              <Text style={styles.cartName}>{line.name}</Text>
+              <Text style={styles.cartMeta}>
+                {line.qty} × R$ {fmtMoney(line.effectiveUnitPrice)}
+                {line.discountPercent > 0 ? ` · −${line.discountPercent}%` : ""}
+              </Text>
+            </View>
+            <Text style={styles.cartSummaryMeta}>
+              R$ {fmtMoney(s.cartLineTotal(line))}
+            </Text>
+          </View>
+        ))
+      )}
+      <Text style={styles.cartTotal}>Total R$ {fmtMoney(s.cartTotal)}</Text>
+      <View style={{ height: 120 }} />
+    </ScrollView>
+  );
+
   return (
     <SafeScreen variant="topOnly">
       <MobileHeader
-        title="Venda rápida"
-        subtitle="Montar pedido e carrinho"
+        title="Digitação de pedidos"
+        subtitle={
+          s.selectedCustomer
+            ? s.selectedCustomer.tradeName || s.selectedCustomer.name
+            : "Selecione o cliente"
+        }
         showBack
         rightAction={
-          <CatalogViewModeToggle
-            viewMode={viewMode}
-            onToggle={toggleViewMode}
-          />
+          s.tab === "produtos" ? (
+            <CatalogViewModeToggle
+              viewMode={viewMode}
+              onToggle={toggleViewMode}
+            />
+          ) : undefined
         }
       />
+      {tabBar}
       <KeyboardAvoidingScreen style={styles.flex} offset={8}>
-        <FlatList
-          key={viewMode}
-          numColumns={viewMode === "list" ? 1 : 2}
-          data={catalog.filteredProducts}
-          keyExtractor={(item) => item.id}
-          ListHeaderComponent={header}
-          ListFooterComponent={<View style={{ height: footerHeight + 16 }} />}
-          contentContainerStyle={styles.listContent}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          columnWrapperStyle={
-            viewMode === "list"
-              ? undefined
-              : { gap: layout.catalogGap, marginBottom: layout.catalogGap }
-          }
-          renderItem={({ item: p }) => (
-            <ProductCatalogTile
-              variant={viewMode === "list" ? "list" : "grid"}
-              tileWidth={viewMode === "list" ? layout.listTileW : layout.tileW}
-              product={p}
-              favorite={catalog.favoriteIds.has(p.id)}
-              onToggleFavorite={() => catalog.toggleFavorite(p.id)}
-              onAddPress={() => s.scheduleProductTap(p)}
-              qtyInCart={s.cartQtyByProductId[p.id]}
-            />
-          )}
-          ListEmptyComponent={
-            <Text style={styles.warn}>{s.emptyCatalogMessage}</Text>
-          }
-        />
+        {s.tab === "clientes" ? clientesTab : null}
+
+        {s.tab === "produtos" ? (
+          <FlatList
+            key={viewMode}
+            numColumns={viewMode === "list" ? 1 : 2}
+            data={catalog.filteredProducts}
+            keyExtractor={(item) => item.id}
+            ListHeaderComponent={productsHeader}
+            ListFooterComponent={<View style={{ height: footerHeight + 16 }} />}
+            contentContainerStyle={styles.listContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            columnWrapperStyle={
+              viewMode === "list"
+                ? undefined
+                : { gap: layout.catalogGap, marginBottom: layout.catalogGap }
+            }
+            renderItem={({ item: p }) => (
+              <ProductCatalogTile
+                variant={viewMode === "list" ? "list" : "grid"}
+                tileWidth={
+                  viewMode === "list" ? layout.listTileW : layout.tileW
+                }
+                product={p}
+                favorite={catalog.favoriteIds.has(p.id)}
+                onToggleFavorite={() => catalog.toggleFavorite(p.id)}
+                onAddPress={() => s.scheduleProductTap(p)}
+                qtyInCart={s.cartQtyByProductId[p.id]}
+              />
+            )}
+            ListEmptyComponent={
+              <Text style={styles.warn}>{s.emptyCatalogMessage}</Text>
+            }
+          />
+        ) : null}
+
+        {s.tab === "finalizar" ? finalizarTab : null}
 
         <AppToast
           visible={!!s.scanMsg}
@@ -264,149 +562,158 @@ export default function QuickSaleScreen() {
           bottomOffset={toastBottom}
         />
 
-        <View
-          style={[
-            styles.footer,
-            { paddingBottom: Math.max(s.insets.bottom, 12) },
-          ]}
-        >
-          {hasCart ? (
-            <>
-              <Pressable
-                style={styles.cartSummaryBtn}
-                onPress={() => setCartExpanded((v) => !v)}
-                accessibilityRole="button"
-                accessibilityState={{ expanded: cartExpanded }}
-                accessibilityLabel="Carrinho"
-              >
-                <ShoppingCart
-                  size={18}
-                  color={colors.primary}
-                  strokeWidth={2.2}
-                />
-                <Text style={styles.cartSummaryText} numberOfLines={1}>
-                  Carrinho · {s.cartLines.length}{" "}
-                  {s.cartLines.length === 1 ? "item" : "itens"}
-                </Text>
-                <Text style={styles.cartSummaryMeta} numberOfLines={1}>
-                  R$ {fmtMoney(s.cartTotal)}
-                </Text>
-                {cartExpanded ? (
-                  <ChevronDown size={20} color={colors.textSecondary} />
-                ) : (
-                  <ChevronUp size={20} color={colors.textSecondary} />
-                )}
-              </Pressable>
-              {cartExpanded ? (
-                <View
-                  style={[
-                    styles.cartExpandedPanel,
-                    { maxHeight: cartExpandedMaxH },
-                  ]}
+        {(s.tab === "produtos" || s.tab === "finalizar") && (
+          <View
+            style={[
+              styles.footer,
+              { paddingBottom: Math.max(s.insets.bottom, 12) },
+            ]}
+          >
+            {hasCart && s.tab === "produtos" ? (
+              <>
+                <Pressable
+                  style={styles.cartSummaryBtn}
+                  onPress={() => setCartExpanded((v) => !v)}
                 >
-                  <ScrollView
-                    style={styles.cartExpandedScroll}
-                    nestedScrollEnabled
-                    keyboardShouldPersistTaps="handled"
+                  <ShoppingCart
+                    size={18}
+                    color={colors.primary}
+                    strokeWidth={2.2}
+                  />
+                  <Text style={styles.cartSummaryText} numberOfLines={1}>
+                    Carrinho · {s.cartLines.length}{" "}
+                    {s.cartLines.length === 1 ? "item" : "itens"}
+                  </Text>
+                  <Text style={styles.cartSummaryMeta} numberOfLines={1}>
+                    R$ {fmtMoney(s.cartTotal)}
+                  </Text>
+                  {cartExpanded ? (
+                    <ChevronDown size={20} color={colors.textSecondary} />
+                  ) : (
+                    <ChevronUp size={20} color={colors.textSecondary} />
+                  )}
+                </Pressable>
+                {cartExpanded ? (
+                  <View
+                    style={[
+                      styles.cartExpandedPanel,
+                      { maxHeight: cartExpandedMaxH },
+                    ]}
                   >
-                    {s.cartLines.map((line) => (
-                      <View key={line.productId} style={styles.cartRow}>
-                        <View style={styles.cartMain}>
-                          <Text style={styles.cartName} numberOfLines={2}>
-                            {line.name}
-                          </Text>
-                          <Text style={styles.cartMeta}>
-                            R$ {fmtMoney(line.effectiveUnitPrice)}
-                            {line.discountPercent > 0
-                              ? ` · −${line.discountPercent}%`
-                              : ""}
-                            {" · "}Subtotal R$ {fmtMoney(s.cartLineTotal(line))}
-                          </Text>
-                        </View>
-                        <View style={styles.cartActions}>
-                          <View style={styles.qtyRow}>
+                    <ScrollView
+                      style={styles.cartExpandedScroll}
+                      nestedScrollEnabled
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      {s.cartLines.map((line) => (
+                        <View key={line.productId} style={styles.cartRow}>
+                          <View style={styles.cartMain}>
+                            <Text style={styles.cartName} numberOfLines={2}>
+                              {line.name}
+                            </Text>
+                            <Text style={styles.cartMeta}>
+                              R$ {fmtMoney(line.effectiveUnitPrice)}
+                              {line.discountPercent > 0
+                                ? ` · −${line.discountPercent}%`
+                                : ""}
+                              {" · "}Subtotal R${" "}
+                              {fmtMoney(s.cartLineTotal(line))}
+                            </Text>
+                          </View>
+                          <View style={styles.cartActions}>
+                            <View style={styles.qtyRow}>
+                              <Pressable
+                                hitSlop={8}
+                                style={styles.iconBtn}
+                                onPress={() =>
+                                  s.bumpQty(s.cartProductStub(line), -1)
+                                }
+                              >
+                                <Minus
+                                  size={20}
+                                  color={colors.text}
+                                  strokeWidth={2.5}
+                                />
+                              </Pressable>
+                              <Text style={styles.qtyTxt}>{line.qty}</Text>
+                              <Pressable
+                                hitSlop={8}
+                                style={styles.iconBtn}
+                                onPress={() =>
+                                  s.bumpQty(s.cartProductStub(line), 1)
+                                }
+                              >
+                                <Plus
+                                  size={20}
+                                  color={colors.text}
+                                  strokeWidth={2.5}
+                                />
+                              </Pressable>
+                            </View>
                             <Pressable
-                              hitSlop={8}
-                              style={styles.iconBtn}
-                              onPress={() =>
-                                s.bumpQty(s.cartProductStub(line), -1)
-                              }
+                              style={styles.discBtn}
+                              onPress={() => s.cycleDiscount(line.productId)}
                             >
-                              <Minus
-                                size={20}
-                                color={colors.text}
-                                strokeWidth={2.5}
-                              />
-                            </Pressable>
-                            <Text style={styles.qtyTxt}>{line.qty}</Text>
-                            <Pressable
-                              hitSlop={8}
-                              style={styles.iconBtn}
-                              onPress={() =>
-                                s.bumpQty(s.cartProductStub(line), 1)
-                              }
-                            >
-                              <Plus
-                                size={20}
-                                color={colors.text}
-                                strokeWidth={2.5}
-                              />
+                              <Text style={styles.discBtnTxt}>
+                                Desc. {line.discountPercent}%
+                              </Text>
                             </Pressable>
                           </View>
-                          <Pressable
-                            style={styles.discBtn}
-                            onPress={() => s.cycleDiscount(line.productId)}
-                          >
-                            <Text style={styles.discBtnTxt}>
-                              Desc. {line.discountPercent}%
-                            </Text>
-                          </Pressable>
                         </View>
-                      </View>
-                    ))}
-                  </ScrollView>
-                </View>
-              ) : null}
-            </>
-          ) : null}
+                      ))}
+                    </ScrollView>
+                  </View>
+                ) : null}
+              </>
+            ) : null}
 
-          {s.err ? <Text style={styles.errFoot}>{s.err}</Text> : null}
-          {s.creditBlockedCheckout ? (
-            <Text style={styles.errFoot}>
-              Pedido bloqueado pela política de crédito.
-            </Text>
-          ) : null}
-          <Pressable
-            style={[
-              styles.finalBtn,
-              (s.cartLines.length === 0 ||
-                s.create.isPending ||
-                s.creditBlockedCheckout) &&
-                styles.finalBtnDis,
-            ]}
-            disabled={
-              s.cartLines.length === 0 ||
-              s.create.isPending ||
-              s.creditBlockedCheckout
-            }
-            onPress={s.finalize}
-          >
-            {s.create.isPending ? (
-              <ActivityIndicator color={colors.primaryForeground} />
-            ) : (
-              <View style={styles.finalInner}>
-                <ClipboardCheck
-                  color={colors.primaryForeground}
-                  size={22}
-                  strokeWidth={2}
-                />
+            {s.err ? <Text style={styles.errFoot}>{s.err}</Text> : null}
+            {s.creditBlockedCheckout ? (
+              <Text style={styles.errFoot}>
+                Pedido bloqueado pela política de crédito.
+              </Text>
+            ) : null}
+
+            {s.tab === "produtos" ? (
+              <Pressable
+                style={[
+                  styles.finalBtn,
+                  (!hasCart || !s.customerId) && styles.finalBtnDis,
+                ]}
+                disabled={!hasCart || !s.customerId}
+                onPress={() => s.goTab("finalizar")}
+              >
                 <Text style={styles.finalTxt}>
-                  Finalizar · R$ {fmtMoney(s.cartTotal)}
+                  Ir para finalizar · R$ {fmtMoney(s.cartTotal)}
                 </Text>
-              </View>
+              </Pressable>
+            ) : (
+              <Pressable
+                style={[
+                  styles.finalBtn,
+                  (!s.canFinalize || s.create.isPending) && styles.finalBtnDis,
+                ]}
+                disabled={!s.canFinalize || s.create.isPending}
+                onPress={s.finalize}
+              >
+                {s.create.isPending ? (
+                  <ActivityIndicator color={colors.primaryForeground} />
+                ) : (
+                  <View style={styles.finalInner}>
+                    <ClipboardCheck
+                      color={colors.primaryForeground}
+                      size={22}
+                      strokeWidth={2}
+                    />
+                    <Text style={styles.finalTxt}>
+                      Confirmar pedido · R$ {fmtMoney(s.cartTotal)}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
             )}
-          </Pressable>
-        </View>
+          </View>
+        )}
 
         <BarcodeScannerModal
           visible={s.barcodeOpen}
@@ -419,14 +726,60 @@ export default function QuickSaleScreen() {
           onClose={() => setFiltersOpen(false)}
           categories={catalog.catalogCategories}
           selectedCategoryIds={catalog.categoryFilterIds}
-          customers={s.customers}
-          selectedCustomerId={s.customerId}
-          lastCustomer={s.lastCustomerEntity}
-          onApply={({ categoryIds, customerId }) => {
+          onApply={({ categoryIds }) => {
             catalog.setCategoryFilterIds(categoryIds);
-            s.setCustomerId(customerId);
           }}
         />
+
+        <Modal
+          visible={s.paymentPickerOpen}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => s.setPaymentPickerOpen(false)}
+        >
+          <SafeScreen>
+            <MobileHeader
+              title="Condição de pagamento"
+              showBack
+              onBack={() => s.setPaymentPickerOpen(false)}
+            />
+            <FlatList
+              data={s.paymentConditions}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={{ padding: 16, gap: 4 }}
+              ListEmptyComponent={
+                <Text style={styles.warn}>
+                  Nenhuma condição cadastrada. Peça ao admin para rodar o seed
+                  ou cadastrar condições.
+                </Text>
+              }
+              renderItem={({ item }) => {
+                const active = item.id === s.paymentConditionId;
+                return (
+                  <Pressable
+                    style={[
+                      styles.paymentRow,
+                      active && styles.paymentRowActive,
+                    ]}
+                    onPress={() => {
+                      s.setPaymentConditionId(item.id);
+                      s.setPaymentPickerOpen(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.paymentRowTxt,
+                        active && styles.paymentRowTxtActive,
+                      ]}
+                    >
+                      {item.code} - {item.name}
+                    </Text>
+                  </Pressable>
+                );
+              }}
+            />
+          </SafeScreen>
+        </Modal>
       </KeyboardAvoidingScreen>
     </SafeScreen>
   );

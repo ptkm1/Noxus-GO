@@ -26,6 +26,12 @@ enum CreditPolicy {
   REQUIRE_APPROVAL
 }
 
+/// Como o app do vendedor envia pedidos ao servidor.
+enum OrderSyncMode {
+  AUTO
+  MANUAL
+}
+
 enum CreditTitleStatus {
   OPEN
   PAID
@@ -109,6 +115,11 @@ enum CustomerDocumentType {
   CPF
 }
 
+/// Tipo de operação comercial do pedido (digitação de vendas).
+enum OrderOperation {
+  SALE
+}
+
 /// Classificação comercial do produto (cadastro).
 enum ProductClassification {
   RESALE
@@ -157,6 +168,8 @@ model Organization {
   creditPolicy     CreditPolicy       @default(WARN_ONLY)
   /// Desconto máximo extra do vendedor (%) quando o produto não define `maxSellerDiscountPercent`.
   defaultMaxSellerDiscountPercent Decimal @default(50) @db.Decimal(5, 2)
+  /// AUTO = tenta enviar na hora + auto-flush da fila; MANUAL = sempre fila local até sync manual.
+  orderSyncMode    OrderSyncMode      @default(AUTO)
   /// TODO futuro: CNPJ do emitente para NF-e real / certificado.
   cnpj             String?
   /// TODO futuro: Inscrição estadual do emitente.
@@ -176,6 +189,7 @@ model Organization {
   sellerMonthlyGoals SellerMonthlyGoal[]
   customers        Customer[]
   orders           Order[]
+  paymentConditions PaymentCondition[]
   customerCreditTitles CustomerCreditTitle[]
   sellerCustomerVisits SellerCustomerVisit[]
   sellerLiveLocations  SellerLiveLocation[]
@@ -801,6 +815,26 @@ model SellerCustomerVisit {
   @@index([organizationId, checkedInAt])
 }
 
+/// Condição de pagamento cadastrada por organização (ex.: À vista, BL 7 dias).
+model PaymentCondition {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Código curto exibido na lista (ex.: "1", "8").
+  code           String
+  name           String
+  /// Prazo principal em dias (0 = à vista).
+  days           Int          @default(0)
+  active         Boolean      @default(true)
+  sortOrder      Int          @default(0)
+  orders         Order[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, code])
+  @@index([organizationId, active, sortOrder])
+}
+
 model Order {
   id             String       @id @default(cuid())
   status         OrderStatus  @default(DRAFT)
@@ -810,6 +844,9 @@ model Order {
   seller         Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   customerId     String?
   customer       Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  paymentConditionId String?
+  paymentCondition   PaymentCondition? @relation(fields: [paymentConditionId], references: [id], onDelete: SetNull)
+  operation      OrderOperation @default(SALE)
   totalAmount    Decimal      @db.Decimal(14, 2)
   /// Total descontado por combos aplicados sobre as linhas (já refletido em `totalAmount`).
   comboDiscountTotal Decimal   @default(0) @db.Decimal(14, 2)
@@ -832,6 +869,7 @@ model Order {
 
   @@unique([organizationId, orderNumber])
   @@index([organizationId, createdAt])
+  @@index([organizationId, paymentConditionId])
 }
 
 model OrderItem {

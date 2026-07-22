@@ -37,6 +37,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { OrderDetailPage } from "./pages/OrderDetailPage";
 import { OrdersPage } from "./pages/OrdersPage";
+import { PaymentConditionsPage } from "./pages/PaymentConditionsPage";
 import { PermissionsPage } from "./pages/PermissionsPage";
 import { PriceTablesPage } from "./pages/PriceTablesPage";
 import { ProductCategoriesPage } from "./pages/ProductCategoriesPage";
@@ -55,6 +56,7 @@ import { SellerTrackingPage } from "./pages/SellerTrackingPage";
 import { StockMovementsPage } from "./pages/StockMovementsPage";
 import { StockPage } from "./pages/StockPage";
 import { SuppliersPage } from "./pages/SuppliersPage";
+import { SystemSettingsPage } from "./pages/SystemSettingsPage";
 import { TeamsPage } from "./pages/TeamsPage";
 import { UsersPage } from "./pages/UsersPage";
 
@@ -196,6 +198,10 @@ function AppRoutes() {
             <Route path="estoque" element={<StockPage />} />
             <Route path="estoque/movimentos" element={<StockMovementsPage />} />
             <Route path="fornecedores" element={<SuppliersPage />} />
+            <Route
+              path="condicoes-pagamento"
+              element={<PaymentConditionsPage />}
+            />
             <Route path="fiscal" element={<FiscalHubPage />} />
             <Route
               path="fiscal/despesas-fixas"
@@ -224,6 +230,7 @@ function AppRoutes() {
             <Route path="clientes" element={<CustomersPage />} />
             <Route path="notificacoes" element={<NotificationsPage />} />
             <Route path="permissoes" element={<PermissionsPage />} />
+            <Route path="configuracoes" element={<SystemSettingsPage />} />
             <Route path="auditoria" element={<AuditLogsPage />} />
             <Route path="relatorios" element={<ReportsHubPage />} />
             <Route
