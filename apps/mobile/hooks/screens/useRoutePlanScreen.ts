@@ -2,9 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert } from "react-native";
 import type { RoutePlanMapRef } from "../../components/RoutePlanMap";
 import type { RouteListCustomer } from "../../components/molecules/RouteCustomerListItem";
+import { useConfirm } from "../../context/ConfirmContext";
 import { apiFetch } from "../../lib/api";
 import type {
   DirectionsRouteResp,
@@ -19,6 +19,7 @@ export type RouteRadiusKm = (typeof RADIUS_OPTIONS)[number];
 
 export function useRoutePlanScreen() {
   const router = useRouter();
+  const { alert, confirm, choose } = useConfirm();
   const qc = useQueryClient();
   const mapRef = useRef<RoutePlanMapRef>(null);
 
@@ -170,14 +171,17 @@ export function useRoutePlanScreen() {
             ];
       requestAnimationFrame(() => mapRef.current?.fitRoute(fit));
       if (data.source === "air_fallback") {
-        Alert.alert(
-          "Rota em linha reta",
-          data.disclaimer +
+        void alert({
+          title: "Rota em linha reta",
+          description:
+            data.disclaimer +
             "\n\nPara traçado pelas vias: GOOGLE_MAPS_SERVER_API_KEY em apps/api/.env + Routes API no Google Cloud. Reinicie a API.",
-        );
+        });
       }
     },
-    onError: (e: Error) => Alert.alert("Rota", e.message),
+    onError: (e: Error) => {
+      void alert({ title: "Rota", description: e.message, tone: "danger" });
+    },
   });
 
   const polyCoords = useMemo(() => {
@@ -236,41 +240,54 @@ export function useRoutePlanScreen() {
       try {
         await openNavigationApp(app, c.latitude, c.longitude, c.name);
       } catch (e) {
-        Alert.alert(
-          "Navegação",
-          e instanceof Error ? e.message : "Não foi possível abrir o app.",
-        );
+        await alert({
+          title: "Navegação",
+          description:
+            e instanceof Error ? e.message : "Não foi possível abrir o app.",
+          tone: "danger",
+        });
       }
     },
-    [],
+    [alert],
   );
 
   const submitCheckIn = useCallback(
     (customerId: string, notes?: string) => {
       if (myLat == null || myLng == null) {
-        Alert.alert("GPS", "Atualize a sua localização antes do check-in.");
+        void alert({
+          title: "GPS",
+          description: "Atualize a sua localização antes do check-in.",
+        });
         return;
       }
       checkIn.mutate(
         { customerId, latitude: myLat, longitude: myLng, notes },
-        { onError: (err: Error) => Alert.alert("Check-in", err.message) },
+        {
+          onError: (err: Error) => {
+            void alert({
+              title: "Check-in",
+              description: err.message,
+              tone: "danger",
+            });
+          },
+        },
       );
     },
-    [checkIn, myLat, myLng],
+    [alert, checkIn, myLat, myLng],
   );
 
   const requestCheckIn = useCallback(
     (c: RouteListCustomer) => {
       if (hasOpenVisit) {
-        Alert.alert(
-          "Visita em curso",
-          `Termine o check-out em ${activeVisit?.customerName} antes de iniciar outra visita.`,
-        );
+        void alert({
+          title: "Visita em curso",
+          description: `Termine o check-out em ${activeVisit?.customerName} antes de iniciar outra visita.`,
+        });
         return;
       }
       setCheckInModal({ id: c.id, name: c.name });
     },
-    [activeVisit?.customerName, hasOpenVisit],
+    [activeVisit?.customerName, alert, hasOpenVisit],
   );
 
   const submitCheckOut = useCallback(
@@ -285,19 +302,33 @@ export function useRoutePlanScreen() {
               : {}),
             notes,
           },
-          { onError: (e: Error) => Alert.alert("Check-out", e.message) },
+          {
+            onError: (e: Error) => {
+              void alert({
+                title: "Check-out",
+                description: e.message,
+                tone: "danger",
+              });
+            },
+          },
         );
 
       if (myLat == null || myLng == null) {
-        Alert.alert("GPS", "Encerrar sem gravar coordenadas de saída?", [
-          { text: "Cancelar", style: "cancel" },
-          { text: "Encerrar", onPress: finish },
-        ]);
+        void (async () => {
+          const ok = await confirm({
+            title: "GPS",
+            description: "Encerrar sem gravar coordenadas de saída?",
+            confirmLabel: "Encerrar",
+            cancelLabel: "Cancelar",
+            tone: "default",
+          });
+          if (ok) finish();
+        })();
         return;
       }
       finish();
     },
-    [activeVisit, checkOut, myLat, myLng],
+    [activeVisit, alert, checkOut, confirm, myLat, myLng],
   );
 
   const requestCheckOut = useCallback(() => {
@@ -315,23 +346,36 @@ export function useRoutePlanScreen() {
         assignedToMe: false,
       };
       const isActive = activeVisit?.customerId === full.id && hasOpenVisit;
-      Alert.alert(full.name, undefined, [
-        { text: "Ver cliente", onPress: () => openCustomer(full.id) },
-        {
-          text: "Google Maps",
-          onPress: () => void navigateToCustomer(full, "google"),
-        },
-        { text: "Waze", onPress: () => void navigateToCustomer(full, "waze") },
-        ...(isActive
-          ? [{ text: "Visita em curso", style: "cancel" as const }]
-          : hasOpenVisit
-            ? [{ text: "Check-in (visita aberta)", style: "cancel" as const }]
-            : [{ text: "Check-in", onPress: () => requestCheckIn(full) }]),
-        { text: "Fechar", style: "cancel" },
-      ]);
+      void (async () => {
+        const action = await choose({
+          title: full.name,
+          options: [
+            { id: "view", label: "Ver cliente" },
+            { id: "google", label: "Google Maps" },
+            { id: "waze", label: "Waze" },
+            isActive
+              ? { id: "checkin", label: "Visita em curso", disabled: true }
+              : hasOpenVisit
+                ? {
+                    id: "checkin",
+                    label: "Check-in (visita aberta)",
+                    disabled: true,
+                  }
+                : { id: "checkin", label: "Check-in" },
+          ],
+          cancelLabel: "Fechar",
+        });
+        if (action === "view") openCustomer(full.id);
+        else if (action === "google") void navigateToCustomer(full, "google");
+        else if (action === "waze") void navigateToCustomer(full, "waze");
+        else if (action === "checkin" && !isActive && !hasOpenVisit) {
+          requestCheckIn(full);
+        }
+      })();
     },
     [
       activeVisit?.customerId,
+      choose,
       filteredCustomers,
       hasOpenVisit,
       navigateToCustomer,

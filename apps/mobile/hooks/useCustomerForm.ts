@@ -17,7 +17,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Alert } from "react-native";
+import { useConfirm } from "@/context/ConfirmContext";
 
 function parseCoord(value: unknown): number | null {
   if (value == null) return null;
@@ -27,6 +27,7 @@ function parseCoord(value: unknown): number | null {
 
 export function useCustomerForm(customerId?: string) {
   const router = useRouter();
+  const { alert } = useConfirm();
   const qc = useQueryClient();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<CustomerFormValues>(emptyCustomerForm());
@@ -65,7 +66,11 @@ export function useCustomerForm(customerId?: string) {
   async function lookupCnpj() {
     const d = cnpjDigitsOnly(form.cnpj);
     if (!isValidCnpj(d)) {
-      Alert.alert("CNPJ inválido", "Informe um CNPJ válido com 14 dígitos.");
+      await alert({
+        title: "CNPJ inválido",
+        description: "Informe um CNPJ válido com 14 dígitos.",
+        tone: "danger",
+      });
       return;
     }
     setCnpjLoading(true);
@@ -89,10 +94,11 @@ export function useCustomerForm(customerId?: string) {
         city: data.municipio ?? form.city,
       });
     } catch (e) {
-      Alert.alert(
-        "Erro",
-        e instanceof Error ? e.message : "Falha na consulta.",
-      );
+      await alert({
+        title: "Erro",
+        description: e instanceof Error ? e.message : "Falha na consulta.",
+        tone: "danger",
+      });
     } finally {
       setCnpjLoading(false);
     }
@@ -103,10 +109,11 @@ export function useCustomerForm(customerId?: string) {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert(
-          "Permissão necessária",
-          "Ative a localização para gravar as coordenadas do cliente.",
-        );
+        await alert({
+          title: "Permissão necessária",
+          description:
+            "Ative a localização para gravar as coordenadas do cliente.",
+        });
         return;
       }
       const pos = await Location.getCurrentPositionAsync({
@@ -115,14 +122,16 @@ export function useCustomerForm(customerId?: string) {
       setLatitude(pos.coords.latitude);
       setLongitude(pos.coords.longitude);
     } catch (e) {
-      Alert.alert(
-        "Localização",
-        e instanceof Error ? e.message : "Não foi possível obter o GPS.",
-      );
+      await alert({
+        title: "Localização",
+        description:
+          e instanceof Error ? e.message : "Não foi possível obter o GPS.",
+        tone: "danger",
+      });
     } finally {
       setLocationLoading(false);
     }
-  }, []);
+  }, [alert]);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -158,17 +167,23 @@ export function useCustomerForm(customerId?: string) {
           "approvalStatus" in data &&
           data.approvalStatus === "PENDING";
         if (pending) {
-          Alert.alert(
-            "Cadastro enviado",
-            "Aguardando validação do escritório. O cliente só poderá ser usado em vendas após a aprovação.",
-            [{ text: "OK", onPress: () => router.replace("/(tabs)/customers") }],
-          );
+          void alert({
+            title: "Cadastro enviado",
+            description:
+              "Aguardando validação do escritório. O cliente só poderá ser usado em vendas após a aprovação.",
+          }).then(() => router.replace("/(tabs)/customers"));
         } else {
           router.replace("/(tabs)/customers");
         }
       }
     },
-    onError: (e: Error) => Alert.alert("Erro ao salvar", e.message),
+    onError: (e: Error) => {
+      void alert({
+        title: "Erro ao salvar",
+        description: e.message,
+        tone: "danger",
+      });
+    },
   });
 
   return {

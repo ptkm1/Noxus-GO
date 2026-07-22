@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Alert } from "react-native";
+import { useConfirm } from "../../context/ConfirmContext";
 import {
   deleteOfflineSaleRow,
   listOfflineSaleRows,
@@ -12,6 +12,7 @@ import { useOrderSyncMode } from "../useOrderSyncMode";
 
 export function useOfflineQueueScreen() {
   const router = useRouter();
+  const { confirm, alert } = useConfirm();
   const { settings } = useOrderSyncMode();
   const canEditQueued = settings?.sellerCanEditQueuedSales === true;
   const [rows, setRows] = useState<OfflineQueueRow[]>([]);
@@ -37,54 +38,51 @@ export function useOfflineQueueScreen() {
 
   const retryRow = useCallback(
     (localId: string) => {
-      Alert.alert(
-        "Repetir envio?",
-        "O servidor vai recalcular preços e crédito.",
-        [
-          { text: "Cancelar", style: "cancel" },
-          {
-            text: "Enviar",
-            onPress: () =>
-              void (async () => {
-                setBusyId(localId);
-                try {
-                  await reviveOfflineSaleRow(localId);
-                  refresh();
-                  await load();
-                  await syncNow();
-                } finally {
-                  setBusyId(null);
-                }
-              })(),
-          },
-        ],
-      );
+      void (async () => {
+        const ok = await confirm({
+          title: "Repetir envio?",
+          description: "O servidor vai recalcular preços e crédito.",
+          confirmLabel: "Enviar",
+          cancelLabel: "Cancelar",
+          tone: "default",
+        });
+        if (!ok) return;
+        setBusyId(localId);
+        try {
+          await reviveOfflineSaleRow(localId);
+          refresh();
+          await load();
+          await syncNow();
+        } finally {
+          setBusyId(null);
+        }
+      })();
     },
-    [load, refresh, syncNow],
+    [confirm, load, refresh, syncNow],
   );
 
   const discardRow = useCallback(
     (localId: string) => {
-      Alert.alert("Remover pedido da fila?", "Perde este registo offline.", [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Remover",
-          style: "destructive",
-          onPress: () =>
-            void (async () => {
-              setBusyId(localId);
-              try {
-                await deleteOfflineSaleRow(localId);
-                refresh();
-                await load();
-              } finally {
-                setBusyId(null);
-              }
-            })(),
-        },
-      ]);
+      void (async () => {
+        const ok = await confirm({
+          title: "Remover pedido da fila?",
+          description: "Perde este registo offline.",
+          confirmLabel: "Remover",
+          cancelLabel: "Cancelar",
+          tone: "destructive",
+        });
+        if (!ok) return;
+        setBusyId(localId);
+        try {
+          await deleteOfflineSaleRow(localId);
+          refresh();
+          await load();
+        } finally {
+          setBusyId(null);
+        }
+      })();
     },
-    [load, refresh],
+    [confirm, load, refresh],
   );
 
   const editRow = useCallback(
@@ -93,15 +91,16 @@ export function useOfflineQueueScreen() {
       const row = rows.find((r) => r.localId === localId);
       // Só pedidos ainda locais (fila / erro de validação) — nunca vendas já sincronizadas.
       if (!row || (row.state !== "queued" && row.state !== "dead")) {
-        Alert.alert(
-          "Edição indisponível",
-          "Só é possível editar pedidos na fila antes da sincronização.",
-        );
+        void alert({
+          title: "Edição indisponível",
+          description:
+            "Só é possível editar pedidos na fila antes da sincronização.",
+        });
         return;
       }
       router.push(`/(tabs)/vendas/offline-edit/${localId}`);
     },
-    [router, canEditQueued, rows],
+    [alert, router, canEditQueued, rows],
   );
 
   return {

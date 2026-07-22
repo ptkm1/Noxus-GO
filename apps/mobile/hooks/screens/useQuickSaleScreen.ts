@@ -3,9 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Crypto from "expo-crypto";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, useWindowDimensions } from "react-native";
+import { useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fmtMoney } from "../../components/atoms/formatMoney";
+import { useConfirm } from "../../context/ConfirmContext";
 import { useAppToast } from "../../context/ToastContext";
 import { apiFetch } from "../../lib/api";
 import { enqueueOfflineSale } from "../../lib/offline-outbox";
@@ -70,6 +71,7 @@ function formatDoc(c: SaleCustomer): string {
 export function useQuickSaleScreen() {
   const router = useRouter();
   const { showToast } = useAppToast();
+  const { alert } = useConfirm();
   const { customerId: customerIdParam, repeatSaleId: repeatSaleIdParam } =
     useLocalSearchParams<{
       customerId?: string;
@@ -153,7 +155,10 @@ export function useQuickSaleScreen() {
 
       const prefill = order ? buildRepeatSalePrefill(order) : null;
       if (!prefill) {
-        Alert.alert("Repetir venda", "Nenhuma venda anterior para repetir");
+        void alert({
+          title: "Repetir venda",
+          description: "Nenhuma venda anterior para repetir",
+        });
         return;
       }
 
@@ -174,7 +179,7 @@ export function useQuickSaleScreen() {
     return () => {
       cancelled = true;
     };
-  }, [qc, repeatSaleId, showToast]);
+  }, [alert, qc, repeatSaleId, showToast]);
 
   const { data: customers = [] } = useQuery({
     queryKey: ["seller", "customers"],
@@ -479,24 +484,25 @@ export function useQuickSaleScreen() {
       });
       void qc.invalidateQueries({ queryKey: ["seller", "customer-credit"] });
       if (data.mode === "offlineQueued") {
-        Alert.alert(
-          orderSyncMode === "MANUAL"
-            ? "Pedido na fila"
-            : "Pedido na fila offline",
-          orderSyncMode === "MANUAL"
-            ? "Envio manual ativo: toque em Sincronizar na fila de pedidos para enviar ao servidor."
-            : "Assim que houver internet, enviamos automaticamente. Veja em Início → Fila offline.",
-          [{ text: "OK", onPress: () => router.back() }],
-        );
+        void alert({
+          title:
+            orderSyncMode === "MANUAL"
+              ? "Pedido na fila"
+              : "Pedido na fila offline",
+          description:
+            orderSyncMode === "MANUAL"
+              ? "Envio manual ativo: toque em Sincronizar na fila de pedidos para enviar ao servidor."
+              : "Assim que houver internet, enviamos automaticamente. Veja em Início → Fila offline.",
+        }).then(() => router.back());
         setCart({});
         return;
       }
       if (data.status === "PENDING_CREDIT_APPROVAL") {
-        Alert.alert(
-          "Aguardando aprovação",
-          "O escritório precisa liberar este pedido por causa do crédito do cliente.",
-          [{ text: "OK", onPress: () => router.back() }],
-        );
+        void alert({
+          title: "Aguardando aprovação",
+          description:
+            "O escritório precisa liberar este pedido por causa do crédito do cliente.",
+        }).then(() => router.back());
         return;
       }
       showToast({

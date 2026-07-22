@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
-import { Alert } from "react-native";
+import { useConfirm } from "../../context/ConfirmContext";
 import { apiFetch, sharePdf } from "../../lib/api";
 import { isRepeatableSale } from "../../lib/repeat-sale";
 
@@ -27,6 +27,7 @@ export type SellerOrderDetail = {
 
 export function useSaleDetailScreen() {
   const router = useRouter();
+  const { alert } = useConfirm();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [pdfPending, setPdfPending] = useState(false);
   const [pdfErr, setPdfErr] = useState<string | null>(null);
@@ -54,14 +55,17 @@ export function useSaleDetailScreen() {
 
   const repeatThisSale = useCallback(() => {
     if (!id || !canRepeatSale) {
-      Alert.alert("Repetir venda", "Nenhuma venda anterior para repetir");
+      void alert({
+        title: "Repetir venda",
+        description: "Nenhuma venda anterior para repetir",
+      });
       return;
     }
     router.push({
       pathname: "/quick-sale",
       params: { repeatSaleId: id },
     });
-  }, [canRepeatSale, id, router]);
+  }, [alert, canRepeatSale, id, router]);
 
   return {
     order: query.data,

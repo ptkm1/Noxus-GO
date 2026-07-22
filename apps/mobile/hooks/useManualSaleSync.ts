@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
-import { Alert } from "react-native";
+import { useConfirm } from "../context/ConfirmContext";
 import { flushOfflineSaleOutbox } from "../lib/offline-sale-sync";
 import { useOfflineOutboxCounts } from "../lib/useOfflineOutboxCounts";
 import { useOrderSyncMode } from "./useOrderSyncMode";
@@ -26,6 +26,7 @@ export function useManualSaleSync(opts?: {
   onAfterSync?: () => void | Promise<void>;
 }) {
   const qc = useQueryClient();
+  const { alert } = useConfirm();
   const { pending, dead, refresh } = useOfflineOutboxCounts();
   const { orderSyncMode } = useOrderSyncMode();
   const [syncing, setSyncing] = useState(false);
@@ -45,18 +46,21 @@ export function useManualSaleSync(opts?: {
       refresh();
       await onAfterSyncRef.current?.();
       if (result.processed > 0 || result.stockBlocked > 0) {
-        Alert.alert(
-          "Sincronização",
-          syncSummaryMessage(result.sent, result.stockBlocked),
-        );
+        await alert({
+          title: "Sincronização",
+          description: syncSummaryMessage(result.sent, result.stockBlocked),
+        });
       } else {
-        Alert.alert("Sincronização", "Nada pendente para enviar agora.");
+        await alert({
+          title: "Sincronização",
+          description: "Nada pendente para enviar agora.",
+        });
       }
     } finally {
       syncingRef.current = false;
       setSyncing(false);
     }
-  }, [qc, refresh]);
+  }, [alert, qc, refresh]);
 
   return {
     syncNow,

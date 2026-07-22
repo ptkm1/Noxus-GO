@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert } from "react-native";
 import { fmtMoney } from "../../components/atoms/formatMoney";
+import { useConfirm } from "../../context/ConfirmContext";
 import {
   getOfflineSaleRow,
   updateOfflineSalePayload,
@@ -43,26 +43,17 @@ function parseUnitPriceFromSummary(
   return lineTotal / qty;
 }
 
-function leaveOfflineEdit(
-  router: ReturnType<typeof useRouter>,
-  message: string,
-) {
-  Alert.alert("Edição indisponível", message, [
-    {
-      text: "OK",
-      onPress: () => {
-        if (router.canGoBack()) {
-          router.back();
-        } else {
-          router.replace("/(tabs)/vendas/offline-queue");
-        }
-      },
-    },
-  ]);
+function navigateAwayFromOfflineEdit(router: ReturnType<typeof useRouter>) {
+  if (router.canGoBack()) {
+    router.back();
+  } else {
+    router.replace("/(tabs)/vendas/offline-queue");
+  }
 }
 
 export function useOfflineEditScreen(localId: string) {
   const router = useRouter();
+  const { alert } = useConfirm();
   const { settings, isLoading: settingsLoading } = useOrderSyncMode();
   const canEditQueued = settings?.sellerCanEditQueuedSales === true;
   const { refresh } = useOfflineOutboxCounts();
@@ -76,6 +67,17 @@ export function useOfflineEditScreen(localId: string) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const leaveOfflineEdit = useCallback(
+    async (message: string) => {
+      await alert({
+        title: "Edição indisponível",
+        description: message,
+      });
+      navigateAwayFromOfflineEdit(router);
+    },
+    [alert, router],
+  );
 
   const { data: products } = useQuery({
     queryKey: SELLER_PRODUCTS_BASE_KEY,
@@ -102,7 +104,7 @@ export function useOfflineEditScreen(localId: string) {
 
   useEffect(() => {
     if (!localId) {
-      leaveOfflineEdit(router, "Pedido inválido.");
+      void leaveOfflineEdit("Pedido inválido.");
       setLoading(false);
       setLoadError("Pedido inválido.");
       return;
@@ -119,7 +121,7 @@ export function useOfflineEditScreen(localId: string) {
           const msg =
             "A edição de pedidos na fila está desativada para esta organização.";
           setLoadError(msg);
-          leaveOfflineEdit(router, msg);
+          await leaveOfflineEdit(msg);
           return;
         }
 
@@ -130,7 +132,7 @@ export function useOfflineEditScreen(localId: string) {
           const msg =
             "Este pedido já foi sincronizado ou removido da fila e não pode mais ser editado.";
           setLoadError(msg);
-          leaveOfflineEdit(router, msg);
+          await leaveOfflineEdit(msg);
           return;
         }
         if (row.state !== "queued" && row.state !== "dead") {
@@ -140,7 +142,7 @@ export function useOfflineEditScreen(localId: string) {
               "Este pedido está sendo enviado e não pode ser editado.";
           }
           setLoadError(msg);
-          leaveOfflineEdit(router, msg);
+          await leaveOfflineEdit(msg);
           return;
         }
         setBasePayload(row.payload);
@@ -176,7 +178,7 @@ export function useOfflineEditScreen(localId: string) {
     };
     // productById intentionally delayed: first paint from snapshot; refresh names when cache arrives
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per localId; names patched below
-  }, [localId, canEditQueued, settingsLoading, router]);
+  }, [localId, canEditQueued, settingsLoading, leaveOfflineEdit]);
 
   useEffect(() => {
     if (productById.size === 0) return;
@@ -220,10 +222,10 @@ export function useOfflineEditScreen(localId: string) {
   const save = useCallback(async () => {
     if (!basePayload) return;
     if (lines.length === 0) {
-      Alert.alert(
-        "Carrinho vazio",
-        "Inclua ao menos um item ou apague o pedido na fila.",
-      );
+      await alert({
+        title: "Carrinho vazio",
+        description: "Inclua ao menos um item ou apague o pedido na fila.",
+      });
       return;
     }
     setSaving(true);
@@ -252,15 +254,13 @@ export function useOfflineEditScreen(localId: string) {
       };
       const ok = await updateOfflineSalePayload(localId, next);
       if (!ok) {
-        Alert.alert(
-          "Não foi possível salvar",
-          "O pedido pode ter sido sincronizado ou removido. Após o envio, a edição não é mais permitida.",
-        );
-        if (router.canGoBack()) {
-          router.back();
-        } else {
-          router.replace("/(tabs)/vendas/offline-queue");
-        }
+        await alert({
+          title: "Não foi possível salvar",
+          description:
+            "O pedido pode ter sido sincronizado ou removido. Após o envio, a edição não é mais permitida.",
+          tone: "danger",
+        });
+        navigateAwayFromOfflineEdit(router);
         return;
       }
       refresh();
@@ -269,6 +269,7 @@ export function useOfflineEditScreen(localId: string) {
       setSaving(false);
     }
   }, [
+    alert,
     basePayload,
     lines,
     customerLabel,
