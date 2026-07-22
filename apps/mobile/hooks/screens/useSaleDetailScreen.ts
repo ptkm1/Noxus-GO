@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
+import { Alert } from "react-native";
 import { apiFetch, sharePdf } from "../../lib/api";
+import { isRepeatableSale } from "../../lib/repeat-sale";
 
 export type SellerOrderDetail = {
   id: string;
@@ -11,9 +13,12 @@ export type SellerOrderDetail = {
   notes: string | null;
   creditHoldReasons?: unknown;
   createdAt: string;
+  customerId?: string | null;
+  paymentConditionId?: string | null;
   customer: { name: string } | null;
   items: {
     id: string;
+    productId: string;
     productName: string;
     quantity: number;
     unitPrice: unknown;
@@ -21,6 +26,7 @@ export type SellerOrderDetail = {
 };
 
 export function useSaleDetailScreen() {
+  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [pdfPending, setPdfPending] = useState(false);
   const [pdfErr, setPdfErr] = useState<string | null>(null);
@@ -44,11 +50,26 @@ export function useSaleDetailScreen() {
     }
   }, [id]);
 
+  const canRepeatSale = isRepeatableSale(query.data);
+
+  const repeatThisSale = useCallback(() => {
+    if (!id || !canRepeatSale) {
+      Alert.alert("Repetir venda", "Nenhuma venda anterior para repetir");
+      return;
+    }
+    router.push({
+      pathname: "/quick-sale",
+      params: { repeatSaleId: id },
+    });
+  }, [canRepeatSale, id, router]);
+
   return {
     order: query.data,
     isLoading: query.isLoading,
     pdfPending,
     pdfErr,
     shareOrderPdf,
+    canRepeatSale,
+    repeatThisSale,
   };
 }

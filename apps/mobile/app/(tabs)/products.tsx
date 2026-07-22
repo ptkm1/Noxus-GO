@@ -40,7 +40,9 @@ export default function ProductsScreen() {
     emptyMessage,
   } = useProductsScreen();
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const filterActive = catalog.categoryFilterIds.length > 0;
+  const filterActive =
+    catalog.categoryFilterIds.length > 0 ||
+    catalog.supplierFilterIds.length > 0;
 
   const header = (
     <View style={styles.header}>
@@ -179,8 +181,11 @@ export default function ProductsScreen() {
         onClose={() => setFiltersOpen(false)}
         categories={catalog.catalogCategories}
         selectedCategoryIds={catalog.categoryFilterIds}
-        onApply={({ categoryIds }) => {
+        suppliers={catalog.catalogSuppliers}
+        selectedSupplierIds={catalog.supplierFilterIds}
+        onApply={({ categoryIds, supplierIds }) => {
           catalog.setCategoryFilterIds(categoryIds);
+          catalog.setSupplierFilterIds(supplierIds);
         }}
       />
     </SafeScreen>

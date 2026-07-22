@@ -29,6 +29,7 @@ import {
   Package,
   Plus,
   RefreshCw,
+  RotateCcw,
   ShoppingCart,
   TrendingUp,
   Users,
@@ -49,6 +50,7 @@ export default function HomeScreen() {
     pending,
     dead,
     goQuickSale,
+    goRepeatSale,
     goOfflineQueue,
   } = useSalesListScreen();
 
@@ -235,6 +237,12 @@ export default function HomeScreen() {
             description="Montar pedido com cliente e carrinho"
             variant="primary"
             onPress={goQuickSale}
+          />
+          <QuickAction
+            icon={RotateCcw}
+            label="Repetir venda"
+            description="Escolher um pedido recente para pré-preencher"
+            onPress={goRepeatSale}
           />
           <QuickAction
             icon={Package}

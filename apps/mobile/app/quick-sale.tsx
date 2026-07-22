@@ -64,7 +64,9 @@ export default function QuickSaleScreen() {
 
   const cartExpandedMaxH = Math.min(windowHeight * 0.4, 280);
   const hasCart = s.cartLines.length > 0;
-  const filterActive = catalog.categoryFilterIds.length > 0;
+  const filterActive =
+    catalog.categoryFilterIds.length > 0 ||
+    catalog.supplierFilterIds.length > 0;
 
   useEffect(() => {
     if (!hasCart) setCartExpanded(false);
@@ -726,8 +728,11 @@ export default function QuickSaleScreen() {
           onClose={() => setFiltersOpen(false)}
           categories={catalog.catalogCategories}
           selectedCategoryIds={catalog.categoryFilterIds}
-          onApply={({ categoryIds }) => {
+          suppliers={catalog.catalogSuppliers}
+          selectedSupplierIds={catalog.supplierFilterIds}
+          onApply={({ categoryIds, supplierIds }) => {
             catalog.setCategoryFilterIds(categoryIds);
+            catalog.setSupplierFilterIds(supplierIds);
           }}
         />
 

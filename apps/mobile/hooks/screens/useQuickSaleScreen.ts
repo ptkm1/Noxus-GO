@@ -11,6 +11,10 @@ import { apiFetch } from "../../lib/api";
 import { enqueueOfflineSale } from "../../lib/offline-outbox";
 import { postSellerSale } from "../../lib/offline-sale-sync";
 import {
+  buildRepeatSalePrefill,
+  resolveRepeatSaleSource,
+} from "../../lib/repeat-sale";
+import {
   bumpCartQty,
   cartLineTotal,
   cycleCartLineDiscount,
@@ -66,9 +70,13 @@ function formatDoc(c: SaleCustomer): string {
 export function useQuickSaleScreen() {
   const router = useRouter();
   const { showToast } = useAppToast();
-  const { customerId: customerIdParam } = useLocalSearchParams<{
-    customerId?: string;
-  }>();
+  const { customerId: customerIdParam, repeatSaleId: repeatSaleIdParam } =
+    useLocalSearchParams<{
+      customerId?: string;
+      repeatSaleId?: string;
+    }>();
+  const repeatSaleId =
+    typeof repeatSaleIdParam === "string" ? repeatSaleIdParam : undefined;
   const qc = useQueryClient();
   const insets = useSafeAreaInsets();
   const layout = computeCatalogTileWidths(useWindowDimensions().width);
@@ -95,6 +103,7 @@ export function useQuickSaleScreen() {
   const productTapTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
+  const repeatAppliedRef = useRef<string | null>(null);
 
   const isOnline = useNetInfoOnline();
   const { orderSyncMode } = useOrderSyncMode();
@@ -108,10 +117,64 @@ export function useQuickSaleScreen() {
   }, []);
 
   useEffect(() => {
+    if (repeatSaleId) return;
     if (typeof customerIdParam === "string" && customerIdParam.length > 0) {
       setCustomerIdState(customerIdParam);
     }
-  }, [customerIdParam]);
+  }, [customerIdParam, repeatSaleId]);
+
+  useEffect(() => {
+    if (!repeatSaleId) return;
+    if (repeatAppliedRef.current === repeatSaleId) return;
+    let cancelled = false;
+
+    void (async () => {
+      const cachedList = qc.getQueryData<
+        {
+          id: string;
+          status: string;
+          customerId?: string | null;
+          paymentConditionId?: string | null;
+          items: {
+            productId?: string;
+            productName?: string;
+            quantity: number;
+            unitPrice?: unknown;
+          }[];
+        }[]
+      >(["seller", "sales"]);
+      const fromList = cachedList?.find((o) => o.id === repeatSaleId);
+      const order =
+        fromList?.items.some((i) => i.productId)
+          ? fromList
+          : await resolveRepeatSaleSource(repeatSaleId);
+
+      if (cancelled) return;
+
+      const prefill = order ? buildRepeatSalePrefill(order) : null;
+      if (!prefill) {
+        Alert.alert("Repetir venda", "Nenhuma venda anterior para repetir");
+        return;
+      }
+
+      repeatAppliedRef.current = repeatSaleId;
+      if (prefill.customerId) setCustomerIdState(prefill.customerId);
+      if (prefill.paymentConditionId) {
+        setPaymentConditionId(prefill.paymentConditionId);
+      }
+      setCart(prefill.cart);
+      setErr(null);
+      setTab(prefill.customerId ? "produtos" : "clientes");
+      showToast({
+        message: "Venda anterior carregada — edite e finalize",
+        tone: "success",
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [qc, repeatSaleId, showToast]);
 
   const { data: customers = [] } = useQuery({
     queryKey: ["seller", "customers"],

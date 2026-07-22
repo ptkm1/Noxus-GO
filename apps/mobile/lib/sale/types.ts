@@ -15,6 +15,12 @@ export type SaleProduct = {
   blockSaleWhenOutOfStock?: boolean;
   attributes?: Record<string, unknown>;
   category?: { id: string; code: string; name: string } | null;
+  supplier?: {
+    id: string;
+    code: string;
+    tradeName: string;
+    legalName?: string | null;
+  } | null;
   imageUrl?: string | null;
 };
 
