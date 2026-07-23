@@ -23,7 +23,10 @@ import {
   PRODUCT_DOUBLE_TAP_MS,
   syncCartLinesWithProducts,
 } from "../../lib/sale/cart";
-import { getProductStockBlockMessage } from "../../lib/sale/stock";
+import {
+  getCartStockBlockMessage,
+  getProductStockBlockMessage,
+} from "../../lib/sale/stock";
 import type {
   CartLine,
   CreditOverview,
@@ -332,24 +335,28 @@ export function useQuickSaleScreen() {
     !creditBlockedCheckout;
 
   const bumpQty = useCallback(
-    (p: SaleProduct, delta: number) => {
+    (p: SaleProduct, delta: number): boolean => {
       if (!customerId) {
         setErr("Selecione um cliente antes de adicionar produtos.");
         setTab("clientes");
-        return;
+        return false;
       }
-      setCart((prev) => {
-        const currentQty = prev[p.id]?.qty ?? 0;
-        const blockMsg = getProductStockBlockMessage(p, currentQty, delta);
-        if (blockMsg) {
-          setErr(blockMsg);
-          return prev;
-        }
-        setErr(null);
-        return bumpCartQty(prev, p, delta);
-      });
+      const currentQty = cart[p.id]?.qty ?? 0;
+      const blockMsg = getProductStockBlockMessage(p, currentQty, delta);
+      if (blockMsg) {
+        setErr(blockMsg);
+        void alert({
+          title: "Sem estoque",
+          description: blockMsg,
+          tone: "danger",
+        });
+        return false;
+      }
+      setErr(null);
+      setCart((prev) => bumpCartQty(prev, p, delta));
+      return true;
     },
-    [customerId],
+    [alert, cart, customerId],
   );
 
   const scheduleProductTap = useCallback(
@@ -393,29 +400,42 @@ export function useQuickSaleScreen() {
       const p = findProductByBarcode(products, raw);
       setBarcodeOpen(false);
       if (p && typeof p.effectiveUnitPrice === "number") {
-        bumpQty(p, 1);
-        setScanMsgOk(true);
-        setScanMsg(`Produto adicionado: ${p.name}`);
+        const added = bumpQty(p, 1);
+        if (added) {
+          setScanMsgOk(true);
+          setScanMsg(`Produto adicionado: ${p.name}`);
+        } else {
+          setScanMsgOk(false);
+          setScanMsg(
+            getProductStockBlockMessage(p, cart[p.id]?.qty ?? 0, 1) ??
+              `Não foi possível adicionar ${p.name}.`,
+          );
+        }
       } else {
         setScanMsgOk(false);
         setScanMsg(`Não existe produto com o código ${codeLabel} no sistema.`);
       }
     },
-    [products, bumpQty, customerId],
+    [cart, products, bumpQty, customerId],
   );
 
   const cartProductStub = useCallback(
-    (line: CartLine): SaleProduct => ({
-      id: line.productId,
-      name: line.name,
-      sku: line.sku,
-      effectiveUnitPrice: line.effectiveUnitPrice,
-      catalogUnitPrice: line.catalogUnitPrice,
-      promotionLabel: line.promotionLabel,
-      basePrice: null,
-      maxSellerDiscountPercentEffective: line.maxSellerDiscountPercent,
-    }),
-    [],
+    (line: CartLine): SaleProduct => {
+      const fromCatalog = products.find((p) => p.id === line.productId);
+      return {
+        id: line.productId,
+        name: line.name,
+        sku: line.sku ?? fromCatalog?.sku,
+        effectiveUnitPrice: line.effectiveUnitPrice,
+        catalogUnitPrice: line.catalogUnitPrice,
+        promotionLabel: line.promotionLabel,
+        basePrice: null,
+        maxSellerDiscountPercentEffective: line.maxSellerDiscountPercent,
+        stockQty: fromCatalog?.stockQty,
+        blockSaleWhenOutOfStock: fromCatalog?.blockSaleWhenOutOfStock,
+      };
+    },
+    [products],
   );
 
   const create = useMutation({
@@ -538,10 +558,36 @@ export function useQuickSaleScreen() {
       setTab("produtos");
       return;
     }
+    const stockMsg = getCartStockBlockMessage(cartLines, products);
+    if (stockMsg) {
+      setErr(stockMsg);
+      void alert({
+        title: "Sem estoque",
+        description: stockMsg,
+        tone: "danger",
+      });
+      setTab("produtos");
+      return;
+    }
     create.mutate(undefined, {
-      onError: (e) => setErr(e instanceof Error ? e.message : "Erro"),
+      onError: (e) => {
+        const msg = e instanceof Error ? e.message : "Erro";
+        setErr(msg);
+        void alert({
+          title: "Não foi possível finalizar",
+          description: msg,
+          tone: "danger",
+        });
+      },
     });
-  }, [create, customerId, paymentConditionId, cartLines.length]);
+  }, [
+    alert,
+    cartLines,
+    create,
+    customerId,
+    paymentConditionId,
+    products,
+  ]);
 
   const openCustomerCredit = useCallback(() => {
     if (customerId) router.push(`/customer/${customerId}`);

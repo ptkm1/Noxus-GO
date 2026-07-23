@@ -30,7 +30,6 @@ import { FaturamentoPage } from "./pages/FaturamentoPage";
 import { FiscalAccountsPayablePage } from "./pages/FiscalAccountsPayablePage";
 import { FiscalFixedExpensesPage } from "./pages/FiscalFixedExpensesPage";
 import { FiscalHubPage } from "./pages/FiscalHubPage";
-import { FiscalXmlPage } from "./pages/FiscalXmlPage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
@@ -210,7 +209,10 @@ function AppRoutes() {
               element={<FiscalAccountsPayablePage />}
             />
             <Route path="faturamento" element={<FaturamentoPage />} />
-            <Route path="faturamento/xml" element={<FiscalXmlPage />} />
+            <Route
+              path="faturamento/xml"
+              element={<Navigate to="/faturamento" replace />}
+            />
             <Route
               path="fiscal"
               element={<Navigate to="/financeiro" replace />}
@@ -225,7 +227,7 @@ function AppRoutes() {
             />
             <Route
               path="fiscal/xml"
-              element={<Navigate to="/faturamento/xml" replace />}
+              element={<Navigate to="/faturamento" replace />}
             />
             <Route path="comissao" element={<CommissionHubPage />} />
             <Route path="comissao/faixas" element={<CommissionTiersPage />} />

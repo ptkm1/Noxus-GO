@@ -116,6 +116,7 @@ export function buildSignedNfePackage(input: {
   recipient: Recipient;
   emitterName: string;
   accessKey?: string;
+  payment?: NfePaymentInfo;
 }) {
   const issuedAt = new Date();
   const accessKey =
@@ -135,6 +136,7 @@ export function buildSignedNfePackage(input: {
     emitterName: input.emitterName,
     accessKey,
     issuedAt,
+    payment: input.payment,
   });
 
   return { accessKey, infNFeXml: infNFe, issuedAt };
@@ -147,6 +149,7 @@ function buildInfNFe(input: {
   emitterName: string;
   accessKey: string;
   issuedAt: Date;
+  payment?: NfePaymentInfo;
 }) {
   const { config, invoice, recipient, accessKey, issuedAt, emitterName } =
     input;
@@ -278,8 +281,24 @@ function buildInfNFe(input: {
     </ICMSTot>
   </total>
   <transp><modFrete>9</modFrete></transp>
-  <pag><detPag><indPag>0</indPag><tPag>01</tPag><vPag>${formatNfeDecimal(total)}</vPag></detPag></pag>
+  ${buildPagXml(total, input.payment)}
 </infNFe>`;
+}
+
+export type NfePaymentInfo = {
+  /** Prazo em dias (0 = à vista). Derivado de PaymentCondition.days do pedido. */
+  days: number;
+  /** Código tPag NF-e (opcional; default: 01 à vista / 15 boleto a prazo). */
+  tPag?: string;
+};
+
+function buildPagXml(total: number, payment?: NfePaymentInfo): string {
+  const days = payment?.days ?? 0;
+  // indPag: 0=à vista, 1=a prazo
+  const indPag = days > 0 ? "1" : "0";
+  // tPag: 01=Dinheiro; 15=Boleto Bancário; 99=Outros
+  const tPag = payment?.tPag ?? (days > 0 ? "15" : "01");
+  return `<pag><detPag><indPag>${indPag}</indPag><tPag>${tPag}</tPag><vPag>${formatNfeDecimal(total)}</vPag></detPag></pag>`;
 }
 
 export function wrapEnviNFe(signedNFeXml: string, idLote = "1"): string {

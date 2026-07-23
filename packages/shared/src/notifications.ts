@@ -6,7 +6,9 @@ export const NOTIFICATION_TYPES = [
   "GOAL_UPDATED",
   "CREDIT_RESOLVED",
   "STOCK_EXPIRY",
+  "CERT_EXPIRY",
   "CUSTOMER_PENDING_APPROVAL",
+  "MORNING_BRIEF",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -45,8 +47,14 @@ export function notificationHref(
   if (n.type === "STOCK_EXPIRY") {
     return "/estoque";
   }
+  if (n.type === "CERT_EXPIRY") {
+    return "/faturamento";
+  }
   if (n.type === "CUSTOMER_PENDING_APPROVAL") {
     return "/clientes#pendentes";
+  }
+  if (n.type === "MORNING_BRIEF") {
+    return "/insights";
   }
   const m = n.body.match(/ORDER_ID:([^\s\n]+)/);
   return m?.[1] ? `/pedidos/${m[1]}` : null;

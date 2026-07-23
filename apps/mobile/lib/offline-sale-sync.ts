@@ -127,6 +127,8 @@ export type FlushOfflineSaleResult = {
   processed: number;
   sent: number;
   stockBlocked: number;
+  /** Mensagens de estoque (com nome do produto) da pré-checagem. */
+  stockBlockedReasons: string[];
 };
 
 export async function flushOfflineSaleOutbox(
@@ -137,6 +139,7 @@ export async function flushOfflineSaleOutbox(
     processed: 0,
     sent: 0,
     stockBlocked: 0,
+    stockBlockedReasons: [],
   };
   if (syncRunning) return empty;
   const token = await getAccessToken();
@@ -145,6 +148,7 @@ export async function flushOfflineSaleOutbox(
   let processed = 0;
   let sent = 0;
   let stockBlocked = 0;
+  const stockBlockedReasons: string[] = [];
   try {
     try {
       await releaseStaleSyncingClaims();
@@ -178,6 +182,7 @@ export async function flushOfflineSaleOutbox(
         if (stockError) {
           await resetOfflineSaleToQueued(row.localId, stockError);
           stockBlocked += 1;
+          stockBlockedReasons.push(stockError);
           processed += 1;
           continue;
         }
@@ -245,7 +250,7 @@ export async function flushOfflineSaleOutbox(
         }
       }
     }
-    return { processed, sent, stockBlocked };
+    return { processed, sent, stockBlocked, stockBlockedReasons };
   } finally {
     syncRunning = false;
   }

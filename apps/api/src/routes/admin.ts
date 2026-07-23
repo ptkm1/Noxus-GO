@@ -41,6 +41,7 @@ import {
   toCustomerPrismaData,
 } from "../services/customer-validation.js";
 import { buildDistributorInsights } from "../services/distributor-insights.js";
+import { getOrCreateMorningBrief } from "../services/morning-brief.js";
 import {
   AccountsPayableError,
   createAccountsPayable,
@@ -104,7 +105,12 @@ import {
   applyStockOnStatusChange,
   assertSufficientStock,
   StockError,
+  stockErrorPayload,
 } from "../services/product-stock.js";
+import {
+  ensureDefaultOrderSituations,
+  normalizeSituationCode,
+} from "../services/order-situations.js";
 import {
   handleRegisterPushDevice,
   handleUnregisterPushDevice,
@@ -1146,6 +1152,138 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return reply.status(204).send();
   });
 
+  /* --- Situações do pedido (operacional/logística) --- */
+  app.get("/order-situations", async (req) => {
+    const auth = req.auth!;
+    await ensureDefaultOrderSituations(auth.organizationId);
+    return prisma.orderSituation.findMany({
+      where: { organizationId: auth.organizationId },
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+    });
+  });
+
+  app.post("/order-situations", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        code: z.string().min(1),
+        name: z.string().min(1),
+        active: z.boolean().optional(),
+        sortOrder: z.number().int().min(0).max(9999).optional(),
+        mapsToCancel: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const code = normalizeSituationCode(body.data.code);
+    if (!code.length)
+      return reply.status(400).send({ error: "Código é obrigatório" });
+
+    await ensureDefaultOrderSituations(auth.organizationId);
+
+    try {
+      return await prisma.orderSituation.create({
+        data: {
+          organizationId: auth.organizationId,
+          code,
+          name: body.data.name.trim(),
+          active: body.data.active ?? true,
+          sortOrder: body.data.sortOrder ?? 0,
+          mapsToCancel: body.data.mapsToCancel ?? false,
+          isSystem: false,
+        },
+      });
+    } catch {
+      return reply
+        .status(409)
+        .send({ error: "Já existe situação com esse código" });
+    }
+  });
+
+  app.patch("/order-situations/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        code: z.string().min(1).optional(),
+        name: z.string().min(1).optional(),
+        active: z.boolean().optional(),
+        sortOrder: z.number().int().min(0).max(9999).optional(),
+        mapsToCancel: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const existing = await prisma.orderSituation.findFirst({
+      where: { id, organizationId: auth.organizationId },
+    });
+    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+
+    if (
+      body.data.code === undefined &&
+      body.data.name === undefined &&
+      body.data.active === undefined &&
+      body.data.sortOrder === undefined &&
+      body.data.mapsToCancel === undefined
+    ) {
+      return reply.status(400).send({
+        error: "Informe ao menos um campo para atualizar",
+      });
+    }
+
+    const nextCode =
+      body.data.code !== undefined
+        ? normalizeSituationCode(body.data.code)
+        : undefined;
+    if (nextCode !== undefined && !nextCode.length) {
+      return reply.status(400).send({ error: "Código é obrigatório" });
+    }
+
+    try {
+      return await prisma.orderSituation.update({
+        where: { id },
+        data: {
+          ...(nextCode !== undefined ? { code: nextCode } : {}),
+          ...(body.data.name !== undefined
+            ? { name: body.data.name.trim() }
+            : {}),
+          ...(body.data.active !== undefined
+            ? { active: body.data.active }
+            : {}),
+          ...(body.data.sortOrder !== undefined
+            ? { sortOrder: body.data.sortOrder }
+            : {}),
+          ...(body.data.mapsToCancel !== undefined
+            ? { mapsToCancel: body.data.mapsToCancel }
+            : {}),
+        },
+      });
+    } catch {
+      return reply
+        .status(409)
+        .send({ error: "Já existe situação com esse código" });
+    }
+  });
+
+  app.delete("/order-situations/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const existing = await prisma.orderSituation.findFirst({
+      where: { id, organizationId: auth.organizationId },
+    });
+    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+    if (existing.isSystem) {
+      return reply.status(400).send({
+        error:
+          "Situação padrão do sistema não pode ser excluída. Desative-a em vez disso.",
+      });
+    }
+    await prisma.orderSituation.delete({ where: { id } });
+    return reply.status(204).send();
+  });
+
   /* --- Produtos --- */
   const productRelationsInclude = {
     category: {
@@ -1669,7 +1807,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       return result;
     } catch (e) {
       if (e instanceof StockError)
-        return reply.status(400).send({ error: e.message });
+        return reply.status(400).send(stockErrorPayload(e));
       throw e;
     }
   });
@@ -4142,6 +4280,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       include: {
         seller: { include: { user: { select: { name: true, email: true } } } },
         customer: true,
+        situation: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            active: true,
+            mapsToCancel: true,
+          },
+        },
         items: { include: { product: true } },
         fiscalInvoices: {
           where: { direction: "OUTBOUND" },
@@ -4172,6 +4319,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       include: {
         seller: { include: { user: { select: { name: true, email: true } } } },
         customer: true,
+        situation: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            active: true,
+            mapsToCancel: true,
+          },
+        },
         items: { include: { product: true } },
       },
     });
@@ -4253,7 +4409,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       );
     } catch (e) {
       if (e instanceof StockError)
-        return reply.status(400).send({ error: e.message });
+        return reply.status(400).send(stockErrorPayload(e));
       throw e;
     }
 
@@ -4299,6 +4455,77 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return updated;
   });
 
+  app.patch("/orders/:id/situation", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        situationId: z.string().min(1).nullable(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const existing = await prisma.order.findFirst({
+      where: { id, organizationId: auth.organizationId },
+      select: { id: true, situationId: true },
+    });
+    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+
+    const situationId = body.data.situationId;
+    if (situationId) {
+      const situation = await prisma.orderSituation.findFirst({
+        where: {
+          id: situationId,
+          organizationId: auth.organizationId,
+        },
+      });
+      if (!situation) {
+        return reply.status(400).send({ error: "Situação inválida" });
+      }
+      if (!situation.active && situation.id !== existing.situationId) {
+        return reply
+          .status(400)
+          .send({ error: "Situação inválida ou inativa" });
+      }
+    }
+
+    const updated = await prisma.order.update({
+      where: { id },
+      data: { situationId },
+      include: {
+        situation: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            active: true,
+            mapsToCancel: true,
+          },
+        },
+        customer: true,
+        seller: {
+          include: {
+            user: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.UPDATE,
+      entityType: AUDIT_ENTITY.Order,
+      entityId: id,
+      metadata: {
+        field: "situationId",
+        fromSituationId: existing.situationId,
+        toSituationId: situationId,
+      },
+    });
+
+    return updated;
+  });
+
   app.delete("/orders/:id", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
@@ -4318,7 +4545,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       }
     } catch (e) {
       if (e instanceof StockError)
-        return reply.status(400).send({ error: e.message });
+        return reply.status(400).send(stockErrorPayload(e));
       throw e;
     }
 
@@ -4463,7 +4690,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       if (e instanceof OrderPricingError)
         return reply.status(400).send({ error: e.message });
       if (e instanceof StockError)
-        return reply.status(400).send({ error: e.message });
+        return reply.status(400).send(stockErrorPayload(e));
       throw e;
     }
   });
@@ -5065,6 +5292,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return buildDistributorInsights(auth.organizationId);
   });
 
+  /** Resumo matinal baseado em regras — 1 por org/dia (America/Sao_Paulo), lazy-generate. */
+  app.get("/insights/morning-brief", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({
+        error: "Resumo da manhã não disponível para líderes de equipe",
+      });
+    }
+    return getOrCreateMorningBrief(auth.organizationId);
+  });
+
   app.get("/reports/scorecard", async (req) => {
     const auth = req.auth!;
     const q = z
@@ -5370,6 +5608,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         groupByOrder: z
           .union([z.literal("1"), z.literal("true"), z.literal("0")])
           .optional(),
+        /** Comma-separated or repeated query: orderIds=a,b or orderIds=a&orderIds=b */
+        orderIds: z.union([z.string(), z.array(z.string())]).optional(),
       })
       .passthrough()
       .safeParse(req.query);
@@ -5377,6 +5617,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const extras = readExtraParams(
       (q.success ? q.data : req.query) as Record<string, unknown>,
     );
+    const orderIdsRaw = filters.orderIds;
+    const orderIds = orderIdsRaw
+      ? (Array.isArray(orderIdsRaw) ? orderIdsRaw : orderIdsRaw.split(","))
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : undefined;
     const pdf = await buildOrderItemsPdf({
       organizationId: auth.organizationId,
       sellerId: filters.sellerId,
@@ -5386,6 +5632,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       status: filters.status,
       groupByOrder:
         filters.groupByOrder === "1" || filters.groupByOrder === "true",
+      orderIds: orderIds?.length ? orderIds : undefined,
       extras,
     });
     return reply

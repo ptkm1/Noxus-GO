@@ -1,5 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { runCertificateExpiryAlerts } from "../services/cert-expiry-alerts.js";
+import { runMorningBriefJob } from "../services/morning-brief.js";
 import { runStockExpiryAlerts } from "../services/stock-expiry-alerts.js";
 
 function readCronSecret(req: {
@@ -42,6 +44,32 @@ export async function jobsRoutes(app: FastifyInstance) {
       .safeParse(req.body ?? {});
     const result = await runStockExpiryAlerts({
       organizationId: body.success ? body.data.organizationId : undefined,
+    });
+    return result;
+  });
+
+  app.post("/cert-expiry", async (req, reply) => {
+    if (!assertCronSecret(reply, readCronSecret(req))) return;
+    const body = z
+      .object({ organizationId: z.string().optional() })
+      .safeParse(req.body ?? {});
+    const result = await runCertificateExpiryAlerts({
+      organizationId: body.success ? body.data.organizationId : undefined,
+    });
+    return result;
+  });
+
+  app.post("/morning-brief", async (req, reply) => {
+    if (!assertCronSecret(reply, readCronSecret(req))) return;
+    const body = z
+      .object({
+        organizationId: z.string().optional(),
+        notify: z.boolean().optional(),
+      })
+      .safeParse(req.body ?? {});
+    const result = await runMorningBriefJob({
+      organizationId: body.success ? body.data.organizationId : undefined,
+      notify: body.success ? body.data.notify : undefined,
     });
     return result;
   });

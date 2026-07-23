@@ -41,3 +41,33 @@ export function isProductSaleBlockedByStock(
 ): boolean {
   return blockSaleWhenOutOfStock && stockQty <= 0;
 }
+
+/** Rótulo amigável: nome (+ código/SKU opcional). */
+export function formatProductStockItemLabel(
+  name: string,
+  code?: string | null,
+): string {
+  const label = name.trim() || "produto";
+  const c = typeof code === "string" ? code.trim() : "";
+  return c ? `${label} (${c})` : label;
+}
+
+/** Estoque zerado / acabou. */
+export function formatOutOfStockMessage(
+  name: string,
+  code?: string | null,
+): string {
+  return `O item ${formatProductStockItemLabel(name, code)} está sem estoque disponível.`;
+}
+
+/** Quantidade pedida maior que o disponível (ainda > 0). */
+export function formatInsufficientStockMessage(
+  name: string,
+  available: number,
+  requested: number,
+  code?: string | null,
+): string {
+  if (available <= 0) return formatOutOfStockMessage(name, code);
+  const label = formatProductStockItemLabel(name, code);
+  return `O item ${label} não tem estoque suficiente (disponível: ${available}, solicitado: ${requested}).`;
+}

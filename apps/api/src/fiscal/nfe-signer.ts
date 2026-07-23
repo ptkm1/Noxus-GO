@@ -97,6 +97,14 @@ export function signInfEvento(
   return signXmlBlock(infEventoXml, privateKeyPem, certPem, "evento");
 }
 
+export function signInfInut(
+  infInutXml: string,
+  privateKeyPem: string,
+  certPem: string,
+): string {
+  return signXmlBlock(infInutXml, privateKeyPem, certPem, "inutNFe");
+}
+
 export function parseSefazAuthorizationResponse(xml: string): {
   success: boolean;
   cStat?: string;

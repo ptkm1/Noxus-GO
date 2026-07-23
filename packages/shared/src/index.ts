@@ -140,7 +140,10 @@ export type {
   PermissionsMap,
 } from "./permissions.js";
 export {
+  formatInsufficientStockMessage,
+  formatOutOfStockMessage,
   formatProductPriceWithUnit,
+  formatProductStockItemLabel,
   formatProductStockLabel,
   formatProductUnitLabel,
   isProductSaleBlockedByStock,

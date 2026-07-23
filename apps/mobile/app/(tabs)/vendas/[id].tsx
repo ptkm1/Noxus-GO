@@ -65,10 +65,25 @@ export default function SaleDetailScreen() {
           <ThemedText variant="bodySm" muted>
             {new Date(order.createdAt).toLocaleString("pt-BR")} ·{" "}
             {orderStatusDetailLabel(order.status)}
+            {order.situation?.name ? ` · ${order.situation.name}` : ""}
           </ThemedText>
 
           <ThemedCard style={styles.card}>
-            <ThemedText variant="caption" muted>
+            {order.situation?.name ? (
+              <>
+                <ThemedText variant="caption" muted>
+                  Situação
+                </ThemedText>
+                <ThemedText variant="titleSm" style={{ marginTop: 4 }}>
+                  {order.situation.name}
+                </ThemedText>
+              </>
+            ) : null}
+            <ThemedText
+              variant="caption"
+              muted
+              style={order.situation?.name ? { marginTop: 12 } : undefined}
+            >
               Cliente
             </ThemedText>
             <ThemedText variant="titleSm" style={{ marginTop: 4 }}>

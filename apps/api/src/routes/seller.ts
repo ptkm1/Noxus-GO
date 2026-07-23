@@ -42,6 +42,7 @@ import {
   assertSufficientStock,
   getProductStockLevels,
   StockError,
+  stockErrorPayload,
 } from "../services/product-stock.js";
 import {
   handleRegisterPushDevice,
@@ -195,6 +196,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       include: {
         customer: true,
         items: true,
+        situation: {
+          select: { id: true, code: true, name: true },
+        },
       },
     });
   });
@@ -208,7 +212,13 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         sellerId: auth.sellerId!,
         organizationId: auth.organizationId,
       },
-      include: { customer: true, items: { include: { product: true } } },
+      include: {
+        customer: true,
+        items: { include: { product: true } },
+        situation: {
+          select: { id: true, code: true, name: true },
+        },
+      },
     });
     if (!order) return reply.status(404).send({ error: "Não encontrado" });
     return order;
@@ -529,7 +539,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       if (e instanceof OrderPricingError)
         return reply.status(400).send({ error: e.message });
       if (e instanceof StockError)
-        return reply.status(400).send({ error: e.message });
+        return reply.status(400).send(stockErrorPayload(e));
       throw e;
     }
   });

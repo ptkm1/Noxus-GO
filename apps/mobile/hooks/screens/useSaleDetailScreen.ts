@@ -9,6 +9,7 @@ export type SellerOrderDetail = {
   id: string;
   orderNumber?: number | null;
   status: string;
+  situation?: { id: string; code: string; name: string } | null;
   totalAmount: unknown;
   notes: string | null;
   creditHoldReasons?: unknown;

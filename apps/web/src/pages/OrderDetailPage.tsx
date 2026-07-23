@@ -23,10 +23,19 @@ import { ArrowLeft, Download, Printer } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
+type OrderSituation = {
+  id: string;
+  code: string;
+  name: string;
+  active: boolean;
+};
+
 type Order = {
   id: string;
   orderNumber?: number | null;
   status: string;
+  situationId?: string | null;
+  situation?: OrderSituation | null;
   totalAmount: unknown;
   notes: string | null;
   creditHoldReasons?: unknown;
@@ -96,6 +105,12 @@ export function OrderDetailPage() {
     enabled: !!orderId,
   });
 
+  const { data: situations = [] } = useQuery({
+    queryKey: ["admin", "order-situations"],
+    queryFn: () => apiFetch<OrderSituation[]>("/admin/order-situations"),
+    enabled: canWrite,
+  });
+
   const patchStatus = useMutation({
     mutationFn: (status: string) =>
       apiFetch(`/admin/orders/${orderId}/status`, {
@@ -111,6 +126,18 @@ export function OrderDetailPage() {
       void qc.invalidateQueries({
         queryKey: ["admin", "notifications-unread"],
       });
+    },
+  });
+
+  const patchSituation = useMutation({
+    mutationFn: (situationId: string | null) =>
+      apiFetch(`/admin/orders/${orderId}/situation`, {
+        method: "PATCH",
+        body: JSON.stringify({ situationId }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin", "order", orderId] });
+      void qc.invalidateQueries({ queryKey: ["admin", "orders"] });
     },
   });
 
@@ -166,6 +193,27 @@ export function OrderDetailPage() {
     });
     if (!ok) return;
     patchStatus.mutate(status);
+  }
+
+  function handleSituationChange(situationId: string) {
+    if (!order) return;
+    const next = situationId || null;
+    if (next === (order.situationId ?? null)) return;
+    patchSituation.mutate(next);
+  }
+
+  function situationSelectOptions() {
+    if (!order) return [];
+    const active = situations.filter((s) => s.active);
+    const current = order.situation;
+    const opts = active.map((s) => ({ value: s.id, label: s.name }));
+    if (current && !active.some((s) => s.id === current.id)) {
+      opts.push({
+        value: current.id,
+        label: `${current.name} (inativa)`,
+      });
+    }
+    return opts;
   }
 
   if (!orderId) return null;
@@ -257,19 +305,34 @@ export function OrderDetailPage() {
               </Button>
             </div>
             {canWrite ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm text-muted-foreground">Status</span>
-                <AppSelect
-                  value={order.status}
-                  disabled={patchStatus.isPending}
-                  triggerClassName="w-auto min-w-[11rem]"
-                  options={ORDER_STATUSES.map((s) => ({
-                    value: s,
-                    label: orderStatusLabel(s),
-                  }))}
-                  onValueChange={(v) => void handleStatusChange(v)}
-                />
+              <div className="flex flex-col gap-2 sm:items-end">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Status</span>
+                  <AppSelect
+                    value={order.status}
+                    disabled={patchStatus.isPending}
+                    triggerClassName="w-auto min-w-[11rem]"
+                    options={ORDER_STATUSES.map((s) => ({
+                      value: s,
+                      label: orderStatusLabel(s),
+                    }))}
+                    onValueChange={(v) => void handleStatusChange(v)}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Situação</span>
+                  <AppSelect
+                    value={order.situationId ?? ""}
+                    disabled={patchSituation.isPending}
+                    triggerClassName="w-auto min-w-[11rem]"
+                    emptyLabel="Sem situação"
+                    options={situationSelectOptions()}
+                    onValueChange={handleSituationChange}
+                  />
+                </div>
               </div>
+            ) : order.situation ? (
+              <Badge variant="outline">{order.situation.name}</Badge>
             ) : null}
           </div>
         </div>
@@ -283,6 +346,12 @@ export function OrderDetailPage() {
           <p className="border-b border-border px-6 py-3 text-sm text-destructive">
             {(patchStatus.error as Error).message ||
               "Não foi possível alterar o status."}
+          </p>
+        ) : null}
+        {patchSituation.isError ? (
+          <p className="border-b border-border px-6 py-3 text-sm text-destructive">
+            {(patchSituation.error as Error).message ||
+              "Não foi possível alterar a situação."}
           </p>
         ) : null}
 

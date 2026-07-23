@@ -107,6 +107,21 @@ function fmtDays(d: number | null, neverPurchased: boolean): string {
   return `${d} dias`;
 }
 
+type MorningBriefTip = {
+  id: string;
+  severity: "info" | "warning" | "critical";
+  title: string;
+  reason: string;
+  href?: string;
+};
+
+type MorningBrief = {
+  date: string;
+  generatedAt: string;
+  cached: boolean;
+  tips: MorningBriefTip[];
+};
+
 type ExpiringLot = {
   id: string;
   lotCode: string;
@@ -154,6 +169,13 @@ export function InsightsPage() {
     queryKey: ["admin", "reports-insights"],
     queryFn: () => apiFetch<DistributorInsights>("/admin/reports/insights"),
     staleTime: 45_000,
+    enabled: !teamLeader,
+  });
+
+  const morningBriefQ = useQuery({
+    queryKey: ["admin", "morning-brief"],
+    queryFn: () => apiFetch<MorningBrief>("/admin/insights/morning-brief"),
+    staleTime: 5 * 60_000,
     enabled: !teamLeader,
   });
 
@@ -363,6 +385,72 @@ export function InsightsPage() {
           </p>
         ) : null}
       </div>
+
+      {/* Resumo da manhã — gerado 1×/dia por regras (sem LLM) */}
+      <section className="rounded-xl border border-primary/25 bg-primary/5 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">
+              Resumo da manhã
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Pontos de atenção gerados automaticamente para hoje
+              {morningBriefQ.data
+                ? ` (${new Date(
+                    morningBriefQ.data.date + "T12:00:00",
+                  ).toLocaleDateString("pt-BR")})`
+                : ""}
+              .
+            </p>
+          </div>
+          {morningBriefQ.data ? (
+            <p className="text-xs text-muted-foreground">
+              {morningBriefQ.data.cached ? "Em cache · " : "Novo · "}
+              {new Date(morningBriefQ.data.generatedAt).toLocaleString("pt-BR")}
+            </p>
+          ) : null}
+        </div>
+
+        {morningBriefQ.isLoading ? (
+          <p className="mt-4 text-sm text-muted-foreground">
+            Montando resumo da manhã…
+          </p>
+        ) : morningBriefQ.error ? (
+          <p className="mt-4 text-sm text-destructive">
+            {(morningBriefQ.error as Error).message}
+          </p>
+        ) : morningBriefQ.data ? (
+          <ul className="mt-4 space-y-3">
+            {morningBriefQ.data.tips.map((tip) => {
+              const badge =
+                tip.severity === "critical"
+                  ? "border-red-300 bg-red-50 text-red-950"
+                  : tip.severity === "warning"
+                    ? "border-amber-300 bg-amber-50 text-amber-950"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-950";
+              return (
+                <li
+                  key={tip.id}
+                  className={`rounded-lg border px-4 py-3 ${badge}`}
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="font-medium">{tip.title}</p>
+                    {tip.href ? (
+                      <Link
+                        to={tip.href}
+                        className="text-sm font-medium underline-offset-4 hover:underline"
+                      >
+                        Abrir
+                      </Link>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 text-sm opacity-90">{tip.reason}</p>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+      </section>
 
       {admin ? (
         <section className="space-y-3">

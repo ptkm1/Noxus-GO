@@ -16,6 +16,7 @@ import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { apiFetch } from "../lib/api";
 import { AuditLogsPanel } from "./AuditLogsPage";
+import { OrderSituationsPanel } from "./OrderSituationsPanel";
 import { PermissionsPanel } from "./PermissionsPage";
 
 type OrderSyncMode = "AUTO" | "MANUAL";
@@ -225,6 +226,13 @@ export function SystemSettingsPage() {
                 />
               </FormField>
             </FormGrid>
+          </FormSection>
+
+          <FormSection
+            title="Situações do pedido"
+            description="Cadastre as situações operacionais usadas na lista e no detalhe do pedido."
+          >
+            <OrderSituationsPanel />
           </FormSection>
         </>
       ) : null}

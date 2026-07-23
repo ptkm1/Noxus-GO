@@ -1,9 +1,14 @@
+import {
+  formatInsufficientStockMessage,
+  formatOutOfStockMessage,
+} from "@pedidos/shared";
 import { apiUrl, getAccessToken } from "./api";
 import type { OfflineQueueRow } from "./offline-sale-types";
 
 export type RemoteProductStock = {
   productId: string;
   name: string;
+  sku?: string | null;
   stockQty: number;
   blockSaleWhenOutOfStock: boolean;
 };
@@ -51,6 +56,7 @@ export async function fetchRemoteProductStock(
     out.push({
       productId: p.productId,
       name: typeof p.name === "string" ? p.name : p.productId,
+      sku: typeof p.sku === "string" ? p.sku : null,
       stockQty: typeof p.stockQty === "number" ? p.stockQty : 0,
       blockSaleWhenOutOfStock: p.blockSaleWhenOutOfStock === true,
     });
@@ -74,10 +80,12 @@ function neededBlockedQty(
   return needByProduct;
 }
 
+type StockAvail = { name: string; sku: string | null; qty: number };
+
 /** Retorna erro se a venda não couber no estoque simulado (não altera o mapa). */
 export function checkStockForSale(
   row: OfflineQueueRow,
-  available: Map<string, { name: string; qty: number }>,
+  available: Map<string, StockAvail>,
   blockedIds: Set<string>,
 ): string | null {
   const needByProduct = neededBlockedQty(row, blockedIds);
@@ -85,8 +93,12 @@ export function checkStockForSale(
     const stock = available.get(productId);
     if (!stock || stock.qty < need) {
       const name = stock?.name ?? productId;
+      const sku = stock?.sku ?? null;
       const disponivel = stock?.qty ?? 0;
-      return `Estoque insuficiente para ${name} (disponível: ${disponivel}, pedido: ${need})`;
+      if (disponivel <= 0) {
+        return formatOutOfStockMessage(name, sku);
+      }
+      return formatInsufficientStockMessage(name, disponivel, need, sku);
     }
   }
   return null;
@@ -95,7 +107,7 @@ export function checkStockForSale(
 /** Deduz do mapa após envio bem-sucedido (reserva na ordem da fila). */
 export function reserveStockForSale(
   row: OfflineQueueRow,
-  available: Map<string, { name: string; qty: number }>,
+  available: Map<string, StockAvail>,
   blockedIds: Set<string>,
 ): void {
   const needByProduct = neededBlockedQty(row, blockedIds);
@@ -107,13 +119,17 @@ export function reserveStockForSale(
 }
 
 export function buildStockAvailabilityMaps(products: RemoteProductStock[]): {
-  available: Map<string, { name: string; qty: number }>;
+  available: Map<string, StockAvail>;
   blockedIds: Set<string>;
 } {
-  const available = new Map<string, { name: string; qty: number }>();
+  const available = new Map<string, StockAvail>();
   const blockedIds = new Set<string>();
   for (const p of products) {
-    available.set(p.productId, { name: p.name, qty: p.stockQty });
+    available.set(p.productId, {
+      name: p.name,
+      sku: p.sku ?? null,
+      qty: p.stockQty,
+    });
     if (p.blockSaleWhenOutOfStock) blockedIds.add(p.productId);
   }
   return { available, blockedIds };

@@ -5,19 +5,32 @@ import { prisma } from "../db.js";
 import { certificateStatus, parsePfxMetadata } from "../fiscal/certificate.js";
 import { parseLogoUpload } from "../fiscal/danfe-logo.js";
 import { encryptBuffer, encryptSecret } from "../fiscal/encryption.js";
-import { confirmInboundImport, cancelInboundInvoice, importInboundNfeXml, listInboundPending, manifestInboundNfe, syncInboundDfe } from "../services/fiscal-inbound.js";
-import {
-  buildOutboundInvoiceFromOrder,
-  cancelOutboundInvoice,
-  listEligibleOutboundOrders,
-  transmitOutboundInvoice,
-} from "../services/fiscal-outbound.js";
-import { loadInvoiceForDanfe, sendDanfePdfReply } from "../services/nfe-danfe-load.js";
 import {
   AUDIT_ACTION,
   AUDIT_ENTITY,
   auditFromAuth,
 } from "../services/audit-log.js";
+import {
+  cancelInboundInvoice,
+  confirmInboundImport,
+  importInboundNfeXml,
+  listInboundPending,
+  manifestInboundNfe,
+  syncInboundDfe,
+} from "../services/fiscal-inbound.js";
+import {
+    buildOutboundInvoiceFromOrder,
+    cancelOutboundInvoice,
+    consultOutboundInvoiceSituation,
+    inutilizarNumeracao,
+    listEligibleOutboundOrders,
+    sendCartaCorrecao,
+    transmitOutboundInvoice,
+} from "../services/fiscal-outbound.js";
+import {
+  loadInvoiceForDanfe,
+  sendDanfePdfReply,
+} from "../services/nfe-danfe-load.js";
 
 const idParam = z.object({ id: z.string().min(1) });
 
@@ -73,7 +86,9 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         cnpj: z.string().optional(),
         stateRegistration: z.string().optional(),
         municipalRegistration: z.string().optional(),
-        taxRegime: z.enum(["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL"]).optional(),
+        taxRegime: z
+          .enum(["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL"])
+          .optional(),
         uf: z.string().max(2).optional(),
         cityIbge: z.string().optional(),
         street: z.string().optional(),
@@ -87,7 +102,8 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         autoStockOnInboundInvoice: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const config = await prisma.organizationFiscalConfig.upsert({
       where: { organizationId: auth.organizationId },
@@ -112,7 +128,8 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         password: z.string().min(1),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     let pfx: Buffer;
     try {
@@ -130,7 +147,8 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
       encryptedPassword = encryptSecret(body.data.password);
     } catch (e) {
       return reply.status(500).send({
-        error: e instanceof Error ? e.message : "Falha ao criptografar certificado",
+        error:
+          e instanceof Error ? e.message : "Falha ao criptografar certificado",
       });
     }
 
@@ -148,6 +166,7 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         certificatePasswordEncrypted: encryptedPassword,
         certificateExpiresAt: meta.expiresAt,
         certificateCnpj: meta.cnpj,
+        certificateLastAlertThreshold: null,
       },
     });
 
@@ -188,7 +207,8 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         mimeType: z.string().min(1),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
 
     const parsed = parseLogoUpload(body.data.imageBase64, body.data.mimeType);
     if (!parsed) {
@@ -259,7 +279,8 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         cofinsRate: z.number().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
     return prisma.fiscalNcm.create({
       data: { organizationId: auth.organizationId, ...body.data },
     });
@@ -281,7 +302,8 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
     const row = await prisma.fiscalNcm.findFirst({
       where: { id, organizationId: auth.organizationId },
     });
@@ -291,7 +313,9 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/operations", async (req) => {
     const auth = req.auth!;
-    const q = z.object({ direction: z.enum(["INBOUND", "OUTBOUND"]).optional() }).safeParse(req.query);
+    const q = z
+      .object({ direction: z.enum(["INBOUND", "OUTBOUND"]).optional() })
+      .safeParse(req.query);
     return prisma.fiscalOperation.findMany({
       where: {
         organizationId: auth.organizationId,
@@ -315,7 +339,8 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         movesStock: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
     return prisma.fiscalOperation.create({
       data: { organizationId: auth.organizationId, ...body.data },
     });
@@ -335,7 +360,8 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
     const row = await prisma.fiscalOperation.findFirst({
       where: { id, organizationId: auth.organizationId },
     });
@@ -352,7 +378,10 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     if (!requireAdmin(reply, auth)) return;
     const { orderId } = z.object({ orderId: z.string() }).parse(req.params);
-    const result = await buildOutboundInvoiceFromOrder(auth.organizationId, orderId);
+    const result = await buildOutboundInvoiceFromOrder(
+      auth.organizationId,
+      orderId,
+    );
     if (!result.ok) {
       const summary = result.issues.map((i) => i.message).join("; ");
       return reply.status(400).send({ error: summary, issues: result.issues });
@@ -390,7 +419,29 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     return prisma.fiscalInvoice.findMany({
       where: { organizationId: auth.organizationId, direction: "OUTBOUND" },
       orderBy: { createdAt: "desc" },
-      include: { order: { include: { customer: true } }, items: true },
+      select: {
+        id: true,
+        direction: true,
+        status: true,
+        accessKey: true,
+        number: true,
+        series: true,
+        totalAmount: true,
+        issuedAt: true,
+        stockApplied: true,
+        rejectionReason: true,
+        protocol: true,
+        createdAt: true,
+        order: { include: { customer: true } },
+        items: {
+          select: {
+            id: true,
+            description: true,
+            quantity: true,
+            productId: true,
+          },
+        },
+      },
     });
   });
 
@@ -399,7 +450,11 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(req.params);
     const row = await prisma.fiscalInvoice.findFirst({
       where: { id, organizationId: auth.organizationId, direction: "OUTBOUND" },
-      include: { items: { include: { product: true } }, order: { include: { customer: true } }, events: true },
+      include: {
+        items: { include: { product: true } },
+        order: { include: { customer: true } },
+        events: { orderBy: { createdAt: "desc" } },
+      },
     });
     if (!row) return reply.status(404).send({ error: "Não encontrado" });
     return row;
@@ -413,21 +468,189 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     return sendDanfePdfReply(reply, invoice);
   });
 
+  /** XML autorizado, assinado ou do último evento de cancelamento/CC-e. */
+  app.get("/invoices/:id/xml", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const kind = z
+      .enum(["authorized", "signed", "cancel"])
+      .catch("authorized")
+      .parse(
+        typeof req.query === "object" && req.query && "kind" in req.query
+          ? (req.query as { kind?: string }).kind
+          : "authorized",
+      );
+
+    const invoice = await prisma.fiscalInvoice.findFirst({
+      where: { id, organizationId: auth.organizationId },
+      include: {
+        events: { orderBy: { createdAt: "desc" }, take: 20 },
+      },
+    });
+    if (!invoice) return reply.status(404).send({ error: "Não encontrado" });
+
+    let xml: string | null = null;
+    let filename = `nfe-${invoice.number ?? id.slice(0, 8)}.xml`;
+
+    if (kind === "signed") {
+      xml = invoice.xmlSigned;
+      filename = `nfe-assinada-${invoice.number ?? id.slice(0, 8)}.xml`;
+    } else if (kind === "cancel") {
+      const cancelEv = invoice.events.find(
+        (e) => e.eventType === "NFeCancelamento" && e.success,
+      );
+      xml = cancelEv?.requestPayload ?? cancelEv?.responsePayload ?? null;
+      filename = `nfe-cancelamento-${invoice.number ?? id.slice(0, 8)}.xml`;
+    } else {
+      xml = invoice.xmlAuthorized ?? invoice.xmlSigned;
+      filename = `nfe-autorizada-${invoice.number ?? id.slice(0, 8)}.xml`;
+    }
+
+    if (!xml?.trim()) {
+      return reply.status(404).send({
+        error:
+          kind === "cancel"
+            ? "XML de cancelamento não disponível"
+            : "XML não disponível para esta nota",
+      });
+    }
+
+    reply.header("Content-Type", "application/xml; charset=utf-8");
+    reply.header("Content-Disposition", `attachment; filename="${filename}"`);
+    return reply.send(xml);
+  });
+
   app.post("/outbound/invoices/:id/cancel", async (req, reply) => {
     const auth = req.auth!;
     if (!requireAdmin(reply, auth)) return;
     const { id } = idParam.parse(req.params);
-    const body = z.object({ justification: z.string().min(15) }).safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Justificativa obrigatória (mín. 15 caracteres)" });
-    const result = await cancelOutboundInvoice(auth.organizationId, id, body.data.justification);
+    const body = z
+      .object({ justification: z.string().min(15) })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply
+        .status(400)
+        .send({ error: "Justificativa obrigatória (mín. 15 caracteres)" });
+    const result = await cancelOutboundInvoice(
+      auth.organizationId,
+      id,
+      body.data.justification,
+    );
     if (!result.ok) return reply.status(400).send({ error: result.error });
     await auditFromAuth(auth, {
       action: AUDIT_ACTION.NFE_CANCEL,
       entityType: AUDIT_ENTITY.FiscalInvoice,
       entityId: id,
-      metadata: { direction: "OUTBOUND", justification: body.data.justification },
+      metadata: {
+        direction: "OUTBOUND",
+        justification: body.data.justification,
+      },
     });
     return result.invoice;
+  });
+
+  app.post("/outbound/invoices/:id/cce", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({ correctionText: z.string().min(15).max(1000) })
+      .safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({
+        error: "Texto da CC-e obrigatório (15 a 1000 caracteres)",
+      });
+    }
+    const result = await sendCartaCorrecao(
+      auth.organizationId,
+      id,
+      body.data.correctionText,
+    );
+    if (!result.ok) return reply.status(400).send({ error: result.error });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.NFE_CCE,
+      entityType: AUDIT_ENTITY.FiscalInvoice,
+      entityId: id,
+      metadata: { nSeqEvento: result.nSeqEvento },
+    });
+    return result;
+  });
+
+  app.post("/outbound/invoices/:id/consult", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+    const result = await consultOutboundInvoiceSituation(
+      auth.organizationId,
+      id,
+    );
+    if (!result.ok) return reply.status(400).send({ error: result.error });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.NFE_CONSULTA,
+      entityType: AUDIT_ENTITY.FiscalInvoice,
+      entityId: id,
+      metadata: {
+        cStat: result.cStat,
+        xMotivo: result.xMotivo,
+        nProt: result.nProt,
+      },
+    });
+    return result;
+  });
+
+  app.get("/outbound/invoices/:id/consult", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+    const result = await consultOutboundInvoiceSituation(
+      auth.organizationId,
+      id,
+    );
+    if (!result.ok) return reply.status(400).send({ error: result.error });
+    return result;
+  });
+
+  app.post("/outbound/inutilizar", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const body = z
+      .object({
+        numberStart: z.number().int().positive(),
+        numberEnd: z.number().int().positive(),
+        justification: z.string().min(15),
+        series: z.number().int().positive().optional(),
+        year: z.number().int().min(2000).max(2100).optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({
+        error:
+          "Informe número inicial/final e justificativa (mín. 15 caracteres)",
+      });
+    }
+    const result = await inutilizarNumeracao({
+      organizationId: auth.organizationId,
+      ...body.data,
+    });
+    if (!result.ok) return reply.status(400).send({ error: result.error });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.NFE_INUTILIZACAO,
+      entityType: AUDIT_ENTITY.FiscalConfig,
+      entityId: auth.organizationId,
+      metadata: {
+        numberStart: body.data.numberStart,
+        numberEnd: body.data.numberEnd,
+        series: body.data.series,
+        year: body.data.year,
+        cStat: result.cStat,
+        xMotivo: result.xMotivo,
+      },
+    });
+    return {
+      ok: true,
+      cStat: result.cStat,
+      xMotivo: result.xMotivo,
+    };
   });
 
   app.get("/inbound/pending", async (req) => {
@@ -448,8 +671,12 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     if (!requireAdmin(reply, auth)) return;
     const body = z.object({ xml: z.string().min(10) }).safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "XML obrigatório" });
-    const result = await importInboundNfeXml(auth.organizationId, body.data.xml);
+    if (!body.success)
+      return reply.status(400).send({ error: "XML obrigatório" });
+    const result = await importInboundNfeXml(
+      auth.organizationId,
+      body.data.xml,
+    );
     if (!result.ok) return reply.status(400).send({ error: result.error });
     await auditFromAuth(auth, {
       action: AUDIT_ACTION.NFE_IMPORT,
@@ -467,7 +694,8 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({ productMappings: z.record(z.string(), z.string()).default({}) })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
     const result = await confirmInboundImport(
       auth.organizationId,
       id,
@@ -488,8 +716,13 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     if (!requireAdmin(reply, auth)) return;
     const { id } = idParam.parse(req.params);
-    const body = z.object({ justification: z.string().min(15) }).safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Justificativa obrigatória (mín. 15 caracteres)" });
+    const body = z
+      .object({ justification: z.string().min(15) })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply
+        .status(400)
+        .send({ error: "Justificativa obrigatória (mín. 15 caracteres)" });
     const result = await cancelInboundInvoice(
       auth.organizationId,
       id,
@@ -501,7 +734,10 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
       action: AUDIT_ACTION.NFE_CANCEL,
       entityType: AUDIT_ENTITY.FiscalInvoice,
       entityId: id,
-      metadata: { direction: "INBOUND", justification: body.data.justification },
+      metadata: {
+        direction: "INBOUND",
+        justification: body.data.justification,
+      },
     });
     return result.invoice;
   });
@@ -509,26 +745,43 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
   app.post("/inbound/sync", async (req, reply) => {
     const auth = req.auth!;
     if (!requireAdmin(reply, auth)) return;
-    const body = z.object({ ultNsu: z.string().optional() }).safeParse(req.body ?? {});
+    const body = z
+      .object({ ultNsu: z.string().optional() })
+      .safeParse(req.body ?? {});
     const result = await syncInboundDfe(
       auth.organizationId,
       body.success ? body.data.ultNsu : undefined,
     );
-    if (!result.ok) return reply.status(400).send({ error: result.error, cStat: "cStat" in result ? result.cStat : undefined, ultNSU: "ultNSU" in result ? result.ultNSU : undefined });
+    if (!result.ok)
+      return reply
+        .status(400)
+        .send({
+          error: result.error,
+          cStat: "cStat" in result ? result.cStat : undefined,
+          ultNSU: "ultNSU" in result ? result.ultNSU : undefined,
+        });
     return result;
   });
 
   app.post("/inbound/:accessKey/manifest", async (req, reply) => {
     const auth = req.auth!;
     if (!requireAdmin(reply, auth)) return;
-    const { accessKey } = z.object({ accessKey: z.string().length(44) }).parse(req.params);
+    const { accessKey } = z
+      .object({ accessKey: z.string().length(44) })
+      .parse(req.params);
     const body = z
       .object({
-        type: z.enum(["CIENCIA", "CONFIRMACAO", "DESCONHECIMENTO", "NAO_REALIZADA"]),
+        type: z.enum([
+          "CIENCIA",
+          "CONFIRMACAO",
+          "DESCONHECIMENTO",
+          "NAO_REALIZADA",
+        ]),
         justification: z.string().optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Tipo de manifestação inválido" });
+    if (!body.success)
+      return reply.status(400).send({ error: "Tipo de manifestação inválido" });
     const result = await manifestInboundNfe(
       auth.organizationId,
       accessKey,

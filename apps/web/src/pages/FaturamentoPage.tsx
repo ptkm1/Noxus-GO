@@ -17,11 +17,11 @@ import {
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import { FiscalCadastrosPanel } from "../components/FiscalCadastrosPanel";
 import {
   apiFetch,
   downloadPdf,
+  downloadXml,
   fetchAuthenticatedBlob,
   printPdf,
 } from "../lib/api";
@@ -67,6 +67,14 @@ function selectAllState(
   return false;
 }
 
+type FiscalInvoiceEvent = {
+  id: string;
+  eventType: string;
+  success: boolean;
+  createdAt: string;
+  responsePayload?: string | null;
+};
+
 type FiscalInvoice = {
   id: string;
   direction: string;
@@ -77,6 +85,9 @@ type FiscalInvoice = {
   totalAmount: unknown;
   issuedAt: string | null;
   stockApplied: boolean;
+  rejectionReason?: string | null;
+  xmlSigned?: string | null;
+  xmlAuthorized?: string | null;
   supplier?: { tradeName?: string; legalName?: string; cnpj?: string } | null;
   order?: { customer: { name: string } | null } | null;
   items: {
@@ -85,6 +96,7 @@ type FiscalInvoice = {
     quantity: unknown;
     productId: string | null;
   }[];
+  events?: FiscalInvoiceEvent[];
 };
 
 type FiscalSettings = {
@@ -99,6 +111,7 @@ type FiscalSettings = {
   zipCode?: string | null;
   nfeEnvironment?: NfeEnvironment;
   nfeSeries?: number;
+  nfeLastNumber?: number;
   autoStockOnInboundInvoice?: boolean;
   logo?: {
     uploaded: boolean;
@@ -110,8 +123,39 @@ type FiscalSettings = {
     warning: boolean;
     expiresAt: string | null;
     daysUntilExpiry: number | null;
+    alertThreshold?: 60 | 30 | 15 | 7 | 0 | null;
   };
 };
+
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  NFeAutorizacao: "Autorização",
+  NFeCancelamento: "Cancelamento",
+  NFeCartaCorrecao: "Carta de correção",
+  NFeConsultaSituacao: "Consulta situação",
+};
+
+function certBannerMessage(cert: NonNullable<FiscalSettings["certificate"]>) {
+  if (!cert.uploaded) return null;
+  if (!cert.valid || cert.alertThreshold === 0) {
+    return {
+      tone: "destructive" as const,
+      text: "Certificado digital A1 vencido. Emissões e eventos SEFAZ vão falhar até renovar.",
+    };
+  }
+  if (cert.alertThreshold != null && cert.daysUntilExpiry != null) {
+    return {
+      tone: cert.alertThreshold <= 15 ? ("warning" as const) : ("info" as const),
+      text: `Certificado A1 vence em ${cert.daysUntilExpiry} dia(s) (alerta ${cert.alertThreshold} dias). Renove em Configurações.`,
+    };
+  }
+  if (cert.warning && cert.daysUntilExpiry != null) {
+    return {
+      tone: "warning" as const,
+      text: `Certificado A1 vence em ${cert.daysUntilExpiry} dia(s). Renove em Configurações.`,
+    };
+  }
+  return null;
+}
 
 export function FaturamentoPage() {
   const qc = useQueryClient();
@@ -136,11 +180,21 @@ export function FaturamentoPage() {
     current: number;
     total: number;
   } | null>(null);
+  const [detailInvoiceId, setDetailInvoiceId] = useState<string | null>(null);
+  const [inutForm, setInutForm] = useState({
+    numberStart: "",
+    numberEnd: "",
+    justification: "",
+  });
 
   const { data: settings, refetch: refetchSettings } = useQuery({
     queryKey: ["admin", "fiscal", "settings"],
     queryFn: () => apiFetch<FiscalSettings>("/admin/fiscal/settings"),
   });
+
+  const certBanner = settings?.certificate
+    ? certBannerMessage(settings.certificate)
+    : null;
 
   const { data: products = [] } = useQuery({
     queryKey: ["admin", "products", "fiscal-map"],
@@ -286,6 +340,15 @@ export function FaturamentoPage() {
     enabled: tab === "saida",
   });
 
+  const { data: invoiceDetail, isLoading: loadingDetail } = useQuery({
+    queryKey: ["admin", "fiscal", "outbound-invoice", detailInvoiceId],
+    queryFn: () =>
+      apiFetch<FiscalInvoice>(
+        `/admin/fiscal/outbound/invoices/${detailInvoiceId}`,
+      ),
+    enabled: tab === "saida" && Boolean(detailInvoiceId),
+  });
+
   const { data: inboundInvoices = [] } = useQuery({
     queryKey: ["admin", "fiscal", "inbound-invoices"],
     queryFn: () => apiFetch<FiscalInvoice[]>("/admin/fiscal/inbound/invoices"),
@@ -301,6 +364,7 @@ export function FaturamentoPage() {
       notifySuccess("NF-e em rascunho criada com sucesso.");
       void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
     },
+    onError: (e) => notifyError(getErrorMessage(e), "Falha ao emitir NF-e"),
   });
 
   const transmit = useMutation({
@@ -312,6 +376,8 @@ export function FaturamentoPage() {
       notifySuccess("NF-e transmitida para a SEFAZ.");
       void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
     },
+    onError: (e) =>
+      notifyError(getErrorMessage(e), "SEFAZ rejeitou a transmissão"),
   });
 
   const cancelOutbound = useMutation({
@@ -330,6 +396,70 @@ export function FaturamentoPage() {
       notifySuccess("Cancelamento enviado.");
       void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
     },
+    onError: (e) => notifyError(getErrorMessage(e), "Falha no cancelamento"),
+  });
+
+  const sendCce = useMutation({
+    mutationFn: ({
+      invoiceId,
+      correctionText,
+    }: {
+      invoiceId: string;
+      correctionText: string;
+    }) =>
+      apiFetch(`/admin/fiscal/outbound/invoices/${invoiceId}/cce`, {
+        method: "POST",
+        body: JSON.stringify({ correctionText }),
+      }),
+    onSuccess: () => {
+      notifySuccess("Carta de correção enviada à SEFAZ.");
+      void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
+    },
+    onError: (e) => notifyError(getErrorMessage(e), "Falha na CC-e"),
+  });
+
+  const consultSituation = useMutation({
+    mutationFn: (invoiceId: string) =>
+      apiFetch<{
+        ok: boolean;
+        cStat?: string;
+        xMotivo?: string;
+        nProt?: string;
+      }>(`/admin/fiscal/outbound/invoices/${invoiceId}/consult`, {
+        method: "POST",
+      }),
+    onSuccess: (res) => {
+      notifySuccess(
+        `${res.cStat ?? "—"}: ${res.xMotivo ?? "Consulta concluída"}`,
+        "Situação SEFAZ",
+      );
+      void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
+    },
+    onError: (e) => notifyError(getErrorMessage(e), "Falha na consulta"),
+  });
+
+  const inutilizar = useMutation({
+    mutationFn: (body: {
+      numberStart: number;
+      numberEnd: number;
+      justification: string;
+    }) =>
+      apiFetch<{ cStat?: string; xMotivo?: string }>(
+        "/admin/fiscal/outbound/inutilizar",
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+        },
+      ),
+    onSuccess: (res) => {
+      notifySuccess(
+        `${res.cStat ?? "OK"}: ${res.xMotivo ?? "Numeração inutilizada"}`,
+        "Inutilização",
+      );
+      setInutForm({ numberStart: "", numberEnd: "", justification: "" });
+      void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
+    },
+    onError: (e) => notifyError(getErrorMessage(e), "Falha na inutilização"),
   });
 
   const cancelInbound = useMutation({
@@ -365,6 +495,20 @@ export function FaturamentoPage() {
     onConfirm(justification);
   }
 
+  async function promptCce(invoiceId: string) {
+    const correctionText = await promptAction({
+      title: "Carta de correção (CC-e)",
+      message:
+        "Descreva a correção (15 a 1000 caracteres). Não altera valores, destinatário nem data.",
+      placeholder: "Texto da correção…",
+      multiline: true,
+      minLength: 15,
+      confirmLabel: "Enviar CC-e",
+    });
+    if (!correctionText) return;
+    sendCce.mutate({ invoiceId, correctionText });
+  }
+
   function canShowDanfe(status: FiscalInvoiceStatus) {
     return (
       status === "AUTHORIZED" || status === "IMPORTED" || status === "CANCELLED"
@@ -383,6 +527,28 @@ export function FaturamentoPage() {
       else await printPdf(path);
     } catch (e) {
       notifyError(getErrorMessage(e), "Falha ao gerar DANFE");
+    }
+  }
+
+  async function handleDownloadXml(
+    invoiceId: string,
+    number: number | null,
+    kind: "authorized" | "signed" | "cancel",
+  ) {
+    const suffix =
+      kind === "cancel"
+        ? "cancelamento"
+        : kind === "signed"
+          ? "assinada"
+          : "autorizada";
+    const filename = `nfe-${suffix}-${number ?? invoiceId.slice(0, 8)}.xml`;
+    try {
+      await downloadXml(
+        `/admin/fiscal/invoices/${invoiceId}/xml?kind=${kind}`,
+        filename,
+      );
+    } catch (e) {
+      notifyError(getErrorMessage(e), "Falha ao baixar XML");
     }
   }
 
@@ -651,13 +817,30 @@ export function FaturamentoPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <h1 className="text-2xl font-semibold">Faturamento</h1>
-        <Link
-          to="/faturamento/xml"
-          className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:border-primary/40 hover:bg-muted/40"
-        >
-          Exportar XML NF-e
-        </Link>
       </div>
+
+      {certBanner && (
+        <div
+          className={cn(
+            "rounded-xl border px-4 py-3 text-sm",
+            certBanner.tone === "destructive" &&
+              "border-destructive/40 bg-destructive/10 text-destructive",
+            certBanner.tone === "warning" &&
+              "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200",
+            certBanner.tone === "info" &&
+              "border-border bg-muted/50 text-foreground",
+          )}
+        >
+          {certBanner.text}
+          <button
+            type="button"
+            className="ml-2 underline"
+            onClick={() => setTab("config")}
+          >
+            Abrir configurações
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2 border-b border-border pb-2">
         {tabs.map((t) => (
@@ -769,16 +952,22 @@ export function FaturamentoPage() {
                                 ]}
                           </td>
                           <td className="px-4 py-3">
-                            {o.fiscalStatus === "NONE" ||
-                            o.fiscalStatus === "REJECTED" ? (
+                            {o.fiscalStatus === "NONE" ? (
                               <div className="space-y-1">
                                 {o.readinessIssues &&
                                   o.readinessIssues.length > 0 && (
-                                    <p className="max-w-xs text-xs text-amber-600">
-                                      {o.readinessIssues
-                                        .map((i) => i.message)
-                                        .join(" · ")}
-                                    </p>
+                                    <div className="max-w-xs rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-200">
+                                      <p className="font-medium">
+                                        Pendências para emitir:
+                                      </p>
+                                      <ul className="mt-1 list-inside list-disc">
+                                        {o.readinessIssues.map((i) => (
+                                          <li key={i.code + i.message}>
+                                            {i.message}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
                                   )}
                                 <Button
                                   size="sm"
@@ -793,6 +982,37 @@ export function FaturamentoPage() {
                                 </Button>
                               </div>
                             ) : o.fiscalInvoice?.status === "DRAFT" ? (
+                              <div className="space-y-1">
+                                {o.readinessIssues &&
+                                  o.readinessIssues.length > 0 && (
+                                    <div className="max-w-xs rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-200">
+                                      <p className="font-medium">
+                                        Checklist antes de transmitir:
+                                      </p>
+                                      <ul className="mt-1 list-inside list-disc">
+                                        {o.readinessIssues.map((i) => (
+                                          <li key={i.code + i.message}>
+                                            {i.message}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                <Button
+                                  size="sm"
+                                  disabled={
+                                    transmit.isPending ||
+                                    batchEmitBusy ||
+                                    (o.readinessIssues?.length ?? 0) > 0
+                                  }
+                                  onClick={() =>
+                                    transmit.mutate(o.fiscalInvoice!.id)
+                                  }
+                                >
+                                  Transmitir
+                                </Button>
+                              </div>
+                            ) : o.fiscalInvoice?.status === "REJECTED" ? (
                               <Button
                                 size="sm"
                                 disabled={transmit.isPending || batchEmitBusy}
@@ -800,7 +1020,7 @@ export function FaturamentoPage() {
                                   transmit.mutate(o.fiscalInvoice!.id)
                                 }
                               >
-                                Transmitir
+                                Reenviar à SEFAZ
                               </Button>
                             ) : null}
                           </td>
@@ -829,7 +1049,13 @@ export function FaturamentoPage() {
                 </thead>
                 <tbody>
                   {outboundInvoices.map((inv) => (
-                    <tr key={inv.id} className="border-t border-border">
+                    <tr
+                      key={inv.id}
+                      className={cn(
+                        "border-t border-border",
+                        detailInvoiceId === inv.id && "bg-muted/40",
+                      )}
+                    >
                       <td className="px-4 py-3">
                         {inv.series}/{inv.number}
                       </td>
@@ -837,7 +1063,14 @@ export function FaturamentoPage() {
                         {inv.order?.customer?.name ?? "—"}
                       </td>
                       <td className="px-4 py-3">
-                        {FISCAL_INVOICE_STATUS_LABELS[inv.status]}
+                        <div>
+                          {FISCAL_INVOICE_STATUS_LABELS[inv.status]}
+                          {inv.status === "REJECTED" && inv.rejectionReason ? (
+                            <p className="mt-1 max-w-xs text-xs text-destructive">
+                              {inv.rejectionReason}
+                            </p>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         R$ {Number(inv.totalAmount).toFixed(2)}
@@ -847,6 +1080,38 @@ export function FaturamentoPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              setDetailInvoiceId(
+                                detailInvoiceId === inv.id ? null : inv.id,
+                              )
+                            }
+                          >
+                            {detailInvoiceId === inv.id ? "Fechar" : "Detalhes"}
+                          </Button>
+                          {(inv.status === "AUTHORIZED" ||
+                            inv.status === "CANCELLED" ||
+                            inv.status === "REJECTED") && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                void handleDownloadXml(
+                                  inv.id,
+                                  inv.number,
+                                  inv.status === "CANCELLED"
+                                    ? "cancel"
+                                    : inv.status === "REJECTED"
+                                      ? "signed"
+                                      : "authorized",
+                                )
+                              }
+                            >
+                              XML
+                            </Button>
+                          )}
                           {canShowDanfe(inv.status) && (
                             <>
                               <Button
@@ -873,24 +1138,68 @@ export function FaturamentoPage() {
                               </Button>
                             </>
                           )}
-                          {inv.status === "AUTHORIZED" && (
+                          {(inv.status === "DRAFT" ||
+                            inv.status === "REJECTED") && (
                             <Button
                               size="sm"
-                              variant="ghost"
-                              className="text-destructive"
-                              disabled={cancelOutbound.isPending}
-                              onClick={() =>
-                                promptCancel((justification) =>
-                                  cancelOutbound.mutate({
-                                    invoiceId: inv.id,
-                                    justification,
-                                  }),
-                                )
-                              }
+                              disabled={transmit.isPending}
+                              onClick={() => transmit.mutate(inv.id)}
                             >
-                              Cancelar
+                              {inv.status === "REJECTED"
+                                ? "Reenviar"
+                                : "Transmitir"}
                             </Button>
                           )}
+                          {inv.status === "AUTHORIZED" && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={sendCce.isPending}
+                                onClick={() => void promptCce(inv.id)}
+                              >
+                                CC-e
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={consultSituation.isPending}
+                                onClick={() => consultSituation.mutate(inv.id)}
+                              >
+                                Atualizar situação
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-destructive"
+                                disabled={cancelOutbound.isPending}
+                                onClick={() =>
+                                  promptCancel((justification) =>
+                                    cancelOutbound.mutate({
+                                      invoiceId: inv.id,
+                                      justification,
+                                    }),
+                                  )
+                                }
+                              >
+                                Cancelar
+                              </Button>
+                            </>
+                          )}
+                          {(inv.status === "AUTHORIZED" ||
+                            inv.status === "CANCELLED" ||
+                            inv.status === "REJECTED") &&
+                            inv.accessKey &&
+                            inv.status !== "AUTHORIZED" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={consultSituation.isPending}
+                                onClick={() => consultSituation.mutate(inv.id)}
+                              >
+                                Atualizar situação
+                              </Button>
+                            )}
                         </div>
                       </td>
                     </tr>
@@ -898,6 +1207,125 @@ export function FaturamentoPage() {
                 </tbody>
               </table>
             </div>
+
+            {detailInvoiceId ? (
+              <div className="mt-4 rounded-xl border border-border bg-card p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-base font-medium">
+                    Detalhe da NF-e{" "}
+                    {invoiceDetail
+                      ? `${invoiceDetail.series}/${invoiceDetail.number}`
+                      : ""}
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {(invoiceDetail?.status === "AUTHORIZED" ||
+                      invoiceDetail?.xmlAuthorized) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          void handleDownloadXml(
+                            detailInvoiceId,
+                            invoiceDetail?.number ?? null,
+                            "authorized",
+                          )
+                        }
+                      >
+                        Baixar XML autorizado
+                      </Button>
+                    )}
+                    {(invoiceDetail?.xmlSigned ||
+                      invoiceDetail?.status === "REJECTED" ||
+                      invoiceDetail?.status === "AUTHORIZED") && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          void handleDownloadXml(
+                            detailInvoiceId,
+                            invoiceDetail?.number ?? null,
+                            "signed",
+                          )
+                        }
+                      >
+                        Baixar XML assinado
+                      </Button>
+                    )}
+                    {invoiceDetail?.status === "CANCELLED" ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          void handleDownloadXml(
+                            detailInvoiceId,
+                            invoiceDetail?.number ?? null,
+                            "cancel",
+                          )
+                        }
+                      >
+                        Baixar XML cancelamento
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+                {loadingDetail ? (
+                  <p className="text-sm text-muted-foreground">Carregando…</p>
+                ) : invoiceDetail ? (
+                  <div className="space-y-3">
+                    {invoiceDetail.rejectionReason ? (
+                      <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                        {invoiceDetail.rejectionReason}
+                      </p>
+                    ) : null}
+                    <p className="font-mono text-xs text-muted-foreground">
+                      Chave: {invoiceDetail.accessKey ?? "—"}
+                    </p>
+                    <div>
+                      <h4 className="mb-2 text-sm font-medium">
+                        Histórico de eventos
+                      </h4>
+                      {(invoiceDetail.events?.length ?? 0) === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          Nenhum evento registrado.
+                        </p>
+                      ) : (
+                        <ul className="space-y-2">
+                          {(invoiceDetail.events ?? []).map((ev) => (
+                            <li
+                              key={ev.id}
+                              className="rounded-lg border border-border px-3 py-2 text-sm"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="font-medium">
+                                  {EVENT_TYPE_LABELS[ev.eventType] ??
+                                    ev.eventType}
+                                </span>
+                                <span
+                                  className={
+                                    ev.success
+                                      ? "text-xs text-emerald-600"
+                                      : "text-xs text-destructive"
+                                  }
+                                >
+                                  {ev.success ? "OK" : "Falha"}
+                                </span>
+                              </div>
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                {new Date(ev.createdAt).toLocaleString("pt-BR")}
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Nota não encontrada.
+                  </p>
+                )}
+              </div>
+            ) : null}
           </section>
         </div>
       )}
@@ -1385,6 +1813,21 @@ export function FaturamentoPage() {
           </FormSection>
 
           <FormSection title="Certificado A1">
+            {certBanner && (
+              <div
+                className={cn(
+                  "mb-3 rounded-lg border px-3 py-2 text-sm",
+                  certBanner.tone === "destructive" &&
+                    "border-destructive/40 bg-destructive/10 text-destructive",
+                  certBanner.tone === "warning" &&
+                    "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200",
+                  certBanner.tone === "info" &&
+                    "border-border bg-muted/50 text-foreground",
+                )}
+              >
+                {certBanner.text}
+              </div>
+            )}
             {settings?.certificate?.uploaded && (
               <p
                 className={`mb-3 text-sm ${settings.certificate.warning ? "text-amber-600" : "text-muted-foreground"}`}
@@ -1393,7 +1836,10 @@ export function FaturamentoPage() {
                 {settings.certificate.expiresAt
                   ? ` — validade ${new Date(settings.certificate.expiresAt).toLocaleDateString("pt-BR")}`
                   : ""}
-                {!settings.certificate.valid ? " (vencido)" : ""}
+                {settings.certificate.daysUntilExpiry != null
+                  ? ` (${settings.certificate.daysUntilExpiry} dia(s))`
+                  : ""}
+                {!settings.certificate.valid ? " — vencido" : ""}
               </p>
             )}
             <FormGrid>
@@ -1418,6 +1864,63 @@ export function FaturamentoPage() {
               onClick={() => uploadCert.mutate()}
             >
               Enviar certificado
+            </Button>
+          </FormSection>
+
+          <FormSection title="Inutilizar numeração NF-e">
+            <p className="mb-3 text-sm text-muted-foreground">
+              Inutiliza faixa de números não usados na série atual (SEFAZ).
+              Justificativa mínima de 15 caracteres.
+            </p>
+            <FormGrid>
+              <FormField label="Número inicial">
+                <Input
+                  type="number"
+                  min={1}
+                  value={inutForm.numberStart}
+                  onChange={(e) =>
+                    setInutForm({ ...inutForm, numberStart: e.target.value })
+                  }
+                />
+              </FormField>
+              <FormField label="Número final">
+                <Input
+                  type="number"
+                  min={1}
+                  value={inutForm.numberEnd}
+                  onChange={(e) =>
+                    setInutForm({ ...inutForm, numberEnd: e.target.value })
+                  }
+                />
+              </FormField>
+            </FormGrid>
+            <FormField label="Justificativa" className="mt-3">
+              <textarea
+                className={`${fieldControlClass} min-h-[80px] w-full`}
+                value={inutForm.justification}
+                onChange={(e) =>
+                  setInutForm({ ...inutForm, justification: e.target.value })
+                }
+                placeholder="Motivo da inutilização…"
+              />
+            </FormField>
+            <Button
+              className="mt-3"
+              disabled={
+                inutilizar.isPending ||
+                !inutForm.numberStart ||
+                !inutForm.numberEnd ||
+                inutForm.justification.trim().length < 15
+              }
+              onClick={() =>
+                inutilizar.mutate({
+                  numberStart: Number(inutForm.numberStart),
+                  numberEnd: Number(inutForm.numberEnd),
+                  justification: inutForm.justification.trim(),
+                })
+              }
+            >
+              {inutilizar.isPending ? "Enviando…" : "Inutilizar numeração"}
             </Button>
           </FormSection>
 

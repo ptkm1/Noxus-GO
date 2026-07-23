@@ -222,6 +222,52 @@ async function main() {
     });
   }
 
+  const orderSituationsSeed = [
+    {
+      code: "OPEN",
+      name: "Aberto",
+      sortOrder: 1,
+      mapsToCancel: false,
+      isSystem: true,
+    },
+    {
+      code: "SENT",
+      name: "Enviado",
+      sortOrder: 2,
+      mapsToCancel: false,
+      isSystem: true,
+    },
+    {
+      code: "DELIVERED",
+      name: "Entregue",
+      sortOrder: 3,
+      mapsToCancel: false,
+      isSystem: true,
+    },
+    {
+      code: "CANCELLED",
+      name: "Cancelado",
+      sortOrder: 4,
+      mapsToCancel: true,
+      isSystem: true,
+    },
+  ];
+  for (const sit of orderSituationsSeed) {
+    await prisma.orderSituation.upsert({
+      where: {
+        organizationId_code: { organizationId: org.id, code: sit.code },
+      },
+      create: { organizationId: org.id, ...sit, active: true },
+      update: {
+        name: sit.name,
+        sortOrder: sit.sortOrder,
+        mapsToCancel: sit.mapsToCancel,
+        isSystem: sit.isSystem,
+        active: true,
+      },
+    });
+  }
+
   const adminPass = await bcrypt.hash(DEMO_ADMIN_PASSWORD, 10);
   const sellerPass = await bcrypt.hash(DEMO_SELLER_PASSWORD, 10);
   const managerPass = await bcrypt.hash(DEMO_MANAGER_PASSWORD, 10);

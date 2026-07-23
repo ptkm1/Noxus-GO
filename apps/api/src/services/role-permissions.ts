@@ -239,7 +239,11 @@ export function adminPathToResource(
   if (path.startsWith("/customers") || path.startsWith("/credit"))
     return "customers";
   if (/^\/orders\/[^/]+\/pdf-80mm$/.test(path)) return "orders_print_80mm";
-  if (path.startsWith("/orders") || path.startsWith("/payment-conditions"))
+  if (
+    path.startsWith("/orders") ||
+    path.startsWith("/payment-conditions") ||
+    path.startsWith("/order-situations")
+  )
     return "orders";
   if (
     path.startsWith("/sellers") ||

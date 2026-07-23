@@ -26,10 +26,19 @@ import { Link, useSearchParams } from "react-router-dom";
 
 type Seller = { id: string; user: { name: string } };
 
+type OrderSituation = {
+  id: string;
+  code: string;
+  name: string;
+  active: boolean;
+};
+
 type Order = {
   id: string;
   orderNumber?: number | null;
   status: string;
+  situationId?: string | null;
+  situation?: OrderSituation | null;
   totalAmount: unknown;
   createdAt: string;
   seller: { user: { name: string } };
@@ -124,6 +133,12 @@ export function OrdersPage() {
   const { data: sellers = [] } = useQuery({
     queryKey: ["admin", "sellers"],
     queryFn: () => apiFetch<Seller[]>("/admin/sellers"),
+  });
+
+  const { data: situations = [] } = useQuery({
+    queryKey: ["admin", "order-situations"],
+    queryFn: () => apiFetch<OrderSituation[]>("/admin/order-situations"),
+    enabled: canWrite,
   });
 
   const listQueryKey = useMemo(
@@ -230,6 +245,34 @@ export function OrdersPage() {
       }),
     onSuccess: () => invalidateOrders(),
   });
+
+  const patchSituation = useMutation({
+    mutationFn: async ({
+      orderId,
+      situationId,
+    }: {
+      orderId: string;
+      situationId: string | null;
+    }) =>
+      apiFetch(`/admin/orders/${orderId}/situation`, {
+        method: "PATCH",
+        body: JSON.stringify({ situationId }),
+      }),
+    onSuccess: () => invalidateOrders(),
+  });
+
+  function situationOptionsFor(order: Order) {
+    const active = situations.filter((s) => s.active);
+    const current = order.situation;
+    const opts = active.map((s) => ({ value: s.id, label: s.name }));
+    if (current && !active.some((s) => s.id === current.id)) {
+      opts.push({
+        value: current.id,
+        label: `${current.name} (inativa)`,
+      });
+    }
+    return opts;
+  }
 
   const removeOrder = useMutation({
     mutationFn: (orderId: string) =>
@@ -340,6 +383,7 @@ export function OrdersPage() {
 
   const pendingCreditSelected = statusFilter === "PENDING_CREDIT_APPROVAL";
   const statusBusy = patchStatus.isPending;
+  const situationBusy = patchSituation.isPending;
 
   return (
     <div className="space-y-6">
@@ -512,6 +556,7 @@ export function OrdersPage() {
                 <TableHead className="px-4">Código</TableHead>
                 <TableHead className="px-4">Data</TableHead>
                 <TableHead className="px-4">Status</TableHead>
+                <TableHead className="px-4">Situação</TableHead>
                 <TableHead className="px-4">Vendedor</TableHead>
                 <TableHead className="px-4">Cliente</TableHead>
                 <TableHead className="px-4">Cidade</TableHead>
@@ -564,6 +609,38 @@ export function OrdersPage() {
                         >
                           {orderStatusLabel(o.status)}
                         </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      {canWrite ? (
+                        <AppSelect
+                          value={o.situationId ?? ""}
+                          disabled={situationBusy}
+                          triggerClassName="w-auto min-w-[9rem]"
+                          emptyLabel="Sem situação"
+                          options={situationOptionsFor(o)}
+                          onValueChange={(v) => {
+                            const next = v || null;
+                            if (next === (o.situationId ?? null)) return;
+                            setActionError(null);
+                            patchSituation.mutate(
+                              { orderId: o.id, situationId: next },
+                              {
+                                onError: (e) => {
+                                  setActionError(
+                                    e instanceof Error
+                                      ? e.message
+                                      : "Não foi possível alterar a situação.",
+                                  );
+                                },
+                              },
+                            );
+                          }}
+                        />
+                      ) : (
+                        <span className="text-sm text-muted-foreground">
+                          {o.situation?.name ?? "—"}
+                        </span>
                       )}
                     </TableCell>
                     <TableCell className="px-4 py-3">

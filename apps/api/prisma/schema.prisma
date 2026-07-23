@@ -209,6 +209,7 @@ model Organization {
   customers        Customer[]
   orders           Order[]
   paymentConditions PaymentCondition[]
+  orderSituations  OrderSituation[]
   customerCreditTitles CustomerCreditTitle[]
   sellerCustomerVisits SellerCustomerVisit[]
   sellerLiveLocations  SellerLiveLocation[]
@@ -229,6 +230,24 @@ model Organization {
   fiscalInvoices        FiscalInvoice[]
   productStocks         ProductStock[]
   stockExpiryAlerts     StockExpiryAlert[]
+  dailyInsights         OrganizationDailyInsight[]
+}
+
+/// Resumo matinal baseado em regras (1 por org por dia civil America/Sao_Paulo).
+model OrganizationDailyInsight {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Dia civil (YYYY-MM-DD) no fuso America/Sao_Paulo, armazenado como Date.
+  date           DateTime     @db.Date
+  /// Array de tips: { id, severity, title, reason, href? }.
+  tips           Json
+  generatedAt    DateTime     @default(now())
+  /// Preenchido quando a notificação in-app do dia foi enviada.
+  notifiedAt     DateTime?
+
+  @@unique([organizationId, date])
+  @@index([organizationId, date])
 }
 
 /// Matriz de permissões por organização (defaults seedados; ADMIN edita via painel).
@@ -865,6 +884,28 @@ model PaymentCondition {
   @@index([organizationId, active, sortOrder])
 }
 
+/// Situação operacional/logística do pedido (ex.: Enviado, Entregue) — distinta de OrderStatus (crédito/confirmação).
+model OrderSituation {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Código estável por org (ex.: SENT, DELIVERED).
+  code           String
+  name           String
+  sortOrder      Int          @default(0)
+  active         Boolean      @default(true)
+  /// Situações padrão criadas pelo sistema (não excluir; só desativar).
+  isSystem       Boolean      @default(false)
+  /// Indica que a situação representa cancelamento operacional (metadado; não altera OrderStatus).
+  mapsToCancel   Boolean      @default(false)
+  orders         Order[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, code])
+  @@index([organizationId, active, sortOrder])
+}
+
 model Order {
   id             String       @id @default(cuid())
   status         OrderStatus  @default(DRAFT)
@@ -876,6 +917,9 @@ model Order {
   customer       Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
   paymentConditionId String?
   paymentCondition   PaymentCondition? @relation(fields: [paymentConditionId], references: [id], onDelete: SetNull)
+  /// Situação operacional (enviado/entregue/etc.) — independente de `status` financeiro.
+  situationId    String?
+  situation      OrderSituation? @relation(fields: [situationId], references: [id], onDelete: SetNull)
   operation      OrderOperation @default(SALE)
   totalAmount    Decimal      @db.Decimal(14, 2)
   /// Total descontado por combos aplicados sobre as linhas (já refletido em `totalAmount`).
@@ -900,6 +944,7 @@ model Order {
   @@unique([organizationId, orderNumber])
   @@index([organizationId, createdAt])
   @@index([organizationId, paymentConditionId])
+  @@index([organizationId, situationId])
 }
 
 model OrderItem {
@@ -1064,6 +1109,8 @@ model OrganizationFiscalConfig {
   certificatePasswordEncrypted String?
   certificateExpiresAt      DateTime?
   certificateCnpj           String?
+  /// Último limiar de alerta de validade notificado (60|30|15|7|0). Null = nenhum.
+  certificateLastAlertThreshold Int?
   autoStockOnInboundInvoice Boolean         @default(false)
   /// Imagem da logo exibida no DANFE (PNG/JPEG/WebP).
   danfeLogoBytes            Bytes?
