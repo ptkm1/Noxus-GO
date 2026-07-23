@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { requireAdmin } from "../auth/org-roles.js";
@@ -33,6 +34,50 @@ import {
 } from "../services/nfe-danfe-load.js";
 
 const idParam = z.object({ id: z.string().min(1) });
+
+function outboundInvoiceSearchWhere(
+  organizationId: string,
+  searchRaw?: string,
+): Prisma.FiscalInvoiceWhereInput {
+  const where: Prisma.FiscalInvoiceWhereInput = {
+    organizationId,
+    direction: "OUTBOUND",
+  };
+  const search = searchRaw?.trim();
+  if (!search) return where;
+
+  const digits = search.replace(/\D/g, "");
+  const or: Prisma.FiscalInvoiceWhereInput[] = [
+    {
+      order: {
+        customer: { name: { contains: search, mode: "insensitive" } },
+      },
+    },
+    {
+      order: {
+        customer: { tradeName: { contains: search, mode: "insensitive" } },
+      },
+    },
+    {
+      order: {
+        customer: { legalName: { contains: search, mode: "insensitive" } },
+      },
+    },
+    { order: { id: { contains: search, mode: "insensitive" } } },
+  ];
+
+  if (digits) {
+    const asNum = Number(digits);
+    if (Number.isFinite(asNum) && digits.length <= 9) {
+      or.push({ number: asNum });
+      or.push({ order: { orderNumber: asNum } });
+    }
+    or.push({ accessKey: { contains: digits } });
+  }
+
+  where.OR = or;
+  return where;
+}
 
 export const fiscalRoutes: FastifyPluginAsync = async (app) => {
   app.get("/settings", async (req) => {
@@ -416,8 +461,12 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/outbound/invoices", async (req) => {
     const auth = req.auth!;
+    const q = z
+      .object({ q: z.string().optional() })
+      .safeParse(req.query);
+    const search = q.success ? q.data.q : undefined;
     return prisma.fiscalInvoice.findMany({
-      where: { organizationId: auth.organizationId, direction: "OUTBOUND" },
+      where: outboundInvoiceSearchWhere(auth.organizationId, search),
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -432,7 +481,15 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         rejectionReason: true,
         protocol: true,
         createdAt: true,
-        order: { include: { customer: true } },
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+            customer: {
+              select: { name: true, tradeName: true, legalName: true },
+            },
+          },
+        },
         items: {
           select: {
             id: true,

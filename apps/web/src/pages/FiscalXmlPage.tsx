@@ -9,7 +9,10 @@ export function FiscalXmlPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const t = window.setTimeout(() => navigate("/faturamento", { replace: true }), 2500);
+    const t = window.setTimeout(
+      () => navigate("/faturamento", { replace: true }),
+      2500,
+    );
     return () => window.clearTimeout(t);
   }, [navigate]);
 

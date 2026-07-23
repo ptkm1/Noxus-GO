@@ -28,12 +28,6 @@ import { DynamicCategoryAttributes } from "../components/DynamicCategoryAttribut
 import { ProductPromotionsPanel } from "../components/ProductPromotionsPanel";
 import { apiFetch } from "../lib/api";
 
-type FiscalNcmOption = {
-  id: string;
-  code: string;
-  description: string;
-  active: boolean;
-};
 type FiscalOpOption = {
   id: string;
   direction: string;
@@ -95,11 +89,6 @@ export function ProductFormPage() {
   useScrollToFirstError(
     Object.keys(fieldErrors).length > 0 ? fieldErrors : formError,
   );
-
-  const { data: ncms = [] } = useQuery({
-    queryKey: ["admin", "fiscal", "ncm"],
-    queryFn: () => apiFetch<FiscalNcmOption[]>("/admin/fiscal/ncm"),
-  });
 
   const { data: outboundOps = [] } = useQuery({
     queryKey: ["admin", "fiscal", "operations", "OUTBOUND"],
@@ -705,48 +694,25 @@ export function ProductFormPage() {
         {activeTab === "fiscal" ? (
           <FormSection
             title="Dados fiscais para NF-e"
-            description="Campos usados na emissão. Cadastre NCM/CFOP em Faturamento → NCM/CFOP."
+            description="Campos usados na emissão. Digite o NCM livremente (8 dígitos)."
           >
             <FormGrid cols={2}>
               <FormField
-                label="NCM (cadastro fiscal)"
-                htmlFor="prod-ncm-id"
-                hint="Obrigatório para emitir NF-e."
-              >
-                <select
-                  id="prod-ncm-id"
-                  className={fieldControlClass}
-                  value={values.ncmId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setField("ncmId", id);
-                    const selected = ncms.find((n) => n.id === id);
-                    if (selected) setField("ncm", selected.code);
-                  }}
-                >
-                  <option value="">Selecione o NCM…</option>
-                  {ncms
-                    .filter((n) => n.active)
-                    .map((n) => (
-                      <option key={n.id} value={n.id}>
-                        {n.code} — {n.description}
-                      </option>
-                    ))}
-                </select>
-              </FormField>
-
-              <FormField
-                label="NCM (código)"
+                label="NCM"
                 htmlFor="prod-ncm"
                 error={fieldError("ncm")}
-                hint="8 dígitos. Preenchido ao selecionar o NCM."
+                hint="8 dígitos. Digite o código livremente."
               >
                 <Input
                   id="prod-ncm"
                   placeholder="27101932"
                   value={values.ncm}
-                  onChange={(e) => setField("ncm", e.target.value)}
+                  onChange={(e) => {
+                    setField("ncm", e.target.value);
+                    if (values.ncmId) setField("ncmId", "");
+                  }}
                   inputMode="numeric"
+                  maxLength={10}
                 />
               </FormField>
 
@@ -932,12 +898,14 @@ export function ProductFormPage() {
                 />
               </FormField>
             </FormGrid>
-            {values.ncmId && values.nfeOrigin !== "" && values.fiscalUnit ? (
+            {values.ncm.replace(/\D/g, "").length === 8 &&
+            values.nfeOrigin !== "" &&
+            values.fiscalUnit ? (
               <p className="mt-3 text-sm text-green-700">Pronto para NF-e</p>
             ) : (
               <p className="mt-3 text-sm text-amber-700">
-                Cadastro fiscal incompleto — selecione NCM, origem e unidade
-                fiscal.
+                Cadastro fiscal incompleto — informe NCM (8 dígitos), origem e
+                unidade fiscal.
               </p>
             )}
           </FormSection>
