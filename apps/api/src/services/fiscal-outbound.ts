@@ -113,6 +113,11 @@ export async function buildOutboundInvoiceFromOrder(
       icmsRate: ncm?.icmsRate ? Number(ncm.icmsRate) : undefined,
       pisRate: ncm?.pisRate ? Number(ncm.pisRate) : undefined,
       cofinsRate: ncm?.cofinsRate ? Number(ncm.cofinsRate) : undefined,
+      ipiRate: item.product.ipiPercent
+        ? Number(item.product.ipiPercent)
+        : undefined,
+      fcpRate: ncm?.fcpRate ? Number(ncm.fcpRate) : undefined,
+      cstPis: item.product.cstPis,
       regime,
     });
     return {
@@ -131,10 +136,19 @@ export async function buildOutboundInvoiceFromOrder(
         csosn: ncm?.defaultCsosn ?? taxes.csosn,
         cst: ncm?.defaultCstIcms ?? taxes.cst,
       },
+      _grossWeightKg: item.product.grossWeightKg
+        ? Number(item.product.grossWeightKg) * item.quantity
+        : 0,
+      _netWeightKg: item.product.netWeightKg
+        ? Number(item.product.netWeightKg) * item.quantity
+        : 0,
     };
   });
 
   const totalAmount = invoiceItems.reduce((s, i) => s + i.totalPrice, 0);
+  const grossWeightKg = invoiceItems.reduce((s, i) => s + i._grossWeightKg, 0);
+  const netWeightKg = invoiceItems.reduce((s, i) => s + i._netWeightKg, 0);
+  const volumeQty = order.items.reduce((s, i) => s + i.quantity, 0);
 
   const invoice = await prisma.$transaction(async (tx) => {
     await tx.organizationFiscalConfig.update({
@@ -147,6 +161,12 @@ export async function buildOutboundInvoiceFromOrder(
         organizationId,
         direction: "OUTBOUND",
         status: "DRAFT",
+        documentModel: 55,
+        tpEmis: "1",
+        modFrete: "9",
+        volumeQty: volumeQty > 0 ? volumeQty : null,
+        grossWeightKg: grossWeightKg > 0 ? grossWeightKg : null,
+        netWeightKg: netWeightKg > 0 ? netWeightKg : null,
         orderId: order.id,
         customerId: order.customerId,
         number: nextNumber,
@@ -154,7 +174,11 @@ export async function buildOutboundInvoiceFromOrder(
         totalAmount,
         issuerSnapshot: buildIssuerSnapshot(cfg),
         recipientSnapshot: buildRecipientSnapshot(order.customer!),
-        items: { create: invoiceItems },
+        items: {
+          create: invoiceItems.map(
+            ({ _grossWeightKg: _g, _netWeightKg: _n, ...row }) => row,
+          ),
+        },
       },
       include: { items: true, order: { include: { customer: true } } },
     });
@@ -244,7 +268,7 @@ export async function transmitOutboundInvoice(
           0,
           50000,
         ),
-        success: sefaz.ok,
+        success: sefaz.ok || Boolean(sefaz.pending),
       },
     });
 
@@ -257,6 +281,20 @@ export async function transmitOutboundInvoice(
           xmlSigned: signedNFe,
           xmlAuthorized: sefaz.rawResponse || signedNFe,
           protocol: sefaz.parsed.nProt ?? null,
+          issuedAt,
+          rejectionReason: null,
+        },
+        include: { items: true, order: true },
+      });
+    }
+
+    if (sefaz.pending) {
+      return tx.fiscalInvoice.update({
+        where: { id: invoice.id },
+        data: {
+          status: "TRANSMITTED",
+          accessKey,
+          xmlSigned: signedNFe,
           issuedAt,
           rejectionReason: null,
         },
@@ -278,6 +316,15 @@ export async function transmitOutboundInvoice(
     });
   });
 
+  if (sefaz.pending) {
+    return {
+      ok: true as const,
+      pending: true as const,
+      sefazReceipt: sefaz.parsed.nRec ?? null,
+      invoice: updated,
+    };
+  }
+
   if (!sefaz.ok) {
     return {
       ok: false as const,
@@ -286,6 +333,49 @@ export async function transmitOutboundInvoice(
     };
   }
 
+  return { ok: true as const, invoice: updated };
+}
+
+export async function updateOutboundInvoiceTransport(
+  organizationId: string,
+  invoiceId: string,
+  data: {
+    modFrete?: string;
+    freightAmount?: number | null;
+    volumeQty?: number | null;
+    grossWeightKg?: number | null;
+    netWeightKg?: number | null;
+  },
+) {
+  const invoice = await prisma.fiscalInvoice.findFirst({
+    where: { id: invoiceId, organizationId, direction: "OUTBOUND" },
+  });
+  if (!invoice) return { ok: false as const, error: "Nota não encontrada" };
+  if (invoice.status !== "DRAFT" && invoice.status !== "REJECTED") {
+    return {
+      ok: false as const,
+      error: "Só é possível editar transporte em rascunho ou rejeitada",
+    };
+  }
+  const updated = await prisma.fiscalInvoice.update({
+    where: { id: invoiceId },
+    data: {
+      ...(data.modFrete != null
+        ? { modFrete: String(data.modFrete).slice(0, 1) }
+        : {}),
+      ...(data.freightAmount !== undefined
+        ? { freightAmount: data.freightAmount }
+        : {}),
+      ...(data.volumeQty !== undefined ? { volumeQty: data.volumeQty } : {}),
+      ...(data.grossWeightKg !== undefined
+        ? { grossWeightKg: data.grossWeightKg }
+        : {}),
+      ...(data.netWeightKg !== undefined
+        ? { netWeightKg: data.netWeightKg }
+        : {}),
+    },
+    include: { items: true, order: { include: { customer: true } } },
+  });
   return { ok: true as const, invoice: updated };
 }
 
@@ -524,8 +614,20 @@ export async function consultOutboundInvoiceSituation(
     },
   });
 
-  // Sincroniza status local se SEFAZ indicar cancelada
-  if (
+  // Sincroniza status local a partir da consulta
+  if (sefaz.ok && sefaz.parsed.cStat === "100") {
+    if (invoice.status === "TRANSMITTED" || invoice.status === "DRAFT") {
+      await prisma.fiscalInvoice.update({
+        where: { id: invoice.id },
+        data: {
+          status: "AUTHORIZED",
+          protocol: sefaz.parsed.nProt ?? invoice.protocol,
+          rejectionReason: null,
+          xmlAuthorized: invoice.xmlAuthorized ?? invoice.xmlSigned,
+        },
+      });
+    }
+  } else if (
     sefaz.ok &&
     sefaz.parsed.cStat === "101" &&
     invoice.status === "AUTHORIZED"

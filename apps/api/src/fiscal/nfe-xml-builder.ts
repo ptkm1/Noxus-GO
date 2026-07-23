@@ -110,6 +110,100 @@ function buildIcmsXml(
         </ICMS>`;
 }
 
+function taxNum(tax: Record<string, unknown>, key: string): number {
+  const v = tax[key];
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function buildPisCofinsXml(tax: Record<string, unknown>): string {
+  const cst = String(tax.cstPis ?? "07").padStart(2, "0");
+  const vBC = formatNfeDecimal(taxNum(tax, "base"));
+  const pPIS = formatNfeDecimal(taxNum(tax, "pisRate"));
+  const vPIS = formatNfeDecimal(taxNum(tax, "pis"));
+  const pCOFINS = formatNfeDecimal(taxNum(tax, "cofinsRate"));
+  const vCOFINS = formatNfeDecimal(taxNum(tax, "cofins"));
+  if (cst === "07" || cst === "08" || cst === "09") {
+    return `<PIS><PISNT><CST>${cst}</CST></PISNT></PIS>
+        <COFINS><COFINSNT><CST>${cst}</CST></COFINSNT></COFINS>`;
+  }
+  return `<PIS>
+          <PISAliq>
+            <CST>${cst}</CST>
+            <vBC>${vBC}</vBC>
+            <pPIS>${pPIS}</pPIS>
+            <vPIS>${vPIS}</vPIS>
+          </PISAliq>
+        </PIS>
+        <COFINS>
+          <COFINSAliq>
+            <CST>${cst}</CST>
+            <vBC>${vBC}</vBC>
+            <pCOFINS>${pCOFINS}</pCOFINS>
+            <vCOFINS>${vCOFINS}</vCOFINS>
+          </COFINSAliq>
+        </COFINS>`;
+}
+
+function buildIpiXml(tax: Record<string, unknown>): string {
+  const ipi = taxNum(tax, "ipi");
+  const ipiRate = taxNum(tax, "ipiRate");
+  if (ipi <= 0 && ipiRate <= 0) return "";
+  const vBC = formatNfeDecimal(taxNum(tax, "base"));
+  return `<IPI>
+          <cEnq>999</cEnq>
+          <IPITrib>
+            <CST>99</CST>
+            <vBC>${vBC}</vBC>
+            <pIPI>${formatNfeDecimal(ipiRate)}</pIPI>
+            <vIPI>${formatNfeDecimal(ipi)}</vIPI>
+          </IPITrib>
+        </IPI>`;
+}
+
+function buildTranspXml(invoice: FiscalInvoice): string {
+  const modFrete = String(invoice.modFrete ?? "9").slice(0, 1) || "9";
+  const qVol = invoice.volumeQty != null ? Number(invoice.volumeQty) : null;
+  const pesoB =
+    invoice.grossWeightKg != null ? Number(invoice.grossWeightKg) : null;
+  const pesoL =
+    invoice.netWeightKg != null ? Number(invoice.netWeightKg) : null;
+  const hasVol =
+    (qVol != null && qVol > 0) ||
+    (pesoB != null && pesoB > 0) ||
+    (pesoL != null && pesoL > 0);
+  if (!hasVol) return `<transp><modFrete>${modFrete}</modFrete></transp>`;
+  return (
+    `<transp><modFrete>${modFrete}</modFrete>` +
+    `<vol>` +
+    `<qVol>${formatNfeDecimal(qVol ?? 0, 0)}</qVol>` +
+    `<pesoL>${formatNfeDecimal(pesoL ?? 0, 3)}</pesoL>` +
+    `<pesoB>${formatNfeDecimal(pesoB ?? 0, 3)}</pesoB>` +
+    `</vol></transp>`
+  );
+}
+
+function sumTaxSnapshots(items: FiscalInvoiceItem[]) {
+  let vBC = 0;
+  let vICMS = 0;
+  let vFCP = 0;
+  let vIPI = 0;
+  let vPIS = 0;
+  let vCOFINS = 0;
+  let vProd = 0;
+  for (const item of items) {
+    vProd += Number(item.totalPrice);
+    const tax = (item.taxSnapshot as Record<string, unknown> | null) ?? {};
+    vBC += taxNum(tax, "base");
+    vICMS += taxNum(tax, "icms");
+    vFCP += taxNum(tax, "fcp");
+    vIPI += taxNum(tax, "ipi");
+    vPIS += taxNum(tax, "pis");
+    vCOFINS += taxNum(tax, "cofins");
+  }
+  return { vBC, vICMS, vFCP, vIPI, vPIS, vCOFINS, vProd };
+}
+
 export function buildSignedNfePackage(input: {
   config: OrganizationFiscalConfig;
   invoice: FiscalInvoice & { items: FiscalInvoiceItem[] };
@@ -118,6 +212,11 @@ export function buildSignedNfePackage(input: {
   accessKey?: string;
   payment?: NfePaymentInfo;
 }) {
+  if ((input.invoice.documentModel ?? 55) !== 55) {
+    throw new Error(
+      "Emissão NFC-e (modelo 65) ainda não implementada — use documentModel 55.",
+    );
+  }
   const issuedAt = new Date();
   const accessKey =
     input.accessKey ??
@@ -161,15 +260,19 @@ function buildInfNFe(input: {
   const crt = taxRegimeToCrt(config.taxRegime);
   const destDoc = onlyDigits(recipient.document ?? "");
   const isCnpj = destDoc.length === 14;
-  const total = Number(invoice.totalAmount);
   const destName = homolog
     ? "NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL"
     : recipient.name;
+  const tpEmis = String(invoice.tpEmis ?? "1").slice(0, 1) || "1";
+  const freight = Number(invoice.freightAmount ?? 0);
+  const totals = sumTaxSnapshots(invoice.items);
+  const vNF = totals.vProd + freight + totals.vIPI;
 
   const det = invoice.items
     .map((item) => {
       const tax = (item.taxSnapshot as Record<string, unknown> | null) ?? {};
       const vProd = Number(item.totalPrice);
+      const ipiXml = buildIpiXml(tax);
       return `
     <det nItem="${item.lineNumber}">
       <prod>
@@ -190,12 +293,8 @@ function buildInfNFe(input: {
       </prod>
       <imposto>
         ${buildIcmsXml(config.taxRegime, tax, item.lineNumber)}
-        <PIS>
-          <PISNT><CST>07</CST></PISNT>
-        </PIS>
-        <COFINS>
-          <COFINSNT><CST>07</CST></COFINSNT>
-        </COFINS>
+        ${ipiXml}
+        ${buildPisCofinsXml(tax)}
       </imposto>
     </det>`;
     })
@@ -214,7 +313,7 @@ function buildInfNFe(input: {
     <idDest>1</idDest>
     <cMunFG>${escapeXml(config.cityIbge ?? "3550308")}</cMunFG>
     <tpImp>1</tpImp>
-    <tpEmis>1</tpEmis>
+    <tpEmis>${tpEmis}</tpEmis>
     <cDV>${accessKey.slice(-1)}</cDV>
     <tpAmb>${tpAmb}</tpAmb>
     <finNFe>1</finNFe>
@@ -259,29 +358,29 @@ function buildInfNFe(input: {
   </dest>${det}
   <total>
     <ICMSTot>
-      <vBC>0.00</vBC>
-      <vICMS>0.00</vICMS>
+      <vBC>${formatNfeDecimal(totals.vBC)}</vBC>
+      <vICMS>${formatNfeDecimal(totals.vICMS)}</vICMS>
       <vICMSDeson>0.00</vICMSDeson>
-      <vFCP>0.00</vFCP>
+      <vFCP>${formatNfeDecimal(totals.vFCP)}</vFCP>
       <vBCST>0.00</vBCST>
       <vST>0.00</vST>
       <vFCPST>0.00</vFCPST>
       <vFCPSTRet>0.00</vFCPSTRet>
-      <vProd>${formatNfeDecimal(total)}</vProd>
-      <vFrete>0.00</vFrete>
+      <vProd>${formatNfeDecimal(totals.vProd)}</vProd>
+      <vFrete>${formatNfeDecimal(freight)}</vFrete>
       <vSeg>0.00</vSeg>
       <vDesc>0.00</vDesc>
       <vII>0.00</vII>
-      <vIPI>0.00</vIPI>
+      <vIPI>${formatNfeDecimal(totals.vIPI)}</vIPI>
       <vIPIDevol>0.00</vIPIDevol>
-      <vPIS>0.00</vPIS>
-      <vCOFINS>0.00</vCOFINS>
+      <vPIS>${formatNfeDecimal(totals.vPIS)}</vPIS>
+      <vCOFINS>${formatNfeDecimal(totals.vCOFINS)}</vCOFINS>
       <vOutro>0.00</vOutro>
-      <vNF>${formatNfeDecimal(total)}</vNF>
+      <vNF>${formatNfeDecimal(vNF)}</vNF>
     </ICMSTot>
   </total>
-  <transp><modFrete>9</modFrete></transp>
-  ${buildPagXml(total, input.payment)}
+  ${buildTranspXml(invoice)}
+  ${buildPagXml(vNF, input.payment)}
 </infNFe>`;
 }
 

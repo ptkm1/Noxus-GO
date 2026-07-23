@@ -64,8 +64,19 @@ export async function buildSalesScorecard(params: {
     },
   });
 
-  const bySeller = new Map<string, { name: string; orderCount: number; totalAmount: number }>();
-  const byTeam = new Map<string, { teamId: string; teamName: string; orderCount: number; totalAmount: number }>();
+  const bySeller = new Map<
+    string,
+    { name: string; orderCount: number; totalAmount: number }
+  >();
+  const byTeam = new Map<
+    string,
+    {
+      teamId: string;
+      teamName: string;
+      orderCount: number;
+      totalAmount: number;
+    }
+  >();
   const byDay = new Map<string, { orderCount: number; totalAmount: number }>();
 
   let totalAmount = 0;
@@ -196,7 +207,8 @@ export async function buildMarginReport(params: {
   for (const o of orders) {
     for (const it of o.items) {
       const revenue = decToNum(it.unitPrice) * it.quantity;
-      const unitCost = it.product.costPrice != null ? decToNum(it.product.costPrice) : null;
+      const unitCost =
+        it.product.costPrice != null ? decToNum(it.product.costPrice) : null;
       const cost = unitCost != null ? unitCost * it.quantity : 0;
       if (unitCost == null) linesMissingCost += 1;
 
@@ -260,7 +272,8 @@ export async function buildMarginReport(params: {
     return [...m.entries()]
       .map(([id, r]) => {
         const margin = roundMoney(r.revenue - r.cost);
-        const marginPct = r.revenue > 0 ? roundMoney((margin / r.revenue) * 100) : 0;
+        const marginPct =
+          r.revenue > 0 ? roundMoney((margin / r.revenue) * 100) : 0;
         return {
           id,
           label: r.label,
@@ -275,7 +288,8 @@ export async function buildMarginReport(params: {
   }
 
   const margin = roundMoney(totalRevenue - totalCost);
-  const marginPct = totalRevenue > 0 ? roundMoney((margin / totalRevenue) * 100) : 0;
+  const marginPct =
+    totalRevenue > 0 ? roundMoney((margin / totalRevenue) * 100) : 0;
 
   return {
     generatedAt: new Date().toISOString(),
@@ -316,10 +330,14 @@ export async function buildCommissionStatement(params: {
     where: { organizationId: params.organizationId, year, month },
   });
   const sellerGoal = new Map(
-    goals.filter((g) => g.scope === "SELLER" && g.sellerId).map((g) => [g.sellerId!, g]),
+    goals
+      .filter((g) => g.scope === "SELLER" && g.sellerId)
+      .map((g) => [g.sellerId!, g]),
   );
   const teamGoal = new Map(
-    goals.filter((g) => g.scope === "TEAM" && g.teamId).map((g) => [g.teamId!, g]),
+    goals
+      .filter((g) => g.scope === "TEAM" && g.teamId)
+      .map((g) => [g.teamId!, g]),
   );
   const allGoal = goals.find((g) => g.scope === "ALL") ?? null;
 
@@ -339,7 +357,10 @@ export async function buildCommissionStatement(params: {
     },
   });
 
-  const agg = new Map<string, { revenue: number; commission: number; orderIds: Set<string> }>();
+  const agg = new Map<
+    string,
+    { revenue: number; commission: number; orderIds: Set<string> }
+  >();
   // Re-query orders for counts
   const orders = await prisma.order.findMany({
     where: {
@@ -351,14 +372,22 @@ export async function buildCommissionStatement(params: {
   });
 
   for (const o of orders) {
-    const row = agg.get(o.sellerId) ?? { revenue: 0, commission: 0, orderIds: new Set<string>() };
+    const row = agg.get(o.sellerId) ?? {
+      revenue: 0,
+      commission: 0,
+      orderIds: new Set<string>(),
+    };
     row.revenue += decToNum(o.totalAmount);
     row.orderIds.add(o.id);
     agg.set(o.sellerId, row);
   }
   for (const it of items) {
     const sid = it.order.sellerId;
-    const row = agg.get(sid) ?? { revenue: 0, commission: 0, orderIds: new Set<string>() };
+    const row = agg.get(sid) ?? {
+      revenue: 0,
+      commission: 0,
+      orderIds: new Set<string>(),
+    };
     row.commission += decToNum(it.commissionAmount ?? 0);
     agg.set(sid, row);
   }
@@ -398,7 +427,9 @@ export async function buildCommissionStatement(params: {
         achieved = orgRevenue;
       }
       const goalPct =
-        target != null && target > 0 ? roundMoney((achieved / target) * 100) : null;
+        target != null && target > 0
+          ? roundMoney((achieved / target) * 100)
+          : null;
       return {
         sellerId: s.id,
         name: s.user.name,
@@ -488,7 +519,10 @@ export async function buildStockHealthReport(organizationId: string) {
         excess: roundMoney(qty - p.maxStockQty),
       });
     }
-    if (qty > 0 && (neverSold || (daysSince != null && daysSince >= stagnantDays))) {
+    if (
+      qty > 0 &&
+      (neverSold || (daysSince != null && daysSince >= stagnantDays))
+    ) {
       stagnantWithStock.push({
         productId: p.id,
         name: p.name,
@@ -563,7 +597,9 @@ export async function buildCreditAgingReport(organizationId: string) {
     if (open <= 0) continue;
     const due = new Date(t.dueDate);
     due.setHours(0, 0, 0, 0);
-    const daysOverdue = Math.floor((today.getTime() - due.getTime()) / 86_400_000);
+    const daysOverdue = Math.floor(
+      (today.getTime() - due.getTime()) / 86_400_000,
+    );
 
     let key: BucketKey = "current";
     if (daysOverdue >= 91) key = "d90_plus";
@@ -612,7 +648,9 @@ export async function buildCreditAgingReport(organizationId: string) {
     generatedAt: new Date().toISOString(),
     totals: {
       openTitles: titles.length,
-      openBalance: roundMoney(Object.values(buckets).reduce((s, n) => s + n, 0)),
+      openBalance: roundMoney(
+        Object.values(buckets).reduce((s, n) => s + n, 0),
+      ),
       buckets: {
         current: roundMoney(buckets.current),
         d1_30: roundMoney(buckets.d1_30),
@@ -649,7 +687,13 @@ export async function buildFiscalReconciliation(params: {
       seller: { select: { user: { select: { name: true } } } },
       fiscalInvoices: {
         where: { direction: "OUTBOUND" },
-        select: { id: true, status: true, number: true, series: true, totalAmount: true },
+        select: {
+          id: true,
+          status: true,
+          number: true,
+          series: true,
+          totalAmount: true,
+        },
         orderBy: { createdAt: "desc" },
         take: 1,
       },
@@ -722,12 +766,120 @@ export async function buildFiscalReconciliation(params: {
       ordersWithoutNfe: withoutNfe.length,
       ordersWithAuthorizedNfe: authorizedCount,
       outboundAuthorizedCount: outbound._count,
-      outboundAuthorizedTotal: roundMoney(decToNum(outbound._sum.totalAmount ?? 0)),
+      outboundAuthorizedTotal: roundMoney(
+        decToNum(outbound._sum.totalAmount ?? 0),
+      ),
       inboundCount: inbound._count,
       inboundTotal: roundMoney(decToNum(inbound._sum.totalAmount ?? 0)),
     },
     ordersWithoutNfe: withoutNfe,
     rejectedOrCancelled: rejected,
+  };
+}
+
+/** Resumo operacional NF-e de saída (fila, rejeições, status). */
+export async function buildFiscalOutboundSummary(params: {
+  organizationId: string;
+  from?: string;
+  to?: string;
+}) {
+  const { start, end } = resolvePeriod(params.from, params.to);
+  const orgId = params.organizationId;
+
+  const [
+    drafts,
+    authorized,
+    rejected,
+    transmitted,
+    queuedPending,
+    queuedFailed,
+    recentRejected,
+  ] = await Promise.all([
+    prisma.fiscalInvoice.count({
+      where: {
+        organizationId: orgId,
+        direction: "OUTBOUND",
+        status: "DRAFT",
+        createdAt: { gte: start, lte: end },
+      },
+    }),
+    prisma.fiscalInvoice.count({
+      where: {
+        organizationId: orgId,
+        direction: "OUTBOUND",
+        status: "AUTHORIZED",
+        issuedAt: { gte: start, lte: end },
+      },
+    }),
+    prisma.fiscalInvoice.count({
+      where: {
+        organizationId: orgId,
+        direction: "OUTBOUND",
+        status: "REJECTED",
+        createdAt: { gte: start, lte: end },
+      },
+    }),
+    prisma.fiscalInvoice.count({
+      where: {
+        organizationId: orgId,
+        direction: "OUTBOUND",
+        status: "TRANSMITTED",
+      },
+    }),
+    prisma.fiscalTransmitJob.count({
+      where: {
+        organizationId: orgId,
+        status: { in: ["PENDING", "RUNNING"] },
+      },
+    }),
+    prisma.fiscalTransmitJob.count({
+      where: { organizationId: orgId, status: "FAILED" },
+    }),
+    prisma.fiscalInvoice.findMany({
+      where: {
+        organizationId: orgId,
+        direction: "OUTBOUND",
+        status: "REJECTED",
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+      select: {
+        id: true,
+        number: true,
+        series: true,
+        rejectionReason: true,
+        updatedAt: true,
+        order: {
+          select: {
+            orderNumber: true,
+            customer: { select: { name: true, tradeName: true } },
+          },
+        },
+      },
+    }),
+  ]);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    period: { from: start.toISOString(), to: end.toISOString() },
+    counts: {
+      drafts,
+      authorized,
+      rejected,
+      transmitted,
+      queuePending: queuedPending,
+      queueFailed: queuedFailed,
+    },
+    recentRejected: recentRejected.map((r) => ({
+      id: r.id,
+      number: r.number,
+      series: r.series,
+      rejectionReason: r.rejectionReason,
+      updatedAt: r.updatedAt.toISOString(),
+      orderNumber: r.order?.orderNumber ?? null,
+      customerName:
+        r.order?.customer?.tradeName || r.order?.customer?.name || "—",
+    })),
   };
 }
 
@@ -770,7 +922,9 @@ export async function buildVisitEffectiveness(params: {
         gte: start,
         lte: new Date(end.getTime() + windowDays * 86_400_000),
       },
-      ...(params.sellerIds?.length ? { sellerId: { in: params.sellerIds } } : {}),
+      ...(params.sellerIds?.length
+        ? { sellerId: { in: params.sellerIds } }
+        : {}),
     },
     select: {
       id: true,
@@ -817,7 +971,9 @@ export async function buildVisitEffectiveness(params: {
     const candidates = ordersByPair.get(key) ?? [];
     const visitDayStart = new Date(v.checkedInAt);
     visitDayStart.setHours(0, 0, 0, 0);
-    const windowEnd = new Date(visitDayStart.getTime() + windowDays * 86_400_000 + 86_400_000 - 1);
+    const windowEnd = new Date(
+      visitDayStart.getTime() + windowDays * 86_400_000 + 86_400_000 - 1,
+    );
 
     const match = candidates.find(
       (o) => o.createdAt >= visitDayStart && o.createdAt <= windowEnd,
@@ -842,7 +998,9 @@ export async function buildVisitEffectiveness(params: {
   const assignedCustomers = await prisma.customer.count({
     where: {
       organizationId: params.organizationId,
-      sellerId: params.sellerIds?.length ? { in: params.sellerIds } : { not: null },
+      sellerId: params.sellerIds?.length
+        ? { in: params.sellerIds }
+        : { not: null },
     },
   });
   const visitedCustomerIds = new Set(visits.map((v) => v.customerId));
@@ -873,7 +1031,8 @@ export async function buildVisitEffectiveness(params: {
         name: r.name,
         visits: r.visits,
         converted: r.converted,
-        conversionRate: r.visits > 0 ? roundMoney((r.converted / r.visits) * 100) : 0,
+        conversionRate:
+          r.visits > 0 ? roundMoney((r.converted / r.visits) * 100) : 0,
         revenue: roundMoney(r.revenue),
       }))
       .sort((a, b) => b.converted - a.converted),

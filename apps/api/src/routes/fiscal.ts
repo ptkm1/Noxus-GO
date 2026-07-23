@@ -19,15 +19,21 @@ import {
   manifestInboundNfe,
   syncInboundDfe,
 } from "../services/fiscal-inbound.js";
+import { sendFiscalInvoiceEmail } from "../services/fiscal-invoice-email.js";
 import {
-    buildOutboundInvoiceFromOrder,
-    cancelOutboundInvoice,
-    consultOutboundInvoiceSituation,
-    inutilizarNumeracao,
-    listEligibleOutboundOrders,
-    sendCartaCorrecao,
-    transmitOutboundInvoice,
+  buildOutboundInvoiceFromOrder,
+  cancelOutboundInvoice,
+  consultOutboundInvoiceSituation,
+  inutilizarNumeracao,
+  listEligibleOutboundOrders,
+  sendCartaCorrecao,
+  transmitOutboundInvoice,
+  updateOutboundInvoiceTransport,
 } from "../services/fiscal-outbound.js";
+import {
+  enqueueFiscalTransmit,
+  requeueFiscalTransmit,
+} from "../services/fiscal-transmit-queue.js";
 import {
   loadInvoiceForDanfe,
   sendDanfePdfReply,
@@ -109,6 +115,9 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
       nfeEnvironment: config.nfeEnvironment,
       nfeSeries: config.nfeSeries,
       nfeLastNumber: config.nfeLastNumber,
+      nfceSeries: config.nfceSeries,
+      nfceLastNumber: config.nfceLastNumber,
+      contingencyEnabled: config.contingencyEnabled,
       autoStockOnInboundInvoice: config.autoStockOnInboundInvoice,
       logo: {
         uploaded: Boolean(config.danfeLogoBytes?.length),
@@ -144,6 +153,8 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         zipCode: z.string().optional(),
         nfeEnvironment: z.enum(["HOMOLOGATION", "PRODUCTION"]).optional(),
         nfeSeries: z.number().int().positive().optional(),
+        /** Hook UI — emissão SVC ainda não implementada. */
+        contingencyEnabled: z.boolean().optional(),
         autoStockOnInboundInvoice: z.boolean().optional(),
       })
       .safeParse(req.body);
@@ -322,6 +333,7 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         icmsRate: z.number().optional(),
         pisRate: z.number().optional(),
         cofinsRate: z.number().optional(),
+        fcpRate: z.number().optional(),
       })
       .safeParse(req.body);
     if (!body.success)
@@ -344,6 +356,7 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         icmsRate: z.number().nullable().optional(),
         pisRate: z.number().nullable().optional(),
         cofinsRate: z.number().nullable().optional(),
+        fcpRate: z.number().nullable().optional(),
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
@@ -444,8 +457,47 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     if (!requireAdmin(reply, auth)) return;
     const { id } = idParam.parse(req.params);
+    const body = z
+      .object({ async: z.boolean().optional() })
+      .safeParse(req.body ?? {});
+    const qAsync =
+      typeof req.query === "object" &&
+      req.query &&
+      "async" in req.query &&
+      String((req.query as { async?: string }).async) === "1";
+    const useAsync = (body.success && body.data.async) || qAsync;
+
+    if (useAsync) {
+      const queued = await enqueueFiscalTransmit(auth.organizationId, id);
+      if (!queued.ok) return reply.status(400).send({ error: queued.error });
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.NFE_TRANSMIT,
+        entityType: AUDIT_ENTITY.FiscalInvoice,
+        entityId: id,
+        metadata: { async: true, jobId: queued.job.id },
+      });
+      return reply.status(202).send({
+        queued: true,
+        job: queued.job,
+        alreadyQueued: queued.alreadyQueued ?? false,
+      });
+    }
+
     const result = await transmitOutboundInvoice(auth.organizationId, id);
     if (!result.ok) return reply.status(400).send({ error: result.error });
+    if ("pending" in result && result.pending) {
+      const queued = await enqueueFiscalTransmit(auth.organizationId, id);
+      if (queued.ok) {
+        await prisma.fiscalTransmitJob.update({
+          where: { id: queued.job.id },
+          data: {
+            sefazReceipt: result.sefazReceipt,
+            nextRunAt: new Date(Date.now() + 30_000),
+            status: "PENDING",
+          },
+        });
+      }
+    }
     await auditFromAuth(auth, {
       action: AUDIT_ACTION.NFE_TRANSMIT,
       entityType: AUDIT_ENTITY.FiscalInvoice,
@@ -454,16 +506,71 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         status: result.invoice.status,
         accessKey: result.invoice.accessKey,
         number: result.invoice.number,
+        pending: "pending" in result ? result.pending : false,
       },
     });
     return result.invoice;
   });
 
+  app.patch("/outbound/invoices/:id/transport", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        modFrete: z.string().min(1).max(1).optional(),
+        freightAmount: z.number().nonnegative().nullable().optional(),
+        volumeQty: z.number().nonnegative().nullable().optional(),
+        grossWeightKg: z.number().nonnegative().nullable().optional(),
+        netWeightKg: z.number().nonnegative().nullable().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: "Dados de transporte inválidos" });
+    }
+    const result = await updateOutboundInvoiceTransport(
+      auth.organizationId,
+      id,
+      body.data,
+    );
+    if (!result.ok) return reply.status(400).send({ error: result.error });
+    return result.invoice;
+  });
+
+  app.post("/outbound/invoices/:id/email", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({ to: z.string().email().optional() })
+      .safeParse(req.body ?? {});
+    const result = await sendFiscalInvoiceEmail(
+      auth.organizationId,
+      id,
+      body.success ? body.data.to : undefined,
+    );
+    if (!result.ok) return reply.status(400).send({ error: result.error });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.NFE_EMAIL,
+      entityType: AUDIT_ENTITY.FiscalInvoice,
+      entityId: id,
+      metadata: { to: result.to },
+    });
+    return { ok: true, to: result.to };
+  });
+
+  app.post("/outbound/invoices/:id/requeue", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+    const result = await requeueFiscalTransmit(auth.organizationId, id);
+    if (!result.ok) return reply.status(400).send({ error: result.error });
+    return result.job;
+  });
+
   app.get("/outbound/invoices", async (req) => {
     const auth = req.auth!;
-    const q = z
-      .object({ q: z.string().optional() })
-      .safeParse(req.query);
+    const q = z.object({ q: z.string().optional() }).safeParse(req.query);
     const search = q.success ? q.data.q : undefined;
     return prisma.fiscalInvoice.findMany({
       where: outboundInvoiceSearchWhere(auth.organizationId, search),
@@ -480,6 +587,9 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         stockApplied: true,
         rejectionReason: true,
         protocol: true,
+        modFrete: true,
+        documentModel: true,
+        tpEmis: true,
         createdAt: true,
         order: {
           select: {
@@ -498,6 +608,17 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
             productId: true,
           },
         },
+        transmitJobs: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+            attempts: true,
+            lastError: true,
+            nextRunAt: true,
+          },
+        },
       },
     });
   });
@@ -511,6 +632,10 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         items: { include: { product: true } },
         order: { include: { customer: true } },
         events: { orderBy: { createdAt: "desc" } },
+        transmitJobs: {
+          orderBy: { createdAt: "desc" },
+          take: 3,
+        },
       },
     });
     if (!row) return reply.status(404).send({ error: "Não encontrado" });
@@ -810,13 +935,11 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
       body.success ? body.data.ultNsu : undefined,
     );
     if (!result.ok)
-      return reply
-        .status(400)
-        .send({
-          error: result.error,
-          cStat: "cStat" in result ? result.cStat : undefined,
-          ultNSU: "ultNSU" in result ? result.ultNSU : undefined,
-        });
+      return reply.status(400).send({
+        error: result.error,
+        cStat: "cStat" in result ? result.cStat : undefined,
+        ultNSU: "ultNSU" in result ? result.ultNSU : undefined,
+      });
     return result;
   });
 

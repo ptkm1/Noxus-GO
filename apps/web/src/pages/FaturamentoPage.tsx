@@ -83,6 +83,14 @@ type FiscalInvoiceEvent = {
   responsePayload?: string | null;
 };
 
+type TransmitJobBrief = {
+  id: string;
+  status: "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED";
+  attempts: number;
+  lastError?: string | null;
+  nextRunAt?: string;
+};
+
 type FiscalInvoice = {
   id: string;
   direction: string;
@@ -96,6 +104,13 @@ type FiscalInvoice = {
   rejectionReason?: string | null;
   xmlSigned?: string | null;
   xmlAuthorized?: string | null;
+  modFrete?: string | null;
+  freightAmount?: unknown;
+  volumeQty?: unknown;
+  grossWeightKg?: unknown;
+  netWeightKg?: unknown;
+  documentModel?: number;
+  tpEmis?: string | null;
   supplier?: { tradeName?: string; legalName?: string; cnpj?: string } | null;
   order?: {
     id: string;
@@ -104,6 +119,7 @@ type FiscalInvoice = {
       name: string;
       tradeName?: string | null;
       legalName?: string | null;
+      email?: string | null;
     } | null;
   } | null;
   items: {
@@ -113,6 +129,7 @@ type FiscalInvoice = {
     productId: string | null;
   }[];
   events?: FiscalInvoiceEvent[];
+  transmitJobs?: TransmitJobBrief[];
 };
 
 type FiscalSettings = {
@@ -128,6 +145,7 @@ type FiscalSettings = {
   nfeEnvironment?: NfeEnvironment;
   nfeSeries?: number;
   nfeLastNumber?: number;
+  contingencyEnabled?: boolean;
   autoStockOnInboundInvoice?: boolean;
   logo?: {
     uploaded: boolean;
@@ -148,6 +166,14 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   NFeCancelamento: "Cancelamento",
   NFeCartaCorrecao: "Carta de correção",
   NFeConsultaSituacao: "Consulta situação",
+  NFeEmail: "E-mail XML/DANFE",
+};
+
+const JOB_STATUS_LABELS: Record<TransmitJobBrief["status"], string> = {
+  PENDING: "Na fila",
+  RUNNING: "Transmitindo",
+  SUCCEEDED: "Fila OK",
+  FAILED: "Falha na fila",
 };
 
 function certBannerMessage(cert: NonNullable<FiscalSettings["certificate"]>) {
@@ -160,7 +186,8 @@ function certBannerMessage(cert: NonNullable<FiscalSettings["certificate"]>) {
   }
   if (cert.alertThreshold != null && cert.daysUntilExpiry != null) {
     return {
-      tone: cert.alertThreshold <= 15 ? ("warning" as const) : ("info" as const),
+      tone:
+        cert.alertThreshold <= 15 ? ("warning" as const) : ("info" as const),
       text: `Certificado A1 vence em ${cert.daysUntilExpiry} dia(s) (alerta ${cert.alertThreshold} dias). Renove em Configurações.`,
     };
   }
@@ -193,7 +220,9 @@ export function FaturamentoPage() {
     new Set(),
   );
   const [outboundInvoiceSearch, setOutboundInvoiceSearch] = useState("");
-  const debouncedOutboundInvoiceSearch = useDebouncedValue(outboundInvoiceSearch);
+  const debouncedOutboundInvoiceSearch = useDebouncedValue(
+    outboundInvoiceSearch,
+  );
   const [batchEmitProgress, setBatchEmitProgress] = useState<{
     current: number;
     total: number;
@@ -401,16 +430,76 @@ export function FaturamentoPage() {
   });
 
   const transmit = useMutation({
-    mutationFn: (invoiceId: string) =>
+    mutationFn: ({
+      invoiceId,
+      async: useAsync,
+    }: {
+      invoiceId: string;
+      async?: boolean;
+    }) =>
       apiFetch(`/admin/fiscal/outbound/invoices/${invoiceId}/transmit`, {
         method: "POST",
+        body: JSON.stringify(useAsync ? { async: true } : {}),
       }),
-    onSuccess: () => {
-      notifySuccess("NF-e transmitida para a SEFAZ.");
+    onSuccess: (_data, vars) => {
+      notifySuccess(
+        vars.async
+          ? "NF-e enfileirada para transmissão."
+          : "NF-e transmitida para a SEFAZ.",
+      );
       void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
     },
     onError: (e) =>
       notifyError(getErrorMessage(e), "SEFAZ rejeitou a transmissão"),
+  });
+
+  const sendInvoiceEmail = useMutation({
+    mutationFn: (invoiceId: string) =>
+      apiFetch<{ to: string }>(
+        `/admin/fiscal/outbound/invoices/${invoiceId}/email`,
+        { method: "POST", body: "{}" },
+      ),
+    onSuccess: (res) => {
+      notifySuccess(`Enviado para ${res.to}`);
+      void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
+    },
+    onError: (e) => notifyError(getErrorMessage(e), "Falha ao enviar e-mail"),
+  });
+
+  const saveTransport = useMutation({
+    mutationFn: ({
+      invoiceId,
+      ...body
+    }: {
+      invoiceId: string;
+      modFrete?: string;
+      freightAmount?: number | null;
+      volumeQty?: number | null;
+      grossWeightKg?: number | null;
+      netWeightKg?: number | null;
+    }) =>
+      apiFetch(`/admin/fiscal/outbound/invoices/${invoiceId}/transport`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      notifySuccess("Transporte atualizado.");
+      void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
+    },
+    onError: (e) =>
+      notifyError(getErrorMessage(e), "Falha ao salvar transporte"),
+  });
+
+  const requeueTransmit = useMutation({
+    mutationFn: (invoiceId: string) =>
+      apiFetch(`/admin/fiscal/outbound/invoices/${invoiceId}/requeue`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      notifySuccess("Reenfileirada para transmissão.");
+      void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
+    },
+    onError: (e) => notifyError(getErrorMessage(e), "Falha ao reenfileirar"),
   });
 
   const cancelOutbound = useMutation({
@@ -796,6 +885,7 @@ export function FaturamentoPage() {
     zipCode: "",
     nfeEnvironment: "HOMOLOGATION" as NfeEnvironment,
     nfeSeries: "1",
+    contingencyEnabled: false,
     autoStockOnInboundInvoice: false,
   });
 
@@ -834,6 +924,7 @@ export function FaturamentoPage() {
       zipCode: settings.zipCode ?? "",
       nfeEnvironment: settings.nfeEnvironment ?? "HOMOLOGATION",
       nfeSeries: String(settings.nfeSeries ?? 1),
+      contingencyEnabled: settings.contingencyEnabled ?? false,
       autoStockOnInboundInvoice: settings.autoStockOnInboundInvoice ?? false,
     });
   }, [settings]);
@@ -841,7 +932,7 @@ export function FaturamentoPage() {
   const tabs: { id: Tab; label: string }[] = [
     { id: "saida", label: "NF-e de Saída" },
     { id: "entrada", label: "NF-e de Entrada" },
-    { id: "cadastros", label: "NCM / CFOP" },
+    { id: "cadastros", label: "CFOP" },
     { id: "config", label: "Configurações" },
     { id: "historico", label: "Histórico" },
   ];
@@ -1039,7 +1130,9 @@ export function FaturamentoPage() {
                                     (o.readinessIssues?.length ?? 0) > 0
                                   }
                                   onClick={() =>
-                                    transmit.mutate(o.fiscalInvoice!.id)
+                                    transmit.mutate({
+                                      invoiceId: o.fiscalInvoice!.id,
+                                    })
                                   }
                                 >
                                   Transmitir
@@ -1050,7 +1143,9 @@ export function FaturamentoPage() {
                                 size="sm"
                                 disabled={transmit.isPending || batchEmitBusy}
                                 onClick={() =>
-                                  transmit.mutate(o.fiscalInvoice!.id)
+                                  transmit.mutate({
+                                    invoiceId: o.fiscalInvoice!.id,
+                                  })
                                 }
                               >
                                 Reenviar à SEFAZ
@@ -1140,6 +1235,21 @@ export function FaturamentoPage() {
                           <td className="px-4 py-3">
                             <div>
                               {FISCAL_INVOICE_STATUS_LABELS[inv.status]}
+                              {inv.transmitJobs?.[0] &&
+                              (inv.transmitJobs[0].status === "PENDING" ||
+                                inv.transmitJobs[0].status === "RUNNING" ||
+                                inv.transmitJobs[0].status === "FAILED") ? (
+                                <p className="mt-0.5 text-xs text-muted-foreground">
+                                  {
+                                    JOB_STATUS_LABELS[
+                                      inv.transmitJobs[0].status
+                                    ]
+                                  }
+                                  {inv.transmitJobs[0].lastError
+                                    ? ` — ${inv.transmitJobs[0].lastError.slice(0, 80)}`
+                                    : ""}
+                                </p>
+                              ) : null}
                               {inv.status === "REJECTED" &&
                               inv.rejectionReason ? (
                                 <p className="mt-1 max-w-xs text-xs text-destructive">
@@ -1222,18 +1332,55 @@ export function FaturamentoPage() {
                               )}
                               {(inv.status === "DRAFT" ||
                                 inv.status === "REJECTED") && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    disabled={transmit.isPending}
+                                    onClick={() =>
+                                      transmit.mutate({ invoiceId: inv.id })
+                                    }
+                                  >
+                                    {inv.status === "REJECTED"
+                                      ? "Reenviar"
+                                      : "Transmitir"}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={transmit.isPending}
+                                    onClick={() =>
+                                      transmit.mutate({
+                                        invoiceId: inv.id,
+                                        async: true,
+                                      })
+                                    }
+                                  >
+                                    Fila
+                                  </Button>
+                                </>
+                              )}
+                              {inv.transmitJobs?.[0]?.status === "FAILED" && (
                                 <Button
                                   size="sm"
-                                  disabled={transmit.isPending}
-                                  onClick={() => transmit.mutate(inv.id)}
+                                  variant="ghost"
+                                  disabled={requeueTransmit.isPending}
+                                  onClick={() => requeueTransmit.mutate(inv.id)}
                                 >
-                                  {inv.status === "REJECTED"
-                                    ? "Reenviar"
-                                    : "Transmitir"}
+                                  Reenfileirar
                                 </Button>
                               )}
                               {inv.status === "AUTHORIZED" && (
                                 <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={sendInvoiceEmail.isPending}
+                                    onClick={() =>
+                                      sendInvoiceEmail.mutate(inv.id)
+                                    }
+                                  >
+                                    E-mail
+                                  </Button>
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -1354,6 +1501,17 @@ export function FaturamentoPage() {
                         Baixar XML cancelamento
                       </Button>
                     ) : null}
+                    {(invoiceDetail?.status === "AUTHORIZED" ||
+                      invoiceDetail?.status === "CANCELLED") && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={sendInvoiceEmail.isPending}
+                        onClick={() => sendInvoiceEmail.mutate(detailInvoiceId)}
+                      >
+                        Enviar por e-mail
+                      </Button>
+                    )}
                   </div>
                 </div>
                 {loadingDetail ? (
@@ -1368,6 +1526,111 @@ export function FaturamentoPage() {
                     <p className="font-mono text-xs text-muted-foreground">
                       Chave: {invoiceDetail.accessKey ?? "—"}
                     </p>
+                    {(invoiceDetail.status === "DRAFT" ||
+                      invoiceDetail.status === "REJECTED") && (
+                      <div className="rounded-lg border border-border p-3">
+                        <h4 className="mb-2 text-sm font-medium">Transporte</h4>
+                        <FormGrid>
+                          <FormField label="modFrete (0–9)">
+                            <Input
+                              defaultValue={invoiceDetail.modFrete ?? "9"}
+                              id={`modFrete-${invoiceDetail.id}`}
+                            />
+                          </FormField>
+                          <FormField label="Volumes">
+                            <Input
+                              type="number"
+                              step="0.0001"
+                              defaultValue={
+                                invoiceDetail.volumeQty != null
+                                  ? String(invoiceDetail.volumeQty)
+                                  : ""
+                              }
+                              id={`volumeQty-${invoiceDetail.id}`}
+                            />
+                          </FormField>
+                          <FormField label="Peso bruto (kg)">
+                            <Input
+                              type="number"
+                              step="0.001"
+                              defaultValue={
+                                invoiceDetail.grossWeightKg != null
+                                  ? String(invoiceDetail.grossWeightKg)
+                                  : ""
+                              }
+                              id={`grossWeight-${invoiceDetail.id}`}
+                            />
+                          </FormField>
+                          <FormField label="Peso líquido (kg)">
+                            <Input
+                              type="number"
+                              step="0.001"
+                              defaultValue={
+                                invoiceDetail.netWeightKg != null
+                                  ? String(invoiceDetail.netWeightKg)
+                                  : ""
+                              }
+                              id={`netWeight-${invoiceDetail.id}`}
+                            />
+                          </FormField>
+                          <FormField label="Frete (R$)">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              defaultValue={
+                                invoiceDetail.freightAmount != null
+                                  ? String(invoiceDetail.freightAmount)
+                                  : ""
+                              }
+                              id={`freight-${invoiceDetail.id}`}
+                            />
+                          </FormField>
+                        </FormGrid>
+                        <Button
+                          className="mt-3"
+                          size="sm"
+                          disabled={saveTransport.isPending}
+                          onClick={() => {
+                            const mod =
+                              (
+                                document.getElementById(
+                                  `modFrete-${invoiceDetail.id}`,
+                                ) as HTMLInputElement | null
+                              )?.value ?? "9";
+                            const vol = (
+                              document.getElementById(
+                                `volumeQty-${invoiceDetail.id}`,
+                              ) as HTMLInputElement | null
+                            )?.value;
+                            const gross = (
+                              document.getElementById(
+                                `grossWeight-${invoiceDetail.id}`,
+                              ) as HTMLInputElement | null
+                            )?.value;
+                            const net = (
+                              document.getElementById(
+                                `netWeight-${invoiceDetail.id}`,
+                              ) as HTMLInputElement | null
+                            )?.value;
+                            const frete = (
+                              document.getElementById(
+                                `freight-${invoiceDetail.id}`,
+                              ) as HTMLInputElement | null
+                            )?.value;
+                            saveTransport.mutate({
+                              invoiceId: invoiceDetail.id,
+                              modFrete: mod.slice(0, 1),
+                              volumeQty: vol ? Number(vol) : null,
+                              grossWeightKg: gross ? Number(gross) : null,
+                              netWeightKg: net ? Number(net) : null,
+                              freightAmount: frete ? Number(frete) : null,
+                            });
+                          }}
+                        >
+                          Salvar transporte
+                        </Button>
+                      </div>
+                    )}
                     <div>
                       <h4 className="mb-2 text-sm font-medium">
                         Histórico de eventos
@@ -2028,6 +2291,26 @@ export function FaturamentoPage() {
             </label>
             <p className="mt-2 text-sm text-muted-foreground">
               Quando desligado, use a tela Estoque para movimentações manuais.
+            </p>
+          </FormSection>
+
+          <FormSection title="Contingência (SVC)">
+            <label className="flex items-center gap-2 text-sm opacity-70">
+              <Checkbox
+                checked={form.contingencyEnabled}
+                disabled
+                onCheckedChange={(v) =>
+                  setForm({
+                    ...form,
+                    contingencyEnabled: v === true,
+                  })
+                }
+              />
+              Habilitar contingência SVC (em breve)
+            </label>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Hook preparado (`tpEmis` / flag na config). Emissão real em
+              SVC-AN/RS ainda não está disponível nesta versão.
             </p>
           </FormSection>
         </div>

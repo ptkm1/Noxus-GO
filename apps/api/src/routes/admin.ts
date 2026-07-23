@@ -41,7 +41,6 @@ import {
   toCustomerPrismaData,
 } from "../services/customer-validation.js";
 import { buildDistributorInsights } from "../services/distributor-insights.js";
-import { getOrCreateMorningBrief } from "../services/morning-brief.js";
 import {
   AccountsPayableError,
   createAccountsPayable,
@@ -76,12 +75,14 @@ import {
 import {
   buildCommissionStatement,
   buildCreditAgingReport,
+  buildFiscalOutboundSummary,
   buildFiscalReconciliation,
   buildMarginReport,
   buildSalesScorecard,
   buildStockHealthReport,
   buildVisitEffectiveness,
 } from "../services/management-reports.js";
+import { getOrCreateMorningBrief } from "../services/morning-brief.js";
 import { getWebPushPublicKey, notifyUsers } from "../services/notify.js";
 import {
   sendOrderPdf80mmReply,
@@ -91,6 +92,10 @@ import {
   computeSaleOrder,
   OrderPricingError,
 } from "../services/order-pricing.js";
+import {
+  ensureDefaultOrderSituations,
+  normalizeSituationCode,
+} from "../services/order-situations.js";
 import type { AttributeFieldDef } from "../services/product-attributes.js";
 import {
   parseCategoryAttributeSchema,
@@ -108,10 +113,6 @@ import {
   StockError,
   stockErrorPayload,
 } from "../services/product-stock.js";
-import {
-  ensureDefaultOrderSituations,
-  normalizeSituationCode,
-} from "../services/order-situations.js";
 import {
   handleRegisterPushDevice,
   handleUnregisterPushDevice,
@@ -3487,9 +3488,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const q = z
       .object({
         sellerId: z.string().optional(),
-        approvalStatus: z
-          .enum(["APPROVED", "PENDING", "REJECTED"])
-          .optional(),
+        approvalStatus: z.enum(["APPROVED", "PENDING", "REJECTED"]).optional(),
       })
       .safeParse(req.query);
     const where: Prisma.CustomerWhereInput = {
@@ -5430,6 +5429,23 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       .object({ from: z.string().optional(), to: z.string().optional() })
       .safeParse(req.query);
     return buildFiscalReconciliation({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+    });
+  });
+
+  app.get("/reports/fiscal-outbound-summary", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply
+        .status(403)
+        .send({ error: "Resumo fiscal disponível apenas para admin" });
+    }
+    const q = z
+      .object({ from: z.string().optional(), to: z.string().optional() })
+      .safeParse(req.query);
+    return buildFiscalOutboundSummary({
       organizationId: auth.organizationId,
       from: q.success ? q.data.from : undefined,
       to: q.success ? q.data.to : undefined,

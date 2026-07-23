@@ -1,6 +1,7 @@
 import { buildApp } from "./app.js";
 import { prisma } from "./db.js";
 import "./load-env.js";
+import { scheduleFiscalTransmitCron } from "./services/fiscal-transmit-cron.js";
 import { scheduleMorningBriefCron } from "./services/morning-brief-cron.js";
 import { scheduleStockExpiryCron } from "./services/stock-expiry-cron.js";
 
@@ -37,6 +38,7 @@ try {
   app.log.info(`API http://${host}:${port}`);
   scheduleStockExpiryCron(app.log);
   scheduleMorningBriefCron(app.log);
+  scheduleFiscalTransmitCron(app.log);
 } catch (err) {
   app.log.error(err);
   process.exit(1);

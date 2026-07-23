@@ -553,7 +553,7 @@ export function OrdersPage() {
                     aria-label="Selecionar todas"
                   />
                 </TableHead>
-                <TableHead className="px-4">Código</TableHead>
+                <TableHead className="px-4">Número do pedido</TableHead>
                 <TableHead className="px-4">Data</TableHead>
                 <TableHead className="px-4">Status</TableHead>
                 <TableHead className="px-4">Situação</TableHead>

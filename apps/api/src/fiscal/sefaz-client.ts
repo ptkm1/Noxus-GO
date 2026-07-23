@@ -23,10 +23,14 @@ const INUTILIZACAO_NS =
 
 export type SefazAuthResult = {
   ok: boolean;
+  /** Lote aceito (cStat 103) — aguarda poll de protocolo. */
+  pending?: boolean;
   rawResponse: string;
   parsed: ReturnType<typeof parseSefazAuthorizationResponse>;
   error?: string;
 };
+
+const SEFAZ_TIMEOUT_MS = 60_000;
 
 export async function authorizeNfe(input: {
   uf: string;
@@ -42,6 +46,14 @@ export async function authorizeNfe(input: {
     const rawResponse = await postSoap(url, soap, input.pfx, input.password);
     const body = extractSoapBody(rawResponse);
     const parsed = parseSefazAuthorizationResponse(body);
+    if (parsed.pending) {
+      return {
+        ok: false,
+        pending: true,
+        rawResponse: body,
+        parsed,
+      };
+    }
     return {
       ok: parsed.success,
       rawResponse: body,
@@ -197,6 +209,7 @@ function postSoap(
       {
         method: "POST",
         agent,
+        timeout: SEFAZ_TIMEOUT_MS,
         headers: {
           "Content-Type": "application/soap+xml; charset=utf-8",
           "Content-Length": Buffer.byteLength(soapBody, "utf8"),
@@ -217,6 +230,9 @@ function postSoap(
         });
       },
     );
+    req.setTimeout(SEFAZ_TIMEOUT_MS, () => {
+      req.destroy(new Error(`Timeout SEFAZ (${SEFAZ_TIMEOUT_MS}ms)`));
+    });
     req.on("error", reject);
     req.write(soapBody);
     req.end();

@@ -91,32 +91,83 @@ export async function upsertFiscalDemoData(organizationId: string) {
     },
   });
 
-  await prisma.customer.updateMany({
-    where: {
-      organizationId,
-      OR: [
-        { cnpj: null },
-        { cnpj: "" },
-        { street: null },
-        { city: null },
-        { state: null },
-      ],
-    },
-    data: {
-      documentType: "CNPJ",
-      cnpj: "11444777000161",
-      legalName: "Cliente Demo NF-e",
-      tradeName: "Cliente Demo",
-      stateRegistration: "ISENTO",
-      street: "Av. Paulista",
-      number: "1000",
-      neighborhood: "Bela Vista",
-      city: "São Paulo",
-      state: "SP",
-      cep: "01310100",
-      cityIbgeCode: "3550308",
-    },
+  const demoCnpj = "11444777000161";
+  const existingByCnpj = await prisma.customer.findFirst({
+    where: { organizationId, cnpj: demoCnpj },
   });
+  if (existingByCnpj) {
+    await prisma.customer.update({
+      where: { id: existingByCnpj.id },
+      data: {
+        name: "Cliente Demo NF-e",
+        documentType: "CNPJ",
+        legalName: "Cliente Demo NF-e",
+        tradeName: "Cliente Demo",
+        stateRegistration: "ISENTO",
+        street: "Av. Paulista",
+        number: "1000",
+        neighborhood: "Bela Vista",
+        city: "São Paulo",
+        state: "SP",
+        cep: "01310100",
+        cityIbgeCode: "3550308",
+      },
+    });
+  } else {
+    const incomplete = await prisma.customer.findFirst({
+      where: {
+        organizationId,
+        OR: [
+          { cnpj: null },
+          { cnpj: "" },
+          { street: null },
+          { city: null },
+          { state: null },
+        ],
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    if (incomplete) {
+      await prisma.customer.update({
+        where: { id: incomplete.id },
+        data: {
+          documentType: "CNPJ",
+          cnpj: demoCnpj,
+          legalName: "Cliente Demo NF-e",
+          tradeName: "Cliente Demo",
+          stateRegistration: "ISENTO",
+          street: "Av. Paulista",
+          number: "1000",
+          neighborhood: "Bela Vista",
+          city: "São Paulo",
+          state: "SP",
+          cep: "01310100",
+          cityIbgeCode: "3550308",
+        },
+      });
+    } else {
+      await prisma.customer.create({
+        data: {
+          organizationId,
+          name: "Cliente Demo NF-e",
+          documentType: "CNPJ",
+          cnpj: demoCnpj,
+          legalName: "Cliente Demo NF-e",
+          tradeName: "Cliente Demo",
+          stateRegistration: "ISENTO",
+          street: "Av. Paulista",
+          number: "1000",
+          neighborhood: "Bela Vista",
+          city: "São Paulo",
+          state: "SP",
+          cep: "01310100",
+          cityIbgeCode: "3550308",
+        },
+      });
+    }
+  }
 
-  console.log("Dados fiscais demo garantidos (config, NCM, cliente e produtos).");
+  console.log(
+    "Dados fiscais demo garantidos (config, NCM, cliente e produtos).",
+  );
 }

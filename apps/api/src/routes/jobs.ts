@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { runCertificateExpiryAlerts } from "../services/cert-expiry-alerts.js";
+import { runFiscalTransmitJobs } from "../services/fiscal-transmit-queue.js";
 import { runMorningBriefJob } from "../services/morning-brief.js";
 import { runStockExpiryAlerts } from "../services/stock-expiry-alerts.js";
 
@@ -72,5 +73,19 @@ export async function jobsRoutes(app: FastifyInstance) {
       notify: body.success ? body.data.notify : undefined,
     });
     return result;
+  });
+
+  app.post("/fiscal-transmit", async (req, reply) => {
+    if (!assertCronSecret(reply, readCronSecret(req))) return;
+    const body = z
+      .object({
+        organizationId: z.string().optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+      })
+      .safeParse(req.body ?? {});
+    return runFiscalTransmitJobs({
+      organizationId: body.success ? body.data.organizationId : undefined,
+      limit: body.success ? body.data.limit : undefined,
+    });
   });
 }

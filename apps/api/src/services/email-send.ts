@@ -61,12 +61,19 @@ export function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+export type EmailAttachment = {
+  filename: string;
+  content: Buffer;
+  contentType: string;
+};
+
 async function sendViaResend(params: {
   apiKey: string;
   fromRaw: string;
   to: string[];
   subject: string;
   html: string;
+  attachments?: EmailAttachment[];
 }): Promise<{ ok: true } | { ok: false; message: string }> {
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -79,12 +86,24 @@ async function sendViaResend(params: {
       to: params.to,
       subject: params.subject,
       html: params.html,
+      ...(params.attachments?.length
+        ? {
+            attachments: params.attachments.map((a) => ({
+              filename: a.filename,
+              content: a.content.toString("base64"),
+              content_type: a.contentType,
+            })),
+          }
+        : {}),
     }),
   });
 
   if (!res.ok) {
     const errBody = await res.text().catch(() => "");
-    return { ok: false, message: `Resend HTTP ${res.status}: ${errBody.slice(0, 400)}` };
+    return {
+      ok: false,
+      message: `Resend HTTP ${res.status}: ${errBody.slice(0, 400)}`,
+    };
   }
   return { ok: true };
 }
@@ -95,6 +114,7 @@ async function sendViaSendGrid(params: {
   to: string[];
   subject: string;
   html: string;
+  attachments?: EmailAttachment[];
 }): Promise<{ ok: true } | { ok: false; message: string }> {
   const parsed = parseFromHeader(params.fromRaw);
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
@@ -105,15 +125,30 @@ async function sendViaSendGrid(params: {
     },
     body: JSON.stringify({
       personalizations: [{ to: params.to.map((email) => ({ email })) }],
-      from: parsed.name ? { email: parsed.email, name: parsed.name } : { email: parsed.email },
+      from: parsed.name
+        ? { email: parsed.email, name: parsed.name }
+        : { email: parsed.email },
       subject: params.subject,
       content: [{ type: "text/html", value: params.html }],
+      ...(params.attachments?.length
+        ? {
+            attachments: params.attachments.map((a) => ({
+              content: a.content.toString("base64"),
+              filename: a.filename,
+              type: a.contentType,
+              disposition: "attachment",
+            })),
+          }
+        : {}),
     }),
   });
 
   if (!res.ok) {
     const errBody = await res.text().catch(() => "");
-    return { ok: false, message: `SendGrid HTTP ${res.status}: ${errBody.slice(0, 400)}` };
+    return {
+      ok: false,
+      message: `SendGrid HTTP ${res.status}: ${errBody.slice(0, 400)}`,
+    };
   }
   return { ok: true };
 }
@@ -124,6 +159,7 @@ export async function sendTransactionalHtmlEmail(params: {
   to: string[];
   subject: string;
   html: string;
+  attachments?: EmailAttachment[];
 }): Promise<{ ok: true } | { ok: false; message: string }> {
   const uniq = [...new Set(params.to.map((e) => e.trim()).filter(Boolean))];
   if (!uniq.length) return { ok: false, message: "Sem destinatários" };
@@ -135,6 +171,7 @@ export async function sendTransactionalHtmlEmail(params: {
       to: uniq,
       subject: params.subject,
       html: params.html,
+      attachments: params.attachments,
     });
   }
   return sendViaSendGrid({
@@ -143,5 +180,6 @@ export async function sendTransactionalHtmlEmail(params: {
     to: uniq,
     subject: params.subject,
     html: params.html,
+    attachments: params.attachments,
   });
 }
