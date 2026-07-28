@@ -32,6 +32,7 @@ import {
   sendOrderPdf80mmReply,
   sendOrderPdfReply,
 } from "../services/order-pdf-load.js";
+import { nextOrderNumber } from "../services/order-number.js";
 import {
   computeSaleOrder,
   OrderPricingError,
@@ -444,42 +445,46 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         );
       }
 
-      const order = await prisma.order.create({
-        data: {
-          organizationId: auth.organizationId,
-          sellerId: auth.sellerId!,
-          customerId: body.data.customerId,
-          paymentConditionId: body.data.paymentConditionId,
-          operation: body.data.operation ?? "SALE",
-          status: orderStatus,
-          totalAmount: sale.netTotal,
-          comboDiscountTotal: sale.comboDiscountTotal,
-          notes: body.data.notes,
-          ...(creditHoldPayload !== undefined
-            ? { creditHoldReasons: creditHoldPayload }
-            : {}),
-          ...(clientMutationId ? { clientMutationId } : {}),
-          items: {
-            create: sale.lines.map((l) => ({
-              productId: l.productId,
-              quantity: l.quantity,
-              unitPrice: l.unitPrice,
-              productName: l.productName,
-              commissionPercent: l.commissionPercent,
-              commissionAmount: l.commissionAmount,
-            })),
-          },
-        },
-        include: {
-          items: true,
-          customer: true,
-          paymentCondition: true,
-          seller: {
-            include: {
-              user: { select: { name: true } },
+      const order = await prisma.$transaction(async (tx) => {
+        const orderNumber = await nextOrderNumber(tx, auth.organizationId);
+        return tx.order.create({
+          data: {
+            organizationId: auth.organizationId,
+            sellerId: auth.sellerId!,
+            customerId: body.data.customerId,
+            paymentConditionId: body.data.paymentConditionId,
+            operation: body.data.operation ?? "SALE",
+            status: orderStatus,
+            totalAmount: sale.netTotal,
+            comboDiscountTotal: sale.comboDiscountTotal,
+            notes: body.data.notes,
+            orderNumber,
+            ...(creditHoldPayload !== undefined
+              ? { creditHoldReasons: creditHoldPayload }
+              : {}),
+            ...(clientMutationId ? { clientMutationId } : {}),
+            items: {
+              create: sale.lines.map((l) => ({
+                productId: l.productId,
+                quantity: l.quantity,
+                unitPrice: l.unitPrice,
+                productName: l.productName,
+                commissionPercent: l.commissionPercent,
+                commissionAmount: l.commissionAmount,
+              })),
             },
           },
-        },
+          include: {
+            items: true,
+            customer: true,
+            paymentCondition: true,
+            seller: {
+              include: {
+                user: { select: { name: true } },
+              },
+            },
+          },
+        });
       });
 
       if (order.status === "PENDING_CREDIT_APPROVAL") {

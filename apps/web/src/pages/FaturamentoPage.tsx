@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { fieldControlClass } from "@/lib/field-styles";
+import { formatOrderCode } from "@/lib/order-code";
 import { cn } from "@/lib/utils";
 import type {
   FiscalInvoiceStatus,
@@ -46,6 +47,7 @@ type Tab = "saida" | "entrada" | "cadastros" | "config" | "historico";
 
 type EligibleOrder = {
   id: string;
+  orderNumber?: number | null;
   status: string;
   totalAmount: unknown;
   createdAt: string;
@@ -1056,11 +1058,11 @@ export function FaturamentoPage() {
                               onCheckedChange={(v) =>
                                 toggleOrder(o.id, v === true)
                               }
-                              aria-label={`Selecionar pedido ${o.id.slice(0, 8)}`}
+                              aria-label={`Selecionar pedido ${formatOrderCode(o)}`}
                             />
                           </td>
                           <td className="px-4 py-3 font-mono text-xs">
-                            {o.id.slice(0, 8)}…
+                            {formatOrderCode(o)}
                           </td>
                           <td className="px-4 py-3">
                             {o.customer?.name ?? "—"}
@@ -1212,12 +1214,9 @@ export function FaturamentoPage() {
                         inv.order?.customer?.name ||
                         inv.order?.customer?.legalName ||
                         "—";
-                      const orderLabel =
-                        inv.order?.orderNumber != null
-                          ? String(inv.order.orderNumber)
-                          : inv.order?.id
-                            ? `${inv.order.id.slice(0, 8)}…`
-                            : "—";
+                      const orderLabel = inv.order
+                        ? formatOrderCode(inv.order)
+                        : "—";
                       return (
                         <tr
                           key={inv.id}

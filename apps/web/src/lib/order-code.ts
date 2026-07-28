@@ -1,8 +1,17 @@
-/** Código legível do pedido (orderNumber ou prefixo do id). */
+/** Número do pedido; "—" se ainda não atribuído (sem fallback alfanumérico). */
 export function formatOrderCode(order: {
   id: string;
   orderNumber?: number | null;
 }): string {
   if (order.orderNumber != null) return String(order.orderNumber);
-  return `#${order.id.slice(0, 8)}`;
+  return "—";
+}
+
+/** Parte segura para nome de arquivo PDF. */
+export function orderCodeFilenamePart(order: {
+  id: string;
+  orderNumber?: number | null;
+}): string {
+  if (order.orderNumber != null) return String(order.orderNumber);
+  return order.id;
 }

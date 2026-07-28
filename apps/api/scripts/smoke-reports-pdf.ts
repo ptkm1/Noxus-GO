@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { lineDiscount, orderCode } from "../src/services/reports/pdf-common.js";
 
-assert.equal(orderCode({ id: "abcdefghijklmnop" }), "#abcdefgh");
+assert.equal(orderCode({ id: "abcdefghijklmnop" }), "—");
 assert.equal(orderCode({ id: "abcdefghijklmnop", orderNumber: 42 }), "42");
 assert.equal(lineDiscount({ unitPrice: 8, basePrice: 10 }), 2);
 assert.equal(lineDiscount({ unitPrice: 10, basePrice: 8 }), 0);

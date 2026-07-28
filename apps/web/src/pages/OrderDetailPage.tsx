@@ -14,7 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { apiFetch, downloadPdf, printPdf } from "@/lib/api";
-import { formatOrderCode } from "@/lib/order-code";
+import { formatOrderCode, orderCodeFilenamePart } from "@/lib/order-code";
 import { isWebAdmin } from "@/lib/staff";
 import { cn } from "@/lib/utils";
 import { ORDER_STATUSES, canRead, orderStatusLabel } from "@pedidos/shared";
@@ -174,7 +174,7 @@ export function OrderDetailPage() {
     try {
       await downloadPdf(
         `/admin/orders/${orderId}/pdf`,
-        `pedido-${formatOrderCode(order).replace("#", "")}.pdf`,
+        `pedido-${orderCodeFilenamePart(order)}.pdf`,
       );
     } catch {
       setPdfErr("Não foi possível baixar o PDF.");

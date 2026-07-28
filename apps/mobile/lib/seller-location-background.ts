@@ -106,7 +106,7 @@ export async function startSellerBackgroundLocation(): Promise<boolean> {
     foregroundService: {
       notificationTitle: "PedixPro",
       notificationBody: "Rastreio de rota ativo",
-      notificationColor: "#0F4C5C",
+      notificationColor: "#02445C",
     },
   });
   return true;

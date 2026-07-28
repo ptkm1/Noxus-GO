@@ -33,10 +33,17 @@ function fmtMoney(n: number): string {
 function orderCode(order: {
   id: string;
   orderNumber: number | null;
-  createdAt: Date;
 }): string {
   if (order.orderNumber != null) return String(order.orderNumber);
-  return order.id.slice(0, 8).toUpperCase();
+  return "—";
+}
+
+function orderFileSlug(order: {
+  id: string;
+  orderNumber: number | null;
+}): string {
+  if (order.orderNumber != null) return String(order.orderNumber);
+  return order.id;
 }
 
 /** Número provisório da NF a partir do orderNumber ou hash estável do id. */
@@ -103,6 +110,7 @@ export async function buildNfeXml(
   const nNF = provisionalNnf(order);
   const dhEmi = order.createdAt.toISOString().replace(/\.\d{3}Z$/, "-03:00");
   const code = orderCode(order);
+  const fileSlug = orderFileSlug(order);
 
   let vProd = 0;
   const detXml = order.items
@@ -229,7 +237,7 @@ ${detXml}
 </NFe>
 `;
 
-  return { xml, filename: `nfe-${code}.xml` };
+  return { xml, filename: `nfe-${fileSlug}.xml` };
 }
 
 export async function listFiscalOrders(
@@ -386,7 +394,7 @@ export async function buildNfeXmlZip(
       const { xml, filename } = await buildNfeXml(organizationId, order.id);
       let name = filename;
       if (usedNames.has(name)) {
-        name = `nfe-${order.code}-${order.id.slice(0, 6)}.xml`;
+        name = `nfe-${orderFileSlug(order)}-${order.id.slice(0, 6)}.xml`;
       }
       usedNames.add(name);
       files.push({ name, content: xml });

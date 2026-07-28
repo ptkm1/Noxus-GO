@@ -54,9 +54,17 @@ export function orderCode(order: {
   id: string;
   orderNumber?: number | null;
 }): string {
-  // TODO futuro: preferir orderNumber quando preenchido em massa.
   if (order.orderNumber != null) return String(order.orderNumber);
-  return `#${order.id.slice(0, 8)}`;
+  return "—";
+}
+
+/** Slug para nome de arquivo (evita "—" no disco). */
+export function orderCodeFileSlug(order: {
+  id: string;
+  orderNumber?: number | null;
+}): string {
+  if (order.orderNumber != null) return String(order.orderNumber);
+  return order.id;
 }
 
 export function lineDiscount(params: {

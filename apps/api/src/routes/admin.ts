@@ -85,9 +85,11 @@ import {
 import { getOrCreateMorningBrief } from "../services/morning-brief.js";
 import { getWebPushPublicKey, notifyUsers } from "../services/notify.js";
 import {
+  loadOrderForPdf,
   sendOrderPdf80mmReply,
   sendOrderPdfReply,
 } from "../services/order-pdf-load.js";
+import { nextOrderNumber } from "../services/order-number.js";
 import {
   computeSaleOrder,
   OrderPricingError,
@@ -121,6 +123,7 @@ import { buildCustomersPdf } from "../services/reports/customers-pdf.js";
 import { readExtraParams } from "../services/reports/extra-filters.js";
 import { buildOrderItemsPdf } from "../services/reports/order-items-pdf.js";
 import { buildOrdersPdf } from "../services/reports/orders-pdf.js";
+import { orderCode } from "../services/reports/pdf-common.js";
 import { buildStockPdf } from "../services/reports/stock-pdf.js";
 import {
   adminPathToResource,
@@ -1241,6 +1244,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         : undefined;
     if (nextCode !== undefined && !nextCode.length) {
       return reply.status(400).send({ error: "Código é obrigatório" });
+    }
+    if (
+      existing.isSystem &&
+      nextCode !== undefined &&
+      nextCode !== existing.code
+    ) {
+      return reply.status(400).send({
+        error: "Código de situação padrão do sistema não pode ser alterado",
+      });
     }
 
     try {
@@ -4234,7 +4246,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   });
 
   /* --- Pedidos (visão admin) --- */
-  app.get("/orders", async (req) => {
+  app.get("/orders", async (req, reply) => {
     const auth = req.auth!;
     const q = z
       .object({
@@ -4242,7 +4254,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         status: z
           .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
           .optional(),
-        /** Número/código do pedido (número exato ou prefixo do id). */
+        /** Número do pedido (apenas dígitos; inteiro positivo). */
         orderNumber: z.string().optional(),
         /** Alias de orderNumber. */
         q: z.string().optional(),
@@ -4263,12 +4275,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
       const codeRaw = (q.data.orderNumber ?? q.data.q)?.trim();
       if (codeRaw) {
-        const digits = codeRaw.replace(/^#/, "").trim();
-        if (/^\d+$/.test(digits)) {
-          where.orderNumber = Number(digits);
-        } else if (digits) {
-          where.id = { startsWith: digits, mode: "insensitive" };
+        if (!/^\d+$/.test(codeRaw)) {
+          return reply.status(400).send({
+            error: "Número do pedido deve conter apenas dígitos",
+          });
         }
+        const n = Number(codeRaw);
+        if (!Number.isSafeInteger(n) || n < 1) {
+          return reply.status(400).send({
+            error: "Número do pedido deve ser um inteiro positivo",
+          });
+        }
+        where.orderNumber = n;
       }
 
       const customerAnd: Prisma.CustomerWhereInput[] = [];
@@ -4365,15 +4383,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
     const scoped = orderScopeWhere(auth);
-    const order = await prisma.order.findFirst({
-      where: { id, ...scoped },
-      include: {
-        seller: { include: { user: { select: { name: true, email: true } } } },
-        customer: true,
-        items: { include: { product: { select: { sku: true } } } },
-        organization: { select: { name: true, displayName: true } },
-      },
-    });
+    const order = await loadOrderForPdf({ id, ...scoped });
     if (!order) return reply.status(404).send({ error: "Não encontrado" });
     return sendOrderPdfReply(reply, order);
   });
@@ -4392,15 +4402,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     }
     const { id } = idParam.parse(req.params);
     const scoped = orderScopeWhere(auth);
-    const order = await prisma.order.findFirst({
-      where: { id, ...scoped },
-      include: {
-        seller: { include: { user: { select: { name: true, email: true } } } },
-        customer: true,
-        items: { include: { product: { select: { sku: true } } } },
-        organization: { select: { name: true, displayName: true } },
-      },
-    });
+    const order = await loadOrderForPdf({ id, ...scoped });
     if (!order) return reply.status(404).send({ error: "Não encontrado" });
     return sendOrderPdf80mmReply(reply, order);
   });
@@ -4649,31 +4651,35 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         );
       }
 
-      const order = await prisma.order.create({
-        data: {
-          organizationId: auth.organizationId,
-          sellerId: body.data.sellerId,
-          customerId: body.data.customerId,
-          status: orderStatus,
-          totalAmount: sale.netTotal,
-          comboDiscountTotal: sale.comboDiscountTotal,
-          notes: body.data.notes,
-          items: {
-            create: sale.lines.map((l) => ({
-              productId: l.productId,
-              quantity: l.quantity,
-              unitPrice: l.unitPrice,
-              productName: l.productName,
-              commissionPercent: l.commissionPercent,
-              commissionAmount: l.commissionAmount,
-            })),
+      const order = await prisma.$transaction(async (tx) => {
+        const orderNumber = await nextOrderNumber(tx, auth.organizationId);
+        return tx.order.create({
+          data: {
+            organizationId: auth.organizationId,
+            sellerId: body.data.sellerId,
+            customerId: body.data.customerId,
+            status: orderStatus,
+            totalAmount: sale.netTotal,
+            comboDiscountTotal: sale.comboDiscountTotal,
+            notes: body.data.notes,
+            orderNumber,
+            items: {
+              create: sale.lines.map((l) => ({
+                productId: l.productId,
+                quantity: l.quantity,
+                unitPrice: l.unitPrice,
+                productName: l.productName,
+                commissionPercent: l.commissionPercent,
+                commissionAmount: l.commissionAmount,
+              })),
+            },
           },
-        },
-        include: {
-          items: true,
-          seller: { include: { user: true } },
-          customer: true,
-        },
+          include: {
+            items: true,
+            seller: { include: { user: true } },
+            customer: true,
+          },
+        });
       });
 
       if (order.status === "CONFIRMED") {
@@ -5551,10 +5557,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.get("/reports/customers.pdf", async (req, reply) => {
     const auth = req.auth!;
     if (!requireAdmin(reply, auth)) return;
+    const situationEnum = z.enum([
+      "blocked",
+      "ok",
+      "inactive",
+      "no_quarter_positivacao",
+    ]);
     const q = z
       .object({
         sellerId: z.string().optional(),
         customerId: z.string().optional(),
+        situation: situationEnum.optional(),
+        /** @deprecated use `situation` */
         creditStatus: z.enum(["blocked", "ok"]).optional(),
       })
       .passthrough()
@@ -5567,6 +5581,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       organizationId: auth.organizationId,
       sellerId: filters.sellerId,
       customerId: filters.customerId,
+      situation: filters.situation,
       creditStatus: filters.creditStatus,
       extras,
     });
@@ -5772,7 +5787,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     for (const o of orders) {
       const amount = decToNum(o.totalAmount);
       sum += amount;
-      doc.fontSize(12).text(`Pedido ${o.id.slice(0, 8)}… — ${o.status}`, {
+      doc.fontSize(12).text(`Pedido ${orderCode(o)} — ${o.status}`, {
         continued: false,
       });
       doc

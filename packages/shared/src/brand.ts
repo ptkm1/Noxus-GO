@@ -1,7 +1,7 @@
 export const APP_BRAND_NAME = "PedixPro";
 export const APP_BRAND_SHORT = "PedixPro";
 /** Primary teal da marca PedixPro. */
-export const APP_BRAND_PRIMARY = "#0F4C5C";
+export const APP_BRAND_PRIMARY = "#02445C";
 /** @deprecated Use APP_BRAND_PRIMARY — mantido para compatibilidade. */
 export const APP_BRAND_LILAC = APP_BRAND_PRIMARY;
 export const APP_BRAND_NAVY = "#111827";

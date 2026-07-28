@@ -28,11 +28,11 @@ Mobile: preferência **claro / escuro / sistema** em Definições (`ThemePrefere
 
 ## Cores principais
 
-| Token | Light | Função |
-|-------|-------|--------|
-| `primary` | `#0F4C5C` (teal) | Ações, links, destaque |
-| `foreground` | `#111827` (navy) | Texto |
-| `border` / `accent` | `#E2E8F0` | Bordas e superfícies secundárias |
-| `background` | `#F8FAFC` | Fundo app |
+| Token               | Light            | Função                           |
+| ------------------- | ---------------- | -------------------------------- |
+| `primary`           | `#02445C` (teal) | Ações, links, destaque           |
+| `foreground`        | `#111827` (navy) | Texto                            |
+| `border` / `accent` | `#E2E8F0`        | Bordas e superfícies secundárias |
+| `background`        | `#F8FAFC`        | Fundo app                        |
 
 Tipografia: **Sora** (web).

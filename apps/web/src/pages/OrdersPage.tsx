@@ -15,7 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { apiFetch, downloadPdf, printPdf } from "@/lib/api";
-import { formatOrderCode } from "@/lib/order-code";
+import { formatOrderCode, orderCodeFilenamePart } from "@/lib/order-code";
 import { isWebAdmin } from "@/lib/staff";
 import { cn } from "@/lib/utils";
 import { ORDER_STATUSES, canRead, orderStatusLabel } from "@pedidos/shared";
@@ -322,10 +322,9 @@ export function OrdersPage() {
     setPdfPending(true);
     try {
       for (const o of selectedOrders) {
-        const code = formatOrderCode(o);
         await downloadPdf(
           `/admin/orders/${o.id}/pdf`,
-          `pedido-${code.replace("#", "")}.pdf`,
+          `pedido-${orderCodeFilenamePart(o)}.pdf`,
         );
       }
     } catch {
@@ -423,9 +422,13 @@ export function OrdersPage() {
         <FormField label="Nº do pedido" htmlFor="orders-filter-number">
           <Input
             id="orders-filter-number"
-            placeholder="Número ou código"
+            placeholder="Número"
+            inputMode="numeric"
+            pattern="[0-9]*"
             value={orderNumber}
-            onChange={(e) => setOrderNumber(e.target.value)}
+            onChange={(e) =>
+              setOrderNumber(e.target.value.replace(/\D/g, ""))
+            }
           />
         </FormField>
         <FormField label="Cidade" htmlFor="orders-filter-city">

@@ -11,7 +11,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0F4C5C"
+      "backgroundColor": "#02445C"
     },
     "ios": {
       "supportsTablet": true,
@@ -20,7 +20,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0F4C5C"
+        "backgroundColor": "#02445C"
       },
       "package": "com.pedixpro.app",
       "googleServicesFile": "./google-services.json",
@@ -57,7 +57,7 @@
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
-          "color": "#0F4C5C",
+          "color": "#02445C",
           "defaultChannel": "default"
         }
       ]

@@ -42,6 +42,7 @@ export function OrderSituationsPanel() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingIsSystem, setEditingIsSystem] = useState(false);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [sortOrder, setSortOrder] = useState("0");
@@ -52,6 +53,7 @@ export function OrderSituationsPanel() {
 
   function resetForm() {
     setEditingId(null);
+    setEditingIsSystem(false);
     setCode("");
     setName("");
     setSortOrder("0");
@@ -68,6 +70,7 @@ export function OrderSituationsPanel() {
 
   function openEdit(row: OrderSituation) {
     setEditingId(row.id);
+    setEditingIsSystem(row.isSystem);
     setCode(row.code);
     setName(row.name);
     setSortOrder(String(row.sortOrder));
@@ -87,14 +90,15 @@ export function OrderSituationsPanel() {
     meta: { inlineError: true },
     mutationFn: async () => {
       const sortN = Number(sortOrder);
-      const payload = {
-        code: code.trim(),
-        name: name.trim(),
-        sortOrder: Number.isFinite(sortN) ? Math.max(0, Math.trunc(sortN)) : 0,
-        active,
-        mapsToCancel,
-      };
+      const sort = Number.isFinite(sortN) ? Math.max(0, Math.trunc(sortN)) : 0;
       if (editingId) {
+        const payload = {
+          ...(editingIsSystem ? {} : { code: code.trim() }),
+          name: name.trim(),
+          sortOrder: sort,
+          active,
+          mapsToCancel,
+        };
         return apiFetch<OrderSituation>(
           `/admin/order-situations/${editingId}`,
           {
@@ -103,6 +107,13 @@ export function OrderSituationsPanel() {
           },
         );
       }
+      const payload = {
+        code: code.trim(),
+        name: name.trim(),
+        sortOrder: sort,
+        active,
+        mapsToCancel,
+      };
       return apiFetch<OrderSituation>("/admin/order-situations", {
         method: "POST",
         body: JSON.stringify(payload),
@@ -191,7 +202,11 @@ export function OrderSituationsPanel() {
             label="Código"
             htmlFor="os-code"
             required
-            hint="Ex.: SENT ou EM_ROTA"
+            hint={
+              editingIsSystem
+                ? "Código padrão do sistema (não editável)"
+                : "Ex.: SENT ou EM_ROTA"
+            }
             error={fieldErrors.code}
           >
             <Input
@@ -199,6 +214,7 @@ export function OrderSituationsPanel() {
               placeholder="SENT"
               aria-invalid={fieldErrors.code ? true : undefined}
               value={code}
+              disabled={editingIsSystem}
               onChange={(e) => setCode(e.target.value)}
             />
           </FormField>

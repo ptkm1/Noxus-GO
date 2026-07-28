@@ -15,10 +15,9 @@ import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 function orderCodeLabel(order: {
   orderNumber?: number | null;
-  id: string;
 }): string {
-  if (order.orderNumber != null) return `#${order.orderNumber}`;
-  return `#${order.id.slice(0, 8).toUpperCase()}`;
+  if (order.orderNumber != null) return String(order.orderNumber);
+  return "—";
 }
 
 export default function SaleDetailScreen() {

@@ -12,7 +12,7 @@
   --card-foreground: #111827;
   --popover: #ffffff;
   --popover-foreground: #111827;
-  --primary: #0f4c5c;
+  --primary: #02445c;
   --primary-foreground: #f8fafc;
   --secondary: #e2e8f0;
   --secondary-foreground: #111827;
@@ -30,8 +30,8 @@
   --info-foreground: #f8fafc;
   --border: #e2e8f0;
   --input: #e2e8f0;
-  --ring: #0f4c5c;
-  --chart-1: #0f4c5c;
+  --ring: #02445c;
+  --chart-1: #02445c;
   --chart-2: #1e6b7a;
   --chart-3: #64748b;
   --chart-4: #0d9488;
@@ -39,12 +39,12 @@
   --radius: 0.625rem;
   --sidebar: #ffffff;
   --sidebar-foreground: #111827;
-  --sidebar-primary: #0f4c5c;
+  --sidebar-primary: #02445c;
   --sidebar-primary-foreground: #f8fafc;
   --sidebar-accent: #f1f5f9;
   --sidebar-accent-foreground: #111827;
   --sidebar-border: #e2e8f0;
-  --sidebar-ring: #0f4c5c;
+  --sidebar-ring: #02445c;
 }
 
 /* PedixPro — tema escuro (navy + teal) */
@@ -188,7 +188,7 @@
     border: 1px solid rgb(51 65 85 / 0.8);
   }
   .gradient-text {
-    background: linear-gradient(135deg, #0f4c5c, #1e6b7a);
+    background: linear-gradient(135deg, #02445c, #1e6b7a);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
