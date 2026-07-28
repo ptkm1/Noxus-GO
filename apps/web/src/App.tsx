@@ -1,4 +1,4 @@
-import { canRead } from "@pedidos/shared";
+import { canRead, planHasFeature } from "@pedidos/shared";
 import { QueryClientProvider } from "@tanstack/react-query";
 import {
   BrowserRouter,
@@ -12,7 +12,11 @@ import {
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { ConfirmProvider } from "./components/confirm";
 import { AppLogo } from "./components/layout/AppLogo";
-import { resourceForPath } from "./components/layout/navConfig";
+import {
+  planFeatureForPath,
+  resourceForPath,
+} from "./components/layout/navConfig";
+import { PlanFeatureGate } from "./components/PlanFeatureGate";
 import { PublicAuthLayout } from "./components/layout/PublicAuthLayout";
 import { AppNotificationsProvider } from "./lib/app-notifications";
 import { createAppQueryClient } from "./lib/query-client";
@@ -114,12 +118,23 @@ function LegacyVendasRedirect() {
   return <Navigate to={orderId ? `/pedidos/${orderId}` : "/pedidos"} replace />;
 }
 
-/** ADMIN/MANAGER: rota visível se canRead efetivo do recurso. */
+/** ADMIN/MANAGER: rota visível se canRead efetivo do recurso + feature do plano. */
 function PermissionRouteGuard() {
   const { user } = useAuth();
   const { pathname } = useLocation();
-  if (isWebTeamLeader(user) && user?.role === "SELLER") return <Outlet />;
   if (!user) return <Navigate to="/login" replace />;
+
+  const planFeature = planFeatureForPath(pathname);
+  if (planFeature) {
+    const hasFeature =
+      user.subscription?.features?.includes(planFeature) ??
+      planHasFeature(user.subscription?.planId, planFeature);
+    if (!hasFeature) {
+      return <PlanFeatureGate feature={planFeature} />;
+    }
+  }
+
+  if (isWebTeamLeader(user) && user?.role === "SELLER") return <Outlet />;
   const resource = resourceForPath(pathname);
   if (!resource) return <Outlet />;
   if (canRead(user.role, resource, user.permissions)) return <Outlet />;

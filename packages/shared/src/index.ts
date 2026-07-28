@@ -151,6 +151,24 @@ export type {
   PermissionsMap,
 } from "./permissions.js";
 export {
+  cheapestPlanWithFeature,
+  DEFAULT_PLAN_ID,
+  DEFAULT_TRIAL_DAYS,
+  getPlanDefinition,
+  isPlanId,
+  listPlans,
+  PLAN_CATALOG,
+  PLAN_FEATURE_LABELS,
+  PLAN_IDS,
+  planHasFeature,
+} from "./plans.js";
+export type {
+  PlanDefinition,
+  PlanFeature,
+  PlanId,
+  PlanLimits,
+} from "./plans.js";
+export {
   formatInsufficientStockMessage,
   formatOutOfStockMessage,
   formatProductPriceWithUnit,

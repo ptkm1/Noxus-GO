@@ -1,6 +1,7 @@
 import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/db.js";
+import { ensureOrgSubscription } from "../src/services/billing/subscription.js";
 import { ensureOrgRolePermissions } from "../src/services/role-permissions.js";
 import { CATEGORY_SCHEMA_BY_CODE } from "./category-schemas.js";
 import { upsertFiscalDemoData } from "./seed-fiscal-demo.js";
@@ -190,6 +191,16 @@ async function main() {
   });
 
   await ensureOrgRolePermissions(org.id);
+  await ensureOrgSubscription(org.id, { planId: "pro" });
+  // Demo: plano Pro ACTIVE para exercitar todas as features
+  await prisma.organizationSubscription.update({
+    where: { organizationId: org.id },
+    data: {
+      planId: "pro",
+      status: "ACTIVE",
+      currentPeriodEnd: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+    },
+  });
   await upsertDemoCategories(org.id);
   const demoSupplier = await upsertDemoSupplier(org.id);
   await upsertFiscalDemoData(org.id);

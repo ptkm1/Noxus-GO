@@ -7,14 +7,15 @@ import {
 } from "../auth/jwt.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { prisma } from "../db.js";
-import {
-  resolveTeamLeaderContext,
-  resolveTeamLeaderTeamId,
-} from "../services/sales-teams.js";
+import { getOrgEntitlements } from "../services/billing/entitlements.js";
 import {
   ensureOrgRolePermissions,
   getRolePermissionsMap,
 } from "../services/role-permissions.js";
+import {
+  resolveTeamLeaderContext,
+  resolveTeamLeaderTeamId,
+} from "../services/sales-teams.js";
 import { getAuth } from "../util/guards.js";
 
 async function accessPayloadForUser(user: {
@@ -52,6 +53,7 @@ async function userResponseForMe(user: {
     user.organizationId,
     user.role,
   );
+  const subscription = await getOrgEntitlements(user.organizationId);
   return {
     id: user.id,
     email: user.email,
@@ -67,6 +69,7 @@ async function userResponseForMe(user: {
     teamId: leader?.teamId ?? null,
     teamName: leader?.teamName ?? null,
     permissions,
+    subscription,
   };
 }
 
@@ -112,6 +115,19 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const user = await prisma.$transaction(async (tx) => {
       const org = await tx.organization.create({
         data: { name: organizationName, displayName: organizationName },
+      });
+      const now = new Date();
+      const trialEnd = new Date(now);
+      trialEnd.setDate(trialEnd.getDate() + 14);
+      await tx.organizationSubscription.create({
+        data: {
+          organizationId: org.id,
+          planId: "starter",
+          status: "TRIAL",
+          provider: "none",
+          currentPeriodStart: now,
+          currentPeriodEnd: trialEnd,
+        },
       });
       return tx.user.create({
         data: {

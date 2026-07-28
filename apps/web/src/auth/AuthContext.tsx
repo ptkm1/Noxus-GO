@@ -1,4 +1,11 @@
-import type { PermissionLevel, PermissionResource, Role } from "@pedidos/shared";
+import type {
+  PermissionLevel,
+  PermissionResource,
+  PlanFeature,
+  PlanId,
+  PlanLimits,
+  Role,
+} from "@pedidos/shared";
 import {
   createContext,
   useCallback,
@@ -9,6 +16,16 @@ import {
   type ReactNode,
 } from "react";
 import { apiFetch, clearTokens, getAccessToken, setTokens } from "../lib/api";
+
+export type UserSubscription = {
+  planId: PlanId;
+  status: string;
+  features: PlanFeature[];
+  limits: PlanLimits;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  provider: string;
+};
 
 export type User = {
   id: string;
@@ -23,6 +40,7 @@ export type User = {
   teamName?: string | null;
   /** Permissões efetivas da org para o role atual (`/auth/me`). */
   permissions?: Partial<Record<PermissionResource, PermissionLevel>>;
+  subscription?: UserSubscription;
 };
 
 export type RegisterInput = {

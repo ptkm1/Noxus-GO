@@ -35,6 +35,12 @@ import {
   writeAuditLog,
 } from "../services/audit-log.js";
 import {
+  countOrgSellers,
+  countOrgUsers,
+  getOrgEntitlements,
+} from "../services/billing/entitlements.js";
+import { assertAdminPathPlanFeature } from "../services/billing/plan-gate.js";
+import {
   customerBodySchema,
   customerPatchSchema,
   parseCompleteCustomerBody,
@@ -84,12 +90,12 @@ import {
 } from "../services/management-reports.js";
 import { getOrCreateMorningBrief } from "../services/morning-brief.js";
 import { getWebPushPublicKey, notifyUsers } from "../services/notify.js";
+import { nextOrderNumber } from "../services/order-number.js";
 import {
   loadOrderForPdf,
   sendOrderPdf80mmReply,
   sendOrderPdfReply,
 } from "../services/order-pdf-load.js";
-import { nextOrderNumber } from "../services/order-number.js";
 import {
   computeSaleOrder,
   OrderPricingError,
@@ -331,6 +337,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       const method = req.method.toUpperCase();
       const routePath =
         req.routeOptions?.url ?? req.url.split("?")[0] ?? req.url;
+
+      if (
+        !(await assertAdminPathPlanFeature(
+          reply,
+          auth.organizationId,
+          routePath,
+        ))
+      ) {
+        return;
+      }
 
       if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
         if (auth.role === "MANAGER" && isManagerWriteAllowed(routePath)) {
@@ -2675,6 +2691,19 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         .status(400)
         .send({ error: "Dados inválidos", details: body.error.flatten() });
 
+    const entUsers = await getOrgEntitlements(auth.organizationId);
+    if (entUsers.limits.maxUsers != null) {
+      const n = await countOrgUsers(auth.organizationId);
+      if (n >= entUsers.limits.maxUsers) {
+        return reply.status(403).send({
+          error: `Seu plano permite no máximo ${entUsers.limits.maxUsers} usuário(s)`,
+          code: "PLAN_LIMIT_USERS",
+          planId: entUsers.planId,
+          limit: entUsers.limits.maxUsers,
+        });
+      }
+    }
+
     const email = body.data.email.toLowerCase();
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) return reply.status(409).send({ error: "Email já cadastrado" });
@@ -3085,6 +3114,19 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       return reply
         .status(400)
         .send({ error: "Dados inválidos", details: body.error.flatten() });
+
+    const ent = await getOrgEntitlements(auth.organizationId);
+    if (ent.limits.maxSellers != null) {
+      const n = await countOrgSellers(auth.organizationId);
+      if (n >= ent.limits.maxSellers) {
+        return reply.status(403).send({
+          error: `Seu plano permite no máximo ${ent.limits.maxSellers} vendedor(es)`,
+          code: "PLAN_LIMIT_SELLERS",
+          planId: ent.planId,
+          limit: ent.limits.maxSellers,
+        });
+      }
+    }
 
     const { commissionType } = body.data;
     const commissionPercent =

@@ -4,6 +4,7 @@ import Fastify, { type FastifyRequest } from "fastify";
 import { verifyAccessToken, type AccessPayload } from "./auth/jwt.js";
 import { adminRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
+import { billingRoutes } from "./routes/billing.js";
 import { integrationsRoutes } from "./routes/integrations.js";
 import { jobsRoutes } from "./routes/jobs.js";
 import { sellerRoutes } from "./routes/seller.js";
@@ -50,6 +51,7 @@ export async function buildApp() {
   await app.register(
     async (r) => {
       await r.register(authRoutes, { prefix: "/auth" });
+      await r.register(billingRoutes, { prefix: "/billing" });
       await r.register(integrationsRoutes, { prefix: "/integrations" });
       await r.register(jobsRoutes, { prefix: "/jobs" });
     },

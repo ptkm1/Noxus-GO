@@ -9,6 +9,7 @@
     "build:shared": "node scripts/build-package.mjs packages/shared",
     "build:design-tokens": "node scripts/build-package.mjs packages/design-tokens",
     "dev:web": "pnpm --filter @pedidos/web dev",
+    "dev:site": "pnpm --filter @pedidos/site dev",
     "dev:mobile": "pnpm build:design-tokens && pnpm --filter @pedidos/mobile start",
     "dev:mobile:client": "pnpm build:design-tokens && pnpm --filter @pedidos/mobile start:dev",
     "dev:web-api": "node scripts/run-dev-stack.mjs web-api",
