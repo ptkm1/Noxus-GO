@@ -1,6 +1,6 @@
 # Monorepo pnpm hoisted: development client com expo-dev-client.
 build:
-  name: CommercePro development Android
+  name: PedixPro development Android
   steps:
     - eas/checkout
     - eas/use_npm_token

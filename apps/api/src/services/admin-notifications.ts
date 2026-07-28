@@ -29,7 +29,7 @@ async function notifyAdminsCreditPendingEmail(params: {
   const total = decToNum(params.order.totalAmount);
   const cust = params.order.customer?.name ?? "Cliente sem nome";
   const seller = params.order.seller.user.name;
-  const subject = "[CommercePro] Pedido aguardando aprovação de crédito";
+  const subject = "[PedixPro] Pedido aguardando aprovação de crédito";
   const webBase = (process.env.WEB_APP_ORIGIN ?? "").replace(/\/$/, "");
   const detailPath = `/pedidos/${params.order.id}`;
   const detailLink =

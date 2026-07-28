@@ -3,7 +3,7 @@
 export type EmailOutboundConfig = {
   provider: "resend" | "sendgrid";
   apiKey: string;
-  /** Ex.: `Pedidos <noreply@seudominio.com>` ou só o e-mail. */
+  /** Ex.: `PedixPro <noreply@seudominio.com>` ou só o e-mail. */
   fromRaw: string;
 };
 

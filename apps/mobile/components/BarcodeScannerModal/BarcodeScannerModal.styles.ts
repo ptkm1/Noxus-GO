@@ -1,4 +1,4 @@
-import { APP_BRAND_LILAC } from "@pedidos/shared";
+import { APP_BRAND_PRIMARY } from "@pedidos/shared";
 import { useMemo } from "react";
 import { StyleSheet } from "react-native";
 
@@ -10,7 +10,7 @@ export type BarcodeScannerModalStylesParams = {
 export function useBarcodeScannerModalStyles(
   params: BarcodeScannerModalStylesParams,
 ) {
-  const { paddingTop, primaryButtonColor = APP_BRAND_LILAC } = params;
+  const { paddingTop, primaryButtonColor = APP_BRAND_PRIMARY } = params;
 
   return useMemo(
     () =>

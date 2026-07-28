@@ -1,5 +1,6 @@
 import { AuditLogPanel } from "@/components/AuditLogPanel";
 import { FormField, FormGrid, FormSection } from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -1838,24 +1839,21 @@ export function FaturamentoPage() {
                       Qtd: {String(item.quantity)}
                     </p>
                   </div>
-                  <select
-                    className={fieldControlClass}
+                  <AppSelect
                     value={productMappings[item.id] ?? item.productId ?? ""}
-                    onChange={(e) =>
+                    onValueChange={(v) =>
                       setProductMappings((prev) => ({
                         ...prev,
-                        [item.id]: e.target.value,
+                        [item.id]: v,
                       }))
                     }
-                  >
-                    <option value="">Sem vínculo</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                        {p.sku ? ` (${p.sku})` : ""}
-                      </option>
-                    ))}
-                  </select>
+                    emptyLabel="Sem vínculo"
+                    placeholder="Sem vínculo"
+                    options={products.map((p) => ({
+                      value: p.id,
+                      label: `${p.name}${p.sku ? ` (${p.sku})` : ""}`,
+                    }))}
+                  />
                 </div>
               ))}
               <div className="mt-3 flex gap-2">
@@ -2054,40 +2052,32 @@ export function FaturamentoPage() {
                 />
               </FormField>
               <FormField label="Regime">
-                <select
-                  className={fieldControlClass}
+                <AppSelect
                   value={form.taxRegime}
-                  onChange={(e) =>
+                  onValueChange={(v) =>
                     setForm({
                       ...form,
-                      taxRegime: e.target.value as FiscalTaxRegime,
+                      taxRegime: v as FiscalTaxRegime,
                     })
                   }
-                >
-                  {Object.entries(FISCAL_TAX_REGIME_LABELS).map(([k, v]) => (
-                    <option key={k} value={k}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
+                  options={Object.entries(FISCAL_TAX_REGIME_LABELS).map(
+                    ([k, v]) => ({ value: k, label: v }),
+                  )}
+                />
               </FormField>
               <FormField label="Ambiente NF-e">
-                <select
-                  className={fieldControlClass}
+                <AppSelect
                   value={form.nfeEnvironment}
-                  onChange={(e) =>
+                  onValueChange={(v) =>
                     setForm({
                       ...form,
-                      nfeEnvironment: e.target.value as NfeEnvironment,
+                      nfeEnvironment: v as NfeEnvironment,
                     })
                   }
-                >
-                  {Object.entries(NFE_ENVIRONMENT_LABELS).map(([k, v]) => (
-                    <option key={k} value={k}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
+                  options={Object.entries(NFE_ENVIRONMENT_LABELS).map(
+                    ([k, v]) => ({ value: k, label: v }),
+                  )}
+                />
               </FormField>
               <FormField label="Série">
                 <Input

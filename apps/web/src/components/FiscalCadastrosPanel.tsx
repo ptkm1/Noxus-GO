@@ -1,8 +1,8 @@
 import { FormField, FormGrid, FormSection } from "@/components/forms";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { fieldControlClass } from "@/lib/field-styles";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiFetch } from "../lib/api";
@@ -77,16 +77,16 @@ export function FiscalCadastrosPanel() {
       <FormSection title="Operações fiscais (CFOP)">
         <FormGrid cols={3}>
           <FormField label="Direção">
-            <select
-              className={fieldControlClass}
+            <AppSelect
               value={opDirection}
-              onChange={(e) =>
-                setOpDirection(e.target.value as "OUTBOUND" | "INBOUND")
+              onValueChange={(v) =>
+                setOpDirection(v as "OUTBOUND" | "INBOUND")
               }
-            >
-              <option value="OUTBOUND">Saída</option>
-              <option value="INBOUND">Entrada</option>
-            </select>
+              options={[
+                { value: "OUTBOUND", label: "Saída" },
+                { value: "INBOUND", label: "Entrada" },
+              ]}
+            />
           </FormField>
           <FormField label="CFOP">
             <Input

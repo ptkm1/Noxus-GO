@@ -1,7 +1,7 @@
-/* CommercePro — Web Push service worker */
+/* PedixPro — Web Push service worker */
 /* eslint-disable no-undef */
 self.addEventListener("push", (event) => {
-  let payload = { title: "CommercePro", body: "", data: {} };
+  let payload = { title: "PedixPro", body: "", data: {} };
   try {
     if (event.data) {
       payload = { ...payload, ...event.data.json() };
@@ -10,7 +10,7 @@ self.addEventListener("push", (event) => {
     /* ignore */
   }
 
-  const title = payload.title || "CommercePro";
+  const title = payload.title || "PedixPro";
   const options = {
     body: payload.body || "",
     data: payload.data || {},

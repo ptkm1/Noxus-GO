@@ -1,7 +1,7 @@
 import type { SemanticColors } from "./colors.js";
 import { darkColorsHex, lightColorsHex } from "./colors.js";
 
-/** Mapa VendaForce → AppColors do mobile. */
+/** Mapa PedixPro → AppColors do mobile. */
 export function semanticToAppColors(c: SemanticColors) {
   return {
     background: c.background,

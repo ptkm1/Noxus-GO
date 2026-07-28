@@ -1,6 +1,6 @@
 # Monorepo pnpm hoisted: install na raiz + links para apps/mobile/node_modules.
 build:
-  name: CommercePro preview Android
+  name: PedixPro preview Android
   steps:
     - eas/checkout
     - eas/use_npm_token

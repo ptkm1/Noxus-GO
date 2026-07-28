@@ -78,7 +78,7 @@ async function smokeForEmail(email: string) {
   const stamp = new Date().toLocaleString("pt-BR");
   await notifyUsers({
     userIds: [user.id],
-    title: "Smoke push CommercePro",
+    title: "Smoke push PedixPro",
     body: `Teste de notificação às ${stamp}`,
     type: "GENERIC",
     data: { href: "/(tabs)/notifications", smoke: true },

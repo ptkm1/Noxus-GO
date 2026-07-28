@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useProductFormPage } from "@/hooks/useProductFormPage";
 import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
-import { fieldControlClass } from "@/lib/field-styles";
 import { cn } from "@/lib/utils";
 import {
   PRODUCT_CLASSIFICATIONS,
@@ -746,47 +745,46 @@ export function ProductFormPage() {
                 htmlFor="prod-fiscal-unit"
                 hint="Ex.: UN, CX, KG. Obrigatório para NF-e."
               >
-                <select
+                <AppSelect
                   id="prod-fiscal-unit"
-                  className={fieldControlClass}
                   value={values.fiscalUnit}
-                  onChange={(e) => setField("fiscalUnit", e.target.value)}
-                >
-                  {PURCHASE_UNITS.map((u) => (
-                    <option key={u.value} value={u.value}>
-                      {u.label}
-                    </option>
-                  ))}
-                  {!PURCHASE_UNITS.some((u) => u.value === values.fiscalUnit) &&
-                  values.fiscalUnit ? (
-                    <option value={values.fiscalUnit}>
-                      {values.fiscalUnit}
-                    </option>
-                  ) : null}
-                </select>
+                  onValueChange={(v) => setField("fiscalUnit", v)}
+                  options={[
+                    ...PURCHASE_UNITS.map((u) => ({
+                      value: u.value,
+                      label: u.label,
+                    })),
+                    ...(!PURCHASE_UNITS.some(
+                      (u) => u.value === values.fiscalUnit,
+                    ) && values.fiscalUnit
+                      ? [
+                          {
+                            value: values.fiscalUnit,
+                            label: values.fiscalUnit,
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
               </FormField>
 
               <FormField
                 label="CFOP padrão de saída"
                 htmlFor="prod-outbound-op"
               >
-                <select
+                <AppSelect
                   id="prod-outbound-op"
-                  className={fieldControlClass}
                   value={values.outboundOperationId}
-                  onChange={(e) =>
-                    setField("outboundOperationId", e.target.value)
-                  }
-                >
-                  <option value="">Usar padrão (5102)</option>
-                  {outboundOps
+                  onValueChange={(v) => setField("outboundOperationId", v)}
+                  emptyLabel="Usar padrão (5102)"
+                  placeholder="Usar padrão (5102)"
+                  options={outboundOps
                     .filter((o) => o.active)
-                    .map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.cfop} — {o.description}
-                      </option>
-                    ))}
-                </select>
+                    .map((o) => ({
+                      value: o.id,
+                      label: `${o.cfop} — ${o.description}`,
+                    }))}
+                />
               </FormField>
 
               <FormField label="GTIN / EAN" htmlFor="prod-fiscal-gtin">

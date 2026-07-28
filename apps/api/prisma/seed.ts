@@ -609,7 +609,7 @@ async function main() {
     data: {
       userId: sellerUser.id,
       title: "Bem-vindo",
-      body: "Seu acesso ao app Pedidos está ativo.",
+      body: "Seu acesso ao app PedixPro está ativo.",
     },
   });
 

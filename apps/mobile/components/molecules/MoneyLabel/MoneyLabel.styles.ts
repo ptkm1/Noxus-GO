@@ -1,3 +1,4 @@
+import { APP_BRAND_PRIMARY } from "@pedidos/shared";
 import { useMemo } from "react";
 import { StyleSheet } from "react-native";
 
@@ -8,7 +9,7 @@ export type MoneyLabelStylesParams = {
 };
 
 export function useMoneyLabelStyles(params: MoneyLabelStylesParams = {}) {
-  const { color = "#9762fd", fontSize = 16, fontWeight = "600" } = params;
+  const { color = APP_BRAND_PRIMARY, fontSize = 16, fontWeight = "600" } = params;
 
   return useMemo(
     () =>

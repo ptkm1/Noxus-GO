@@ -174,7 +174,7 @@ export async function buildNfeXml(
       <indFinal>1</indFinal>
       <indPres>1</indPres>
       <procEmi>0</procEmi>
-      <verProc>Pedidos-provisorio-1.0</verProc>
+      <verProc>PedixPro-1.0</verProc>
     </ide>
     <emit>
       <CNPJ>${esc(emitCnpj)}</CNPJ>

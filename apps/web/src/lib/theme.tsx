@@ -14,7 +14,7 @@ export type ResolvedTheme = "light" | "dark";
 const STORAGE_KEY = "pedidos-web-theme";
 
 function getSystemTheme(): ResolvedTheme {
-  if (typeof window === "undefined") return "dark";
+  if (typeof window === "undefined") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
@@ -25,7 +25,7 @@ function readStored(): ThemePreference {
   } catch {
     /* ignore */
   }
-  return "dark";
+  return "light";
 }
 
 function applyDom(resolved: ResolvedTheme) {
