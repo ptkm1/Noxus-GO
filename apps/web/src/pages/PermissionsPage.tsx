@@ -1,6 +1,6 @@
 import { useConfirm } from "@/components/confirm";
-import { Button } from "@/components/ui/button";
 import { AppSelect } from "@/components/ui/app-select";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -57,7 +57,12 @@ function matrixToDraft(
   return draft;
 }
 
-export function PermissionsPage() {
+type PermissionsPanelProps = {
+  /** Sem título de página (ex.: modal). */
+  embedded?: boolean;
+};
+
+export function PermissionsPanel({ embedded = false }: PermissionsPanelProps) {
   const qc = useQueryClient();
   const { confirm, alert } = useConfirm();
   const { data, isLoading, error } = useQuery({
@@ -110,7 +115,6 @@ export function PermissionsPage() {
     onSuccess: async (matrix) => {
       setDraft(matrixToDraft(matrix));
       await qc.invalidateQueries({ queryKey: ["admin", "permissions"] });
-      // Recarrega sessão para nav/guards refletirem overrides do próprio role (se aplicável).
       window.dispatchEvent(new Event("pedidos:auth-refresh"));
       await alert({
         title: "Permissões salvas",
@@ -144,11 +148,21 @@ export function PermissionsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Permissões</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Defina leitura/escrita por role. Alterações são salvas por
-            organização.
-          </p>
+          {embedded ? null : (
+            <>
+              <h1 className="text-2xl font-semibold">Permissões</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Defina leitura/escrita por role. Alterações são salvas por
+                organização.
+              </p>
+            </>
+          )}
+          {embedded ? (
+            <p className="text-sm text-muted-foreground">
+              Defina leitura/escrita por role. Alterações são salvas por
+              organização.
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           {dirty ? (
@@ -243,4 +257,8 @@ export function PermissionsPage() {
       ) : null}
     </div>
   );
+}
+
+export function PermissionsPage() {
+  return <PermissionsPanel />;
 }

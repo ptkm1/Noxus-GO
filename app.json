@@ -6,7 +6,7 @@
       }
     },
     "ios": {
-      "bundleIdentifier": "com.commercepro.app",
+      "bundleIdentifier": "com.pedixpro.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }

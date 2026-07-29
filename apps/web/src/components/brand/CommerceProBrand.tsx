@@ -1,15 +1,15 @@
 import { cn } from "@/lib/utils";
 import {
-  APP_BRAND_LILAC,
-  COMMERCE_PRO_ICON_ASPECT,
-  COMMERCE_PRO_ICON_PATH,
-  COMMERCE_PRO_ICON_VIEWBOX,
+  APP_BRAND_PRIMARY,
+  PEDIX_PRO_ICON_ASPECT,
+  PEDIX_PRO_ICON_PATHS,
+  PEDIX_PRO_ICON_VIEWBOX,
 } from "@pedidos/shared";
 
 type IconProps = {
   size?: number;
   className?: string;
-  /** Ícone branco sobre fundo lilás (estilo app icon). */
+  /** Ícone branco sobre fundo teal (estilo app icon). */
   onBrand?: boolean;
 };
 
@@ -18,15 +18,15 @@ export function CommerceProIcon({
   className,
   onBrand = false,
 }: IconProps) {
-  const fill = onBrand ? "#FFFFFF" : APP_BRAND_LILAC;
+  const fill = onBrand ? "#FFFFFF" : APP_BRAND_PRIMARY;
   const width = size;
-  const height = size * COMMERCE_PRO_ICON_ASPECT;
+  const height = size * PEDIX_PRO_ICON_ASPECT;
 
   return (
     <svg
       width={width}
       height={height}
-      viewBox={COMMERCE_PRO_ICON_VIEWBOX}
+      viewBox={PEDIX_PRO_ICON_VIEWBOX}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={cn("shrink-0", className)}
@@ -37,15 +37,19 @@ export function CommerceProIcon({
           <rect
             x="0"
             y="0"
-            width="133"
-            height="121"
-            rx="18"
-            fill={APP_BRAND_LILAC}
+            width="152"
+            height="167"
+            rx="28"
+            fill={APP_BRAND_PRIMARY}
           />
-          <path d={COMMERCE_PRO_ICON_PATH} fill="#FFFFFF" />
+          {PEDIX_PRO_ICON_PATHS.map((d) => (
+            <path key={d.slice(0, 24)} d={d} fill="#FFFFFF" />
+          ))}
         </>
       ) : (
-        <path d={COMMERCE_PRO_ICON_PATH} fill={fill} />
+        PEDIX_PRO_ICON_PATHS.map((d) => (
+          <path key={d.slice(0, 24)} d={d} fill={fill} />
+        ))
       )}
     </svg>
   );
@@ -66,7 +70,7 @@ export function CommerceProWordmark({
   showIcon = true,
 }: WordmarkProps) {
   const textStyle = {
-    fontFamily: "'Space Grotesk', system-ui, sans-serif",
+    fontFamily: "'Sora', system-ui, sans-serif",
     fontSize: iconSize * 0.55,
   };
 
@@ -77,17 +81,17 @@ export function CommerceProWordmark({
         <p
           className={cn(
             "font-bold tracking-tight",
-            onDark ? "text-primary" : "text-neutral-900 dark:text-primary",
+            onDark ? "text-primary" : "text-foreground",
           )}
           style={textStyle}
         >
-          commerce
+          Pedix
         </p>
         <p
           className="mt-1 font-bold tracking-tight text-primary"
           style={textStyle}
         >
-          pro
+          Pro
         </p>
       </div>
     </div>

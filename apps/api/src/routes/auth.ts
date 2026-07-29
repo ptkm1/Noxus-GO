@@ -7,14 +7,16 @@ import {
 } from "../auth/jwt.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { prisma } from "../db.js";
+import { getOrgEntitlements } from "../services/billing/entitlements.js";
+import { ensureDefaultOrderSituations } from "../services/order-situations.js";
+import {
+  ensureOrgRolePermissions,
+  getPermissionsMapForUser,
+} from "../services/role-permissions.js";
 import {
   resolveTeamLeaderContext,
   resolveTeamLeaderTeamId,
 } from "../services/sales-teams.js";
-import {
-  ensureOrgRolePermissions,
-  getRolePermissionsMap,
-} from "../services/role-permissions.js";
 import { getAuth } from "../util/guards.js";
 
 async function accessPayloadForUser(user: {
@@ -42,16 +44,19 @@ async function userResponseForMe(user: {
   matricula: string | null;
   role: import("@prisma/client").Role;
   organizationId: string;
+  organizationProfileId?: string | null;
   seller: {
     id: string;
     commissionPercent: import("@prisma/client").Prisma.Decimal;
   } | null;
 }) {
   const leader = await resolveTeamLeaderContext(user.seller?.id ?? null);
-  const permissions = await getRolePermissionsMap(
+  const permissions = await getPermissionsMapForUser(
     user.organizationId,
     user.role,
+    user.organizationProfileId,
   );
+  const subscription = await getOrgEntitlements(user.organizationId);
   return {
     id: user.id,
     email: user.email,
@@ -59,6 +64,7 @@ async function userResponseForMe(user: {
     matricula: user.matricula,
     role: user.role,
     organizationId: user.organizationId,
+    organizationProfileId: user.organizationProfileId ?? null,
     sellerId: user.seller?.id ?? null,
     commissionPercent: user.seller
       ? Number(user.seller.commissionPercent)
@@ -67,6 +73,7 @@ async function userResponseForMe(user: {
     teamId: leader?.teamId ?? null,
     teamName: leader?.teamName ?? null,
     permissions,
+    subscription,
   };
 }
 
@@ -113,6 +120,19 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       const org = await tx.organization.create({
         data: { name: organizationName, displayName: organizationName },
       });
+      const now = new Date();
+      const trialEnd = new Date(now);
+      trialEnd.setDate(trialEnd.getDate() + 14);
+      await tx.organizationSubscription.create({
+        data: {
+          organizationId: org.id,
+          planId: "starter",
+          status: "TRIAL",
+          provider: "none",
+          currentPeriodStart: now,
+          currentPeriodEnd: trialEnd,
+        },
+      });
       return tx.user.create({
         data: {
           email,
@@ -126,6 +146,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     });
 
     await ensureOrgRolePermissions(user.organizationId);
+    await ensureDefaultOrderSituations(user.organizationId);
 
     const accessToken = signAccessToken(await accessPayloadForUser(user));
     const refreshToken = signRefreshToken(user.id);
@@ -184,6 +205,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       );
       return reply.status(401).send({ error: "Email ou senha incorretos" });
     }
+
+    await ensureOrgRolePermissions(user.organizationId);
+    await ensureDefaultOrderSituations(user.organizationId);
 
     const accessToken = signAccessToken(await accessPayloadForUser(user));
     const refreshToken = signRefreshToken(user.id);

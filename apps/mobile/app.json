@@ -1,28 +1,28 @@
 {
   "expo": {
-    "name": "CommercePro",
+    "name": "PedixPro",
     "slug": "pedidos-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "commercepro",
+    "scheme": "pedixpro",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#8A3FFC"
+      "backgroundColor": "#02445C"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.commercepro.app"
+      "bundleIdentifier": "com.pedixpro.app"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#8A3FFC"
+        "backgroundColor": "#02445C"
       },
-      "package": "com.commercepro.app",
+      "package": "com.pedixpro.app",
       "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
@@ -38,16 +38,16 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Usamos a câmara só para ler códigos de barras ao registar vendas.",
-          "microphonePermission": "Opcional para vídeo; não é necessário para vendas rápidas.",
+          "cameraPermission": "Usamos a c\u00e2mara s\u00f3 para ler c\u00f3digos de barras ao registar vendas.",
+          "microphonePermission": "Opcional para v\u00eddeo; n\u00e3o \u00e9 necess\u00e1rio para vendas r\u00e1pidas.",
           "recordAudioAndroid": false
         }
       ],
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "O CommercePro usa a sua localização em segundo plano para o gestor acompanhar a rota da equipa (uso profissional).",
-          "locationWhenInUsePermission": "O CommercePro usa a sua localização para o mapa de rota, check-in de visitas e rastreio.",
+          "locationAlwaysAndWhenInUsePermission": "O PedixPro usa a sua localiza\u00e7\u00e3o em segundo plano para o gestor acompanhar a rota da equipa (uso profissional).",
+          "locationWhenInUsePermission": "O PedixPro usa a sua localiza\u00e7\u00e3o para o mapa de rota, check-in de visitas e rastreio.",
           "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true
         }
@@ -57,7 +57,7 @@
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
-          "color": "#8A3FFC",
+          "color": "#02445C",
           "defaultChannel": "default"
         }
       ]

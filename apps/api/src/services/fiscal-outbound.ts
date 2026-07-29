@@ -7,14 +7,26 @@ import {
 } from "../fiscal/customer-fiscal.js";
 import {
   buildCancelamentoEvento,
+  buildCartaCorrecaoEvento,
+  buildInutilizacao,
   wrapEnvEvento,
+  wrapInutNFe,
 } from "../fiscal/nfe-event-xml.js";
-import { signInfEvento, signInfNFe } from "../fiscal/nfe-signer.js";
+import {
+  signInfEvento,
+  signInfInut,
+  signInfNFe,
+} from "../fiscal/nfe-signer.js";
 import {
   buildSignedNfePackage,
   wrapEnviNFe,
 } from "../fiscal/nfe-xml-builder.js";
-import { authorizeNfe, sendNfeEvento } from "../fiscal/sefaz-client.js";
+import {
+  authorizeNfe,
+  consultNfeProtocolo,
+  sendNfeEvento,
+  sendNfeInutilizacao,
+} from "../fiscal/sefaz-client.js";
 import {
   computeItemTaxes,
   validateCustomerFiscal,
@@ -101,6 +113,11 @@ export async function buildOutboundInvoiceFromOrder(
       icmsRate: ncm?.icmsRate ? Number(ncm.icmsRate) : undefined,
       pisRate: ncm?.pisRate ? Number(ncm.pisRate) : undefined,
       cofinsRate: ncm?.cofinsRate ? Number(ncm.cofinsRate) : undefined,
+      ipiRate: item.product.ipiPercent
+        ? Number(item.product.ipiPercent)
+        : undefined,
+      fcpRate: ncm?.fcpRate ? Number(ncm.fcpRate) : undefined,
+      cstPis: item.product.cstPis,
       regime,
     });
     return {
@@ -119,10 +136,19 @@ export async function buildOutboundInvoiceFromOrder(
         csosn: ncm?.defaultCsosn ?? taxes.csosn,
         cst: ncm?.defaultCstIcms ?? taxes.cst,
       },
+      _grossWeightKg: item.product.grossWeightKg
+        ? Number(item.product.grossWeightKg) * item.quantity
+        : 0,
+      _netWeightKg: item.product.netWeightKg
+        ? Number(item.product.netWeightKg) * item.quantity
+        : 0,
     };
   });
 
   const totalAmount = invoiceItems.reduce((s, i) => s + i.totalPrice, 0);
+  const grossWeightKg = invoiceItems.reduce((s, i) => s + i._grossWeightKg, 0);
+  const netWeightKg = invoiceItems.reduce((s, i) => s + i._netWeightKg, 0);
+  const volumeQty = order.items.reduce((s, i) => s + i.quantity, 0);
 
   const invoice = await prisma.$transaction(async (tx) => {
     await tx.organizationFiscalConfig.update({
@@ -135,6 +161,12 @@ export async function buildOutboundInvoiceFromOrder(
         organizationId,
         direction: "OUTBOUND",
         status: "DRAFT",
+        documentModel: 55,
+        tpEmis: "1",
+        modFrete: "9",
+        volumeQty: volumeQty > 0 ? volumeQty : null,
+        grossWeightKg: grossWeightKg > 0 ? grossWeightKg : null,
+        netWeightKg: netWeightKg > 0 ? netWeightKg : null,
         orderId: order.id,
         customerId: order.customerId,
         number: nextNumber,
@@ -142,7 +174,11 @@ export async function buildOutboundInvoiceFromOrder(
         totalAmount,
         issuerSnapshot: buildIssuerSnapshot(cfg),
         recipientSnapshot: buildRecipientSnapshot(order.customer!),
-        items: { create: invoiceItems },
+        items: {
+          create: invoiceItems.map(
+            ({ _grossWeightKg: _g, _netWeightKg: _n, ...row }) => row,
+          ),
+        },
       },
       include: { items: true, order: { include: { customer: true } } },
     });
@@ -157,7 +193,15 @@ export async function transmitOutboundInvoice(
 ) {
   const invoice = await prisma.fiscalInvoice.findFirst({
     where: { id: invoiceId, organizationId, direction: "OUTBOUND" },
-    include: { items: true, order: { include: { customer: true } } },
+    include: {
+      items: true,
+      order: {
+        include: {
+          customer: true,
+          paymentCondition: { select: { days: true, name: true, code: true } },
+        },
+      },
+    },
   });
   if (!invoice) return { ok: false as const, error: "Nota não encontrada" };
   if (invoice.status !== "DRAFT" && invoice.status !== "REJECTED") {
@@ -197,6 +241,9 @@ export async function transmitOutboundInvoice(
     invoice,
     recipient,
     emitterName: org?.displayName ?? org?.name ?? "Emitente",
+    payment: {
+      days: invoice.order?.paymentCondition?.days ?? 0,
+    },
   });
 
   const signedNFe = signInfNFe(infNFeXml, cert.privateKeyPem, cert.certPem);
@@ -221,7 +268,7 @@ export async function transmitOutboundInvoice(
           0,
           50000,
         ),
-        success: sefaz.ok,
+        success: sefaz.ok || Boolean(sefaz.pending),
       },
     });
 
@@ -234,6 +281,20 @@ export async function transmitOutboundInvoice(
           xmlSigned: signedNFe,
           xmlAuthorized: sefaz.rawResponse || signedNFe,
           protocol: sefaz.parsed.nProt ?? null,
+          issuedAt,
+          rejectionReason: null,
+        },
+        include: { items: true, order: true },
+      });
+    }
+
+    if (sefaz.pending) {
+      return tx.fiscalInvoice.update({
+        where: { id: invoice.id },
+        data: {
+          status: "TRANSMITTED",
+          accessKey,
+          xmlSigned: signedNFe,
           issuedAt,
           rejectionReason: null,
         },
@@ -255,6 +316,15 @@ export async function transmitOutboundInvoice(
     });
   });
 
+  if (sefaz.pending) {
+    return {
+      ok: true as const,
+      pending: true as const,
+      sefazReceipt: sefaz.parsed.nRec ?? null,
+      invoice: updated,
+    };
+  }
+
   if (!sefaz.ok) {
     return {
       ok: false as const,
@@ -263,6 +333,49 @@ export async function transmitOutboundInvoice(
     };
   }
 
+  return { ok: true as const, invoice: updated };
+}
+
+export async function updateOutboundInvoiceTransport(
+  organizationId: string,
+  invoiceId: string,
+  data: {
+    modFrete?: string;
+    freightAmount?: number | null;
+    volumeQty?: number | null;
+    grossWeightKg?: number | null;
+    netWeightKg?: number | null;
+  },
+) {
+  const invoice = await prisma.fiscalInvoice.findFirst({
+    where: { id: invoiceId, organizationId, direction: "OUTBOUND" },
+  });
+  if (!invoice) return { ok: false as const, error: "Nota não encontrada" };
+  if (invoice.status !== "DRAFT" && invoice.status !== "REJECTED") {
+    return {
+      ok: false as const,
+      error: "Só é possível editar transporte em rascunho ou rejeitada",
+    };
+  }
+  const updated = await prisma.fiscalInvoice.update({
+    where: { id: invoiceId },
+    data: {
+      ...(data.modFrete != null
+        ? { modFrete: String(data.modFrete).slice(0, 1) }
+        : {}),
+      ...(data.freightAmount !== undefined
+        ? { freightAmount: data.freightAmount }
+        : {}),
+      ...(data.volumeQty !== undefined ? { volumeQty: data.volumeQty } : {}),
+      ...(data.grossWeightKg !== undefined
+        ? { grossWeightKg: data.grossWeightKg }
+        : {}),
+      ...(data.netWeightKg !== undefined
+        ? { netWeightKg: data.netWeightKg }
+        : {}),
+    },
+    include: { items: true, order: { include: { customer: true } } },
+  });
   return { ok: true as const, invoice: updated };
 }
 
@@ -366,6 +479,243 @@ export async function cancelOutboundInvoice(
   }
 
   return { ok: true as const, invoice: updated };
+}
+
+export async function sendCartaCorrecao(
+  organizationId: string,
+  invoiceId: string,
+  correctionText: string,
+) {
+  const invoice = await prisma.fiscalInvoice.findFirst({
+    where: { id: invoiceId, organizationId, direction: "OUTBOUND" },
+    include: { events: true },
+  });
+  if (!invoice) return { ok: false as const, error: "Nota não encontrada" };
+  if (invoice.status !== "AUTHORIZED") {
+    return {
+      ok: false as const,
+      error: "Somente NF-e autorizada pode receber CC-e",
+    };
+  }
+  if (!invoice.accessKey) {
+    return { ok: false as const, error: "Chave de acesso ausente" };
+  }
+
+  const config = await prisma.organizationFiscalConfig.findUnique({
+    where: { organizationId },
+  });
+  const issues = validateOrganizationFiscalConfig(config);
+  if (issues.length) {
+    return {
+      ok: false as const,
+      error: issues.map((i) => i.message).join("; "),
+    };
+  }
+
+  const cert = await loadOrganizationCertificate(organizationId);
+  if (!cert)
+    return { ok: false as const, error: "Certificado A1 não disponível" };
+
+  const prevCce = invoice.events.filter(
+    (e) => e.eventType === "NFeCartaCorrecao" && e.success,
+  ).length;
+  const seqEvento = prevCce + 1;
+  const homolog = config!.nfeEnvironment === "HOMOLOGATION";
+
+  let built: ReturnType<typeof buildCartaCorrecaoEvento>;
+  try {
+    built = buildCartaCorrecaoEvento({
+      accessKey: invoice.accessKey,
+      cnpj: config!.cnpj ?? "",
+      uf: config!.uf ?? "SP",
+      homologation: homolog,
+      correctionText,
+      seqEvento,
+    });
+  } catch (e) {
+    return {
+      ok: false as const,
+      error: e instanceof Error ? e.message : "Texto da CC-e inválido",
+    };
+  }
+
+  const signedEvento = signInfEvento(
+    built.infEvento,
+    cert.privateKeyPem,
+    cert.certPem,
+  );
+  const envEvento = wrapEnvEvento(signedEvento, built.idLote);
+  const sefaz = await sendNfeEvento({
+    uf: config!.uf ?? "SP",
+    homologation: homolog,
+    envEventoXml: envEvento,
+    pfx: cert.pfx,
+    password: cert.password,
+  });
+
+  await prisma.fiscalInvoiceEvent.create({
+    data: {
+      fiscalInvoiceId: invoice.id,
+      eventType: "NFeCartaCorrecao",
+      requestPayload: envEvento.slice(0, 50000),
+      responsePayload: (sefaz.rawResponse || sefaz.error || "").slice(0, 50000),
+      success: sefaz.ok,
+    },
+  });
+
+  if (!sefaz.ok) {
+    return {
+      ok: false as const,
+      error: sefaz.error ?? "CC-e rejeitada pela SEFAZ",
+    };
+  }
+  return { ok: true as const, nSeqEvento: seqEvento };
+}
+
+export async function consultOutboundInvoiceSituation(
+  organizationId: string,
+  invoiceId: string,
+) {
+  const invoice = await prisma.fiscalInvoice.findFirst({
+    where: { id: invoiceId, organizationId, direction: "OUTBOUND" },
+  });
+  if (!invoice) return { ok: false as const, error: "Nota não encontrada" };
+  if (!invoice.accessKey) {
+    return { ok: false as const, error: "Chave de acesso ausente" };
+  }
+
+  const config = await prisma.organizationFiscalConfig.findUnique({
+    where: { organizationId },
+  });
+  const cert = await loadOrganizationCertificate(organizationId);
+  if (!config || !cert) {
+    return {
+      ok: false as const,
+      error: "Configuração/certificado indisponível",
+    };
+  }
+
+  const homolog = config.nfeEnvironment === "HOMOLOGATION";
+  const sefaz = await consultNfeProtocolo({
+    uf: config.uf ?? "SP",
+    homologation: homolog,
+    accessKey: invoice.accessKey,
+    pfx: cert.pfx,
+    password: cert.password,
+  });
+
+  await prisma.fiscalInvoiceEvent.create({
+    data: {
+      fiscalInvoiceId: invoice.id,
+      eventType: "NFeConsultaSituacao",
+      requestPayload: invoice.accessKey,
+      responsePayload: (sefaz.rawResponse || sefaz.error || "").slice(0, 50000),
+      success: sefaz.ok,
+    },
+  });
+
+  // Sincroniza status local a partir da consulta
+  if (sefaz.ok && sefaz.parsed.cStat === "100") {
+    if (invoice.status === "TRANSMITTED" || invoice.status === "DRAFT") {
+      await prisma.fiscalInvoice.update({
+        where: { id: invoice.id },
+        data: {
+          status: "AUTHORIZED",
+          protocol: sefaz.parsed.nProt ?? invoice.protocol,
+          rejectionReason: null,
+          xmlAuthorized: invoice.xmlAuthorized ?? invoice.xmlSigned,
+        },
+      });
+    }
+  } else if (
+    sefaz.ok &&
+    sefaz.parsed.cStat === "101" &&
+    invoice.status === "AUTHORIZED"
+  ) {
+    await prisma.fiscalInvoice.update({
+      where: { id: invoice.id },
+      data: { status: "CANCELLED" },
+    });
+  }
+
+  return {
+    ok: sefaz.ok,
+    error: sefaz.error,
+    cStat: sefaz.parsed.cStat,
+    xMotivo: sefaz.parsed.xMotivo,
+    nProt: sefaz.parsed.nProt,
+  };
+}
+
+export async function inutilizarNumeracao(input: {
+  organizationId: string;
+  numberStart: number;
+  numberEnd: number;
+  justification: string;
+  series?: number;
+  year?: number;
+}) {
+  const config = await prisma.organizationFiscalConfig.findUnique({
+    where: { organizationId: input.organizationId },
+  });
+  const issues = validateOrganizationFiscalConfig(config);
+  if (issues.length) {
+    return {
+      ok: false as const,
+      error: issues.map((i) => i.message).join("; "),
+    };
+  }
+  if (input.numberEnd < input.numberStart) {
+    return { ok: false as const, error: "Número final menor que o inicial" };
+  }
+
+  const cert = await loadOrganizationCertificate(input.organizationId);
+  if (!cert)
+    return { ok: false as const, error: "Certificado A1 não disponível" };
+
+  const series = input.series ?? config!.nfeSeries;
+  const year = input.year ?? new Date().getFullYear();
+  const homolog = config!.nfeEnvironment === "HOMOLOGATION";
+
+  let built: ReturnType<typeof buildInutilizacao>;
+  try {
+    built = buildInutilizacao({
+      cnpj: config!.cnpj ?? "",
+      uf: config!.uf ?? "SP",
+      homologation: homolog,
+      year,
+      series,
+      numberStart: input.numberStart,
+      numberEnd: input.numberEnd,
+      justification: input.justification,
+    });
+  } catch (e) {
+    return {
+      ok: false as const,
+      error: e instanceof Error ? e.message : "Dados inválidos",
+    };
+  }
+
+  const signed = signInfInut(built.infInut, cert.privateKeyPem, cert.certPem);
+  const inutXml = wrapInutNFe(signed);
+  const sefaz = await sendNfeInutilizacao({
+    uf: config!.uf ?? "SP",
+    homologation: homolog,
+    inutNFeXml: inutXml,
+    pfx: cert.pfx,
+    password: cert.password,
+  });
+
+  // Evento órfão ligado a uma nota placeholder não existe — grava em auditoria via caller.
+  // Criamos um FiscalInvoiceEvent só se houver invoice; aqui retornamos payload para log.
+  return {
+    ok: sefaz.ok,
+    error: sefaz.error,
+    cStat: sefaz.parsed.cStat,
+    xMotivo: sefaz.parsed.xMotivo,
+    requestXml: inutXml.slice(0, 50000),
+    responseXml: (sefaz.rawResponse || "").slice(0, 50000),
+  };
 }
 
 function buildIssuerSnapshot(cfg: OrganizationFiscalConfig) {

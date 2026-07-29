@@ -20,8 +20,7 @@ export const AUDIT_ENTITY = {
   OrganizationRolePermission: "OrganizationRolePermission",
 } as const;
 
-export type AuditEntityType =
-  (typeof AUDIT_ENTITY)[keyof typeof AUDIT_ENTITY];
+export type AuditEntityType = (typeof AUDIT_ENTITY)[keyof typeof AUDIT_ENTITY];
 
 export const AUDIT_ACTION = {
   CREATE: "CREATE",
@@ -34,6 +33,10 @@ export const AUDIT_ACTION = {
   NFE_EMIT: "NFE_EMIT",
   NFE_TRANSMIT: "NFE_TRANSMIT",
   NFE_CANCEL: "NFE_CANCEL",
+  NFE_CCE: "NFE_CCE",
+  NFE_INUTILIZACAO: "NFE_INUTILIZACAO",
+  NFE_CONSULTA: "NFE_CONSULTA",
+  NFE_EMAIL: "NFE_EMAIL",
   NFE_IMPORT: "NFE_IMPORT",
   NFE_CONFIRM_IMPORT: "NFE_CONFIRM_IMPORT",
   FISCAL_SETTINGS: "FISCAL_SETTINGS",
@@ -42,7 +45,9 @@ export const AUDIT_ACTION = {
   PERMISSIONS_UPDATE: "PERMISSIONS_UPDATE",
 } as const;
 
-export type AuditAction = (typeof AUDIT_ACTION)[keyof typeof AUDIT_ACTION] | string;
+export type AuditAction =
+  | (typeof AUDIT_ACTION)[keyof typeof AUDIT_ACTION]
+  | string;
 
 export type AuditInput = {
   organizationId: string;

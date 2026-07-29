@@ -31,7 +31,23 @@ export const UF_IBGE: Record<string, string> = {
 
 /** Estados que usam SVRS para autorização NF-e. */
 const SVRS_STATES = new Set([
-  "AC", "AL", "AP", "DF", "ES", "MG", "PA", "PB", "PI", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "TO",
+  "AC",
+  "AL",
+  "AP",
+  "DF",
+  "ES",
+  "MG",
+  "PA",
+  "PB",
+  "PI",
+  "RJ",
+  "RN",
+  "RO",
+  "RR",
+  "RS",
+  "SC",
+  "SE",
+  "TO",
 ]);
 
 export function getAutorizacaoUrl(uf: string, homologation: boolean): string {
@@ -67,7 +83,10 @@ export function getDistribuicaoDfeUrl(homologation: boolean): string {
     : "https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx";
 }
 
-export function getRecepcaoEventoUrl(uf: string, homologation: boolean): string {
+export function getRecepcaoEventoUrl(
+  uf: string,
+  homologation: boolean,
+): string {
   const u = uf.toUpperCase();
   if (u === "SP") {
     return homologation
@@ -87,4 +106,51 @@ export function getRecepcaoEventoUrl(uf: string, homologation: boolean): string 
   return homologation
     ? "https://nfe-homologacao.svrs.rs.gov.br/ws/recepcaoevento/recepcaoevento4.asmx"
     : "https://nfe.svrs.rs.gov.br/ws/recepcaoevento/recepcaoevento4.asmx";
+}
+
+export function getConsultaProtocoloUrl(
+  uf: string,
+  homologation: boolean,
+): string {
+  const u = uf.toUpperCase();
+  if (u === "SP") {
+    return homologation
+      ? "https://homologacao.nfe.fazenda.sp.gov.br/ws/nfeconsultaprotocolo4.asmx"
+      : "https://nfe.fazenda.sp.gov.br/ws/nfeconsultaprotocolo4.asmx";
+  }
+  if (u === "MG") {
+    return homologation
+      ? "https://hnfe.fazenda.mg.gov.br/nfe2/services/NFeConsultaProtocolo4"
+      : "https://nfe.fazenda.mg.gov.br/nfe2/services/NFeConsultaProtocolo4";
+  }
+  if (u === "PR") {
+    return homologation
+      ? "https://homologacao.nfe.fazenda.pr.gov.br/nfe/NFeConsultaProtocolo4"
+      : "https://nfe.fazenda.pr.gov.br/nfe/NFeConsultaProtocolo4";
+  }
+  return homologation
+    ? "https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx"
+    : "https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx";
+}
+
+export function getInutilizacaoUrl(uf: string, homologation: boolean): string {
+  const u = uf.toUpperCase();
+  if (u === "SP") {
+    return homologation
+      ? "https://homologacao.nfe.fazenda.sp.gov.br/ws/nfeinutilizacao4.asmx"
+      : "https://nfe.fazenda.sp.gov.br/ws/nfeinutilizacao4.asmx";
+  }
+  if (u === "MG") {
+    return homologation
+      ? "https://hnfe.fazenda.mg.gov.br/nfe2/services/NFeInutilizacao4"
+      : "https://nfe.fazenda.mg.gov.br/nfe2/services/NFeInutilizacao4";
+  }
+  if (u === "PR") {
+    return homologation
+      ? "https://homologacao.nfe.fazenda.pr.gov.br/nfe/NFeInutilizacao4"
+      : "https://nfe.fazenda.pr.gov.br/nfe/NFeInutilizacao4";
+  }
+  return homologation
+    ? "https://nfe-homologacao.svrs.rs.gov.br/ws/nfeinutilizacao/nfeinutilizacao4.asmx"
+    : "https://nfe.svrs.rs.gov.br/ws/nfeinutilizacao/nfeinutilizacao4.asmx";
 }

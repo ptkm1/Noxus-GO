@@ -97,24 +97,39 @@ export function signInfEvento(
   return signXmlBlock(infEventoXml, privateKeyPem, certPem, "evento");
 }
 
+export function signInfInut(
+  infInutXml: string,
+  privateKeyPem: string,
+  certPem: string,
+): string {
+  return signXmlBlock(infInutXml, privateKeyPem, certPem, "inutNFe");
+}
+
 export function parseSefazAuthorizationResponse(xml: string): {
   success: boolean;
+  /** Lote recebido — autorização assíncrona (cStat 103). */
+  pending?: boolean;
   cStat?: string;
   xMotivo?: string;
   nProt?: string;
   chNFe?: string;
+  nRec?: string;
 } {
   const cStat = tag(xml, "cStat");
   const xMotivo = tag(xml, "xMotivo");
   const nProt = tag(xml, "nProt");
   const chNFe = tag(xml, "chNFe");
+  const nRec = tag(xml, "nRec");
   const success = cStat === "100" || cStat === "104";
+  const pending = cStat === "103";
   return {
     success,
+    pending,
     cStat: cStat ?? undefined,
     xMotivo: xMotivo ?? undefined,
     nProt: nProt ?? undefined,
     chNFe: chNFe ?? undefined,
+    nRec: nRec ?? undefined,
   };
 }
 

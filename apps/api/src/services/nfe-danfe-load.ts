@@ -1,7 +1,10 @@
 import type { FastifyReply } from "fastify";
 import { prisma } from "../db.js";
 import { customerFiscalDocument } from "../fiscal/customer-fiscal.js";
-import { parseNfeXmlForDanfe, type DanfeNfeData } from "../fiscal/nfe-xml-danfe.js";
+import {
+  parseNfeXmlForDanfe,
+  type DanfeNfeData,
+} from "../fiscal/nfe-xml-danfe.js";
 import { buildDanfePdf, danfePdfFilename } from "./nfe-danfe-pdf.js";
 
 const DANFE_STATUSES = new Set(["AUTHORIZED", "IMPORTED", "CANCELLED"]);
@@ -18,7 +21,10 @@ export async function loadFiscalDanfeLogo(organizationId: string) {
   };
 }
 
-export async function loadInvoiceForDanfe(organizationId: string, invoiceId: string) {
+export async function loadInvoiceForDanfe(
+  organizationId: string,
+  invoiceId: string,
+) {
   return prisma.fiscalInvoice.findFirst({
     where: { id: invoiceId, organizationId },
     include: {
@@ -33,7 +39,10 @@ function buildFallbackFromInvoice(
   invoice: NonNullable<Awaited<ReturnType<typeof loadInvoiceForDanfe>>>,
 ): Partial<DanfeNfeData> {
   const issuerSnap = invoice.issuerSnapshot as Record<string, string> | null;
-  const recipientSnap = invoice.recipientSnapshot as Record<string, string> | null;
+  const recipientSnap = invoice.recipientSnapshot as Record<
+    string,
+    string
+  > | null;
 
   const emitter =
     invoice.direction === "OUTBOUND"
@@ -101,24 +110,32 @@ function buildFallbackFromInvoice(
   };
 }
 
-export async function sendDanfePdfReply(
-  reply: FastifyReply,
+export async function buildDanfePdfForInvoice(
   invoice: NonNullable<Awaited<ReturnType<typeof loadInvoiceForDanfe>>>,
-) {
+): Promise<
+  { ok: true; pdf: Buffer; filename: string } | { ok: false; error: string }
+> {
   if (!DANFE_STATUSES.has(invoice.status)) {
-    return reply.status(400).send({ error: "DANFE disponível apenas para notas autorizadas ou importadas" });
+    return {
+      ok: false,
+      error: "DANFE disponível apenas para notas autorizadas ou importadas",
+    };
   }
 
   const xml = invoice.xmlAuthorized ?? invoice.xmlSigned;
   if (!xml && invoice.items.length === 0) {
-    return reply.status(400).send({ error: "XML da nota não disponível" });
+    return { ok: false, error: "XML da nota não disponível" };
   }
 
   const fallback = buildFallbackFromInvoice(invoice);
   const parsed = xml ? parseNfeXmlForDanfe(xml, fallback) : null;
-  const data = parsed ?? (fallback.accessKey ? (fallback as DanfeNfeData) : null);
+  const data =
+    parsed ?? (fallback.accessKey ? (fallback as DanfeNfeData) : null);
   if (!data?.accessKey) {
-    return reply.status(400).send({ error: "Não foi possível montar DANFE para esta nota" });
+    return {
+      ok: false,
+      error: "Não foi possível montar DANFE para esta nota",
+    };
   }
 
   const logo = await loadFiscalDanfeLogo(invoice.organizationId);
@@ -128,8 +145,19 @@ export async function sendDanfePdfReply(
 
   const pdf = await buildDanfePdf(data as DanfeNfeData);
   const filename = danfePdfFilename(invoice.id, invoice.number);
+  return { ok: true, pdf, filename };
+}
+
+export async function sendDanfePdfReply(
+  reply: FastifyReply,
+  invoice: NonNullable<Awaited<ReturnType<typeof loadInvoiceForDanfe>>>,
+) {
+  const built = await buildDanfePdfForInvoice(invoice);
+  if (!built.ok) {
+    return reply.status(400).send({ error: built.error });
+  }
   return reply
     .header("Content-Type", "application/pdf")
-    .header("Content-Disposition", `inline; filename="${filename}"`)
-    .send(pdf);
+    .header("Content-Disposition", `inline; filename="${built.filename}"`)
+    .send(built.pdf);
 }

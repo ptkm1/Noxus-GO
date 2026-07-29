@@ -7,121 +7,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { apiFetch } from "@/lib/api";
+import {
+  actionLabel,
+  formatAuditDateTime,
+  summarizeMetadata,
+  type AuditLogRow,
+  type AuditLogsResponse,
+} from "@/lib/audit-labels";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 
-export type AuditLogRow = {
-  id: string;
-  action: string;
-  entityType: string;
-  entityId: string | null;
-  userMatricula: string | null;
-  metadata: unknown;
-  createdAt: string;
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    matricula: string | null;
-  } | null;
-};
-
-type AuditLogsResponse = {
-  items: AuditLogRow[];
-  total: number;
-  take: number;
-  skip: number;
-};
-
-const ACTION_LABELS: Record<string, string> = {
-  CREATE: "Criação",
-  UPDATE: "Atualização",
-  DELETE: "Exclusão",
-  STATUS_CHANGE: "Mudança de status",
-  STOCK_ENTRY: "Movimentação de estoque",
-  STOCK_SALE: "Baixa por venda",
-  STOCK_SALE_REVERSAL: "Estorno de venda",
-  NFE_EMIT: "Emissão NF-e",
-  NFE_TRANSMIT: "Transmissão NF-e",
-  NFE_CANCEL: "Cancelamento NF-e",
-  NFE_IMPORT: "Importação NF-e",
-  NFE_CONFIRM_IMPORT: "Confirmação de importação",
-  FISCAL_SETTINGS: "Config. fiscal",
-  FISCAL_CERTIFICATE: "Certificado digital",
-  FISCAL_LOGO: "Logo DANFE",
-  PERMISSIONS_UPDATE: "Permissões",
-  // legado (antes da padronização)
-  "product.create": "Criação",
-  "product.delete": "Exclusão",
-  "user.create": "Criação",
-  "stock.sale": "Baixa por venda",
-  "stock.sale_reversal": "Estorno de venda",
-  PERMISSIONS_MATRIX_UPDATE: "Permissões",
-};
-
-function actionLabel(action: string): string {
-  if (ACTION_LABELS[action]) return ACTION_LABELS[action];
-  if (action.startsWith("stock.")) return "Movimentação de estoque";
-  return action;
-}
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function summarizeMetadata(metadata: unknown): string {
-  if (metadata == null) return "—";
-  if (typeof metadata !== "object") return String(metadata);
-  const obj = metadata as Record<string, unknown>;
-  const parts: string[] = [];
-  const pick = [
-    "name",
-    "fromStatus",
-    "toStatus",
-    "status",
-    "movementType",
-    "qtyDelta",
-    "lotCode",
-    "reason",
-    "fields",
-    "justification",
-    "accessKey",
-    "number",
-    "op",
-  ] as const;
-  for (const key of pick) {
-    const v = obj[key];
-    if (v == null) continue;
-    if (key === "fields" && Array.isArray(v)) {
-      parts.push(`campos: ${v.join(", ")}`);
-      continue;
-    }
-    if (key === "fromStatus" || key === "toStatus") continue;
-    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
-      parts.push(`${key}: ${v}`);
-    }
-  }
-  if (obj.fromStatus != null || obj.toStatus != null) {
-    parts.unshift(`${String(obj.fromStatus ?? "?")} → ${String(obj.toStatus ?? "?")}`);
-  }
-  if (parts.length === 0) {
-    try {
-      const raw = JSON.stringify(metadata);
-      return raw.length > 120 ? `${raw.slice(0, 117)}…` : raw;
-    } catch {
-      return "—";
-    }
-  }
-  return parts.join(" · ");
-}
+export type { AuditLogRow };
 
 type AuditLogPanelProps = {
   entityType?: string;
@@ -202,7 +98,7 @@ export function AuditLogPanel({
               {items.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell className="whitespace-nowrap text-xs tabular-nums">
-                    {formatDateTime(row.createdAt)}
+                    {formatAuditDateTime(row.createdAt)}
                   </TableCell>
                   <TableCell className="text-sm">
                     {actionLabel(row.action)}

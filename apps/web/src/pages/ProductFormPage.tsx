@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useProductFormPage } from "@/hooks/useProductFormPage";
 import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
-import { fieldControlClass } from "@/lib/field-styles";
 import { cn } from "@/lib/utils";
 import {
   PRODUCT_CLASSIFICATIONS,
@@ -28,12 +27,6 @@ import { DynamicCategoryAttributes } from "../components/DynamicCategoryAttribut
 import { ProductPromotionsPanel } from "../components/ProductPromotionsPanel";
 import { apiFetch } from "../lib/api";
 
-type FiscalNcmOption = {
-  id: string;
-  code: string;
-  description: string;
-  active: boolean;
-};
 type FiscalOpOption = {
   id: string;
   direction: string;
@@ -84,22 +77,25 @@ export function ProductFormPage() {
     fieldError,
     categories,
     suppliers,
+    priceTables,
     selectedDefs,
     selectedSupplier,
     markupPercent,
     handleSubmit,
     onCategoryChange,
     pending,
+    selectedPriceTableId,
+    setSelectedPriceTableId,
+    priceTablePrices,
+    setPriceForTable,
+    addPriceTableId,
+    setAddPriceTableId,
+    addProductToPriceTable,
   } = useProductFormPage();
 
   useScrollToFirstError(
     Object.keys(fieldErrors).length > 0 ? fieldErrors : formError,
   );
-
-  const { data: ncms = [] } = useQuery({
-    queryKey: ["admin", "fiscal", "ncm"],
-    queryFn: () => apiFetch<FiscalNcmOption[]>("/admin/fiscal/ncm"),
-  });
 
   const { data: outboundOps = [] } = useQuery({
     queryKey: ["admin", "fiscal", "operations", "OUTBOUND"],
@@ -338,6 +334,47 @@ export function ProductFormPage() {
             title="Preços"
             description="Valores de custo, venda e limites comerciais."
           >
+            {!isEdit ? (
+              <div className="mb-4 space-y-3 rounded-xl border border-border bg-muted/30 p-4">
+                <FormField
+                  label="Tabela de preço"
+                  htmlFor="prod-price-table"
+                  required
+                  hint="O preço de venda será registrado nesta tabela ao salvar."
+                >
+                  <AppSelect
+                    id="prod-price-table"
+                    value={selectedPriceTableId}
+                    onValueChange={setSelectedPriceTableId}
+                    placeholder="Selecione…"
+                    emptyLabel="Selecione…"
+                    options={priceTables.map((t) => ({
+                      value: t.id,
+                      label: t.name,
+                    }))}
+                  />
+                </FormField>
+                {priceTables.length === 0 ? (
+                  <p className="text-sm text-amber-700 dark:text-amber-400">
+                    Nenhuma tabela cadastrada.{" "}
+                    <Link to="/tabelas-preco" className="underline">
+                      Criar tabela de preço
+                    </Link>
+                  </p>
+                ) : !selectedPriceTableId ? (
+                  <p className="text-sm text-muted-foreground">
+                    Selecione a tabela para liberar os campos de preço abaixo.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            <fieldset
+              disabled={!isEdit && !selectedPriceTableId}
+              className={cn(
+                "min-w-0 border-0 p-0",
+                !isEdit && !selectedPriceTableId && "opacity-60",
+              )}
+            >
             <FormGrid cols={2}>
               <FormField
                 label="Preço custo (R$)"
@@ -355,26 +392,15 @@ export function ProductFormPage() {
               </FormField>
 
               <FormField
-                label="Preço fábrica (R$)"
-                htmlFor="prod-factory"
-                error={fieldError("factoryPrice")}
-              >
-                <Input
-                  id="prod-factory"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={values.factoryPrice}
-                  onChange={(e) => setField("factoryPrice", e.target.value)}
-                />
-              </FormField>
-
-              <FormField
                 label="Preço venda (R$)"
                 htmlFor="prod-price"
                 required
                 error={fieldError("basePrice")}
-                hint="Usado quando não há preço em tabela de preços."
+                hint={
+                  !isEdit && selectedPriceTableId
+                    ? `Será gravado na tabela “${priceTables.find((t) => t.id === selectedPriceTableId)?.name ?? "selecionada"}”.`
+                    : "Usado quando não há preço em tabela de preços."
+                }
               >
                 <Input
                   id="prod-price"
@@ -464,6 +490,87 @@ export function ProductFormPage() {
                 />
               </FormField>
             </FormGrid>
+            </fieldset>
+
+            {isEdit ? (
+              <div className="mt-6 space-y-3 border-t border-border pt-6">
+                <div>
+                  <h3 className="text-sm font-medium text-foreground">
+                    Preços por tabela
+                  </h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Edite o preço deste produto em cada tabela ou associe a
+                    outra tabela.
+                  </p>
+                </div>
+                {Object.keys(priceTablePrices).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Produto ainda não está em nenhuma tabela.
+                  </p>
+                ) : (
+                  <FormGrid cols={2}>
+                    {Object.entries(priceTablePrices).map(([tableId, price]) => {
+                      const tableName =
+                        priceTables.find((t) => t.id === tableId)?.name ??
+                        tableId;
+                      return (
+                        <FormField
+                          key={tableId}
+                          label={tableName}
+                          htmlFor={`pt-price-${tableId}`}
+                        >
+                          <Input
+                            id={`pt-price-${tableId}`}
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={price}
+                            onChange={(e) =>
+                              setPriceForTable(tableId, e.target.value)
+                            }
+                          />
+                        </FormField>
+                      );
+                    })}
+                  </FormGrid>
+                )}
+                <div className="flex flex-wrap items-end gap-2">
+                  <FormField
+                    label="Adicionar à tabela"
+                    htmlFor="prod-add-pt"
+                    className="min-w-[14rem] flex-1"
+                  >
+                    <AppSelect
+                      id="prod-add-pt"
+                      value={addPriceTableId}
+                      onValueChange={setAddPriceTableId}
+                      placeholder="Selecione…"
+                      emptyLabel="Selecione…"
+                      options={priceTables
+                        .filter((t) => priceTablePrices[t.id] === undefined)
+                        .map((t) => ({ value: t.id, label: t.name }))}
+                    />
+                  </FormField>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!addPriceTableId}
+                    onClick={addProductToPriceTable}
+                  >
+                    Adicionar
+                  </Button>
+                </div>
+              </div>
+            ) : selectedPriceTableId ? (
+              <p className="mt-4 text-sm text-muted-foreground">
+                Ao salvar, o preço de venda será registrado na tabela{" "}
+                <span className="font-medium text-foreground">
+                  {priceTables.find((t) => t.id === selectedPriceTableId)
+                    ?.name ?? "—"}
+                </span>
+                .
+              </p>
+            ) : null}
           </FormSection>
         ) : null}
 
@@ -705,48 +812,25 @@ export function ProductFormPage() {
         {activeTab === "fiscal" ? (
           <FormSection
             title="Dados fiscais para NF-e"
-            description="Campos usados na emissão. Cadastre NCM/CFOP em Faturamento → NCM/CFOP."
+            description="Campos usados na emissão. Digite o NCM livremente (8 dígitos)."
           >
             <FormGrid cols={2}>
               <FormField
-                label="NCM (cadastro fiscal)"
-                htmlFor="prod-ncm-id"
-                hint="Obrigatório para emitir NF-e."
-              >
-                <select
-                  id="prod-ncm-id"
-                  className={fieldControlClass}
-                  value={values.ncmId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setField("ncmId", id);
-                    const selected = ncms.find((n) => n.id === id);
-                    if (selected) setField("ncm", selected.code);
-                  }}
-                >
-                  <option value="">Selecione o NCM…</option>
-                  {ncms
-                    .filter((n) => n.active)
-                    .map((n) => (
-                      <option key={n.id} value={n.id}>
-                        {n.code} — {n.description}
-                      </option>
-                    ))}
-                </select>
-              </FormField>
-
-              <FormField
-                label="NCM (código)"
+                label="NCM"
                 htmlFor="prod-ncm"
                 error={fieldError("ncm")}
-                hint="8 dígitos. Preenchido ao selecionar o NCM."
+                hint="8 dígitos. Digite o código livremente."
               >
                 <Input
                   id="prod-ncm"
                   placeholder="27101932"
                   value={values.ncm}
-                  onChange={(e) => setField("ncm", e.target.value)}
+                  onChange={(e) => {
+                    setField("ncm", e.target.value);
+                    if (values.ncmId) setField("ncmId", "");
+                  }}
                   inputMode="numeric"
+                  maxLength={10}
                 />
               </FormField>
 
@@ -780,47 +864,46 @@ export function ProductFormPage() {
                 htmlFor="prod-fiscal-unit"
                 hint="Ex.: UN, CX, KG. Obrigatório para NF-e."
               >
-                <select
+                <AppSelect
                   id="prod-fiscal-unit"
-                  className={fieldControlClass}
                   value={values.fiscalUnit}
-                  onChange={(e) => setField("fiscalUnit", e.target.value)}
-                >
-                  {PURCHASE_UNITS.map((u) => (
-                    <option key={u.value} value={u.value}>
-                      {u.label}
-                    </option>
-                  ))}
-                  {!PURCHASE_UNITS.some((u) => u.value === values.fiscalUnit) &&
-                  values.fiscalUnit ? (
-                    <option value={values.fiscalUnit}>
-                      {values.fiscalUnit}
-                    </option>
-                  ) : null}
-                </select>
+                  onValueChange={(v) => setField("fiscalUnit", v)}
+                  options={[
+                    ...PURCHASE_UNITS.map((u) => ({
+                      value: u.value,
+                      label: u.label,
+                    })),
+                    ...(!PURCHASE_UNITS.some(
+                      (u) => u.value === values.fiscalUnit,
+                    ) && values.fiscalUnit
+                      ? [
+                          {
+                            value: values.fiscalUnit,
+                            label: values.fiscalUnit,
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
               </FormField>
 
               <FormField
                 label="CFOP padrão de saída"
                 htmlFor="prod-outbound-op"
               >
-                <select
+                <AppSelect
                   id="prod-outbound-op"
-                  className={fieldControlClass}
                   value={values.outboundOperationId}
-                  onChange={(e) =>
-                    setField("outboundOperationId", e.target.value)
-                  }
-                >
-                  <option value="">Usar padrão (5102)</option>
-                  {outboundOps
+                  onValueChange={(v) => setField("outboundOperationId", v)}
+                  emptyLabel="Usar padrão (5102)"
+                  placeholder="Usar padrão (5102)"
+                  options={outboundOps
                     .filter((o) => o.active)
-                    .map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.cfop} — {o.description}
-                      </option>
-                    ))}
-                </select>
+                    .map((o) => ({
+                      value: o.id,
+                      label: `${o.cfop} — ${o.description}`,
+                    }))}
+                />
               </FormField>
 
               <FormField label="GTIN / EAN" htmlFor="prod-fiscal-gtin">
@@ -932,12 +1015,14 @@ export function ProductFormPage() {
                 />
               </FormField>
             </FormGrid>
-            {values.ncmId && values.nfeOrigin !== "" && values.fiscalUnit ? (
+            {values.ncm.replace(/\D/g, "").length === 8 &&
+            values.nfeOrigin !== "" &&
+            values.fiscalUnit ? (
               <p className="mt-3 text-sm text-green-700">Pronto para NF-e</p>
             ) : (
               <p className="mt-3 text-sm text-amber-700">
-                Cadastro fiscal incompleto — selecione NCM, origem e unidade
-                fiscal.
+                Cadastro fiscal incompleto — informe NCM (8 dígitos), origem e
+                unidade fiscal.
               </p>
             )}
           </FormSection>

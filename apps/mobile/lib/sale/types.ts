@@ -15,10 +15,39 @@ export type SaleProduct = {
   blockSaleWhenOutOfStock?: boolean;
   attributes?: Record<string, unknown>;
   category?: { id: string; code: string; name: string } | null;
+  supplier?: {
+    id: string;
+    code: string;
+    tradeName: string;
+    legalName?: string | null;
+  } | null;
   imageUrl?: string | null;
 };
 
-export type SaleCustomer = { id: string; name: string };
+export type SaleCustomer = {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  documentType?: "CNPJ" | "CPF" | null;
+  cnpj?: string | null;
+  cpf?: string | null;
+  legalName?: string | null;
+  tradeName?: string | null;
+  city?: string | null;
+  state?: string | null;
+  approvalStatus?: "APPROVED" | "PENDING" | "REJECTED";
+};
+
+export type PaymentCondition = {
+  id: string;
+  code: string;
+  name: string;
+  days: number;
+  sortOrder?: number;
+};
+
+export type OrderOperation = "SALE";
 
 export type CreditOverview = {
   creditBlocked: boolean;
@@ -42,3 +71,5 @@ export type CartLine = {
   discountPercent: number;
   maxSellerDiscountPercent: number;
 };
+
+export type QuickSaleTab = "clientes" | "produtos" | "finalizar";

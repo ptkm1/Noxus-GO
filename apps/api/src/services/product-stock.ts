@@ -1,16 +1,96 @@
 import type { OrderStatus } from "@prisma/client";
+import {
+  formatInsufficientStockMessage,
+  formatOutOfStockMessage,
+} from "@pedidos/shared";
 import { prisma } from "../db.js";
 import { AUDIT_ACTION, AUDIT_ENTITY, writeAuditLog } from "./audit-log.js";
 import { consumeLotsFefo } from "./stock-ledger.js";
 
+export type StockShortage = {
+  productId: string;
+  name: string;
+  sku: string | null;
+  available: number;
+  requested: number;
+};
+
 export class StockError extends Error {
-  constructor(message: string) {
+  readonly shortages: StockShortage[];
+
+  constructor(message: string, shortages: StockShortage[] = []) {
     super(message);
     this.name = "StockError";
+    this.shortages = shortages;
   }
 }
 
+/** Payload HTTP padronizado para clientes (mobile/web). */
+export function stockErrorPayload(error: StockError) {
+  return {
+    error: error.message,
+    code: "STOCK_INSUFFICIENT" as const,
+    products: error.shortages.map((s) => ({
+      productId: s.productId,
+      name: s.name,
+      sku: s.sku,
+      available: s.available,
+      requested: s.requested,
+    })),
+  };
+}
+
 type OrderLine = { productId: string; quantity: number };
+
+export type ProductStockLevel = {
+  productId: string;
+  name: string;
+  sku: string | null;
+  stockQty: number;
+  blockSaleWhenOutOfStock: boolean;
+};
+
+export async function getProductStockLevels(
+  organizationId: string,
+  productIds: string[],
+): Promise<ProductStockLevel[]> {
+  const unique = [...new Set(productIds.filter(Boolean))];
+  if (unique.length === 0) return [];
+
+  const products = await prisma.product.findMany({
+    where: {
+      organizationId,
+      id: { in: unique },
+    },
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      stockQty: true,
+      blockSaleWhenOutOfStock: true,
+    },
+  });
+
+  return products.map((p) => ({
+    productId: p.id,
+    name: p.name,
+    sku: p.sku,
+    stockQty: p.stockQty,
+    blockSaleWhenOutOfStock: p.blockSaleWhenOutOfStock,
+  }));
+}
+
+function shortageMessage(s: StockShortage): string {
+  if (s.available <= 0) {
+    return formatOutOfStockMessage(s.name, s.sku);
+  }
+  return formatInsufficientStockMessage(
+    s.name,
+    s.available,
+    s.requested,
+    s.sku,
+  );
+}
 
 export async function assertSufficientStock(
   organizationId: string,
@@ -26,33 +106,33 @@ export async function assertSufficientStock(
     );
   }
 
-  const products = await prisma.product.findMany({
-    where: {
-      organizationId,
-      id: { in: [...qtyByProduct.keys()] },
-    },
-    select: {
-      id: true,
-      name: true,
-      stockQty: true,
-      blockSaleWhenOutOfStock: true,
-    },
-  });
-
-  const byId = new Map(products.map((p) => [p.id, p]));
-  const errors: string[] = [];
+  const products = await getProductStockLevels(
+    organizationId,
+    [...qtyByProduct.keys()],
+  );
+  const byId = new Map(products.map((p) => [p.productId, p]));
+  const shortages: StockShortage[] = [];
 
   for (const [productId, qty] of qtyByProduct) {
     const p = byId.get(productId);
     if (!p?.blockSaleWhenOutOfStock) continue;
     if (p.stockQty < qty) {
-      errors.push(
-        `Estoque insuficiente para "${p.name}" (disponível: ${p.stockQty}, pedido: ${qty}).`,
-      );
+      shortages.push({
+        productId,
+        name: p.name,
+        sku: p.sku,
+        available: p.stockQty,
+        requested: qty,
+      });
     }
   }
 
-  if (errors.length > 0) throw new StockError(errors.join(" "));
+  if (shortages.length > 0) {
+    throw new StockError(
+      shortages.map(shortageMessage).join(" "),
+      shortages,
+    );
+  }
 }
 
 export async function applyStockOnStatusChange(
@@ -92,14 +172,21 @@ export async function applyStockOnStatusChange(
     for (const item of order.items) {
       const product = await tx.product.findUnique({
         where: { id: item.productId },
-        select: { stockQty: true, name: true },
+        select: { stockQty: true, name: true, sku: true },
       });
       if (!product) continue;
 
       if (confirming) {
         const newQty = product.stockQty - item.quantity;
         if (newQty < 0) {
-          throw new StockError(`Estoque insuficiente para "${product.name}".`);
+          const shortage: StockShortage = {
+            productId: item.productId,
+            name: product.name,
+            sku: product.sku,
+            available: product.stockQty,
+            requested: item.quantity,
+          };
+          throw new StockError(shortageMessage(shortage), [shortage]);
         }
         await consumeLotsFefo(tx, {
           organizationId: order.organizationId,

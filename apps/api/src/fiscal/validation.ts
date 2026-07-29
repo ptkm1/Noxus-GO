@@ -112,22 +112,44 @@ export function computeItemTaxes(input: {
   icmsRate?: number;
   pisRate?: number;
   cofinsRate?: number;
+  /** Alíquota IPI (%) do produto. */
+  ipiRate?: number;
+  /** Alíquota FCP (%) do NCM, quando aplicável. */
+  fcpRate?: number;
+  /** CST PIS do produto (fallback conforme regime/alíquota). */
+  cstPis?: string | null;
   regime: FiscalTaxRegime;
 }) {
   const total = input.quantity * input.unitPrice;
   const icmsRate = input.icmsRate ?? 0;
   const pisRate = input.pisRate ?? 0.65;
   const cofinsRate = input.cofinsRate ?? 3;
+  const ipiRate = input.ipiRate ?? 0;
+  const fcpRate = input.fcpRate ?? 0;
   const icms = total * (icmsRate / 100);
   const pis = total * (pisRate / 100);
   const cofins = total * (cofinsRate / 100);
+  const ipi = total * (ipiRate / 100);
+  const fcp = total * (fcpRate / 100);
   const codes = defaultCsosnOrCst(input.regime);
+  const cstPis =
+    input.cstPis?.trim() || (pisRate <= 0 && cofinsRate <= 0 ? "07" : "01");
   return {
     base: total,
     icms,
     pis,
     cofins,
+    ipi,
+    fcp,
     icmsRate,
+    pisRate,
+    cofinsRate,
+    ipiRate,
+    fcpRate,
+    cstPis,
+    // ST / DIFAL: stub — permanecem 0 nesta onda.
+    vBCST: 0,
+    vST: 0,
     ...codes,
   };
 }

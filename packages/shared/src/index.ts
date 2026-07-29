@@ -40,12 +40,23 @@ export type {
   IbgeUf,
 } from "./address.js";
 export {
+  APP_BRAND_BACKGROUND,
+  APP_BRAND_BORDER,
   APP_BRAND_LILAC,
   APP_BRAND_NAME,
+  APP_BRAND_NAVY,
+  APP_BRAND_PRIMARY,
   APP_BRAND_SHORT,
+  APP_BRAND_TAGLINE,
   COMMERCE_PRO_ICON_ASPECT,
   COMMERCE_PRO_ICON_PATH,
+  COMMERCE_PRO_ICON_PATHS,
   COMMERCE_PRO_ICON_VIEWBOX,
+  PEDIX_PRO_ICON_ASPECT,
+  PEDIX_PRO_ICON_LOOP_PATH,
+  PEDIX_PRO_ICON_PATHS,
+  PEDIX_PRO_ICON_STEM_PATH,
+  PEDIX_PRO_ICON_VIEWBOX,
 } from "./brand.js";
 export {
   cnpjDigitsOnly,
@@ -85,10 +96,12 @@ export {
   validateCustomerFormStep,
 } from "./customer-form.js";
 export type {
+  CustomerApprovalStatus,
   CustomerDocumentType,
   CustomerFormErrors,
   CustomerFormValues,
   CustomerRecord,
+  CustomerStatus,
 } from "./customer-form.js";
 export {
   FISCAL_INVOICE_STATUS_LABELS,
@@ -109,6 +122,24 @@ export {
   formatRelativeSaleDate,
   formatSaleItemCount,
 } from "./format-sale-date.js";
+export {
+  DEFAULT_HOME_INDICATORS,
+  DEFAULT_HOME_INDICATORS_LAYOUT,
+  HOME_INDICATOR_KEYS,
+  HOME_INDICATOR_LABELS,
+  HOME_INDICATOR_SHORT_LABELS,
+  HOME_INDICATORS_LAYOUT_LABELS,
+  HOME_INDICATORS_LAYOUTS,
+  isHomeIndicatorKey,
+  isHomeIndicatorsLayout,
+  MAX_HOME_INDICATORS,
+  normalizeHomeIndicators,
+  normalizeHomeIndicatorsLayout,
+} from "./home-indicators.js";
+export type {
+  HomeIndicatorKey,
+  HomeIndicatorsLayout,
+} from "./home-indicators.js";
 export {
   NOTIFICATION_TYPES,
   notificationBodyDisplay,
@@ -139,7 +170,28 @@ export type {
   PermissionsMap,
 } from "./permissions.js";
 export {
+  cheapestPlanWithFeature,
+  DEFAULT_PLAN_ID,
+  DEFAULT_TRIAL_DAYS,
+  getPlanDefinition,
+  isPlanId,
+  listPlans,
+  PLAN_CATALOG,
+  PLAN_FEATURE_LABELS,
+  PLAN_IDS,
+  planHasFeature,
+} from "./plans.js";
+export type {
+  PlanDefinition,
+  PlanFeature,
+  PlanId,
+  PlanLimits,
+} from "./plans.js";
+export {
+  formatInsufficientStockMessage,
+  formatOutOfStockMessage,
   formatProductPriceWithUnit,
+  formatProductStockItemLabel,
   formatProductStockLabel,
   formatProductUnitLabel,
   isProductSaleBlockedByStock,

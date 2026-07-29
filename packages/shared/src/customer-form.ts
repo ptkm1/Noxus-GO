@@ -26,6 +26,10 @@ export type CustomerFormValues = {
   notes: string;
 };
 
+export type CustomerApprovalStatus = "APPROVED" | "PENDING" | "REJECTED";
+
+export type CustomerStatus = "ACTIVE" | "INACTIVE";
+
 export type CustomerRecord = CustomerFormValues & {
   id: string;
   sellerId?: string | null;
@@ -33,6 +37,13 @@ export type CustomerRecord = CustomerFormValues & {
   creditBlocked?: boolean;
   latitude?: unknown;
   longitude?: unknown;
+  approvalStatus?: CustomerApprovalStatus;
+  approvalNote?: string | null;
+  approvedAt?: string | null;
+  rejectedAt?: string | null;
+  rejectionReason?: string | null;
+  /** Situação comercial (ativo / inativo). */
+  status?: CustomerStatus;
 };
 
 export function emptyCustomerForm(
@@ -93,6 +104,7 @@ export function formToCustomerPayload(
     sellerId?: string | null;
     creditLimit?: number | null;
     creditBlocked?: boolean;
+    status?: CustomerStatus;
     latitude?: number | null;
     longitude?: number | null;
   },
@@ -129,6 +141,7 @@ export function formToCustomerPayload(
   if (extras?.creditLimit !== undefined) base.creditLimit = extras.creditLimit;
   if (extras?.creditBlocked !== undefined)
     base.creditBlocked = extras.creditBlocked;
+  if (extras?.status !== undefined) base.status = extras.status;
   if (extras?.latitude !== undefined) base.latitude = extras.latitude;
   if (extras?.longitude !== undefined) base.longitude = extras.longitude;
   return base;

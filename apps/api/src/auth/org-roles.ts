@@ -19,6 +19,7 @@ const MANAGER_GET_ALLOW = [
   /^\/orders\/[^/]+$/,
   /^\/orders\/[^/]+\/pdf$/,
   /^\/orders\/[^/]+\/pdf-80mm$/,
+  /^\/order-situations$/,
   /^\/reports\/sales-by-supplier$/,
   /^\/reports\/scorecard$/,
   /^\/reports\/margin$/,
@@ -32,12 +33,14 @@ const MANAGER_GET_ALLOW = [
   /^\/push-vapid-public-key$/,
 ] as const;
 
-/** Write paths managers may use (inbox + push registration + broadcast). */
+/** Write paths managers may use (inbox + push + broadcast + aprovação de clientes). */
 const MANAGER_WRITE_ALLOW = [
   /^\/notifications\/[^/]+\/read$/,
   /^\/notifications\/read-all$/,
   /^\/notifications\/send$/,
   /^\/push-devices$/,
+  /^\/customers\/[^/]+\/approve$/,
+  /^\/customers\/[^/]+\/reject$/,
 ] as const;
 
 export function isManagerWriteAllowed(routePath: string): boolean {
@@ -57,6 +60,7 @@ const TEAM_LEADER_GET_ALLOW = [
   /^\/orders\/[^/]+$/,
   /^\/orders\/[^/]+\/pdf$/,
   /^\/orders\/[^/]+\/pdf-80mm$/,
+  /^\/order-situations$/,
   /^\/reports\/team-summary$/,
   /^\/reports\/sales-by-supplier$/,
   /^\/reports\/scorecard$/,

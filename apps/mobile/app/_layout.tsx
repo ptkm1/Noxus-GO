@@ -8,6 +8,7 @@ import { PushBootstrap } from "../components/PushBootstrap";
 import { SellerCacheBootstrap } from "../components/SellerCacheBootstrap";
 import { SellerLocationReporter } from "../components/SellerLocationReporter";
 import { AuthProvider } from "../context/AuthContext";
+import { ConfirmProvider } from "../context/ConfirmContext";
 import { ToastProvider } from "../context/ToastContext";
 import { ThemeProvider, useTheme } from "../lib/theme";
 
@@ -53,17 +54,19 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <QueryClientProvider client={qc}>
         <ThemeProvider>
-          <ToastProvider>
-            <DevToolsBootstrap>
-              <AuthProvider>
-                <PushBootstrap />
-                <OfflineSyncBootstrap />
-                <SellerCacheBootstrap />
-                <SellerLocationReporter />
-                <RootStack />
-              </AuthProvider>
-            </DevToolsBootstrap>
-          </ToastProvider>
+          <ConfirmProvider>
+            <ToastProvider>
+              <DevToolsBootstrap>
+                <AuthProvider>
+                  <PushBootstrap />
+                  <OfflineSyncBootstrap />
+                  <SellerCacheBootstrap />
+                  <SellerLocationReporter />
+                  <RootStack />
+                </AuthProvider>
+              </DevToolsBootstrap>
+            </ToastProvider>
+          </ConfirmProvider>
         </ThemeProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

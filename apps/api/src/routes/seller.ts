@@ -2,22 +2,24 @@ import type { OrderStatus } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
+import { prisma } from "../db.js";
+import {
+  notifyAdminsCreditPending,
+  notifyAdminsCustomerPendingApproval,
+  notifySaleConfirmed,
+} from "../services/admin-notifications.js";
 import {
   AUDIT_ACTION,
   AUDIT_ENTITY,
   auditFromAuth,
 } from "../services/audit-log.js";
-import { prisma } from "../db.js";
-import {
-  notifyAdminsCreditPending,
-  notifySaleConfirmed,
-} from "../services/admin-notifications.js";
 import { buildSellerCommissionDashboard } from "../services/commission-dashboard.js";
 import {
   buildSellerCustomerCreditSnapshot,
   evaluateOrderCredit,
   violationsToJson,
 } from "../services/credit.js";
+import { reactivateCustomerOnSale } from "../services/customer-status.js";
 import {
   customerBodySchema,
   customerPatchSchema,
@@ -31,7 +33,7 @@ import {
   sendOrderPdf80mmReply,
   sendOrderPdfReply,
 } from "../services/order-pdf-load.js";
-import { canReadEffective } from "../services/role-permissions.js";
+import { nextOrderNumber } from "../services/order-number.js";
 import {
   computeSaleOrder,
   OrderPricingError,
@@ -40,15 +42,24 @@ import { resolveEffectiveUnitPrice } from "../services/price-resolve.js";
 import {
   applyStockOnStatusChange,
   assertSufficientStock,
+  getProductStockLevels,
   StockError,
+  stockErrorPayload,
 } from "../services/product-stock.js";
 import {
   handleRegisterPushDevice,
   handleUnregisterPushDevice,
 } from "../services/push-device-routes.js";
+import { canReadEffective } from "../services/role-permissions.js";
 import { buildRouteDirections } from "../services/route-directions.js";
 import { greedyNearestRoute, haversineKm } from "../services/route-plan.js";
 import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
+import {
+  getCustomerRegistrationMode,
+  getSellerShowUnassignedCustomers,
+  sellerCustomerListWhere,
+  sellerCustomerSellableWhere,
+} from "../services/seller-customer-access.js";
 import { recordSellerLocation } from "../services/seller-location-write.js";
 import { decToNum } from "../util/money.js";
 
@@ -87,6 +98,31 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       displayName: org.displayName ?? org.name,
       logoUrl: org.logoUrl,
       primaryColor: org.primaryColor,
+    };
+  });
+
+  /** Regras de sistema da org (sync de pedidos, etc.). */
+  app.get("/organization/settings", async (req, reply) => {
+    const auth = req.auth!;
+    const org = await prisma.organization.findFirst({
+      where: { id: auth.organizationId },
+      select: {
+        orderSyncMode: true,
+        sellerShowUnassignedCustomers: true,
+        customerRegistrationMode: true,
+        sellerCanEditQueuedSales: true,
+        autoInactivateCustomersAfterMonths: true,
+      },
+    });
+    if (!org)
+      return reply.status(404).send({ error: "Organização não encontrada" });
+    return {
+      orderSyncMode: org.orderSyncMode,
+      sellerShowUnassignedCustomers: org.sellerShowUnassignedCustomers,
+      customerRegistrationMode: org.customerRegistrationMode,
+      sellerCanEditQueuedSales: org.sellerCanEditQueuedSales,
+      autoInactivateCustomersAfterMonths:
+        org.autoInactivateCustomersAfterMonths,
     };
   });
 
@@ -165,6 +201,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       include: {
         customer: true,
         items: true,
+        situation: {
+          select: { id: true, code: true, name: true },
+        },
       },
     });
   });
@@ -178,7 +217,13 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         sellerId: auth.sellerId!,
         organizationId: auth.organizationId,
       },
-      include: { customer: true, items: { include: { product: true } } },
+      include: {
+        customer: true,
+        items: { include: { product: true } },
+        situation: {
+          select: { id: true, code: true, name: true },
+        },
+      },
     });
     if (!order) return reply.status(404).send({ error: "Não encontrado" });
     return order;
@@ -218,11 +263,45 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     return sendOrderPdf80mmReply(reply, order);
   });
 
+  app.get("/payment-conditions", async (req) => {
+    const auth = req.auth!;
+    let rows = await prisma.paymentCondition.findMany({
+      where: { organizationId: auth.organizationId, active: true },
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+    });
+    if (rows.length === 0) {
+      const defaults = [
+        { code: "1", name: "A VISTA", days: 0, sortOrder: 1 },
+        { code: "8", name: "BL 7 DIAS", days: 7, sortOrder: 2 },
+        { code: "5", name: "BL 14 DIAS", days: 14, sortOrder: 3 },
+        { code: "6", name: "BL 14/21 DIAS", days: 14, sortOrder: 4 },
+        { code: "2", name: "BL 21 DIAS", days: 21, sortOrder: 5 },
+        { code: "4", name: "BL 28 DIAS", days: 28, sortOrder: 6 },
+        { code: "3", name: "BL 7/14 DIAS", days: 7, sortOrder: 7 },
+        { code: "7", name: "BL 7/14/21 DIAS", days: 7, sortOrder: 8 },
+      ];
+      await prisma.paymentCondition.createMany({
+        data: defaults.map((d) => ({
+          organizationId: auth.organizationId,
+          ...d,
+        })),
+        skipDuplicates: true,
+      });
+      rows = await prisma.paymentCondition.findMany({
+        where: { organizationId: auth.organizationId, active: true },
+        orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+      });
+    }
+    return rows;
+  });
+
   app.post("/sales", async (req, reply) => {
     const auth = req.auth!;
     const body = z
       .object({
-        customerId: z.string().optional(),
+        customerId: z.string().min(1),
+        paymentConditionId: z.string().min(1),
+        operation: z.enum(["SALE"]).optional(),
         /** Idempotência — mesmo valor em replay devolve o mesmo pedido (offline queue). */
         clientMutationId: z.string().min(8).max(80).optional(),
         status: z.enum(["DRAFT", "CONFIRMED", "CANCELLED"]).optional(),
@@ -252,6 +331,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         include: {
           items: true,
           customer: true,
+          paymentCondition: true,
           seller: { include: { user: { select: { name: true } } } },
         },
       });
@@ -268,15 +348,53 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
-    if (body.data.customerId) {
-      const c = await prisma.customer.findFirst({
+    const showUnassigned = await getSellerShowUnassignedCustomers(
+      auth.organizationId,
+    );
+    const c = await prisma.customer.findFirst({
+      where: {
+        id: body.data.customerId,
+        ...sellerCustomerSellableWhere(
+          auth.organizationId,
+          auth.sellerId!,
+          showUnassigned,
+        ),
+      },
+    });
+    if (!c) {
+      const pending = await prisma.customer.findFirst({
         where: {
           id: body.data.customerId,
           organizationId: auth.organizationId,
-          OR: [{ sellerId: null }, { sellerId: auth.sellerId }],
+          sellerId: auth.sellerId!,
+          approvalStatus: { in: ["PENDING", "REJECTED"] },
         },
+        select: { approvalStatus: true },
       });
-      if (!c) return reply.status(400).send({ error: "Cliente inválido" });
+      if (pending?.approvalStatus === "PENDING") {
+        return reply.status(400).send({
+          error: "Cliente aguardando validação do escritório",
+        });
+      }
+      if (pending?.approvalStatus === "REJECTED") {
+        return reply
+          .status(400)
+          .send({ error: "Cadastro do cliente foi rejeitado" });
+      }
+      return reply.status(400).send({ error: "Cliente inválido" });
+    }
+
+    const paymentCondition = await prisma.paymentCondition.findFirst({
+      where: {
+        id: body.data.paymentConditionId,
+        organizationId: auth.organizationId,
+        active: true,
+      },
+    });
+    if (!paymentCondition) {
+      return reply
+        .status(400)
+        .send({ error: "Condição de pagamento inválida" });
     }
 
     const allowed = await prisma.sellerProduct.findMany({
@@ -289,7 +407,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       const sale = await computeSaleOrder({
         organizationId: auth.organizationId,
         sellerId: auth.sellerId!,
-        customerId: body.data.customerId ?? null,
+        customerId: body.data.customerId,
         items: body.data.items.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
@@ -302,7 +420,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         "CONFIRMED") as OrderStatus;
       let creditHoldPayload: Prisma.InputJsonValue | undefined;
 
-      if (orderStatus === "CONFIRMED" && body.data.customerId) {
+      if (orderStatus === "CONFIRMED") {
         const ev = await evaluateOrderCredit({
           organizationId: auth.organizationId,
           customerId: body.data.customerId,
@@ -331,39 +449,46 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         );
       }
 
-      const order = await prisma.order.create({
-        data: {
-          organizationId: auth.organizationId,
-          sellerId: auth.sellerId!,
-          customerId: body.data.customerId,
-          status: orderStatus,
-          totalAmount: sale.netTotal,
-          comboDiscountTotal: sale.comboDiscountTotal,
-          notes: body.data.notes,
-          ...(creditHoldPayload !== undefined
-            ? { creditHoldReasons: creditHoldPayload }
-            : {}),
-          ...(clientMutationId ? { clientMutationId } : {}),
-          items: {
-            create: sale.lines.map((l) => ({
-              productId: l.productId,
-              quantity: l.quantity,
-              unitPrice: l.unitPrice,
-              productName: l.productName,
-              commissionPercent: l.commissionPercent,
-              commissionAmount: l.commissionAmount,
-            })),
-          },
-        },
-        include: {
-          items: true,
-          customer: true,
-          seller: {
-            include: {
-              user: { select: { name: true } },
+      const order = await prisma.$transaction(async (tx) => {
+        const orderNumber = await nextOrderNumber(tx, auth.organizationId);
+        return tx.order.create({
+          data: {
+            organizationId: auth.organizationId,
+            sellerId: auth.sellerId!,
+            customerId: body.data.customerId,
+            paymentConditionId: body.data.paymentConditionId,
+            operation: body.data.operation ?? "SALE",
+            status: orderStatus,
+            totalAmount: sale.netTotal,
+            comboDiscountTotal: sale.comboDiscountTotal,
+            notes: body.data.notes,
+            orderNumber,
+            ...(creditHoldPayload !== undefined
+              ? { creditHoldReasons: creditHoldPayload }
+              : {}),
+            ...(clientMutationId ? { clientMutationId } : {}),
+            items: {
+              create: sale.lines.map((l) => ({
+                productId: l.productId,
+                quantity: l.quantity,
+                unitPrice: l.unitPrice,
+                productName: l.productName,
+                commissionPercent: l.commissionPercent,
+                commissionAmount: l.commissionAmount,
+              })),
             },
           },
-        },
+          include: {
+            items: true,
+            customer: true,
+            paymentCondition: true,
+            seller: {
+              include: {
+                user: { select: { name: true } },
+              },
+            },
+          },
+        });
       });
 
       if (order.status === "PENDING_CREDIT_APPROVAL") {
@@ -389,6 +514,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
           "CONFIRMED",
           auth.sub,
         );
+        void reactivateCustomerOnSale(order.customerId);
         void notifySaleConfirmed({
           organizationId: auth.organizationId,
           order: {
@@ -423,7 +549,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       if (e instanceof OrderPricingError)
         return reply.status(400).send({ error: e.message });
       if (e instanceof StockError)
-        return reply.status(400).send({ error: e.message });
+        return reply.status(400).send(stockErrorPayload(e));
       throw e;
     }
   });
@@ -465,11 +591,17 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
     let regionId: string | null = null;
     if (customerId) {
+      const showUnassigned = await getSellerShowUnassignedCustomers(
+        auth.organizationId,
+      );
       const cust = await prisma.customer.findFirst({
         where: {
           id: customerId,
-          organizationId: auth.organizationId,
-          OR: [{ sellerId: null }, { sellerId: auth.sellerId }],
+          ...sellerCustomerSellableWhere(
+            auth.organizationId,
+            auth.sellerId!,
+            showUnassigned,
+          ),
         },
         select: { regionId: true },
       });
@@ -534,13 +666,35 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     return out;
   });
 
+  /** Estoque atual em lote — usado na pré-checagem antes de sincronizar a fila offline. */
+  app.post("/products/stock-check", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        productIds: z.array(z.string().min(1)).min(1).max(500),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const products = await getProductStockLevels(
+      auth.organizationId,
+      body.data.productIds,
+    );
+    return { products };
+  });
+
   app.get("/customers", async (req) => {
     const auth = req.auth!;
+    const showUnassigned = await getSellerShowUnassignedCustomers(
+      auth.organizationId,
+    );
     return prisma.customer.findMany({
-      where: {
-        organizationId: auth.organizationId,
-        OR: [{ sellerId: auth.sellerId }, { sellerId: null }],
-      },
+      where: sellerCustomerListWhere(
+        auth.organizationId,
+        auth.sellerId!,
+        showUnassigned,
+      ),
       orderBy: { name: "asc" },
     });
   });
@@ -548,11 +702,17 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
   app.get("/customers/:id", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
+    const showUnassigned = await getSellerShowUnassignedCustomers(
+      auth.organizationId,
+    );
     const customer = await prisma.customer.findFirst({
       where: {
         id,
-        organizationId: auth.organizationId,
-        OR: [{ sellerId: auth.sellerId }, { sellerId: null }],
+        ...sellerCustomerListWhere(
+          auth.organizationId,
+          auth.sellerId!,
+          showUnassigned,
+        ),
       },
     });
     if (!customer) return reply.status(404).send({ error: "Não encontrado" });
@@ -588,11 +748,24 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         .status(400)
         .send({ error: "Dados inválidos", details: body.error.flatten() });
 
+    const registrationMode = await getCustomerRegistrationMode(
+      auth.organizationId,
+    );
+    const approvalStatus =
+      registrationMode === "REQUIRE_APPROVAL" ? "PENDING" : "APPROVED";
+
     try {
       const created = await prisma.customer.create({
         data: {
           organizationId: auth.organizationId,
           sellerId: auth.sellerId,
+          approvalStatus,
+          ...(approvalStatus === "APPROVED"
+            ? {
+                approvedAt: new Date(),
+                approvedByUserId: auth.sub,
+              }
+            : {}),
           ...toCustomerPrismaData(body.data),
         } as Prisma.CustomerUncheckedCreateInput,
       });
@@ -600,8 +773,25 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         action: AUDIT_ACTION.CREATE,
         entityType: AUDIT_ENTITY.Customer,
         entityId: created.id,
-        metadata: { name: created.name, source: "seller" },
+        metadata: {
+          name: created.name,
+          source: "seller",
+          approvalStatus: created.approvalStatus,
+        },
       });
+      if (created.approvalStatus === "PENDING") {
+        try {
+          await notifyAdminsCustomerPendingApproval({
+            organizationId: auth.organizationId,
+            customer: { id: created.id, name: created.name },
+          });
+        } catch (e) {
+          console.warn(
+            "[notify] Falha ao alertar escritório (cliente pendente):",
+            e,
+          );
+        }
+      }
       return created;
     } catch (e) {
       if (
@@ -766,11 +956,17 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         .send({ error: "Informe lat e lng válidos na query" });
 
     const radiusKm = q.data.radiusKm ?? 80;
+    const showUnassigned = await getSellerShowUnassignedCustomers(
+      auth.organizationId,
+    );
 
     const rows = await prisma.customer.findMany({
       where: {
-        organizationId: auth.organizationId,
-        OR: [{ sellerId: auth.sellerId }, { sellerId: null }],
+        ...sellerCustomerSellableWhere(
+          auth.organizationId,
+          auth.sellerId!,
+          showUnassigned,
+        ),
         latitude: { not: null },
         longitude: { not: null },
       },
@@ -824,11 +1020,17 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     if (!body.success)
       return reply.status(400).send({ error: "Dados inválidos" });
 
+    const showUnassigned = await getSellerShowUnassignedCustomers(
+      auth.organizationId,
+    );
     const rows = await prisma.customer.findMany({
       where: {
         id: { in: body.data.customerIds },
-        organizationId: auth.organizationId,
-        OR: [{ sellerId: auth.sellerId }, { sellerId: null }],
+        ...sellerCustomerSellableWhere(
+          auth.organizationId,
+          auth.sellerId!,
+          showUnassigned,
+        ),
         latitude: { not: null },
         longitude: { not: null },
       },
@@ -889,11 +1091,17 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     if (!body.success)
       return reply.status(400).send({ error: "Dados inválidos" });
 
+    const showUnassigned = await getSellerShowUnassignedCustomers(
+      auth.organizationId,
+    );
     const rows = await prisma.customer.findMany({
       where: {
         id: { in: body.data.customerIds },
-        organizationId: auth.organizationId,
-        OR: [{ sellerId: auth.sellerId }, { sellerId: null }],
+        ...sellerCustomerSellableWhere(
+          auth.organizationId,
+          auth.sellerId!,
+          showUnassigned,
+        ),
         latitude: { not: null },
         longitude: { not: null },
       },
@@ -980,11 +1188,17 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
+    const showUnassigned = await getSellerShowUnassignedCustomers(
+      auth.organizationId,
+    );
     const cust = await prisma.customer.findFirst({
       where: {
         id: body.data.customerId,
-        organizationId: auth.organizationId,
-        OR: [{ sellerId: auth.sellerId }, { sellerId: null }],
+        ...sellerCustomerSellableWhere(
+          auth.organizationId,
+          auth.sellerId!,
+          showUnassigned,
+        ),
       },
       select: { id: true },
     });

@@ -7,19 +7,22 @@ import { useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-type CategoryChip = { id: string; name: string };
+type FilterChip = { id: string; name: string };
 type CustomerChip = { id: string; name: string };
 
 export type CatalogFiltersApplyPayload = {
   categoryIds: string[];
+  supplierIds: string[];
   customerId?: string;
 };
 
 type Props = {
   visible: boolean;
   onClose: () => void;
-  categories: CategoryChip[];
+  categories: FilterChip[];
   selectedCategoryIds: string[];
+  suppliers?: FilterChip[];
+  selectedSupplierIds?: string[];
   onApply: (payload: CatalogFiltersApplyPayload) => void;
   /** Quando omitido, a secção Clientes não aparece (ex. aba Produtos). */
   customers?: CustomerChip[];
@@ -112,6 +115,8 @@ export function CatalogFiltersModal({
   onClose,
   categories,
   selectedCategoryIds,
+  suppliers = [],
+  selectedSupplierIds = [],
   onApply,
   customers,
   selectedCustomerId,
@@ -122,19 +127,23 @@ export function CatalogFiltersModal({
   const showCustomers = customers != null;
 
   const [draftCategoryIds, setDraftCategoryIds] = useState<string[]>([]);
+  const [draftSupplierIds, setDraftSupplierIds] = useState<string[]>([]);
   const [draftCustomerId, setDraftCustomerId] = useState<string | undefined>();
   const [customerSearch, setCustomerSearch] = useState("");
   const [clientsOpen, setClientsOpen] = useState(true);
   const [categoriesOpen, setCategoriesOpen] = useState(true);
+  const [suppliersOpen, setSuppliersOpen] = useState(true);
 
   useEffect(() => {
     if (!visible) return;
     setDraftCategoryIds(selectedCategoryIds);
+    setDraftSupplierIds(selectedSupplierIds);
     setDraftCustomerId(selectedCustomerId);
     setCustomerSearch("");
     setClientsOpen(true);
     setCategoriesOpen(true);
-  }, [visible, selectedCategoryIds, selectedCustomerId]);
+    setSuppliersOpen(true);
+  }, [visible, selectedCategoryIds, selectedSupplierIds, selectedCustomerId]);
 
   const filteredCustomers = useMemo(() => {
     if (!customers) return [];
@@ -144,20 +153,24 @@ export function CatalogFiltersModal({
   }, [customers, customerSearch]);
 
   const allCategoriesSelected = draftCategoryIds.length === 0;
+  const allSuppliersSelected = draftSupplierIds.length === 0;
 
   function toggleCategory(id: string) {
-    setDraftCategoryIds((prev) => {
-      if (prev.includes(id)) {
-        const next = prev.filter((x) => x !== id);
-        return next;
-      }
-      return [...prev, id];
-    });
+    setDraftCategoryIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+
+  function toggleSupplier(id: string) {
+    setDraftSupplierIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
   }
 
   function apply() {
     onApply({
       categoryIds: draftCategoryIds,
+      supplierIds: draftSupplierIds,
       ...(showCustomers ? { customerId: draftCustomerId } : {}),
     });
     onClose();
@@ -165,6 +178,7 @@ export function CatalogFiltersModal({
 
   function clear() {
     setDraftCategoryIds([]);
+    setDraftSupplierIds([]);
     setDraftCustomerId(undefined);
     setCustomerSearch("");
   }
@@ -299,6 +313,50 @@ export function CatalogFiltersModal({
                           label={c.name}
                           checked={draftCategoryIds.includes(c.id)}
                           onPress={() => toggleCategory(c.id)}
+                        />
+                      ))}
+                    </>
+                  )}
+                </View>
+              ) : null}
+            </View>
+
+            <View style={[styles.accordion, { borderColor: colors.border }]}>
+              <Pressable
+                style={styles.accordionHeader}
+                onPress={() => setSuppliersOpen((v) => !v)}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: suppliersOpen }}
+              >
+                <ThemedText variant="body" style={styles.accordionTitle}>
+                  Fornecedor
+                </ThemedText>
+                {suppliersOpen ? (
+                  <ChevronUp size={20} color={colors.textSecondary} />
+                ) : (
+                  <ChevronDown size={20} color={colors.textSecondary} />
+                )}
+              </Pressable>
+              {suppliersOpen ? (
+                <View style={styles.accordionBody}>
+                  {suppliers.length === 0 ? (
+                    <ThemedText variant="bodySm" muted>
+                      Nenhum fornecedor disponível.
+                    </ThemedText>
+                  ) : (
+                    <>
+                      <CheckboxRow
+                        label="Todos"
+                        checked={allSuppliersSelected}
+                        disabled={allSuppliersSelected}
+                        onPress={() => setDraftSupplierIds([])}
+                      />
+                      {suppliers.map((s) => (
+                        <CheckboxRow
+                          key={s.id}
+                          label={s.name}
+                          checked={draftSupplierIds.includes(s.id)}
+                          onPress={() => toggleSupplier(s.id)}
                         />
                       ))}
                     </>

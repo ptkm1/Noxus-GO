@@ -44,6 +44,7 @@ export function useSellerProductCatalog(options: Options = {}) {
 
   const [productQuery, setProductQuery] = useState("");
   const [categoryFilterIds, setCategoryFilterIds] = useState<string[]>([]);
+  const [supplierFilterIds, setSupplierFilterIds] = useState<string[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -69,14 +70,31 @@ export function useSellerProductCatalog(options: Options = {}) {
     return [...m.values()].sort((a, b) => a.name.localeCompare(b.name, "pt"));
   }, [products]);
 
+  const catalogSuppliers = useMemo(() => {
+    const m = new Map<string, { id: string; name: string }>();
+    for (const p of products) {
+      if (!p.supplier) continue;
+      const name =
+        p.supplier.tradeName?.trim() ||
+        p.supplier.legalName?.trim() ||
+        p.supplier.code;
+      m.set(p.supplier.id, { id: p.supplier.id, name });
+    }
+    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name, "pt"));
+  }, [products]);
+
   const filteredProducts = useMemo(() => {
     const catSet =
       categoryFilterIds.length > 0 ? new Set(categoryFilterIds) : null;
+    const supplierSet =
+      supplierFilterIds.length > 0 ? new Set(supplierFilterIds) : null;
     return products.filter((p) => {
       if (catSet && (!p.category || !catSet.has(p.category.id))) return false;
+      if (supplierSet && (!p.supplier || !supplierSet.has(p.supplier.id)))
+        return false;
       return matchesProductSearch(p, productQuery);
     });
-  }, [products, productQuery, categoryFilterIds]);
+  }, [products, productQuery, categoryFilterIds, supplierFilterIds]);
 
   const topSellingProducts = useMemo(() => {
     const hot = products.filter((p) => (p.soldQty ?? 0) > 0);
@@ -96,9 +114,12 @@ export function useSellerProductCatalog(options: Options = {}) {
     setProductQuery,
     categoryFilterIds,
     setCategoryFilterIds,
+    supplierFilterIds,
+    setSupplierFilterIds,
     favoriteIds,
     toggleFavorite,
     catalogCategories,
+    catalogSuppliers,
     filteredProducts,
     topSellingProducts,
     favoriteProductsList,

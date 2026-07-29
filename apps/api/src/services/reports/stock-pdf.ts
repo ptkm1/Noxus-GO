@@ -19,6 +19,7 @@ export type StockPdfFilters = {
   supplierId?: string;
   categoryId?: string;
   q?: string;
+  productIds?: string[];
   extras?: Record<string, string>;
 };
 
@@ -50,6 +51,7 @@ export async function buildStockPdf(filters: StockPdfFilters): Promise<Buffer> {
       supplierId: filters.supplierId,
       categoryId: filters.categoryId,
       q: filters.q,
+      productIds: filters.productIds,
       stockQtyMin: extra.stockQtyMin,
       stockQtyMax: extra.stockQtyMax,
       productLine: extra.productLine,

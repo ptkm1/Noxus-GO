@@ -1,6 +1,6 @@
 # @pedidos/design-tokens
 
-Design system **VendaForce** partilhado entre web e mobile.
+Design system **PedixPro** partilhado entre web e mobile.
 
 ## Uso
 
@@ -22,16 +22,17 @@ import { appColorsLight, appColorsDark } from "@pedidos/design-tokens";
 
 ## Ativar no ambiente
 
-Web admin usa tema escuro fixo (`class="dark"` em `index.html`).
+Web admin: preferência claro / escuro / sistema (`ThemeToggle`), padrão **claro**.
 
 Mobile: preferência **claro / escuro / sistema** em Definições (`ThemePreferencePicker`).
 
 ## Cores principais
 
-| Token | Dark (web) | Função |
-|-------|------------|--------|
-| `primary` | Verde esmeralda `oklch(0.72 0.19 160)` | Ações, links, destaque |
-| `background` | `oklch(0.13 0.01 260)` | Fundo app |
-| `card` | `oklch(0.17 0.01 260)` | Superfícies elevadas |
+| Token               | Light            | Função                           |
+| ------------------- | ---------------- | -------------------------------- |
+| `primary`           | `#02445C` (teal) | Ações, links, destaque           |
+| `foreground`        | `#111827` (navy) | Texto                            |
+| `border` / `accent` | `#E2E8F0`        | Bordas e superfícies secundárias |
+| `background`        | `#F8FAFC`        | Fundo app                        |
 
-Light mobile usa fundos claros com o mesmo `primary` esmeralda.
+Tipografia: **Sora** (web).

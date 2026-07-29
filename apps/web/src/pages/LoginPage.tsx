@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { APP_BRAND_TAGLINE } from "@pedidos/shared";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -41,7 +42,7 @@ export function LoginPage() {
         <CardHeader>
           <CommerceProWordmark iconSize={40} className="mb-2" />
           <CardTitle className="text-xl">Admin</CardTitle>
-          <CardDescription>Gestão de vendas em campo</CardDescription>
+          <CardDescription>{APP_BRAND_TAGLINE}</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={onSubmit}>

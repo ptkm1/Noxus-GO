@@ -1,24 +1,24 @@
+import {
+  APP_BRAND_NAME,
+  formatCnpjMask,
+  formatCpfMask,
+  formatStructuredAddress,
+} from "@pedidos/shared";
 import PDFDocument from "pdfkit";
 import { decToNum } from "../util/money.js";
-import type { OrderPdfInput } from "./order-pdf.js";
-import { money, orderCode, shortDateTime } from "./reports/pdf-common.js";
+import type { OrderPdfCustomer, OrderPdfInput } from "./order-pdf.js";
+import {
+  money,
+  orderCode,
+  orderCodeFileSlug,
+  shortDateTime,
+} from "./reports/pdf-common.js";
 
 /** 80mm thermal roll ≈ 226.77pt wide. */
 const MM = 72 / 25.4;
 const PAGE_W = 80 * MM;
 const MARGIN = 8;
 const CONTENT_W = PAGE_W - MARGIN * 2;
-
-const ORDER_STATUS_LABELS: Record<string, string> = {
-  DRAFT: "Rascunho",
-  CONFIRMED: "Confirmado",
-  CANCELLED: "Cancelado",
-  PENDING_CREDIT_APPROVAL: "Aguardando crédito",
-};
-
-function statusLabel(status: string): string {
-  return ORDER_STATUS_LABELS[status] ?? status;
-}
 
 function hr(doc: PDFKit.PDFDocument) {
   const y = doc.y;
@@ -65,12 +65,94 @@ function line(
   doc.y = y + size + 4;
 }
 
+function customerPrimaryName(c: OrderPdfCustomer): string {
+  return c.legalName?.trim() || c.tradeName?.trim() || c.name.trim() || "—";
+}
+
+function writeCustomerBlock(
+  doc: PDFKit.PDFDocument,
+  customer: OrderPdfCustomer | null,
+) {
+  doc.font("Helvetica-Bold").fontSize(8).text("CLIENTE", MARGIN, doc.y, {
+    width: CONTENT_W,
+  });
+
+  if (!customer) {
+    doc
+      .font("Helvetica")
+      .fontSize(9)
+      .text("Sem cliente vinculado", MARGIN, doc.y, { width: CONTENT_W });
+    return;
+  }
+
+  const primary = customerPrimaryName(customer);
+  doc.font("Helvetica-Bold").fontSize(9).text(primary, MARGIN, doc.y, {
+    width: CONTENT_W,
+  });
+
+  const trade = customer.tradeName?.trim();
+  if (trade && trade !== primary) {
+    doc
+      .font("Helvetica")
+      .fontSize(8)
+      .text(`Fantasia: ${trade}`, MARGIN, doc.y, { width: CONTENT_W });
+  }
+
+  const legal = customer.legalName?.trim();
+  if (legal && legal !== primary && legal !== trade) {
+    doc
+      .font("Helvetica")
+      .fontSize(8)
+      .text(`Razão: ${legal}`, MARGIN, doc.y, { width: CONTENT_W });
+  }
+
+  const cnpj = customer.cnpj?.replace(/\D/g, "") ?? "";
+  const cpf = customer.cpf?.replace(/\D/g, "") ?? "";
+  if (cnpj) {
+    doc
+      .font("Helvetica")
+      .fontSize(8)
+      .text(`CNPJ ${formatCnpjMask(cnpj)}`, MARGIN, doc.y, { width: CONTENT_W });
+  }
+  if (cpf) {
+    doc
+      .font("Helvetica")
+      .fontSize(8)
+      .text(`CPF ${formatCpfMask(cpf)}`, MARGIN, doc.y, { width: CONTENT_W });
+  }
+
+  const address = formatStructuredAddress(customer);
+  if (address) {
+    doc.font("Helvetica").fontSize(8).text(address, MARGIN, doc.y, {
+      width: CONTENT_W,
+    });
+  }
+  const note = customer.addressNote?.trim();
+  if (note && note !== address) {
+    doc.font("Helvetica").fontSize(8).text(note, MARGIN, doc.y, {
+      width: CONTENT_W,
+    });
+  }
+
+  if (customer.phone?.trim()) {
+    doc
+      .font("Helvetica")
+      .fontSize(8)
+      .text(customer.phone.trim(), MARGIN, doc.y, { width: CONTENT_W });
+  }
+  if (customer.email?.trim()) {
+    doc
+      .font("Helvetica")
+      .fontSize(8)
+      .text(customer.email.trim(), MARGIN, doc.y, { width: CONTENT_W });
+  }
+}
+
 export function orderPdf80mmFilename(order: {
   id: string;
   orderNumber?: number | null;
 }): string {
-  const code = orderCode(order).replace("#", "");
-  return `pedido-${code}-80mm.pdf`;
+  return `pedido-${orderCodeFileSlug(order)}-80mm.pdf`;
 }
 
 /**
@@ -88,8 +170,8 @@ export async function buildOrderPdf80mm(order: OrderPdfInput): Promise<Buffer> {
 
   // Folga generosa: cupom térmico costuma ser uma página contínua.
   const estimatedH = Math.max(
-    400,
-    220 + order.items.length * 44 + (order.notes?.trim() ? 80 : 0),
+    480,
+    260 + order.items.length * 44 + (order.notes?.trim() ? 80 : 0) + 80,
   );
 
   const doc = new PDFDocument({
@@ -105,7 +187,25 @@ export async function buildOrderPdf80mm(order: OrderPdfInput): Promise<Buffer> {
 
   doc.y = MARGIN;
 
-  center(doc, order.organizationName, { size: 11, bold: true });
+  if (order.logo) {
+    try {
+      const maxH = 28;
+      const maxW = CONTENT_W * 0.55;
+      const imgY = doc.y;
+      doc.image(order.logo.buffer, MARGIN + (CONTENT_W - maxW) / 2, imgY, {
+        fit: [maxW, maxH],
+        align: "center",
+        valign: "center",
+      });
+      doc.y = imgY + maxH + 4;
+    } catch {
+      center(doc, APP_BRAND_NAME, { size: 9, bold: true });
+    }
+  } else {
+    center(doc, APP_BRAND_NAME, { size: 9, bold: true });
+  }
+
+  center(doc, order.organizationName, { size: 10, bold: true });
   center(doc, "PEDIDO", { size: 10, bold: true });
   center(doc, code.startsWith("#") ? code : `#${code}`, {
     size: 12,
@@ -118,29 +218,13 @@ export async function buildOrderPdf80mm(order: OrderPdfInput): Promise<Buffer> {
   doc.text(`Data: ${shortDateTime(order.createdAt)}`, MARGIN, doc.y, {
     width: CONTENT_W,
   });
-  doc.text(`Status: ${statusLabel(order.status)}`, MARGIN, doc.y, {
-    width: CONTENT_W,
-  });
   doc.text(`Vendedor: ${order.seller.user.name}`, MARGIN, doc.y, {
     width: CONTENT_W,
   });
   doc.moveDown(0.2);
   hr(doc);
 
-  doc.font("Helvetica-Bold").fontSize(8).text("CLIENTE", MARGIN, doc.y, {
-    width: CONTENT_W,
-  });
-  doc
-    .font("Helvetica")
-    .fontSize(9)
-    .text(order.customer?.name?.trim() || "Sem cliente vinculado", MARGIN, doc.y, {
-      width: CONTENT_W,
-    });
-  if (order.customer?.phone?.trim()) {
-    doc
-      .fontSize(8)
-      .text(order.customer.phone.trim(), MARGIN, doc.y, { width: CONTENT_W });
-  }
+  writeCustomerBlock(doc, order.customer);
   doc.moveDown(0.25);
   hr(doc);
 

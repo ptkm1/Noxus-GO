@@ -1,6 +1,7 @@
 import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/db.js";
+import { ensureOrgSubscription } from "../src/services/billing/subscription.js";
 import { ensureOrgRolePermissions } from "../src/services/role-permissions.js";
 import { CATEGORY_SCHEMA_BY_CODE } from "./category-schemas.js";
 import { upsertFiscalDemoData } from "./seed-fiscal-demo.js";
@@ -190,10 +191,93 @@ async function main() {
   });
 
   await ensureOrgRolePermissions(org.id);
+  await ensureOrgSubscription(org.id, { planId: "pro" });
+  // Demo: plano Pro ACTIVE para exercitar todas as features
+  await prisma.organizationSubscription.update({
+    where: { organizationId: org.id },
+    data: {
+      planId: "pro",
+      status: "ACTIVE",
+      currentPeriodEnd: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+    },
+  });
   await upsertDemoCategories(org.id);
   const demoSupplier = await upsertDemoSupplier(org.id);
   await upsertFiscalDemoData(org.id);
   await upsertDemoFiscalLookups(org.id);
+
+  const paymentConditionsSeed = [
+    { code: "1", name: "A VISTA", days: 0, sortOrder: 1 },
+    { code: "8", name: "BL 7 DIAS", days: 7, sortOrder: 2 },
+    { code: "5", name: "BL 14 DIAS", days: 14, sortOrder: 3 },
+    { code: "6", name: "BL 14/21 DIAS", days: 14, sortOrder: 4 },
+    { code: "13", name: "BL 14/21/28 DIAS", days: 14, sortOrder: 5 },
+    { code: "2", name: "BL 21 DIAS", days: 21, sortOrder: 6 },
+    { code: "10", name: "BL 21/28", days: 21, sortOrder: 7 },
+    { code: "4", name: "BL 28 DIAS", days: 28, sortOrder: 8 },
+    { code: "3", name: "BL 7/14 DIAS", days: 7, sortOrder: 9 },
+    { code: "7", name: "BL 7/14/21 DIAS", days: 7, sortOrder: 10 },
+  ];
+  for (const pc of paymentConditionsSeed) {
+    await prisma.paymentCondition.upsert({
+      where: {
+        organizationId_code: { organizationId: org.id, code: pc.code },
+      },
+      create: { organizationId: org.id, ...pc },
+      update: {
+        name: pc.name,
+        days: pc.days,
+        sortOrder: pc.sortOrder,
+        active: true,
+      },
+    });
+  }
+
+  const orderSituationsSeed = [
+    {
+      code: "OPEN",
+      name: "Aberto",
+      sortOrder: 1,
+      mapsToCancel: false,
+      isSystem: true,
+    },
+    {
+      code: "SENT",
+      name: "Enviado",
+      sortOrder: 2,
+      mapsToCancel: false,
+      isSystem: true,
+    },
+    {
+      code: "DELIVERED",
+      name: "Entregue",
+      sortOrder: 3,
+      mapsToCancel: false,
+      isSystem: true,
+    },
+    {
+      code: "CANCELLED",
+      name: "Cancelado",
+      sortOrder: 4,
+      mapsToCancel: true,
+      isSystem: true,
+    },
+  ];
+  for (const sit of orderSituationsSeed) {
+    await prisma.orderSituation.upsert({
+      where: {
+        organizationId_code: { organizationId: org.id, code: sit.code },
+      },
+      create: { organizationId: org.id, ...sit, active: true },
+      update: {
+        name: sit.name,
+        sortOrder: sit.sortOrder,
+        mapsToCancel: sit.mapsToCancel,
+        isSystem: sit.isSystem,
+        active: true,
+      },
+    });
+  }
 
   const adminPass = await bcrypt.hash(DEMO_ADMIN_PASSWORD, 10);
   const sellerPass = await bcrypt.hash(DEMO_SELLER_PASSWORD, 10);
@@ -536,7 +620,7 @@ async function main() {
     data: {
       userId: sellerUser.id,
       title: "Bem-vindo",
-      body: "Seu acesso ao app Pedidos está ativo.",
+      body: "Seu acesso ao app PedixPro está ativo.",
     },
   });
 

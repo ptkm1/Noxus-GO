@@ -1,21 +1,36 @@
 import https from "node:https";
-import { getAutorizacaoUrl, getRecepcaoEventoUrl } from "./sefaz-endpoints.js";
+import { onlyDigits } from "./nfe-access-key.js";
 import {
   buildSoapEnvelope,
   extractSoapBody,
   parseSefazAuthorizationResponse,
   parseSefazEventResponse,
 } from "./nfe-signer.js";
+import {
+  getAutorizacaoUrl,
+  getConsultaProtocoloUrl,
+  getInutilizacaoUrl,
+  getRecepcaoEventoUrl,
+} from "./sefaz-endpoints.js";
 
-const AUTORIZACAO_NS = "http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4";
+const AUTORIZACAO_NS =
+  "http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4";
 const EVENTO_NS = "http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4";
+const CONSULTA_NS =
+  "http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4";
+const INUTILIZACAO_NS =
+  "http://www.portalfiscal.inf.br/nfe/wsdl/NFeInutilizacao4";
 
 export type SefazAuthResult = {
   ok: boolean;
+  /** Lote aceito (cStat 103) — aguarda poll de protocolo. */
+  pending?: boolean;
   rawResponse: string;
   parsed: ReturnType<typeof parseSefazAuthorizationResponse>;
   error?: string;
 };
+
+const SEFAZ_TIMEOUT_MS = 60_000;
 
 export async function authorizeNfe(input: {
   uf: string;
@@ -31,11 +46,21 @@ export async function authorizeNfe(input: {
     const rawResponse = await postSoap(url, soap, input.pfx, input.password);
     const body = extractSoapBody(rawResponse);
     const parsed = parseSefazAuthorizationResponse(body);
+    if (parsed.pending) {
+      return {
+        ok: false,
+        pending: true,
+        rawResponse: body,
+        parsed,
+      };
+    }
     return {
       ok: parsed.success,
       rawResponse: body,
       parsed,
-      error: parsed.success ? undefined : `${parsed.cStat ?? "?"}: ${parsed.xMotivo ?? "Rejeição SEFAZ"}`,
+      error: parsed.success
+        ? undefined
+        : `${parsed.cStat ?? "?"}: ${parsed.xMotivo ?? "Rejeição SEFAZ"}`,
     };
   } catch (e) {
     return {
@@ -72,7 +97,9 @@ export async function sendNfeEvento(input: {
       ok: parsed.success,
       rawResponse: body,
       parsed,
-      error: parsed.success ? undefined : `${parsed.cStat ?? "?"}: ${parsed.xMotivo ?? "Evento rejeitado"}`,
+      error: parsed.success
+        ? undefined
+        : `${parsed.cStat ?? "?"}: ${parsed.xMotivo ?? "Evento rejeitado"}`,
     };
   } catch (e) {
     return {
@@ -84,7 +111,91 @@ export async function sendNfeEvento(input: {
   }
 }
 
-function postSoap(url: URL, soapBody: string, pfx: Buffer, password: string): Promise<string> {
+export async function consultNfeProtocolo(input: {
+  uf: string;
+  homologation: boolean;
+  accessKey: string;
+  pfx: Buffer;
+  password: string;
+}): Promise<SefazEventResult> {
+  const chNFe = onlyDigits(input.accessKey);
+  const tpAmb = input.homologation ? "2" : "1";
+  const consSit =
+    `<consSitNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">` +
+    `<tpAmb>${tpAmb}</tpAmb><xServ>CONSULTAR</xServ><chNFe>${chNFe}</chNFe>` +
+    `</consSitNFe>`;
+  const url = new URL(getConsultaProtocoloUrl(input.uf, input.homologation));
+  const soap = buildSoapEnvelope(consSit, CONSULTA_NS);
+
+  try {
+    const rawResponse = await postSoap(url, soap, input.pfx, input.password);
+    const body = extractSoapBody(rawResponse);
+    const parsed = parseSefazEventResponse(body);
+    const cStat = parsed.cStat;
+    const ok =
+      cStat === "100" ||
+      cStat === "101" ||
+      cStat === "110" ||
+      cStat === "150" ||
+      cStat === "151" ||
+      parsed.success;
+    return {
+      ok,
+      rawResponse: body,
+      parsed: { ...parsed, success: ok },
+      error: ok
+        ? undefined
+        : `${cStat ?? "?"}: ${parsed.xMotivo ?? "Consulta sem sucesso"}`,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      rawResponse: "",
+      parsed: { success: false },
+      error: e instanceof Error ? e.message : "Erro de comunicação com SEFAZ",
+    };
+  }
+}
+
+export async function sendNfeInutilizacao(input: {
+  uf: string;
+  homologation: boolean;
+  inutNFeXml: string;
+  pfx: Buffer;
+  password: string;
+}): Promise<SefazEventResult> {
+  const url = new URL(getInutilizacaoUrl(input.uf, input.homologation));
+  const soap = buildSoapEnvelope(input.inutNFeXml, INUTILIZACAO_NS);
+
+  try {
+    const rawResponse = await postSoap(url, soap, input.pfx, input.password);
+    const body = extractSoapBody(rawResponse);
+    const parsed = parseSefazEventResponse(body);
+    const ok = parsed.cStat === "102" || parsed.success;
+    return {
+      ok,
+      rawResponse: body,
+      parsed: { ...parsed, success: ok },
+      error: ok
+        ? undefined
+        : `${parsed.cStat ?? "?"}: ${parsed.xMotivo ?? "Inutilização rejeitada"}`,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      rawResponse: "",
+      parsed: { success: false },
+      error: e instanceof Error ? e.message : "Erro de comunicação com SEFAZ",
+    };
+  }
+}
+
+function postSoap(
+  url: URL,
+  soapBody: string,
+  pfx: Buffer,
+  password: string,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const agent = new https.Agent({
       pfx,
@@ -98,6 +209,7 @@ function postSoap(url: URL, soapBody: string, pfx: Buffer, password: string): Pr
       {
         method: "POST",
         agent,
+        timeout: SEFAZ_TIMEOUT_MS,
         headers: {
           "Content-Type": "application/soap+xml; charset=utf-8",
           "Content-Length": Buffer.byteLength(soapBody, "utf8"),
@@ -109,13 +221,18 @@ function postSoap(url: URL, soapBody: string, pfx: Buffer, password: string): Pr
         res.on("end", () => {
           const text = Buffer.concat(chunks).toString("utf8");
           if (res.statusCode && res.statusCode >= 400) {
-            reject(new Error(`SEFAZ HTTP ${res.statusCode}: ${text.slice(0, 500)}`));
+            reject(
+              new Error(`SEFAZ HTTP ${res.statusCode}: ${text.slice(0, 500)}`),
+            );
             return;
           }
           resolve(text);
         });
       },
     );
+    req.setTimeout(SEFAZ_TIMEOUT_MS, () => {
+      req.destroy(new Error(`Timeout SEFAZ (${SEFAZ_TIMEOUT_MS}ms)`));
+    });
     req.on("error", reject);
     req.write(soapBody);
     req.end();

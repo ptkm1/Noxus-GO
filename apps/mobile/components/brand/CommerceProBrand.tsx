@@ -1,8 +1,9 @@
 import {
-  APP_BRAND_LILAC,
-  COMMERCE_PRO_ICON_ASPECT,
-  COMMERCE_PRO_ICON_PATH,
-  COMMERCE_PRO_ICON_VIEWBOX,
+  APP_BRAND_NAVY,
+  APP_BRAND_PRIMARY,
+  PEDIX_PRO_ICON_ASPECT,
+  PEDIX_PRO_ICON_PATHS,
+  PEDIX_PRO_ICON_VIEWBOX,
 } from "@pedidos/shared";
 import { StyleSheet, View } from "react-native";
 import Svg, { Path, Rect } from "react-native-svg";
@@ -15,15 +16,15 @@ type IconProps = {
 };
 
 export function CommerceProIcon({ size = 40, onBrand = false }: IconProps) {
-  const fill = onBrand ? "#FFFFFF" : APP_BRAND_LILAC;
+  const fill = onBrand ? "#FFFFFF" : APP_BRAND_PRIMARY;
   const width = size;
-  const height = size * COMMERCE_PRO_ICON_ASPECT;
+  const height = size * PEDIX_PRO_ICON_ASPECT;
 
   return (
     <Svg
       width={width}
       height={height}
-      viewBox={COMMERCE_PRO_ICON_VIEWBOX}
+      viewBox={PEDIX_PRO_ICON_VIEWBOX}
       fill="none"
     >
       {onBrand ? (
@@ -31,15 +32,19 @@ export function CommerceProIcon({ size = 40, onBrand = false }: IconProps) {
           <Rect
             x="0"
             y="0"
-            width="133"
-            height="121"
-            rx="18"
-            fill={APP_BRAND_LILAC}
+            width="152"
+            height="167"
+            rx="28"
+            fill={APP_BRAND_PRIMARY}
           />
-          <Path d={COMMERCE_PRO_ICON_PATH} fill="#FFFFFF" />
+          {PEDIX_PRO_ICON_PATHS.map((d) => (
+            <Path key={d.slice(0, 24)} d={d} fill="#FFFFFF" />
+          ))}
         </>
       ) : (
-        <Path d={COMMERCE_PRO_ICON_PATH} fill={fill} />
+        PEDIX_PRO_ICON_PATHS.map((d) => (
+          <Path key={d.slice(0, 24)} d={d} fill={fill} />
+        ))
       )}
     </Svg>
   );
@@ -57,24 +62,23 @@ export function CommerceProWordmark({
   showIcon = true,
 }: WordmarkProps) {
   const { isDark } = useTheme();
-  const fontSize = iconSize * 0.5;
-  const commerceColor = onDark || isDark ? APP_BRAND_LILAC : "#111111";
+  const pedixColor = onDark || isDark ? APP_BRAND_PRIMARY : APP_BRAND_NAVY;
 
   return (
     <View style={styles.row}>
       {showIcon ? <CommerceProIcon size={iconSize} /> : null}
       <View>
-        <ThemedText style={[styles.line, { fontSize, color: commerceColor }]}>
-          commerce
+        <ThemedText style={[styles.line, { fontSize: iconSize * 0.5, color: pedixColor }]}>
+          Pedix
         </ThemedText>
         <ThemedText
           style={[
             styles.line,
             styles.pro,
-            { fontSize, color: APP_BRAND_LILAC },
+            { fontSize: iconSize * 0.5, color: APP_BRAND_PRIMARY },
           ]}
         >
-          pro
+          Pro
         </ThemedText>
       </View>
     </View>

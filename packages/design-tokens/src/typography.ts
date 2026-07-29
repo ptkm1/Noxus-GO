@@ -9,6 +9,6 @@ export const typography = {
 } as const;
 
 export const fontFamily = {
-  sans: "'Geist', system-ui, -apple-system, sans-serif",
-  mono: "'Geist Mono', ui-monospace, monospace",
+  sans: "'Sora', system-ui, -apple-system, sans-serif",
+  mono: "ui-monospace, monospace",
 } as const;

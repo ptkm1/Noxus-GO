@@ -13,67 +13,76 @@ const ICON_SIZE = 44;
 
 type Props = {
   order: SellerOrderListItem;
+  /** Se definido, substitui o link para o detalhe da venda. */
+  onPress?: () => void;
 };
 
-export function RecentSaleRow({ order }: Props) {
+export function RecentSaleRow({ order, onPress }: Props) {
   const { colors } = useTheme();
   const confirmed = order.status === "CONFIRMED";
   const amountColor = confirmed ? colors.success : colors.text;
 
-  return (
-    <Link href={`/(tabs)/vendas/${order.id}`} asChild>
-      <Pressable
-        style={({ pressed }) => [
-          styles.pressable,
-          { opacity: pressed ? 0.9 : 1 },
-        ]}
-      >
-        <View style={styles.itemRow}>
-          <View
-            style={[
-              styles.iconCell,
-              {
-                backgroundColor: colorWithAlpha(colors.primary, 0.12),
-                borderColor: colorWithAlpha(colors.primary, 0.2),
-              },
-            ]}
-          >
-            <ShoppingCart color={colors.primary} size={18} />
+  const row = (
+    <Pressable
+      style={({ pressed }) => [
+        styles.pressable,
+        { opacity: pressed ? 0.9 : 1 },
+      ]}
+      {...(onPress ? { onPress } : {})}
+    >
+      <View style={styles.itemRow}>
+        <View
+          style={[
+            styles.iconCell,
+            {
+              backgroundColor: colorWithAlpha(colors.primary, 0.12),
+              borderColor: colorWithAlpha(colors.primary, 0.2),
+            },
+          ]}
+        >
+          <ShoppingCart color={colors.primary} size={18} />
+        </View>
+
+        <View style={styles.infoCell}>
+          <View style={styles.infoLine}>
+            <ThemedText
+              variant="body"
+              numberOfLines={1}
+              style={styles.customer}
+            >
+              {order.customer?.name ?? "Sem cliente"}
+            </ThemedText>
+            <ThemedText
+              variant="bodySm"
+              numberOfLines={1}
+              style={[styles.amount, { color: amountColor }]}
+            >
+              R$ {fmtMoney(Number(order.totalAmount))}
+            </ThemedText>
           </View>
 
-          <View style={styles.infoCell}>
-            <View style={styles.infoLine}>
-              <ThemedText
-                variant="body"
-                numberOfLines={1}
-                style={styles.customer}
-              >
-                {order.customer?.name ?? "Sem cliente"}
-              </ThemedText>
-              <ThemedText
-                variant="bodySm"
-                numberOfLines={1}
-                style={[styles.amount, { color: amountColor }]}
-              >
-                R$ {fmtMoney(Number(order.totalAmount))}
-              </ThemedText>
-            </View>
-
-            <View style={styles.infoLine}>
-              <ThemedText
-                variant="bodySm"
-                muted
-                numberOfLines={1}
-                style={styles.meta}
-              >
-                {formatSaleItemCount(order.items.length)} ·{" "}
-                {formatRelativeSaleDate(order.createdAt)}
-              </ThemedText>
-              <ChevronRight color={colors.textMuted} size={16} />
-            </View>
+          <View style={styles.infoLine}>
+            <ThemedText
+              variant="bodySm"
+              muted
+              numberOfLines={1}
+              style={styles.meta}
+            >
+              {formatSaleItemCount(order.items.length)} ·{" "}
+              {formatRelativeSaleDate(order.createdAt)}
+            </ThemedText>
+            <ChevronRight color={colors.textMuted} size={16} />
           </View>
         </View>
-      </Pressable>
+      </View>
+    </Pressable>
+  );
+
+  if (onPress) return row;
+
+  return (
+    <Link href={`/(tabs)/vendas/${order.id}`} asChild>
+      {row}
     </Link>
   );
 }

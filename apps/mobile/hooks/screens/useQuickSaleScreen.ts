@@ -3,13 +3,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Crypto from "expo-crypto";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, useWindowDimensions } from "react-native";
+import { useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fmtMoney } from "../../components/atoms/formatMoney";
+import { useConfirm } from "../../context/ConfirmContext";
 import { useAppToast } from "../../context/ToastContext";
 import { apiFetch } from "../../lib/api";
 import { enqueueOfflineSale } from "../../lib/offline-outbox";
 import { postSellerSale } from "../../lib/offline-sale-sync";
+import {
+  buildRepeatSalePrefill,
+  resolveRepeatSaleSource,
+} from "../../lib/repeat-sale";
 import {
   bumpCartQty,
   cartLineTotal,
@@ -18,10 +23,15 @@ import {
   PRODUCT_DOUBLE_TAP_MS,
   syncCartLinesWithProducts,
 } from "../../lib/sale/cart";
-import { getProductStockBlockMessage } from "../../lib/sale/stock";
+import {
+  getCartStockBlockMessage,
+  getProductStockBlockMessage,
+} from "../../lib/sale/stock";
 import type {
   CartLine,
   CreditOverview,
+  PaymentCondition,
+  QuickSaleTab,
   SaleCustomer,
   SaleProduct,
 } from "../../lib/sale/types";
@@ -32,48 +42,177 @@ import {
 import { findProductByBarcode } from "../../lib/utils/barcode";
 import { computeCatalogTileWidths } from "../../lib/utils/catalog-layout";
 import { useNetInfoOnline } from "../useNetInfoOnline";
+import { useOrderSyncMode } from "../useOrderSyncMode";
 import { useSellerProductCatalog } from "../useSellerProductCatalog";
 
 type SubmitSaleResult =
   | { mode: "online"; status?: string }
   | { mode: "offlineQueued" };
 
+function digitsOnly(v: string): string {
+  return v.replace(/\D/g, "");
+}
+
+function formatDoc(c: SaleCustomer): string {
+  if (c.cnpj) {
+    const d = digitsOnly(c.cnpj);
+    if (d.length === 14) {
+      return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+    }
+    return c.cnpj;
+  }
+  if (c.cpf) {
+    const d = digitsOnly(c.cpf);
+    if (d.length === 11) {
+      return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+    }
+    return c.cpf;
+  }
+  return "—";
+}
+
 export function useQuickSaleScreen() {
   const router = useRouter();
   const { showToast } = useAppToast();
-  const { customerId: customerIdParam } = useLocalSearchParams<{
-    customerId?: string;
-  }>();
+  const { alert } = useConfirm();
+  const { customerId: customerIdParam, repeatSaleId: repeatSaleIdParam } =
+    useLocalSearchParams<{
+      customerId?: string;
+      repeatSaleId?: string;
+    }>();
+  const repeatSaleId =
+    typeof repeatSaleIdParam === "string" ? repeatSaleIdParam : undefined;
   const qc = useQueryClient();
   const insets = useSafeAreaInsets();
   const layout = computeCatalogTileWidths(useWindowDimensions().width);
 
-  const [customerId, setCustomerId] = useState<string | undefined>();
+  const [tab, setTab] = useState<QuickSaleTab>("clientes");
+  const [customerId, setCustomerIdState] = useState<string | undefined>();
+  const [paymentConditionId, setPaymentConditionId] = useState<
+    string | undefined
+  >();
   const [cart, setCart] = useState<Record<string, CartLine>>({});
   const [barcodeOpen, setBarcodeOpen] = useState(false);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
   const [scanMsgOk, setScanMsgOk] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [lastCustomerId, setLastCustomerId] = useState<string | null>(null);
+  const [customerSearch, setCustomerSearch] = useState({
+    code: "",
+    document: "",
+    legalName: "",
+    tradeName: "",
+    city: "",
+  });
+  const [paymentPickerOpen, setPaymentPickerOpen] = useState(false);
   const productTapTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
+  const repeatAppliedRef = useRef<string | null>(null);
 
   const isOnline = useNetInfoOnline();
+  const { orderSyncMode } = useOrderSyncMode();
   const catalog = useSellerProductCatalog({ customerId });
   const { products } = catalog;
 
+  const setCustomerId = useCallback((id: string | undefined) => {
+    setCustomerIdState(id);
+    setPaymentConditionId(undefined);
+    if (!id) setTab("clientes");
+  }, []);
+
   useEffect(() => {
+    if (repeatSaleId) return;
     if (typeof customerIdParam === "string" && customerIdParam.length > 0) {
-      setCustomerId(customerIdParam);
+      setCustomerIdState(customerIdParam);
     }
-  }, [customerIdParam]);
+  }, [customerIdParam, repeatSaleId]);
+
+  useEffect(() => {
+    if (!repeatSaleId) return;
+    if (repeatAppliedRef.current === repeatSaleId) return;
+    let cancelled = false;
+
+    void (async () => {
+      const cachedList = qc.getQueryData<
+        {
+          id: string;
+          status: string;
+          customerId?: string | null;
+          paymentConditionId?: string | null;
+          items: {
+            productId?: string;
+            productName?: string;
+            quantity: number;
+            unitPrice?: unknown;
+          }[];
+        }[]
+      >(["seller", "sales"]);
+      const fromList = cachedList?.find((o) => o.id === repeatSaleId);
+      const order =
+        fromList?.items.some((i) => i.productId)
+          ? fromList
+          : await resolveRepeatSaleSource(repeatSaleId);
+
+      if (cancelled) return;
+
+      const prefill = order ? buildRepeatSalePrefill(order) : null;
+      if (!prefill) {
+        void alert({
+          title: "Repetir venda",
+          description: "Nenhuma venda anterior para repetir",
+        });
+        return;
+      }
+
+      repeatAppliedRef.current = repeatSaleId;
+      if (prefill.customerId) setCustomerIdState(prefill.customerId);
+      if (prefill.paymentConditionId) {
+        setPaymentConditionId(prefill.paymentConditionId);
+      }
+      setCart(prefill.cart);
+      setErr(null);
+      setTab(prefill.customerId ? "produtos" : "clientes");
+      showToast({
+        message: "Venda anterior carregada — edite e finalize",
+        tone: "success",
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [alert, qc, repeatSaleId, showToast]);
 
   const { data: customers = [] } = useQuery({
     queryKey: ["seller", "customers"],
     staleTime: sellerOfflineStaleTime,
     queryFn: () => fetchSellerCustomers() as Promise<SaleCustomer[]>,
   });
+
+  useEffect(() => {
+    if (!customerId || customers.length === 0) return;
+    const c = customers.find((x) => x.id === customerId);
+    if (c?.approvalStatus && c.approvalStatus !== "APPROVED") {
+      setCustomerIdState(undefined);
+    }
+  }, [customerId, customers]);
+
+  const { data: paymentConditions = [] } = useQuery({
+    queryKey: ["seller", "payment-conditions"],
+    staleTime: sellerOfflineStaleTime,
+    queryFn: () => apiFetch<PaymentCondition[]>("/seller/payment-conditions"),
+  });
+
+  useEffect(() => {
+    if (paymentConditionId) return;
+    const cash = paymentConditions.find(
+      (p) => p.days === 0 || p.code === "1" || /vista/i.test(p.name),
+    );
+    if (cash) setPaymentConditionId(cash.id);
+    else if (paymentConditions[0])
+      setPaymentConditionId(paymentConditions[0].id);
+  }, [paymentConditions, paymentConditionId, customerId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -111,10 +250,58 @@ export function useQuickSaleScreen() {
     setLastCustomerId(customerId);
   }, [customerId]);
 
+  const selectedCustomer = useMemo(() => {
+    if (!customerId) return null;
+    return customers.find((c) => c.id === customerId) ?? null;
+  }, [customers, customerId]);
+
+  const selectedPaymentCondition = useMemo(() => {
+    if (!paymentConditionId) return null;
+    return paymentConditions.find((p) => p.id === paymentConditionId) ?? null;
+  }, [paymentConditions, paymentConditionId]);
+
   const lastCustomerEntity = useMemo(() => {
     if (!lastCustomerId) return null;
-    return customers.find((c) => c.id === lastCustomerId) ?? null;
+    const c = customers.find((x) => x.id === lastCustomerId) ?? null;
+    if (c?.approvalStatus && c.approvalStatus !== "APPROVED") return null;
+    return c;
   }, [customers, lastCustomerId]);
+
+  const filteredCustomers = useMemo(() => {
+    const code = customerSearch.code.trim().toLowerCase();
+    const doc = digitsOnly(customerSearch.document);
+    const legal = customerSearch.legalName.trim().toLowerCase();
+    const trade = customerSearch.tradeName.trim().toLowerCase();
+    const city = customerSearch.city.trim().toLowerCase();
+
+    return customers.filter((c) => {
+      if (c.approvalStatus && c.approvalStatus !== "APPROVED") return false;
+      if (
+        code &&
+        !c.id.toLowerCase().includes(code) &&
+        !(c.name ?? "").toLowerCase().includes(code)
+      ) {
+        return false;
+      }
+      if (doc) {
+        const hay = digitsOnly(`${c.cnpj ?? ""}${c.cpf ?? ""}`);
+        if (!hay.includes(doc)) return false;
+      }
+      if (legal) {
+        const hay = `${c.legalName ?? ""} ${c.name ?? ""}`.toLowerCase();
+        if (!hay.includes(legal)) return false;
+      }
+      if (trade) {
+        const hay = `${c.tradeName ?? ""} ${c.name ?? ""}`.toLowerCase();
+        if (!hay.includes(trade)) return false;
+      }
+      if (city) {
+        const hay = `${c.city ?? ""} ${c.state ?? ""}`.toLowerCase();
+        if (!hay.includes(city)) return false;
+      }
+      return true;
+    });
+  }, [customers, customerSearch]);
 
   const cartQtyByProductId = useMemo(() => {
     const o: Record<string, number> = {};
@@ -140,21 +327,45 @@ export function useQuickSaleScreen() {
   const creditBlockedCheckout =
     !!customerId && creditInfo?.effectiveAction === "BLOCK";
 
-  const bumpQty = useCallback((p: SaleProduct, delta: number) => {
-    setCart((prev) => {
-      const currentQty = prev[p.id]?.qty ?? 0;
+  const canAccessProducts = !!customerId;
+  const canFinalize =
+    !!customerId &&
+    !!paymentConditionId &&
+    cartLines.length > 0 &&
+    !creditBlockedCheckout;
+
+  const bumpQty = useCallback(
+    (p: SaleProduct, delta: number): boolean => {
+      if (!customerId) {
+        setErr("Selecione um cliente antes de adicionar produtos.");
+        setTab("clientes");
+        return false;
+      }
+      const currentQty = cart[p.id]?.qty ?? 0;
       const blockMsg = getProductStockBlockMessage(p, currentQty, delta);
       if (blockMsg) {
         setErr(blockMsg);
-        return prev;
+        void alert({
+          title: "Sem estoque",
+          description: blockMsg,
+          tone: "danger",
+        });
+        return false;
       }
       setErr(null);
-      return bumpCartQty(prev, p, delta);
-    });
-  }, []);
+      setCart((prev) => bumpCartQty(prev, p, delta));
+      return true;
+    },
+    [alert, cart, customerId],
+  );
 
   const scheduleProductTap = useCallback(
     (p: SaleProduct) => {
+      if (!customerId) {
+        setErr("Selecione um cliente antes de adicionar produtos.");
+        setTab("clientes");
+        return;
+      }
       const id = p.id;
       const timers = productTapTimers.current;
       const pending = timers.get(id);
@@ -170,7 +381,7 @@ export function useQuickSaleScreen() {
       }, PRODUCT_DOUBLE_TAP_MS);
       timers.set(id, t);
     },
-    [bumpQty],
+    [bumpQty, customerId],
   );
 
   const cycleDiscount = useCallback((productId: string) => {
@@ -179,42 +390,67 @@ export function useQuickSaleScreen() {
 
   const onBarcode = useCallback(
     (raw: string) => {
+      if (!customerId) {
+        setBarcodeOpen(false);
+        setErr("Selecione um cliente antes de adicionar produtos.");
+        setTab("clientes");
+        return;
+      }
       const codeLabel = raw.trim() || "(vazio)";
       const p = findProductByBarcode(products, raw);
       setBarcodeOpen(false);
       if (p && typeof p.effectiveUnitPrice === "number") {
-        bumpQty(p, 1);
-        setScanMsgOk(true);
-        setScanMsg(`Produto adicionado: ${p.name}`);
+        const added = bumpQty(p, 1);
+        if (added) {
+          setScanMsgOk(true);
+          setScanMsg(`Produto adicionado: ${p.name}`);
+        } else {
+          setScanMsgOk(false);
+          setScanMsg(
+            getProductStockBlockMessage(p, cart[p.id]?.qty ?? 0, 1) ??
+              `Não foi possível adicionar ${p.name}.`,
+          );
+        }
       } else {
         setScanMsgOk(false);
         setScanMsg(`Não existe produto com o código ${codeLabel} no sistema.`);
       }
     },
-    [products, bumpQty],
+    [cart, products, bumpQty, customerId],
   );
 
   const cartProductStub = useCallback(
-    (line: CartLine): SaleProduct => ({
-      id: line.productId,
-      name: line.name,
-      sku: line.sku,
-      effectiveUnitPrice: line.effectiveUnitPrice,
-      catalogUnitPrice: line.catalogUnitPrice,
-      promotionLabel: line.promotionLabel,
-      basePrice: null,
-      maxSellerDiscountPercentEffective: line.maxSellerDiscountPercent,
-    }),
-    [],
+    (line: CartLine): SaleProduct => {
+      const fromCatalog = products.find((p) => p.id === line.productId);
+      return {
+        id: line.productId,
+        name: line.name,
+        sku: line.sku ?? fromCatalog?.sku,
+        effectiveUnitPrice: line.effectiveUnitPrice,
+        catalogUnitPrice: line.catalogUnitPrice,
+        promotionLabel: line.promotionLabel,
+        basePrice: null,
+        maxSellerDiscountPercentEffective: line.maxSellerDiscountPercent,
+        stockQty: fromCatalog?.stockQty,
+        blockSaleWhenOutOfStock: fromCatalog?.blockSaleWhenOutOfStock,
+      };
+    },
+    [products],
   );
 
   const create = useMutation({
     mutationFn: async (): Promise<SubmitSaleResult> => {
       const lines = Object.values(cart);
+      if (!customerId) throw new Error("Selecione o cliente do pedido.");
+      if (!paymentConditionId) {
+        throw new Error("Selecione a condição de pagamento.");
+      }
       if (!lines.length) throw new Error("Adicione pelo menos um produto");
       const clientMutationId = Crypto.randomUUID();
       const payload = {
-        customerId: customerId || undefined,
+        customerId,
+        paymentConditionId,
+        operation: "SALE" as const,
         status: "CONFIRMED" as const,
         items: lines.map((l) => ({
           productId: l.productId,
@@ -226,30 +462,47 @@ export function useQuickSaleScreen() {
         clientMutationId,
       };
 
+      const buildSnapshot = () => {
+        const customerLabel =
+          selectedCustomer?.tradeName ||
+          selectedCustomer?.name ||
+          customers.find((c) => c.id === customerId)?.name;
+        return {
+          customerLabel,
+          paymentConditionLabel: selectedPaymentCondition
+            ? `${selectedPaymentCondition.code} - ${selectedPaymentCondition.name}`
+            : undefined,
+          lineSummaries: lines.map(
+            (l) => `${l.name} × ${l.qty} · R$ ${fmtMoney(cartLineTotal(l))}`,
+          ),
+          cartTotalApprox: cartTotal,
+        };
+      };
+
+      const enqueueLocal = async () => {
+        const ok = await enqueueOfflineSale({
+          ...payload,
+          snapshot: buildSnapshot(),
+        });
+        if (!ok) {
+          throw new Error(
+            "Armazenamento local indisponível. Offline está disponível na app iOS/Android com SQLite.",
+          );
+        }
+        return { mode: "offlineQueued" as const };
+      };
+
+      if (orderSyncMode === "MANUAL") {
+        return enqueueLocal();
+      }
+
       const result = await postSellerSale(payload);
       if (result.kind === "success")
         return { mode: "online", status: result.status };
       if (result.kind === "dead") throw new Error(result.reason);
       if (result.kind === "auth") throw new Error(result.reason);
 
-      const customerLabel = customerId
-        ? customers.find((c) => c.id === customerId)?.name
-        : undefined;
-      const snapshot = {
-        customerLabel,
-        lineSummaries: lines.map(
-          (l) => `${l.name} × ${l.qty} · R$ ${fmtMoney(cartLineTotal(l))}`,
-        ),
-        cartTotalApprox: cartTotal,
-      };
-
-      const ok = await enqueueOfflineSale({ ...payload, snapshot });
-      if (!ok) {
-        throw new Error(
-          "Armazenamento local indisponível. Offline está disponível na app iOS/Android com SQLite.",
-        );
-      }
-      return { mode: "offlineQueued" };
+      return enqueueLocal();
     },
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ["seller", "sales"] });
@@ -259,20 +512,25 @@ export function useQuickSaleScreen() {
       });
       void qc.invalidateQueries({ queryKey: ["seller", "customer-credit"] });
       if (data.mode === "offlineQueued") {
-        Alert.alert(
-          "Pedido na fila offline",
-          "Assim que houver internet, enviamos automaticamente. Veja em Início → Fila offline.",
-          [{ text: "OK", onPress: () => router.back() }],
-        );
+        void alert({
+          title:
+            orderSyncMode === "MANUAL"
+              ? "Pedido na fila"
+              : "Pedido na fila offline",
+          description:
+            orderSyncMode === "MANUAL"
+              ? "Envio manual ativo: toque em Sincronizar na fila de pedidos para enviar ao servidor."
+              : "Assim que houver internet, enviamos automaticamente. Veja em Início → Fila offline.",
+        }).then(() => router.back());
         setCart({});
         return;
       }
       if (data.status === "PENDING_CREDIT_APPROVAL") {
-        Alert.alert(
-          "Aguardando aprovação",
-          "O escritório precisa liberar este pedido por causa do crédito do cliente.",
-          [{ text: "OK", onPress: () => router.back() }],
-        );
+        void alert({
+          title: "Aguardando aprovação",
+          description:
+            "O escritório precisa liberar este pedido por causa do crédito do cliente.",
+        }).then(() => router.back());
         return;
       }
       showToast({
@@ -285,10 +543,51 @@ export function useQuickSaleScreen() {
 
   const finalize = useCallback(() => {
     setErr(null);
+    if (!customerId) {
+      setErr("Selecione o cliente do pedido.");
+      setTab("clientes");
+      return;
+    }
+    if (!paymentConditionId) {
+      setErr("Selecione a condição de pagamento.");
+      setTab("clientes");
+      return;
+    }
+    if (cartLines.length === 0) {
+      setErr("Adicione produtos ao pedido.");
+      setTab("produtos");
+      return;
+    }
+    const stockMsg = getCartStockBlockMessage(cartLines, products);
+    if (stockMsg) {
+      setErr(stockMsg);
+      void alert({
+        title: "Sem estoque",
+        description: stockMsg,
+        tone: "danger",
+      });
+      setTab("produtos");
+      return;
+    }
     create.mutate(undefined, {
-      onError: (e) => setErr(e instanceof Error ? e.message : "Erro"),
+      onError: (e) => {
+        const msg = e instanceof Error ? e.message : "Erro";
+        setErr(msg);
+        void alert({
+          title: "Não foi possível finalizar",
+          description: msg,
+          tone: "danger",
+        });
+      },
     });
-  }, [create]);
+  }, [
+    alert,
+    cartLines,
+    create,
+    customerId,
+    paymentConditionId,
+    products,
+  ]);
 
   const openCustomerCredit = useCallback(() => {
     if (customerId) router.push(`/customer/${customerId}`);
@@ -298,6 +597,44 @@ export function useQuickSaleScreen() {
     setScanMsg(null);
     setScanMsgOk(false);
   }, []);
+
+  const selectCustomer = useCallback(
+    (id: string) => {
+      setCustomerId(id);
+      setErr(null);
+    },
+    [setCustomerId],
+  );
+
+  const clearCustomer = useCallback(() => {
+    setCustomerId(undefined);
+    setCart({});
+    setCustomerSearch({
+      code: "",
+      document: "",
+      legalName: "",
+      tradeName: "",
+      city: "",
+    });
+  }, [setCustomerId]);
+
+  const goTab = useCallback(
+    (next: QuickSaleTab) => {
+      if (next !== "clientes" && !customerId) {
+        setErr("Selecione um cliente para continuar.");
+        setTab("clientes");
+        return;
+      }
+      if (next === "finalizar" && !paymentConditionId) {
+        setErr("Selecione a condição de pagamento.");
+        setTab("clientes");
+        return;
+      }
+      setErr(null);
+      setTab(next);
+    },
+    [customerId, paymentConditionId],
+  );
 
   const emptyCatalogMessage =
     products.length === 0
@@ -309,10 +646,25 @@ export function useQuickSaleScreen() {
   return {
     insets,
     layout,
+    tab,
+    goTab,
     customerId,
     setCustomerId,
+    selectedCustomer,
+    formatDoc,
     customers,
+    filteredCustomers,
+    customerSearch,
+    setCustomerSearch,
+    selectCustomer,
+    clearCustomer,
     lastCustomerEntity,
+    paymentConditions,
+    paymentConditionId,
+    setPaymentConditionId,
+    selectedPaymentCondition,
+    paymentPickerOpen,
+    setPaymentPickerOpen,
     catalog,
     cartLines,
     cartTotal,
@@ -320,6 +672,8 @@ export function useQuickSaleScreen() {
     creditInfo,
     creditLoading,
     creditBlockedCheckout,
+    canAccessProducts,
+    canFinalize,
     bumpQty,
     scheduleProductTap,
     cycleDiscount,

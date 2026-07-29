@@ -1,19 +1,25 @@
 import { useQuery } from "@tanstack/react-query";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
+import { useConfirm } from "../../context/ConfirmContext";
 import { apiFetch, sharePdf } from "../../lib/api";
+import { isRepeatableSale } from "../../lib/repeat-sale";
 
 export type SellerOrderDetail = {
   id: string;
   orderNumber?: number | null;
   status: string;
+  situation?: { id: string; code: string; name: string } | null;
   totalAmount: unknown;
   notes: string | null;
   creditHoldReasons?: unknown;
   createdAt: string;
+  customerId?: string | null;
+  paymentConditionId?: string | null;
   customer: { name: string } | null;
   items: {
     id: string;
+    productId: string;
     productName: string;
     quantity: number;
     unitPrice: unknown;
@@ -21,6 +27,8 @@ export type SellerOrderDetail = {
 };
 
 export function useSaleDetailScreen() {
+  const router = useRouter();
+  const { alert } = useConfirm();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [pdfPending, setPdfPending] = useState(false);
   const [pdfErr, setPdfErr] = useState<string | null>(null);
@@ -44,11 +52,29 @@ export function useSaleDetailScreen() {
     }
   }, [id]);
 
+  const canRepeatSale = isRepeatableSale(query.data);
+
+  const repeatThisSale = useCallback(() => {
+    if (!id || !canRepeatSale) {
+      void alert({
+        title: "Repetir venda",
+        description: "Nenhuma venda anterior para repetir",
+      });
+      return;
+    }
+    router.push({
+      pathname: "/quick-sale",
+      params: { repeatSaleId: id },
+    });
+  }, [alert, canRepeatSale, id, router]);
+
   return {
     order: query.data,
     isLoading: query.isLoading,
     pdfPending,
     pdfErr,
     shareOrderPdf,
+    canRepeatSale,
+    repeatThisSale,
   };
 }

@@ -1,163 +1,37 @@
-import { Button } from "@/components/ui/button";
-import { DatePicker } from "@/components/ui/date-picker";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link } from "react-router-dom";
-import { apiFetch, downloadXml } from "../lib/api";
+import { useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
-type FiscalOrder = {
-  id: string;
-  code: string;
-  orderNumber: number | null;
-  totalAmount: number;
-  createdAt: string;
-  customerName: string;
-  sellerName: string;
-  itemCount: number;
-};
-
+/**
+ * Página provisória de XML a partir do pedido — deprecada.
+ * O download do XML autorizado/cancelado fica em Faturamento → NF-e emitidas.
+ */
 export function FiscalXmlPage() {
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
-  const qs = new URLSearchParams();
-  if (from) qs.set("from", from);
-  if (to) qs.set("to", to);
-  const query = qs.toString();
-
-  const {
-    data: orders = [],
-    isLoading,
-    refetch,
-    isFetching,
-  } = useQuery({
-    queryKey: ["admin", "fiscal-orders", from, to],
-    queryFn: () =>
-      apiFetch<FiscalOrder[]>(
-        `/admin/fiscal/orders${query ? `?${query}` : ""}`,
-      ),
-  });
-
-  async function handleDownload(order: FiscalOrder) {
-    setError(null);
-    setDownloadingId(order.id);
-    try {
-      await downloadXml(
-        `/admin/orders/${order.id}/nfe.xml`,
-        `nfe-${order.code}.xml`,
-      );
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Falha ao baixar XML");
-    } finally {
-      setDownloadingId(null);
-    }
-  }
+  useEffect(() => {
+    const t = window.setTimeout(
+      () => navigate("/faturamento", { replace: true }),
+      2500,
+    );
+    return () => window.clearTimeout(t);
+  }, [navigate]);
 
   return (
-    <div className="space-y-8">
-      <div className="space-y-2">
-        <nav className="text-sm text-muted-foreground">
-          <Link to="/fiscal" className="hover:text-foreground">
-            Fiscal
-          </Link>
-          <span className="mx-1.5">›</span>
-          <span className="text-foreground">Exportar XML NF-e</span>
-        </nav>
-        <h1 className="text-2xl font-semibold text-foreground">
-          Exportar XML NF-e
-        </h1>
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          XML provisório gerado a partir do pedido confirmado. Não substitui a
-          autorização na SEFAZ.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap items-end gap-3">
-        <div>
-          <label className="mb-1 block text-xs text-muted-foreground">De</label>
-          <DatePicker value={from} onChange={setFrom} placeholder="De" />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs text-muted-foreground">
-            Até
-          </label>
-          <DatePicker value={to} onChange={setTo} placeholder="Até" />
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => void refetch()}
-          disabled={isFetching}
-        >
-          Filtrar
-        </Button>
-      </div>
-
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-      {isLoading ? (
-        <p className="text-muted-foreground">Carregando pedidos…</p>
-      ) : orders.length === 0 ? (
-        <p className="rounded-xl border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
-          Nenhum pedido confirmado no período.
-        </p>
-      ) : (
-        <div className="rounded-xl border border-border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Pedido</TableHead>
-                <TableHead>Data</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Vendedor</TableHead>
-                <TableHead>Itens</TableHead>
-                <TableHead>Total</TableHead>
-                <TableHead className="w-[140px]" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {orders.map((o) => (
-                <TableRow key={o.id}>
-                  <TableCell className="font-medium">{o.code}</TableCell>
-                  <TableCell>
-                    {new Date(o.createdAt).toLocaleString("pt-BR")}
-                  </TableCell>
-                  <TableCell>{o.customerName}</TableCell>
-                  <TableCell>{o.sellerName}</TableCell>
-                  <TableCell>{o.itemCount}</TableCell>
-                  <TableCell>
-                    {o.totalAmount.toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
-                    })}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={downloadingId === o.id}
-                      onClick={() => void handleDownload(o)}
-                    >
-                      {downloadingId === o.id ? "Baixando…" : "Baixar XML"}
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+    <div className="mx-auto max-w-lg space-y-4 py-12 text-center">
+      <h1 className="text-xl font-semibold text-foreground">
+        Exportação provisória descontinuada
+      </h1>
+      <p className="text-sm text-muted-foreground">
+        O XML gerado só a partir do pedido não substitui a NF-e autorizada na
+        SEFAZ. Use <strong>Faturamento</strong> para emitir, consultar e baixar
+        o XML autorizado ou de cancelamento.
+      </p>
+      <Link
+        to="/faturamento"
+        className="inline-block rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium hover:bg-muted/40"
+      >
+        Ir para Faturamento
+      </Link>
     </div>
   );
 }

@@ -177,7 +177,7 @@ export const PERMISSION_RESOURCE_LABELS: Record<PermissionResource, string> = {
   products: "Produtos",
   stock: "Estoque",
   suppliers: "Fornecedores",
-  fiscal: "Fiscal",
+  fiscal: "Financeiro",
   customers: "Clientes",
   orders: "Pedidos / Vendas",
   orders_print_80mm: "Imprimir pedido 80mm",

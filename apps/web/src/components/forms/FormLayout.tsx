@@ -63,6 +63,7 @@ export function FormField({
 }
 
 type FormSectionProps = {
+  id?: string;
   title?: string;
   description?: string;
   children: ReactNode;
@@ -70,13 +71,17 @@ type FormSectionProps = {
 };
 
 export function FormSection({
+  id,
   title,
   description,
   children,
   className,
 }: FormSectionProps) {
   return (
-    <section className={cn("surface-card space-y-4 p-4 md:p-5", className)}>
+    <section
+      id={id}
+      className={cn("surface-card space-y-4 p-4 md:p-5", className)}
+    >
       {title ? (
         <div>
           <h2 className="text-base font-semibold text-foreground">{title}</h2>

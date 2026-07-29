@@ -6,16 +6,31 @@ type Props = {
   children: ReactNode;
   onPress?: () => void;
   badge?: number;
+  accessibilityLabel?: string;
+  disabled?: boolean;
 };
 
-export function HeaderIconButton({ children, onPress, badge }: Props) {
+export function HeaderIconButton({
+  children,
+  onPress,
+  badge,
+  accessibilityLabel,
+  disabled,
+}: Props) {
   const { colors } = useTheme();
 
   return (
     <Pressable
       onPress={onPress}
-      style={[styles.btn, { backgroundColor: colors.surfaceMuted }]}
+      disabled={disabled}
+      style={[
+        styles.btn,
+        { backgroundColor: colors.surfaceMuted },
+        disabled ? styles.disabled : null,
+      ]}
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled: Boolean(disabled) }}
     >
       {children}
       {badge != null && badge > 0 ? (
@@ -36,6 +51,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
+  },
+  disabled: {
+    opacity: 0.45,
   },
   badge: {
     position: "absolute",

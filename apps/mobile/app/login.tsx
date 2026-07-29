@@ -1,4 +1,5 @@
 import { KeyboardAvoidingScreen, SafeScreen } from "@/components/layout";
+import { APP_BRAND_TAGLINE } from "@pedidos/shared";
 import { Redirect } from "expo-router";
 import {
   ActivityIndicator,
@@ -48,6 +49,7 @@ export default function LoginScreen() {
             <View style={styles.brand}>
               <CommerceProWordmark iconSize={44} />
             </View>
+            <Text style={styles.tagline}>{APP_BRAND_TAGLINE}</Text>
             <Text style={styles.sub}>Acesso vendedor</Text>
             <ThemedTextInput
               placeholder="Email"
@@ -98,6 +100,13 @@ function createLoginStyles(c: AppColors) {
       gap: 12,
     },
     brand: { alignItems: "flex-start" },
+    tagline: {
+      fontSize: 11,
+      fontWeight: "600",
+      letterSpacing: 0.6,
+      color: c.primary,
+      marginBottom: 4,
+    },
     sub: { fontSize: 14, color: c.textSecondary, marginBottom: 8 },
     err: { color: c.danger, fontSize: 14 },
     btn: {

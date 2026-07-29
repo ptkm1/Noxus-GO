@@ -1,38 +1,49 @@
 import { useRouter } from "expo-router";
 import { useCallback } from "react";
-import { Alert } from "react-native";
 import { useWindowDimensions } from "react-native";
+import { useConfirm } from "../../context/ConfirmContext";
 import { computeCatalogTileWidths } from "../../lib/utils/catalog-layout";
 import { useSellerProductCatalog } from "../useSellerProductCatalog";
 
 export function useProductsScreen() {
   const router = useRouter();
+  const { confirm } = useConfirm();
   const { width: winW } = useWindowDimensions();
   const layout = computeCatalogTileWidths(winW);
 
   const catalog = useSellerProductCatalog();
 
   const promptQuickSale = useCallback(
-    (message: string) => {
-      Alert.alert("Nova venda", message, [
-        { text: "Cancelar", style: "cancel" },
-        { text: "Abrir", onPress: () => router.push("/quick-sale") },
-      ]);
+    async (message: string) => {
+      const ok = await confirm({
+        title: "Nova venda",
+        description: message,
+        confirmLabel: "Abrir",
+        cancelLabel: "Cancelar",
+        tone: "default",
+      });
+      if (ok) router.push("/quick-sale");
     },
-    [router],
+    [confirm, router],
   );
 
   const onRailProductPress = useCallback(() => {
-    promptQuickSale("Abrir a tela de venda para adicionar produtos ao pedido?");
+    void promptQuickSale(
+      "Abrir a tela de venda para adicionar produtos ao pedido?",
+    );
   }, [promptQuickSale]);
 
   const onFavoriteRailPress = useCallback(() => {
-    promptQuickSale("Abrir a tela de venda para usar seus favoritos no pedido?");
+    void promptQuickSale(
+      "Abrir a tela de venda para usar seus favoritos no pedido?",
+    );
   }, [promptQuickSale]);
 
   const onGridProductPress = useCallback(
     (productName: string) => {
-      promptQuickSale(`Para incluir "${productName}" no pedido, abra a venda rápida.`);
+      void promptQuickSale(
+        `Para incluir "${productName}" no pedido, abra a venda rápida.`,
+      );
     },
     [promptQuickSale],
   );

@@ -1,4 +1,13 @@
 import {
+  HOME_INDICATOR_KEYS,
+  HOME_INDICATORS_LAYOUTS,
+  MAX_HOME_INDICATORS,
+  normalizeHomeIndicators,
+  normalizeHomeIndicatorsLayout,
+  type HomeIndicatorKey,
+  type HomeIndicatorsLayout,
+} from "@pedidos/shared";
+import {
   Prisma,
   type OrderStatus,
   type PromotionKind,
@@ -35,12 +44,23 @@ import {
   writeAuditLog,
 } from "../services/audit-log.js";
 import {
+  countOrgSellers,
+  countOrgUsers,
+  getOrgEntitlements,
+} from "../services/billing/entitlements.js";
+import { assertAdminPathPlanFeature } from "../services/billing/plan-gate.js";
+import {
+  maybeInactivateStaleCustomersForOrg,
+  reactivateCustomerOnSale,
+} from "../services/customer-status.js";
+import {
   customerBodySchema,
   customerPatchSchema,
   parseCompleteCustomerBody,
   toCustomerPrismaData,
 } from "../services/customer-validation.js";
 import { buildDistributorInsights } from "../services/distributor-insights.js";
+import { buildHomeIndicator } from "../services/home-dashboard-indicators.js";
 import {
   AccountsPayableError,
   createAccountsPayable,
@@ -68,20 +88,25 @@ import {
 } from "../services/fiscal/fixed-expenses.js";
 import {
   buildNfeXml,
+  buildNfeXmlZip,
   listFiscalOrders,
   NfeXmlError,
 } from "../services/fiscal/nfe-xml.js";
 import {
   buildCommissionStatement,
   buildCreditAgingReport,
+  buildFiscalOutboundSummary,
   buildFiscalReconciliation,
   buildMarginReport,
   buildSalesScorecard,
   buildStockHealthReport,
   buildVisitEffectiveness,
 } from "../services/management-reports.js";
+import { getOrCreateMorningBrief } from "../services/morning-brief.js";
 import { getWebPushPublicKey, notifyUsers } from "../services/notify.js";
+import { nextOrderNumber } from "../services/order-number.js";
 import {
+  loadOrderForPdf,
   sendOrderPdf80mmReply,
   sendOrderPdfReply,
 } from "../services/order-pdf-load.js";
@@ -89,6 +114,10 @@ import {
   computeSaleOrder,
   OrderPricingError,
 } from "../services/order-pricing.js";
+import {
+  ensureDefaultOrderSituations,
+  normalizeSituationCode,
+} from "../services/order-situations.js";
 import type { AttributeFieldDef } from "../services/product-attributes.js";
 import {
   parseCategoryAttributeSchema,
@@ -104,6 +133,7 @@ import {
   applyStockOnStatusChange,
   assertSufficientStock,
   StockError,
+  stockErrorPayload,
 } from "../services/product-stock.js";
 import {
   handleRegisterPushDevice,
@@ -113,14 +143,23 @@ import { buildCustomersPdf } from "../services/reports/customers-pdf.js";
 import { readExtraParams } from "../services/reports/extra-filters.js";
 import { buildOrderItemsPdf } from "../services/reports/order-items-pdf.js";
 import { buildOrdersPdf } from "../services/reports/orders-pdf.js";
+import { orderCode } from "../services/reports/pdf-common.js";
 import { buildStockPdf } from "../services/reports/stock-pdf.js";
 import {
   adminPathToResource,
   buildEffectivePermissionsMatrix,
-  canReadEffective,
+  canReadEffectiveForUser,
   canWriteEffective,
+  setOrgEnabledRoles,
   updateOrgRolePermissions,
 } from "../services/role-permissions.js";
+import {
+  createOrgProfile,
+  deleteOrgProfile,
+  listOrgProfiles,
+  OrgProfileError,
+  updateOrgProfile,
+} from "../services/org-profiles.js";
 import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
 import {
   createSalesTeam,
@@ -321,6 +360,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       const routePath =
         req.routeOptions?.url ?? req.url.split("?")[0] ?? req.url;
 
+      if (
+        !(await assertAdminPathPlanFeature(
+          reply,
+          auth.organizationId,
+          routePath,
+        ))
+      ) {
+        return;
+      }
+
       if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
         if (auth.role === "MANAGER" && isManagerWriteAllowed(routePath)) {
           return;
@@ -334,8 +383,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       if (auth.role === "MANAGER" && method === "GET") {
         const resource = adminPathToResource(routePath);
         if (resource) {
-          const allowed = await canReadEffective(
+          const allowed = await canReadEffectiveForUser(
             auth.organizationId,
+            auth.sub,
             auth.role,
             resource,
           );
@@ -415,6 +465,151 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       data,
     });
     return { ok: true };
+  });
+
+  /** Regras de sistema da org (sync de pedidos, etc.). */
+  app.get("/system-settings", async (req) => {
+    const auth = req.auth!;
+    const org = await prisma.organization.findUnique({
+      where: { id: auth.organizationId },
+      select: {
+        orderSyncMode: true,
+        sellerShowUnassignedCustomers: true,
+        customerRegistrationMode: true,
+        sellerCanEditQueuedSales: true,
+        autoInactivateCustomersAfterMonths: true,
+        homeIndicators: true,
+        homeIndicatorsLayout: true,
+      },
+    });
+    return {
+      orderSyncMode: org?.orderSyncMode ?? ("AUTO" as const),
+      sellerShowUnassignedCustomers: org?.sellerShowUnassignedCustomers ?? true,
+      customerRegistrationMode:
+        org?.customerRegistrationMode ?? ("AUTO" as const),
+      sellerCanEditQueuedSales: org?.sellerCanEditQueuedSales ?? false,
+      autoInactivateCustomersAfterMonths:
+        org?.autoInactivateCustomersAfterMonths ?? false,
+      homeIndicators: normalizeHomeIndicators(org?.homeIndicators),
+      homeIndicatorsLayout: normalizeHomeIndicatorsLayout(
+        org?.homeIndicatorsLayout,
+      ),
+    };
+  });
+
+  app.patch("/system-settings", async (req, reply) => {
+    const auth = req.auth!;
+    const homeIndicatorKeySchema = z.enum(
+      HOME_INDICATOR_KEYS as unknown as [
+        HomeIndicatorKey,
+        ...HomeIndicatorKey[],
+      ],
+    );
+    const homeIndicatorsLayoutSchema = z.enum(
+      HOME_INDICATORS_LAYOUTS as unknown as [
+        HomeIndicatorsLayout,
+        ...HomeIndicatorsLayout[],
+      ],
+    );
+    const body = z
+      .object({
+        orderSyncMode: z.enum(["AUTO", "MANUAL"]).optional(),
+        sellerShowUnassignedCustomers: z.boolean().optional(),
+        customerRegistrationMode: z
+          .enum(["AUTO", "REQUIRE_APPROVAL"])
+          .optional(),
+        sellerCanEditQueuedSales: z.boolean().optional(),
+        autoInactivateCustomersAfterMonths: z.boolean().optional(),
+        homeIndicators: z
+          .array(homeIndicatorKeySchema)
+          .min(1)
+          .max(MAX_HOME_INDICATORS)
+          .optional(),
+        homeIndicatorsLayout: homeIndicatorsLayoutSchema.optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    if (
+      body.data.orderSyncMode === undefined &&
+      body.data.sellerShowUnassignedCustomers === undefined &&
+      body.data.customerRegistrationMode === undefined &&
+      body.data.sellerCanEditQueuedSales === undefined &&
+      body.data.autoInactivateCustomersAfterMonths === undefined &&
+      body.data.homeIndicators === undefined &&
+      body.data.homeIndicatorsLayout === undefined
+    ) {
+      return reply.status(400).send({ error: "Nada para atualizar" });
+    }
+
+    const homeIndicators =
+      body.data.homeIndicators !== undefined
+        ? normalizeHomeIndicators(body.data.homeIndicators)
+        : undefined;
+    const homeIndicatorsLayout =
+      body.data.homeIndicatorsLayout !== undefined
+        ? normalizeHomeIndicatorsLayout(body.data.homeIndicatorsLayout)
+        : undefined;
+
+    const updated = await prisma.organization.update({
+      where: { id: auth.organizationId },
+      data: {
+        ...(body.data.orderSyncMode !== undefined
+          ? { orderSyncMode: body.data.orderSyncMode }
+          : {}),
+        ...(body.data.sellerShowUnassignedCustomers !== undefined
+          ? {
+              sellerShowUnassignedCustomers:
+                body.data.sellerShowUnassignedCustomers,
+            }
+          : {}),
+        ...(body.data.customerRegistrationMode !== undefined
+          ? {
+              customerRegistrationMode: body.data.customerRegistrationMode,
+            }
+          : {}),
+        ...(body.data.sellerCanEditQueuedSales !== undefined
+          ? {
+              sellerCanEditQueuedSales: body.data.sellerCanEditQueuedSales,
+            }
+          : {}),
+        ...(body.data.autoInactivateCustomersAfterMonths !== undefined
+          ? {
+              autoInactivateCustomersAfterMonths:
+                body.data.autoInactivateCustomersAfterMonths,
+            }
+          : {}),
+        ...(homeIndicators !== undefined
+          ? { homeIndicators }
+          : {}),
+        ...(homeIndicatorsLayout !== undefined
+          ? { homeIndicatorsLayout }
+          : {}),
+      },
+      select: {
+        orderSyncMode: true,
+        sellerShowUnassignedCustomers: true,
+        customerRegistrationMode: true,
+        sellerCanEditQueuedSales: true,
+        autoInactivateCustomersAfterMonths: true,
+        homeIndicators: true,
+        homeIndicatorsLayout: true,
+      },
+    });
+    return {
+      ok: true,
+      orderSyncMode: updated.orderSyncMode,
+      sellerShowUnassignedCustomers: updated.sellerShowUnassignedCustomers,
+      customerRegistrationMode: updated.customerRegistrationMode,
+      sellerCanEditQueuedSales: updated.sellerCanEditQueuedSales,
+      autoInactivateCustomersAfterMonths:
+        updated.autoInactivateCustomersAfterMonths,
+      homeIndicators: normalizeHomeIndicators(updated.homeIndicators),
+      homeIndicatorsLayout: normalizeHomeIndicatorsLayout(
+        updated.homeIndicatorsLayout,
+      ),
+    };
   });
 
   /**
@@ -948,6 +1143,261 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return reply.status(204).send();
   });
 
+  /* --- Condições de pagamento --- */
+  app.get("/payment-conditions", async (req) => {
+    const auth = req.auth!;
+    return prisma.paymentCondition.findMany({
+      where: { organizationId: auth.organizationId },
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+    });
+  });
+
+  app.post("/payment-conditions", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        code: z.string().min(1),
+        name: z.string().min(1),
+        days: z.number().int().min(0).max(3650).optional(),
+        active: z.boolean().optional(),
+        sortOrder: z.number().int().min(0).max(9999).optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const code = body.data.code.trim();
+    if (!code.length)
+      return reply.status(400).send({ error: "Código é obrigatório" });
+
+    try {
+      return await prisma.paymentCondition.create({
+        data: {
+          organizationId: auth.organizationId,
+          code,
+          name: body.data.name.trim(),
+          days: body.data.days ?? 0,
+          active: body.data.active ?? true,
+          sortOrder: body.data.sortOrder ?? 0,
+        },
+      });
+    } catch {
+      return reply
+        .status(409)
+        .send({ error: "Já existe condição com esse código" });
+    }
+  });
+
+  app.patch("/payment-conditions/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        code: z.string().min(1).optional(),
+        name: z.string().min(1).optional(),
+        days: z.number().int().min(0).max(3650).optional(),
+        active: z.boolean().optional(),
+        sortOrder: z.number().int().min(0).max(9999).optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const existing = await prisma.paymentCondition.findFirst({
+      where: { id, organizationId: auth.organizationId },
+    });
+    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+
+    if (
+      body.data.code === undefined &&
+      body.data.name === undefined &&
+      body.data.days === undefined &&
+      body.data.active === undefined &&
+      body.data.sortOrder === undefined
+    ) {
+      return reply.status(400).send({
+        error: "Informe ao menos um campo para atualizar",
+      });
+    }
+
+    try {
+      return await prisma.paymentCondition.update({
+        where: { id },
+        data: {
+          ...(body.data.code !== undefined
+            ? { code: body.data.code.trim() }
+            : {}),
+          ...(body.data.name !== undefined
+            ? { name: body.data.name.trim() }
+            : {}),
+          ...(body.data.days !== undefined ? { days: body.data.days } : {}),
+          ...(body.data.active !== undefined
+            ? { active: body.data.active }
+            : {}),
+          ...(body.data.sortOrder !== undefined
+            ? { sortOrder: body.data.sortOrder }
+            : {}),
+        },
+      });
+    } catch {
+      return reply
+        .status(409)
+        .send({ error: "Já existe condição com esse código" });
+    }
+  });
+
+  app.delete("/payment-conditions/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const existing = await prisma.paymentCondition.findFirst({
+      where: { id, organizationId: auth.organizationId },
+    });
+    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+    await prisma.paymentCondition.delete({ where: { id } });
+    return reply.status(204).send();
+  });
+
+  /* --- Situações do pedido (operacional/logística) --- */
+  app.get("/order-situations", async (req) => {
+    const auth = req.auth!;
+    await ensureDefaultOrderSituations(auth.organizationId);
+    return prisma.orderSituation.findMany({
+      where: { organizationId: auth.organizationId },
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+    });
+  });
+
+  app.post("/order-situations", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        code: z.string().min(1),
+        name: z.string().min(1),
+        active: z.boolean().optional(),
+        sortOrder: z.number().int().min(0).max(9999).optional(),
+        mapsToCancel: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const code = normalizeSituationCode(body.data.code);
+    if (!code.length)
+      return reply.status(400).send({ error: "Código é obrigatório" });
+
+    await ensureDefaultOrderSituations(auth.organizationId);
+
+    try {
+      return await prisma.orderSituation.create({
+        data: {
+          organizationId: auth.organizationId,
+          code,
+          name: body.data.name.trim(),
+          active: body.data.active ?? true,
+          sortOrder: body.data.sortOrder ?? 0,
+          mapsToCancel: body.data.mapsToCancel ?? false,
+          isSystem: false,
+        },
+      });
+    } catch {
+      return reply
+        .status(409)
+        .send({ error: "Já existe situação com esse código" });
+    }
+  });
+
+  app.patch("/order-situations/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        code: z.string().min(1).optional(),
+        name: z.string().min(1).optional(),
+        active: z.boolean().optional(),
+        sortOrder: z.number().int().min(0).max(9999).optional(),
+        mapsToCancel: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const existing = await prisma.orderSituation.findFirst({
+      where: { id, organizationId: auth.organizationId },
+    });
+    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+
+    if (
+      body.data.code === undefined &&
+      body.data.name === undefined &&
+      body.data.active === undefined &&
+      body.data.sortOrder === undefined &&
+      body.data.mapsToCancel === undefined
+    ) {
+      return reply.status(400).send({
+        error: "Informe ao menos um campo para atualizar",
+      });
+    }
+
+    const nextCode =
+      body.data.code !== undefined
+        ? normalizeSituationCode(body.data.code)
+        : undefined;
+    if (nextCode !== undefined && !nextCode.length) {
+      return reply.status(400).send({ error: "Código é obrigatório" });
+    }
+    if (
+      existing.isSystem &&
+      nextCode !== undefined &&
+      nextCode !== existing.code
+    ) {
+      return reply.status(400).send({
+        error: "Código de situação padrão do sistema não pode ser alterado",
+      });
+    }
+
+    try {
+      return await prisma.orderSituation.update({
+        where: { id },
+        data: {
+          ...(nextCode !== undefined ? { code: nextCode } : {}),
+          ...(body.data.name !== undefined
+            ? { name: body.data.name.trim() }
+            : {}),
+          ...(body.data.active !== undefined
+            ? { active: body.data.active }
+            : {}),
+          ...(body.data.sortOrder !== undefined
+            ? { sortOrder: body.data.sortOrder }
+            : {}),
+          ...(body.data.mapsToCancel !== undefined
+            ? { mapsToCancel: body.data.mapsToCancel }
+            : {}),
+        },
+      });
+    } catch {
+      return reply
+        .status(409)
+        .send({ error: "Já existe situação com esse código" });
+    }
+  });
+
+  app.delete("/order-situations/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const existing = await prisma.orderSituation.findFirst({
+      where: { id, organizationId: auth.organizationId },
+    });
+    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+    if (existing.isSystem) {
+      return reply.status(400).send({
+        error:
+          "Situação padrão do sistema não pode ser excluída. Desative-a em vez disso.",
+      });
+    }
+    await prisma.orderSituation.delete({ where: { id } });
+    return reply.status(204).send();
+  });
+
   /* --- Produtos --- */
   const productRelationsInclude = {
     category: {
@@ -960,6 +1410,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         tradeName: true,
         legalName: true,
         cnpj: true,
+      },
+    },
+    priceTableItems: {
+      select: {
+        id: true,
+        priceTableId: true,
+        price: true,
+        priceTable: { select: { id: true, name: true } },
       },
     },
   } as const;
@@ -1333,6 +1791,32 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return listFiscalOrders(req.auth!.organizationId, q.data);
   });
 
+  app.get("/fiscal/orders/nfe.zip", async (req, reply) => {
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+      })
+      .safeParse(req.query);
+    if (!q.success)
+      return reply.status(400).send({ error: "Filtros inválidos" });
+    try {
+      const { zip, filename } = await buildNfeXmlZip(
+        req.auth!.organizationId,
+        q.data,
+      );
+      return reply
+        .header("Content-Type", "application/zip")
+        .header("Content-Disposition", `attachment; filename="${filename}"`)
+        .send(zip);
+    } catch (e) {
+      if (e instanceof NfeXmlError) {
+        return reply.status(400).send({ error: e.message });
+      }
+      throw e;
+    }
+  });
+
   app.get("/orders/:id/nfe.xml", async (req, reply) => {
     const { id } = idParam.parse(req.params);
     try {
@@ -1471,7 +1955,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       return result;
     } catch (e) {
       if (e instanceof StockError)
-        return reply.status(400).send({ error: e.message });
+        return reply.status(400).send(stockErrorPayload(e));
       throw e;
     }
   });
@@ -1491,12 +1975,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         updates: z
           .array(
             z.object({
-              role: z.enum(["MANAGER", "SELLER", "SUPERVISOR", "ADMIN"]),
+              role: z.string().min(1),
               resource: z.string().min(1),
               level: z.enum(["none", "read", "write"]),
             }),
           )
-          .min(1),
+          .optional(),
+        enabledRoles: z
+          .array(z.enum(["ADMIN", "MANAGER", "SELLER", "SUPERVISOR"]))
+          .optional(),
       })
       .safeParse(req.body);
     if (!body.success) {
@@ -1505,31 +1992,164 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         .send({ error: "Dados inválidos", details: body.error.flatten() });
     }
 
-    const updates = body.data.updates.filter((u) =>
-      isPermissionResource(u.resource),
-    );
-    if (updates.length === 0) {
-      return reply.status(400).send({ error: "Nenhum recurso válido" });
+    if (
+      body.data.enabledRoles === undefined &&
+      (body.data.updates === undefined || body.data.updates.length === 0)
+    ) {
+      return reply
+        .status(400)
+        .send({ error: "Informe updates e/ou enabledRoles" });
     }
 
-    const matrix = await updateOrgRolePermissions(
-      auth.organizationId,
-      updates.map((u) => ({
-        role: u.role,
-        resource:
-          u.resource as import("../auth/permissions.js").PermissionResource,
-        level: u.level,
-      })),
-    );
+    if (body.data.enabledRoles !== undefined) {
+      await setOrgEnabledRoles(auth.organizationId, body.data.enabledRoles);
+    }
+
+    let matrix;
+    if (body.data.updates && body.data.updates.length > 0) {
+      const updates = body.data.updates.filter((u) =>
+        isPermissionResource(u.resource),
+      );
+      if (updates.length === 0 && body.data.enabledRoles === undefined) {
+        return reply.status(400).send({ error: "Nenhum recurso válido" });
+      }
+      matrix = await updateOrgRolePermissions(
+        auth.organizationId,
+        updates.map((u) => ({
+          role: u.role,
+          resource:
+            u.resource as import("../auth/permissions.js").PermissionResource,
+          level: u.level,
+        })),
+      );
+    } else {
+      matrix = await buildEffectivePermissionsMatrix(auth.organizationId);
+    }
 
     await auditFromAuth(auth, {
       action: AUDIT_ACTION.PERMISSIONS_UPDATE,
       entityType: AUDIT_ENTITY.OrganizationRolePermission,
       entityId: auth.organizationId,
-      metadata: { updateCount: updates.length },
+      metadata: {
+        updateCount: body.data.updates?.length ?? 0,
+        enabledRoles: body.data.enabledRoles,
+      },
     });
 
     return matrix;
+  });
+
+  app.get("/profiles", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    return listOrgProfiles(auth.organizationId);
+  });
+
+  app.post("/profiles", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+
+    const body = z
+      .object({
+        name: z.string().trim().min(1),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
+    }
+
+    try {
+      const created = await createOrgProfile(auth.organizationId, body.data);
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.CREATE,
+        entityType: AUDIT_ENTITY.OrganizationRolePermission,
+        entityId: created.id,
+        metadata: {
+          kind: "OrganizationProfile",
+          name: created.name,
+          key: created.key,
+        },
+      });
+      return created;
+    } catch (e) {
+      if (e instanceof OrgProfileError) {
+        return reply.status(400).send({ error: e.message });
+      }
+      throw e;
+    }
+  });
+
+  app.patch("/profiles/:id", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+
+    const body = z
+      .object({
+        name: z.string().trim().min(1).optional(),
+        enabled: z.boolean().optional(),
+        hasSellerProfile: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
+    }
+    if (
+      body.data.name === undefined &&
+      body.data.enabled === undefined &&
+      body.data.hasSellerProfile === undefined
+    ) {
+      return reply.status(400).send({ error: "Nenhuma alteração informada" });
+    }
+
+    try {
+      const updated = await updateOrgProfile(
+        auth.organizationId,
+        id,
+        body.data,
+      );
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.UPDATE,
+        entityType: AUDIT_ENTITY.OrganizationRolePermission,
+        entityId: id,
+        metadata: {
+          kind: "OrganizationProfile",
+          fields: Object.keys(body.data),
+        },
+      });
+      return updated;
+    } catch (e) {
+      if (e instanceof OrgProfileError) {
+        return reply.status(400).send({ error: e.message });
+      }
+      throw e;
+    }
+  });
+
+  app.delete("/profiles/:id", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+
+    try {
+      await deleteOrgProfile(auth.organizationId, id);
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.DELETE,
+        entityType: AUDIT_ENTITY.OrganizationRolePermission,
+        entityId: id,
+        metadata: { kind: "OrganizationProfile" },
+      });
+      return { ok: true };
+    } catch (e) {
+      if (e instanceof OrgProfileError) {
+        return reply.status(400).send({ error: e.message });
+      }
+      throw e;
+    }
   });
 
   app.get("/audit-logs", async (req) => {
@@ -1630,6 +2250,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         outboundOperationId: z.string().nullable().optional(),
         stockQty: z.number().int().min(0).optional(),
         blockSaleWhenOutOfStock: z.boolean().optional(),
+        priceTableId: z.string().optional(),
         ...productCadastroFieldsSchema,
       })
       .safeParse(req.body);
@@ -1650,6 +2271,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     );
     if (!supplierOk)
       return reply.status(400).send({ error: "Fornecedor inválido" });
+
+    if (body.data.priceTableId) {
+      const tableOk = await prisma.priceTable.findFirst({
+        where: {
+          id: body.data.priceTableId,
+          organizationId: auth.organizationId,
+        },
+      });
+      if (!tableOk)
+        return reply.status(400).send({ error: "Tabela de preço inválida" });
+    }
 
     const defs = await loadCategoryDefs(resolvedCatId, auth.organizationId);
     const attrsRaw = body.data.attributes ?? {};
@@ -1726,6 +2358,23 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         include: productRelationsInclude,
       });
 
+      if (body.data.priceTableId) {
+        await prisma.priceTableItem.upsert({
+          where: {
+            priceTableId_productId: {
+              priceTableId: body.data.priceTableId,
+              productId: created.id,
+            },
+          },
+          create: {
+            priceTableId: body.data.priceTableId,
+            productId: created.id,
+            price: body.data.basePrice,
+          },
+          update: { price: body.data.basePrice },
+        });
+      }
+
       const actor = await prisma.user.findUnique({
         where: { id: auth.sub },
         select: { matricula: true },
@@ -1751,10 +2400,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         action: AUDIT_ACTION.CREATE,
         entityType: AUDIT_ENTITY.Product,
         entityId: created.id,
-        metadata: { name: created.name, stockQty: initialQty },
+        metadata: {
+          name: created.name,
+          stockQty: initialQty,
+          priceTableId: body.data.priceTableId ?? null,
+        },
       });
 
-      return created;
+      return prisma.product.findFirstOrThrow({
+        where: { id: created.id },
+        include: productRelationsInclude,
+      });
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -1802,6 +2458,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         outboundOperationId: z.string().nullable().optional(),
         stockQty: z.number().int().min(0).optional(),
         blockSaleWhenOutOfStock: z.boolean().optional(),
+        priceTablePrices: z
+          .array(
+            z.object({
+              priceTableId: z.string().min(1),
+              price: z.number().nonnegative(),
+            }),
+          )
+          .optional(),
         ...productCadastroFieldsSchema,
       })
       .safeParse(req.body);
@@ -1959,13 +2623,53 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         },
         include: productRelationsInclude,
       });
+
+      if (body.data.priceTablePrices && body.data.priceTablePrices.length > 0) {
+        const tableIds = body.data.priceTablePrices.map((p) => p.priceTableId);
+        const tables = await prisma.priceTable.findMany({
+          where: {
+            id: { in: tableIds },
+            organizationId: auth.organizationId,
+          },
+          select: { id: true },
+        });
+        const okIds = new Set(tables.map((t) => t.id));
+        const invalid = tableIds.filter((tid) => !okIds.has(tid));
+        if (invalid.length > 0) {
+          return reply
+            .status(400)
+            .send({ error: "Tabela de preço inválida" });
+        }
+        await prisma.$transaction(
+          body.data.priceTablePrices.map((row) =>
+            prisma.priceTableItem.upsert({
+              where: {
+                priceTableId_productId: {
+                  priceTableId: row.priceTableId,
+                  productId: id,
+                },
+              },
+              create: {
+                priceTableId: row.priceTableId,
+                productId: id,
+                price: row.price,
+              },
+              update: { price: row.price },
+            }),
+          ),
+        );
+      }
+
       await auditFromAuth(auth, {
         action: AUDIT_ACTION.UPDATE,
         entityType: AUDIT_ENTITY.Product,
         entityId: id,
         metadata: { name: updated.name, fields: Object.keys(body.data) },
       });
-      return updated;
+      return prisma.product.findFirstOrThrow({
+        where: { id },
+        include: productRelationsInclude,
+      });
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -2276,6 +2980,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         email: true,
         name: true,
         role: true,
+        organizationProfileId: true,
+        organizationProfile: {
+          select: { id: true, name: true, key: true, baseRole: true },
+        },
         createdAt: true,
       },
       orderBy: [{ role: "asc" }, { name: "asc" }],
@@ -2291,7 +2999,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         email: z.string().email(),
         password: z.string().min(6),
         name: z.string().min(1),
-        role: z.enum(["ADMIN", "MANAGER"]),
+        role: z.enum(["ADMIN", "MANAGER"]).optional(),
+        organizationProfileId: z.string().min(1).nullable().optional(),
       })
       .safeParse(req.body);
     if (!body.success)
@@ -2299,9 +3008,47 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         .status(400)
         .send({ error: "Dados inválidos", details: body.error.flatten() });
 
+    const entUsers = await getOrgEntitlements(auth.organizationId);
+    if (entUsers.limits.maxUsers != null) {
+      const n = await countOrgUsers(auth.organizationId);
+      if (n >= entUsers.limits.maxUsers) {
+        return reply.status(403).send({
+          error: `Seu plano permite no máximo ${entUsers.limits.maxUsers} usuário(s)`,
+          code: "PLAN_LIMIT_USERS",
+          planId: entUsers.planId,
+          limit: entUsers.limits.maxUsers,
+        });
+      }
+    }
+
     const email = body.data.email.toLowerCase();
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) return reply.status(409).send({ error: "Email já cadastrado" });
+
+    let role: "ADMIN" | "MANAGER" = body.data.role ?? "MANAGER";
+    let organizationProfileId: string | null =
+      body.data.organizationProfileId ?? null;
+
+    if (organizationProfileId) {
+      const profile = await prisma.organizationProfile.findFirst({
+        where: {
+          id: organizationProfileId,
+          organizationId: auth.organizationId,
+          enabled: true,
+        },
+        select: { id: true, baseRole: true },
+      });
+      if (!profile) {
+        return reply.status(400).send({ error: "Perfil personalizado inválido" });
+      }
+      // Perfil custom: User.role técnico fica MANAGER; permissões vêm do perfil.
+      role = "MANAGER";
+      organizationProfileId = profile.id;
+    } else if (!body.data.role) {
+      return reply.status(400).send({ error: "Informe o perfil" });
+    }
+
+    if (role === "ADMIN") organizationProfileId = null;
 
     const passwordHash = await hashPassword(body.data.password);
     const created = await prisma.user.create({
@@ -2309,14 +3056,19 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         email,
         passwordHash,
         name: body.data.name.trim(),
-        role: body.data.role,
+        role,
         organizationId: auth.organizationId,
+        organizationProfileId,
       },
       select: {
         id: true,
         email: true,
         name: true,
         role: true,
+        organizationProfileId: true,
+        organizationProfile: {
+          select: { id: true, name: true, key: true, baseRole: true },
+        },
         createdAt: true,
       },
     });
@@ -2332,10 +3084,293 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       action: AUDIT_ACTION.CREATE,
       entityType: AUDIT_ENTITY.User,
       entityId: created.id,
-      metadata: { email: created.email, role: created.role },
+      metadata: {
+        email: created.email,
+        role: created.role,
+        organizationProfileId: created.organizationProfileId,
+      },
     });
 
     return created;
+  });
+
+  async function countOrgAdmins(organizationId: string): Promise<number> {
+    return prisma.user.count({
+      where: { organizationId, role: "ADMIN" },
+    });
+  }
+
+  async function findStaffUser(organizationId: string, id: string) {
+    return prisma.user.findFirst({
+      where: {
+        id,
+        organizationId,
+        role: { in: ["ADMIN", "MANAGER"] },
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        organizationProfileId: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  app.post("/users/batch-delete", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+
+    const body = z
+      .object({ ids: z.array(z.string().min(1)).min(1).max(100) })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const ids = [...new Set(body.data.ids)];
+    if (ids.includes(auth.sub)) {
+      return reply
+        .status(400)
+        .send({ error: "Não é possível excluir a própria conta" });
+    }
+
+    const targets = await prisma.user.findMany({
+      where: {
+        organizationId: auth.organizationId,
+        id: { in: ids },
+        role: { in: ["ADMIN", "MANAGER"] },
+      },
+      select: { id: true, email: true, role: true },
+    });
+    if (targets.length !== ids.length) {
+      return reply
+        .status(400)
+        .send({ error: "Um ou mais usuários não foram encontrados" });
+    }
+
+    const adminTargets = targets.filter((t) => t.role === "ADMIN").length;
+    if (
+      adminTargets > 0 &&
+      (await countOrgAdmins(auth.organizationId)) <= adminTargets
+    ) {
+      return reply
+        .status(400)
+        .send({ error: "Não é possível excluir todos os administradores" });
+    }
+
+    await prisma.user.deleteMany({
+      where: { organizationId: auth.organizationId, id: { in: ids } },
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.DELETE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: auth.organizationId,
+      metadata: {
+        batch: true,
+        count: targets.length,
+        emails: targets.map((t) => t.email),
+      },
+    });
+    return { deleted: targets.length };
+  });
+
+  app.patch("/users/batch", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+
+    const body = z
+      .object({
+        ids: z.array(z.string().min(1)).min(1).max(100),
+        role: z.enum(["ADMIN", "MANAGER"]),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const ids = [...new Set(body.data.ids)];
+    const targets = await prisma.user.findMany({
+      where: {
+        organizationId: auth.organizationId,
+        id: { in: ids },
+        role: { in: ["ADMIN", "MANAGER"] },
+      },
+      select: { id: true, email: true, role: true },
+    });
+    if (targets.length !== ids.length) {
+      return reply
+        .status(400)
+        .send({ error: "Um ou mais usuários não foram encontrados" });
+    }
+
+    if (body.data.role === "MANAGER") {
+      const demotingAdmins = targets.filter((t) => t.role === "ADMIN").length;
+      if (
+        demotingAdmins > 0 &&
+        (await countOrgAdmins(auth.organizationId)) <= demotingAdmins
+      ) {
+        return reply
+          .status(400)
+          .send({ error: "Não é possível rebaixar todos os administradores" });
+      }
+    }
+
+    await prisma.user.updateMany({
+      where: { organizationId: auth.organizationId, id: { in: ids } },
+      data: { role: body.data.role, organizationProfileId: null },
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.UPDATE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: auth.organizationId,
+      metadata: {
+        batch: true,
+        role: body.data.role,
+        count: targets.length,
+        emails: targets.map((t) => t.email),
+      },
+    });
+    return { updated: targets.length, role: body.data.role };
+  });
+
+  app.patch("/users/:id", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+
+    const body = z
+      .object({
+        email: z.string().email().optional(),
+        password: z.string().min(6).optional(),
+        name: z.string().min(1).optional(),
+        role: z.enum(["ADMIN", "MANAGER"]).optional(),
+        organizationProfileId: z.string().min(1).nullable().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
+
+    const existing = await findStaffUser(auth.organizationId, id);
+    if (!existing)
+      return reply.status(404).send({ error: "Usuário não encontrado" });
+
+    const d = body.data;
+    let nextRole = d.role ?? existing.role;
+    let nextProfileId =
+      d.organizationProfileId === undefined
+        ? existing.organizationProfileId
+        : d.organizationProfileId;
+
+    if (d.organizationProfileId) {
+      const profile = await prisma.organizationProfile.findFirst({
+        where: {
+          id: d.organizationProfileId,
+          organizationId: auth.organizationId,
+          enabled: true,
+        },
+        select: { id: true, baseRole: true },
+      });
+      if (!profile) {
+        return reply.status(400).send({ error: "Perfil personalizado inválido" });
+      }
+      nextRole = "MANAGER";
+      nextProfileId = profile.id;
+    } else if (d.organizationProfileId === null || d.role) {
+      nextProfileId = null;
+    }
+
+    if (nextRole === "ADMIN") nextProfileId = null;
+
+    if (
+      nextRole === "MANAGER" &&
+      existing.role === "ADMIN" &&
+      (await countOrgAdmins(auth.organizationId)) <= 1
+    ) {
+      return reply
+        .status(400)
+        .send({ error: "Não é possível rebaixar o último administrador" });
+    }
+
+    if (d.email) {
+      const email = d.email.toLowerCase();
+      if (email !== existing.email) {
+        const taken = await prisma.user.findUnique({ where: { email } });
+        if (taken)
+          return reply.status(409).send({ error: "Email já cadastrado" });
+      }
+    }
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data: {
+        name: d.name?.trim(),
+        email: d.email?.toLowerCase(),
+        role: nextRole,
+        organizationProfileId: nextProfileId,
+        ...(d.password ? { passwordHash: await hashPassword(d.password) } : {}),
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        organizationProfileId: true,
+        organizationProfile: {
+          select: { id: true, name: true, key: true, baseRole: true },
+        },
+        createdAt: true,
+      },
+    });
+
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.UPDATE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: id,
+      metadata: {
+        fields: Object.keys(d),
+        email: updated.email,
+        role: updated.role,
+        organizationProfileId: updated.organizationProfileId,
+      },
+    });
+
+    return updated;
+  });
+
+  app.delete("/users/:id", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+
+    if (id === auth.sub) {
+      return reply
+        .status(400)
+        .send({ error: "Não é possível excluir a própria conta" });
+    }
+
+    const existing = await findStaffUser(auth.organizationId, id);
+    if (!existing)
+      return reply.status(404).send({ error: "Usuário não encontrado" });
+
+    if (
+      existing.role === "ADMIN" &&
+      (await countOrgAdmins(auth.organizationId)) <= 1
+    ) {
+      return reply
+        .status(400)
+        .send({ error: "Não é possível excluir o último administrador" });
+    }
+
+    await prisma.user.delete({ where: { id } });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.DELETE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: id,
+      metadata: { email: existing.email, role: existing.role },
+    });
+    return reply.status(204).send();
   });
 
   /* --- Equipes de vendas (admin) --- */
@@ -2465,6 +3500,19 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         .status(400)
         .send({ error: "Dados inválidos", details: body.error.flatten() });
 
+    const ent = await getOrgEntitlements(auth.organizationId);
+    if (ent.limits.maxSellers != null) {
+      const n = await countOrgSellers(auth.organizationId);
+      if (n >= ent.limits.maxSellers) {
+        return reply.status(403).send({
+          error: `Seu plano permite no máximo ${ent.limits.maxSellers} vendedor(es)`,
+          code: "PLAN_LIMIT_SELLERS",
+          planId: ent.planId,
+          limit: ent.limits.maxSellers,
+        });
+      }
+    }
+
     const { commissionType } = body.data;
     const commissionPercent =
       commissionType === "FIXED"
@@ -2507,6 +3555,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         include: { seller: true },
       });
 
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.CREATE,
+        entityType: AUDIT_ENTITY.User,
+        entityId: user.id,
+        metadata: {
+          sellerId: user.seller!.id,
+          email: user.email,
+          role: "SELLER",
+        },
+      });
+
       return {
         id: user.seller!.id,
         userId: user.id,
@@ -2530,6 +3589,146 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
+  const sellerInclude = {
+    user: {
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        matricula: true,
+      },
+    },
+    manager: { select: { id: true, name: true, email: true } },
+    team: { select: { id: true, name: true } },
+  } as const;
+
+  async function findOrgSeller(organizationId: string, id: string) {
+    return prisma.seller.findFirst({
+      where: { id, organizationId },
+      include: {
+        user: true,
+        ledTeam: { select: { id: true, name: true } },
+      },
+    });
+  }
+
+  app.post("/sellers/batch-delete", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({ ids: z.array(z.string().min(1)).min(1).max(100) })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const ids = [...new Set(body.data.ids)];
+    const targets = await prisma.seller.findMany({
+      where: { organizationId: auth.organizationId, id: { in: ids } },
+      include: {
+        user: { select: { id: true, email: true, name: true } },
+        ledTeam: { select: { id: true, name: true } },
+      },
+    });
+    if (targets.length !== ids.length) {
+      return reply
+        .status(400)
+        .send({ error: "Um ou mais vendedores não foram encontrados" });
+    }
+
+    const leaders = targets.filter((t) => t.ledTeam);
+    if (leaders.length > 0) {
+      return reply.status(400).send({
+        error: `Não é possível excluir líder(es) de equipe: ${leaders
+          .map((l) => l.user.name)
+          .join(", ")}. Transfira a liderança antes.`,
+      });
+    }
+
+    const userIds = targets.map((t) => t.userId);
+    await prisma.user.deleteMany({
+      where: { organizationId: auth.organizationId, id: { in: userIds } },
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.DELETE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: auth.organizationId,
+      metadata: {
+        batch: true,
+        sellers: true,
+        count: targets.length,
+        emails: targets.map((t) => t.user.email),
+      },
+    });
+    return { deleted: targets.length };
+  });
+
+  app.patch("/sellers/batch", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        ids: z.array(z.string().min(1)).min(1).max(100),
+        active: z.boolean().optional(),
+        managerUserId: z.string().min(1).nullable().optional(),
+        commissionType: sellerCommissionTypeSchema.optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const { ids: rawIds, ...patch } = body.data;
+    if (
+      patch.active === undefined &&
+      patch.managerUserId === undefined &&
+      patch.commissionType === undefined
+    ) {
+      return reply.status(400).send({ error: "Nenhuma alteração informada" });
+    }
+
+    const ids = [...new Set(rawIds)];
+    const targets = await prisma.seller.findMany({
+      where: { organizationId: auth.organizationId, id: { in: ids } },
+      select: { id: true },
+    });
+    if (targets.length !== ids.length) {
+      return reply
+        .status(400)
+        .send({ error: "Um ou mais vendedores não foram encontrados" });
+    }
+
+    if (patch.managerUserId !== undefined) {
+      const v = await validateManagerAssignment(
+        auth.organizationId,
+        patch.managerUserId,
+      );
+      if (!v.ok) return reply.status(400).send({ error: v.error });
+    }
+
+    await prisma.seller.updateMany({
+      where: { organizationId: auth.organizationId, id: { in: ids } },
+      data: {
+        ...(patch.active !== undefined ? { active: patch.active } : {}),
+        ...(patch.managerUserId !== undefined
+          ? { managerUserId: patch.managerUserId }
+          : {}),
+        ...(patch.commissionType !== undefined
+          ? { commissionType: patch.commissionType }
+          : {}),
+      },
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.UPDATE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: auth.organizationId,
+      metadata: {
+        batch: true,
+        sellers: true,
+        count: targets.length,
+        fields: Object.keys(patch),
+      },
+    });
+    return { updated: targets.length };
+  });
+
   app.patch("/sellers/:id", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
@@ -2539,6 +3738,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         commissionPercent: z.number().min(0).max(100).optional(),
         active: z.boolean().optional(),
         name: z.string().min(1).optional(),
+        email: z.string().email().optional(),
+        password: z.string().min(6).optional(),
         matricula: z.string().min(1).max(40).nullable().optional(),
         managerUserId: z.string().min(1).nullable().optional(),
       })
@@ -2546,10 +3747,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!body.success)
       return reply.status(400).send({ error: "Dados inválidos" });
 
-    const seller = await prisma.seller.findFirst({
-      where: { id, organizationId: auth.organizationId },
-      include: { user: true },
-    });
+    const seller = await findOrgSeller(auth.organizationId, id);
     if (!seller) return reply.status(404).send({ error: "Não encontrado" });
 
     if (body.data.managerUserId !== undefined) {
@@ -2558,6 +3756,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         body.data.managerUserId,
       );
       if (!v.ok) return reply.status(400).send({ error: v.error });
+    }
+
+    if (body.data.email) {
+      const email = body.data.email.toLowerCase();
+      if (email !== seller.user.email) {
+        const taken = await prisma.user.findUnique({ where: { email } });
+        if (taken)
+          return reply.status(409).send({ error: "Email já cadastrado" });
+      }
     }
 
     try {
@@ -2573,12 +3780,23 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
               : {}),
           },
         }),
-        ...(body.data.name || body.data.matricula !== undefined
+        ...(body.data.name ||
+        body.data.email ||
+        body.data.password ||
+        body.data.matricula !== undefined
           ? [
               prisma.user.update({
                 where: { id: seller.userId },
                 data: {
-                  ...(body.data.name ? { name: body.data.name } : {}),
+                  ...(body.data.name ? { name: body.data.name.trim() } : {}),
+                  ...(body.data.email
+                    ? { email: body.data.email.toLowerCase() }
+                    : {}),
+                  ...(body.data.password
+                    ? {
+                        passwordHash: await hashPassword(body.data.password),
+                      }
+                    : {}),
                   ...(body.data.matricula !== undefined
                     ? {
                         matricula: body.data.matricula?.trim() || null,
@@ -2601,13 +3819,53 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       throw e;
     }
 
-    return prisma.seller.findUnique({
-      where: { id },
-      include: {
-        user: { select: { id: true, email: true, name: true } },
-        manager: { select: { id: true, name: true, email: true } },
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.UPDATE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: seller.userId,
+      metadata: {
+        sellerId: id,
+        fields: Object.keys(body.data),
       },
     });
+
+    return prisma.seller.findUnique({
+      where: { id },
+      include: sellerInclude,
+    });
+  });
+
+  app.delete("/sellers/:id", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+
+    const seller = await findOrgSeller(auth.organizationId, id);
+    if (!seller) return reply.status(404).send({ error: "Não encontrado" });
+
+    if (seller.ledTeam) {
+      return reply.status(400).send({
+        error: `Não é possível excluir o líder da equipe “${seller.ledTeam.name}”. Transfira a liderança antes.`,
+      });
+    }
+
+    if (seller.userId === auth.sub) {
+      return reply
+        .status(400)
+        .send({ error: "Não é possível excluir a própria conta" });
+    }
+
+    await prisma.user.delete({ where: { id: seller.userId } });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.DELETE,
+      entityType: AUDIT_ENTITY.User,
+      entityId: seller.userId,
+      metadata: {
+        sellerId: id,
+        email: seller.user.email,
+        role: "SELLER",
+      },
+    });
+    return reply.status(204).send();
   });
 
   app.get("/sellers/:id/products", async (req, reply) => {
@@ -2667,12 +3925,20 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.get("/customers", async (req) => {
     const auth = req.auth!;
     const q = z
-      .object({ sellerId: z.string().optional() })
+      .object({
+        sellerId: z.string().optional(),
+        approvalStatus: z.enum(["APPROVED", "PENDING", "REJECTED"]).optional(),
+        status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
+      })
       .safeParse(req.query);
+    await maybeInactivateStaleCustomersForOrg(auth.organizationId);
     const where: Prisma.CustomerWhereInput = {
       organizationId: auth.organizationId,
     };
     if (q.success && q.data.sellerId) where.sellerId = q.data.sellerId;
+    if (q.success && q.data.approvalStatus)
+      where.approvalStatus = q.data.approvalStatus;
+    if (q.success && q.data.status) where.status = q.data.status;
     return prisma.customer.findMany({
       where,
       orderBy: { name: "asc" },
@@ -2681,6 +3947,185 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         region: { select: { id: true, code: true, name: true } },
       },
     });
+  });
+
+  app.patch("/customers/batch", async (req, reply) => {
+    const auth = req.auth!;
+    if (
+      auth.role === "MANAGER" &&
+      !(await canWriteEffective(auth.organizationId, auth.role, "customers"))
+    ) {
+      return reply
+        .status(403)
+        .send({ error: "Sem permissão para editar clientes" });
+    }
+    const body = z
+      .object({
+        ids: z.array(z.string().min(1)).min(1).max(100),
+        status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
+        creditBlocked: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const { ids: rawIds, ...patch } = body.data;
+    if (patch.status === undefined && patch.creditBlocked === undefined) {
+      return reply.status(400).send({ error: "Nenhuma alteração informada" });
+    }
+
+    const ids = [...new Set(rawIds)];
+    const targets = await prisma.customer.findMany({
+      where: { organizationId: auth.organizationId, id: { in: ids } },
+      select: { id: true, name: true },
+    });
+    if (targets.length !== ids.length) {
+      return reply
+        .status(400)
+        .send({ error: "Um ou mais clientes não foram encontrados" });
+    }
+
+    await prisma.customer.updateMany({
+      where: { organizationId: auth.organizationId, id: { in: ids } },
+      data: {
+        ...(patch.status !== undefined ? { status: patch.status } : {}),
+        ...(patch.creditBlocked !== undefined
+          ? { creditBlocked: patch.creditBlocked }
+          : {}),
+      },
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.UPDATE,
+      entityType: AUDIT_ENTITY.Customer,
+      entityId: auth.organizationId,
+      metadata: {
+        batch: true,
+        count: targets.length,
+        status: patch.status ?? null,
+        creditBlocked: patch.creditBlocked ?? null,
+        names: targets.map((t) => t.name).slice(0, 20),
+      },
+    });
+    return { updated: targets.length };
+  });
+
+  app.get("/customers/pending-approval", async (req) => {
+    const auth = req.auth!;
+    return prisma.customer.findMany({
+      where: {
+        organizationId: auth.organizationId,
+        approvalStatus: "PENDING",
+      },
+      orderBy: { createdAt: "asc" },
+      include: {
+        seller: { include: { user: { select: { name: true } } } },
+        region: { select: { id: true, code: true, name: true } },
+      },
+    });
+  });
+
+  app.post("/customers/:id/approve", async (req, reply) => {
+    const auth = req.auth!;
+    if (
+      auth.role === "MANAGER" &&
+      !(await canWriteEffective(auth.organizationId, auth.role, "customers"))
+    ) {
+      return reply
+        .status(403)
+        .send({ error: "Sem permissão para aprovar clientes" });
+    }
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({ note: z.string().trim().max(500).optional() })
+      .safeParse(req.body ?? {});
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const existing = await prisma.customer.findFirst({
+      where: { id, organizationId: auth.organizationId },
+    });
+    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+    if (existing.approvalStatus !== "PENDING") {
+      return reply
+        .status(400)
+        .send({ error: "Cliente não está aguardando validação" });
+    }
+
+    const updated = await prisma.customer.update({
+      where: { id },
+      data: {
+        approvalStatus: "APPROVED",
+        approvedAt: new Date(),
+        approvedByUserId: auth.sub,
+        approvalNote: body.data.note ?? null,
+        rejectedAt: null,
+        rejectionReason: null,
+      },
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.STATUS_CHANGE,
+      entityType: AUDIT_ENTITY.Customer,
+      entityId: updated.id,
+      metadata: {
+        approvalStatus: "APPROVED",
+        name: updated.name,
+        note: body.data.note ?? null,
+      },
+    });
+    return updated;
+  });
+
+  app.post("/customers/:id/reject", async (req, reply) => {
+    const auth = req.auth!;
+    if (
+      auth.role === "MANAGER" &&
+      !(await canWriteEffective(auth.organizationId, auth.role, "customers"))
+    ) {
+      return reply
+        .status(403)
+        .send({ error: "Sem permissão para rejeitar clientes" });
+    }
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        reason: z.string().trim().max(500).optional(),
+      })
+      .safeParse(req.body ?? {});
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const existing = await prisma.customer.findFirst({
+      where: { id, organizationId: auth.organizationId },
+    });
+    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+    if (existing.approvalStatus !== "PENDING") {
+      return reply
+        .status(400)
+        .send({ error: "Cliente não está aguardando validação" });
+    }
+
+    const updated = await prisma.customer.update({
+      where: { id },
+      data: {
+        approvalStatus: "REJECTED",
+        rejectedAt: new Date(),
+        rejectionReason: body.data.reason ?? null,
+        approvedAt: null,
+        approvedByUserId: null,
+        approvalNote: null,
+      },
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.STATUS_CHANGE,
+      entityType: AUDIT_ENTITY.Customer,
+      entityId: updated.id,
+      metadata: {
+        approvalStatus: "REJECTED",
+        name: updated.name,
+        reason: body.data.reason ?? null,
+      },
+    });
+    return updated;
   });
 
   app.post("/customers", async (req, reply) => {
@@ -2829,6 +4274,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         body.data.creditBlocked !== undefined
           ? body.data.creditBlocked
           : existing.creditBlocked,
+      status:
+        body.data.status !== undefined ? body.data.status : existing.status,
     };
 
     const complete = parseCompleteCustomerBody(merged);
@@ -2842,9 +4289,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     try {
       const updated = await prisma.customer.update({
         where: { id },
-        data: toCustomerPrismaData(complete.data, {
-          includeCredit: true,
-        }) as Prisma.CustomerUncheckedUpdateInput,
+        data: {
+          ...(toCustomerPrismaData(complete.data, {
+            includeCredit: true,
+          }) as Prisma.CustomerUncheckedUpdateInput),
+          ...(body.data.status !== undefined
+            ? { status: body.data.status }
+            : {}),
+        },
       });
       await auditFromAuth(auth, {
         action: AUDIT_ACTION.UPDATE,
@@ -2853,6 +4305,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         metadata: {
           name: updated.name,
           fields: Object.keys(body.data),
+          ...(body.data.status !== undefined
+            ? { status: body.data.status }
+            : {}),
         },
       });
       return updated;
@@ -3291,7 +4746,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   });
 
   /* --- Pedidos (visão admin) --- */
-  app.get("/orders", async (req) => {
+  app.get("/orders", async (req, reply) => {
     const auth = req.auth!;
     const q = z
       .object({
@@ -3299,7 +4754,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         status: z
           .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
           .optional(),
-        /** Número/código do pedido (número exato ou prefixo do id). */
+        situationId: z.string().optional(),
+        /** Número do pedido (apenas dígitos; inteiro positivo). */
         orderNumber: z.string().optional(),
         /** Alias de orderNumber. */
         q: z.string().optional(),
@@ -3317,15 +4773,22 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (q.success) {
       if (q.data.sellerId) where.sellerId = q.data.sellerId;
       if (q.data.status) where.status = q.data.status as OrderStatus;
+      if (q.data.situationId) where.situationId = q.data.situationId;
 
       const codeRaw = (q.data.orderNumber ?? q.data.q)?.trim();
       if (codeRaw) {
-        const digits = codeRaw.replace(/^#/, "").trim();
-        if (/^\d+$/.test(digits)) {
-          where.orderNumber = Number(digits);
-        } else if (digits) {
-          where.id = { startsWith: digits, mode: "insensitive" };
+        if (!/^\d+$/.test(codeRaw)) {
+          return reply.status(400).send({
+            error: "Número do pedido deve conter apenas dígitos",
+          });
         }
+        const n = Number(codeRaw);
+        if (!Number.isSafeInteger(n) || n < 1) {
+          return reply.status(400).send({
+            error: "Número do pedido deve ser um inteiro positivo",
+          });
+        }
+        where.orderNumber = n;
       }
 
       const customerAnd: Prisma.CustomerWhereInput[] = [];
@@ -3363,6 +4826,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       include: {
         seller: { include: { user: { select: { name: true, email: true } } } },
         customer: true,
+        situation: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            active: true,
+            mapsToCancel: true,
+          },
+        },
         items: { include: { product: true } },
         fiscalInvoices: {
           where: { direction: "OUTBOUND" },
@@ -3393,6 +4865,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       include: {
         seller: { include: { user: { select: { name: true, email: true } } } },
         customer: true,
+        situation: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            active: true,
+            mapsToCancel: true,
+          },
+        },
         items: { include: { product: true } },
       },
     });
@@ -3404,23 +4885,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
     const scoped = orderScopeWhere(auth);
-    const order = await prisma.order.findFirst({
-      where: { id, ...scoped },
-      include: {
-        seller: { include: { user: { select: { name: true, email: true } } } },
-        customer: true,
-        items: { include: { product: { select: { sku: true } } } },
-        organization: { select: { name: true, displayName: true } },
-      },
-    });
+    const order = await loadOrderForPdf({ id, ...scoped });
     if (!order) return reply.status(404).send({ error: "Não encontrado" });
     return sendOrderPdfReply(reply, order);
   });
 
   app.get("/orders/:id/pdf-80mm", async (req, reply) => {
     const auth = req.auth!;
-    const allowed = await canReadEffective(
+    const allowed = await canReadEffectiveForUser(
       auth.organizationId,
+      auth.sub,
       auth.role,
       "orders_print_80mm",
     );
@@ -3431,15 +4905,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     }
     const { id } = idParam.parse(req.params);
     const scoped = orderScopeWhere(auth);
-    const order = await prisma.order.findFirst({
-      where: { id, ...scoped },
-      include: {
-        seller: { include: { user: { select: { name: true, email: true } } } },
-        customer: true,
-        items: { include: { product: { select: { sku: true } } } },
-        organization: { select: { name: true, displayName: true } },
-      },
-    });
+    const order = await loadOrderForPdf({ id, ...scoped });
     if (!order) return reply.status(404).send({ error: "Não encontrado" });
     return sendOrderPdf80mmReply(reply, order);
   });
@@ -3474,7 +4940,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       );
     } catch (e) {
       if (e instanceof StockError)
-        return reply.status(400).send({ error: e.message });
+        return reply.status(400).send(stockErrorPayload(e));
       throw e;
     }
 
@@ -3502,6 +4968,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
 
     if (body.data.status === "CONFIRMED" && existing.status !== "CONFIRMED") {
+      void reactivateCustomerOnSale(updated.customerId);
       void notifySaleConfirmed({
         organizationId: auth.organizationId,
         order: {
@@ -3516,6 +4983,77 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         },
       });
     }
+
+    return updated;
+  });
+
+  app.patch("/orders/:id/situation", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const body = z
+      .object({
+        situationId: z.string().min(1).nullable(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const existing = await prisma.order.findFirst({
+      where: { id, organizationId: auth.organizationId },
+      select: { id: true, situationId: true },
+    });
+    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
+
+    const situationId = body.data.situationId;
+    if (situationId) {
+      const situation = await prisma.orderSituation.findFirst({
+        where: {
+          id: situationId,
+          organizationId: auth.organizationId,
+        },
+      });
+      if (!situation) {
+        return reply.status(400).send({ error: "Situação inválida" });
+      }
+      if (!situation.active && situation.id !== existing.situationId) {
+        return reply
+          .status(400)
+          .send({ error: "Situação inválida ou inativa" });
+      }
+    }
+
+    const updated = await prisma.order.update({
+      where: { id },
+      data: { situationId },
+      include: {
+        situation: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            active: true,
+            mapsToCancel: true,
+          },
+        },
+        customer: true,
+        seller: {
+          include: {
+            user: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.UPDATE,
+      entityType: AUDIT_ENTITY.Order,
+      entityId: id,
+      metadata: {
+        field: "situationId",
+        fromSituationId: existing.situationId,
+        toSituationId: situationId,
+      },
+    });
 
     return updated;
   });
@@ -3539,7 +5077,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       }
     } catch (e) {
       if (e instanceof StockError)
-        return reply.status(400).send({ error: e.message });
+        return reply.status(400).send(stockErrorPayload(e));
       throw e;
     }
 
@@ -3617,31 +5155,35 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         );
       }
 
-      const order = await prisma.order.create({
-        data: {
-          organizationId: auth.organizationId,
-          sellerId: body.data.sellerId,
-          customerId: body.data.customerId,
-          status: orderStatus,
-          totalAmount: sale.netTotal,
-          comboDiscountTotal: sale.comboDiscountTotal,
-          notes: body.data.notes,
-          items: {
-            create: sale.lines.map((l) => ({
-              productId: l.productId,
-              quantity: l.quantity,
-              unitPrice: l.unitPrice,
-              productName: l.productName,
-              commissionPercent: l.commissionPercent,
-              commissionAmount: l.commissionAmount,
-            })),
+      const order = await prisma.$transaction(async (tx) => {
+        const orderNumber = await nextOrderNumber(tx, auth.organizationId);
+        return tx.order.create({
+          data: {
+            organizationId: auth.organizationId,
+            sellerId: body.data.sellerId,
+            customerId: body.data.customerId,
+            status: orderStatus,
+            totalAmount: sale.netTotal,
+            comboDiscountTotal: sale.comboDiscountTotal,
+            notes: body.data.notes,
+            orderNumber,
+            items: {
+              create: sale.lines.map((l) => ({
+                productId: l.productId,
+                quantity: l.quantity,
+                unitPrice: l.unitPrice,
+                productName: l.productName,
+                commissionPercent: l.commissionPercent,
+                commissionAmount: l.commissionAmount,
+              })),
+            },
           },
-        },
-        include: {
-          items: true,
-          seller: { include: { user: true } },
-          customer: true,
-        },
+          include: {
+            items: true,
+            seller: { include: { user: true } },
+            customer: true,
+          },
+        });
       });
 
       if (order.status === "CONFIRMED") {
@@ -3651,6 +5193,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           "CONFIRMED",
           auth.sub,
         );
+        void reactivateCustomerOnSale(order.customerId);
         void notifySaleConfirmed({
           organizationId: auth.organizationId,
           order: {
@@ -3684,7 +5227,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       if (e instanceof OrderPricingError)
         return reply.status(400).send({ error: e.message });
       if (e instanceof StockError)
-        return reply.status(400).send({ error: e.message });
+        return reply.status(400).send(stockErrorPayload(e));
       throw e;
     }
   });
@@ -4286,6 +5829,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return buildDistributorInsights(auth.organizationId);
   });
 
+  /** Resumo matinal baseado em regras — 1 por org/dia (America/Sao_Paulo), lazy-generate. */
+  app.get("/insights/morning-brief", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({
+        error: "Resumo da manhã não disponível para líderes de equipe",
+      });
+    }
+    return getOrCreateMorningBrief(auth.organizationId);
+  });
+
   app.get("/reports/scorecard", async (req) => {
     const auth = req.auth!;
     const q = z
@@ -4392,6 +5946,23 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
+  app.get("/reports/fiscal-outbound-summary", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply
+        .status(403)
+        .send({ error: "Resumo fiscal disponível apenas para admin" });
+    }
+    const q = z
+      .object({ from: z.string().optional(), to: z.string().optional() })
+      .safeParse(req.query);
+    return buildFiscalOutboundSummary({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+    });
+  });
+
   app.get("/reports/visit-effectiveness", async (req) => {
     const auth = req.auth!;
     const q = z
@@ -4487,14 +6058,84 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
+  /** Preferências de widgets do painel (leitura para admin/gestor). */
+  app.get("/reports/home-dashboard-config", async (req) => {
+    const auth = req.auth!;
+    const org = await prisma.organization.findUnique({
+      where: { id: auth.organizationId },
+      select: { homeIndicators: true, homeIndicatorsLayout: true },
+    });
+    return {
+      homeIndicators: normalizeHomeIndicators(org?.homeIndicators),
+      homeIndicatorsLayout: normalizeHomeIndicatorsLayout(
+        org?.homeIndicatorsLayout,
+      ),
+    };
+  });
+
+  /** Ranking genérico para widgets configuráveis do painel. */
+  app.get("/reports/home-indicator", async (req, reply) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        key: z.enum(
+          HOME_INDICATOR_KEYS as unknown as [
+            HomeIndicatorKey,
+            ...HomeIndicatorKey[],
+          ],
+        ),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(20).optional(),
+      })
+      .safeParse(req.query);
+    if (!q.success)
+      return reply.status(400).send({ error: "Parâmetros inválidos" });
+
+    if (
+      q.data.key.startsWith("profit_") &&
+      isTeamLeaderAuth(auth)
+    ) {
+      return reply.status(403).send({
+        error: "Indicadores de rentabilidade disponíveis apenas para admin/gestor",
+      });
+    }
+
+    let sellerIds: string[] | undefined;
+    if (auth.role === "MANAGER" || isTeamLeaderAuth(auth)) {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+
+    return buildHomeIndicator({
+      organizationId: auth.organizationId,
+      key: q.data.key,
+      sellerIds,
+      from: q.data.from,
+      to: q.data.to,
+      limit: q.data.limit,
+    });
+  });
+
   /* --- Relatório PDF --- */
   app.get("/reports/customers.pdf", async (req, reply) => {
     const auth = req.auth!;
     if (!requireAdmin(reply, auth)) return;
+    const situationEnum = z.enum([
+      "blocked",
+      "ok",
+      "inactive",
+      "no_quarter_positivacao",
+    ]);
     const q = z
       .object({
         sellerId: z.string().optional(),
         customerId: z.string().optional(),
+        situation: situationEnum.optional(),
+        /** @deprecated use `situation` */
         creditStatus: z.enum(["blocked", "ok"]).optional(),
       })
       .passthrough()
@@ -4507,6 +6148,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       organizationId: auth.organizationId,
       sellerId: filters.sellerId,
       customerId: filters.customerId,
+      situation: filters.situation,
       creditStatus: filters.creditStatus,
       extras,
     });
@@ -4591,6 +6233,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         groupByOrder: z
           .union([z.literal("1"), z.literal("true"), z.literal("0")])
           .optional(),
+        /** Comma-separated or repeated query: orderIds=a,b or orderIds=a&orderIds=b */
+        orderIds: z.union([z.string(), z.array(z.string())]).optional(),
       })
       .passthrough()
       .safeParse(req.query);
@@ -4598,6 +6242,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const extras = readExtraParams(
       (q.success ? q.data : req.query) as Record<string, unknown>,
     );
+    const orderIdsRaw = filters.orderIds;
+    const orderIds = orderIdsRaw
+      ? (Array.isArray(orderIdsRaw) ? orderIdsRaw : orderIdsRaw.split(","))
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : undefined;
     const pdf = await buildOrderItemsPdf({
       organizationId: auth.organizationId,
       sellerId: filters.sellerId,
@@ -4607,6 +6257,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       status: filters.status,
       groupByOrder:
         filters.groupByOrder === "1" || filters.groupByOrder === "true",
+      orderIds: orderIds?.length ? orderIds : undefined,
       extras,
     });
     return reply
@@ -4626,6 +6277,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         supplierId: z.string().optional(),
         categoryId: z.string().optional(),
         q: z.string().optional(),
+        productIds: z.string().optional(),
       })
       .passthrough()
       .safeParse(req.query);
@@ -4633,11 +6285,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const extras = readExtraParams(
       (q.success ? q.data : req.query) as Record<string, unknown>,
     );
+    const productIds = filters.productIds
+      ?.split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
     const pdf = await buildStockPdf({
       organizationId: auth.organizationId,
       supplierId: filters.supplierId,
       categoryId: filters.categoryId,
       q: filters.q,
+      productIds: productIds?.length ? productIds : undefined,
       extras,
     });
     return reply
@@ -4697,7 +6354,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     for (const o of orders) {
       const amount = decToNum(o.totalAmount);
       sum += amount;
-      doc.fontSize(12).text(`Pedido ${o.id.slice(0, 8)}… — ${o.status}`, {
+      doc.fontSize(12).text(`Pedido ${orderCode(o)} — ${o.status}`, {
         continued: false,
       });
       doc

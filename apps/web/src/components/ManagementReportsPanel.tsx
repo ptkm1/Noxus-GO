@@ -305,6 +305,40 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
     staleTime: 45_000,
   });
 
+  const fiscalSummaryQ = useQuery({
+    queryKey: [
+      "admin",
+      "reports",
+      "fiscal-outbound-summary",
+      range.from,
+      range.to,
+    ],
+    queryFn: () =>
+      apiFetch<{
+        counts: {
+          drafts: number;
+          authorized: number;
+          rejected: number;
+          transmitted: number;
+          queuePending: number;
+          queueFailed: number;
+        };
+        recentRejected: Array<{
+          id: string;
+          number: number | null;
+          series: number | null;
+          rejectionReason: string | null;
+          updatedAt: string;
+          orderNumber: number | null;
+          customerName: string;
+        }>;
+      }>(
+        `/admin/reports/fiscal-outbound-summary?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`,
+      ),
+    enabled: tab === "fiscal" && props.showAdminOnly,
+    staleTime: 45_000,
+  });
+
   const visitsQ = useQuery({
     queryKey: ["admin", "reports", "visits", range.from, range.to],
     queryFn: () =>
@@ -889,6 +923,79 @@ export function ManagementReportsPanel(props: { showAdminOnly: boolean }) {
       )}
       {tab === "credito" && creditQ.isLoading && (
         <p className="text-muted-foreground">Carregando…</p>
+      )}
+
+      {tab === "fiscal" && fiscalSummaryQ.data && (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold">Fila e rejeições NF-e</h2>
+            <Link
+              to="/faturamento"
+              className="text-sm text-primary hover:underline"
+            >
+              Ir para Faturamento
+            </Link>
+          </div>
+          <KpiCards
+            items={[
+              {
+                label: "Rascunhos",
+                value: String(fiscalSummaryQ.data.counts.drafts),
+              },
+              {
+                label: "Autorizadas",
+                value: String(fiscalSummaryQ.data.counts.authorized),
+              },
+              {
+                label: "Rejeitadas",
+                value: String(fiscalSummaryQ.data.counts.rejected),
+              },
+              {
+                label: "Na fila / falhas",
+                value: `${fiscalSummaryQ.data.counts.queuePending} / ${fiscalSummaryQ.data.counts.queueFailed}`,
+                hint:
+                  fiscalSummaryQ.data.counts.transmitted > 0
+                    ? `${fiscalSummaryQ.data.counts.transmitted} aguardando SEFAZ`
+                    : undefined,
+              },
+            ]}
+          />
+          {fiscalSummaryQ.data.recentRejected.length > 0 ? (
+            <div className="rounded-xl border border-border bg-card">
+              <p className="border-b border-border px-4 py-3 text-sm font-medium">
+                Últimas rejeições
+              </p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="px-4">Nota</TableHead>
+                    <TableHead className="px-4">Cliente</TableHead>
+                    <TableHead className="px-4">Motivo</TableHead>
+                    <TableHead className="px-4">Quando</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {fiscalSummaryQ.data.recentRejected.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="px-4 py-2 font-mono text-xs">
+                        {r.series}/{r.number}
+                      </TableCell>
+                      <TableCell className="px-4 py-2">
+                        {r.customerName}
+                      </TableCell>
+                      <TableCell className="px-4 py-2 text-sm text-destructive">
+                        {(r.rejectionReason ?? "—").slice(0, 120)}
+                      </TableCell>
+                      <TableCell className="px-4 py-2 whitespace-nowrap text-xs">
+                        {new Date(r.updatedAt).toLocaleString("pt-BR")}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : null}
+        </section>
       )}
 
       {tab === "fiscal" && fiscalQ.data && (

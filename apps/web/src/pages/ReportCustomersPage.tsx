@@ -16,10 +16,20 @@ import { useState } from "react";
 type Seller = { id: string; user: { name: string } };
 type Customer = { id: string; name: string };
 
+const SITUATION_OPTIONS = [
+  { value: "ok", label: "Crédito OK" },
+  { value: "blocked", label: "Crédito bloqueado" },
+  { value: "inactive", label: "Inativo" },
+  {
+    value: "no_quarter_positivacao",
+    label: "Sem positivação no trimestre",
+  },
+];
+
 export function ReportCustomersPage() {
   const [sellerId, setSellerId] = useState("");
   const [customerId, setCustomerId] = useState("");
-  const [creditStatus, setCreditStatus] = useState("");
+  const [situation, setSituation] = useState("");
   const [extras, setExtras] = useState<ExtraFilterRow[]>([]);
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -36,7 +46,7 @@ export function ReportCustomersPage() {
   function clear() {
     setSellerId("");
     setCustomerId("");
-    setCreditStatus("");
+    setSituation("");
     setExtras([]);
     setErr(null);
   }
@@ -48,8 +58,13 @@ export function ReportCustomersPage() {
       const q = new URLSearchParams();
       if (sellerId) q.set("sellerId", sellerId);
       if (customerId) q.set("customerId", customerId);
-      if (creditStatus === "blocked" || creditStatus === "ok") {
-        q.set("creditStatus", creditStatus);
+      if (
+        situation === "blocked" ||
+        situation === "ok" ||
+        situation === "inactive" ||
+        situation === "no_quarter_positivacao"
+      ) {
+        q.set("situation", situation);
       }
       appendExtraFilters(q, extras);
       await downloadPdf(
@@ -94,13 +109,10 @@ export function ReportCustomersPage() {
       </ReportField>
       <ReportField label="Situação">
         <AppSelect
-          value={creditStatus}
-          onValueChange={setCreditStatus}
+          value={situation}
+          onValueChange={setSituation}
           emptyLabel="Todos"
-          options={[
-            { value: "ok", label: "Crédito OK" },
-            { value: "blocked", label: "Crédito bloqueado" },
-          ]}
+          options={SITUATION_OPTIONS}
         />
       </ReportField>
       <ReportField label="Formato">

@@ -1,4 +1,4 @@
-import { canRead } from "@pedidos/shared";
+import { canRead, planHasFeature } from "@pedidos/shared";
 import { QueryClientProvider } from "@tanstack/react-query";
 import {
   BrowserRouter,
@@ -12,7 +12,11 @@ import {
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { ConfirmProvider } from "./components/confirm";
 import { AppLogo } from "./components/layout/AppLogo";
-import { resourceForPath } from "./components/layout/navConfig";
+import {
+  planFeatureForPath,
+  resourceForPath,
+} from "./components/layout/navConfig";
+import { PlanFeatureGate } from "./components/PlanFeatureGate";
 import { PublicAuthLayout } from "./components/layout/PublicAuthLayout";
 import { AppNotificationsProvider } from "./lib/app-notifications";
 import { createAppQueryClient } from "./lib/query-client";
@@ -30,13 +34,12 @@ import { FaturamentoPage } from "./pages/FaturamentoPage";
 import { FiscalAccountsPayablePage } from "./pages/FiscalAccountsPayablePage";
 import { FiscalFixedExpensesPage } from "./pages/FiscalFixedExpensesPage";
 import { FiscalHubPage } from "./pages/FiscalHubPage";
-import { FiscalXmlPage } from "./pages/FiscalXmlPage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { OrderDetailPage } from "./pages/OrderDetailPage";
 import { OrdersPage } from "./pages/OrdersPage";
-import { PermissionsPage } from "./pages/PermissionsPage";
+import { PaymentConditionsPage } from "./pages/PaymentConditionsPage";
 import { PriceTablesPage } from "./pages/PriceTablesPage";
 import { ProductCategoriesPage } from "./pages/ProductCategoriesPage";
 import { ProductFormPage } from "./pages/ProductFormPage";
@@ -54,6 +57,7 @@ import { SellerTrackingPage } from "./pages/SellerTrackingPage";
 import { StockMovementsPage } from "./pages/StockMovementsPage";
 import { StockPage } from "./pages/StockPage";
 import { SuppliersPage } from "./pages/SuppliersPage";
+import { SystemSettingsPage } from "./pages/SystemSettingsPage";
 import { TeamsPage } from "./pages/TeamsPage";
 import { UsersPage } from "./pages/UsersPage";
 
@@ -111,20 +115,26 @@ function TeamLeaderRouteGuard() {
 
 function LegacyVendasRedirect() {
   const { orderId } = useParams<{ orderId?: string }>();
-  return (
-    <Navigate
-      to={orderId ? `/pedidos/${orderId}` : "/pedidos"}
-      replace
-    />
-  );
+  return <Navigate to={orderId ? `/pedidos/${orderId}` : "/pedidos"} replace />;
 }
 
-/** ADMIN/MANAGER: rota visível se canRead efetivo do recurso. */
+/** ADMIN/MANAGER: rota visível se canRead efetivo do recurso + feature do plano. */
 function PermissionRouteGuard() {
   const { user } = useAuth();
   const { pathname } = useLocation();
-  if (isWebTeamLeader(user) && user?.role === "SELLER") return <Outlet />;
   if (!user) return <Navigate to="/login" replace />;
+
+  const planFeature = planFeatureForPath(pathname);
+  if (planFeature) {
+    const hasFeature =
+      user.subscription?.features?.includes(planFeature) ??
+      planHasFeature(user.subscription?.planId, planFeature);
+    if (!hasFeature) {
+      return <PlanFeatureGate feature={planFeature} />;
+    }
+  }
+
+  if (isWebTeamLeader(user) && user?.role === "SELLER") return <Outlet />;
   const resource = resourceForPath(pathname);
   if (!resource) return <Outlet />;
   if (canRead(user.role, resource, user.permissions)) return <Outlet />;
@@ -200,17 +210,40 @@ function AppRoutes() {
             <Route path="estoque" element={<StockPage />} />
             <Route path="estoque/movimentos" element={<StockMovementsPage />} />
             <Route path="fornecedores" element={<SuppliersPage />} />
-            <Route path="fiscal" element={<FiscalHubPage />} />
             <Route
-              path="fiscal/despesas-fixas"
+              path="condicoes-pagamento"
+              element={<PaymentConditionsPage />}
+            />
+            <Route path="financeiro" element={<FiscalHubPage />} />
+            <Route
+              path="financeiro/despesas-fixas"
               element={<FiscalFixedExpensesPage />}
             />
             <Route
-              path="fiscal/contas-a-pagar"
+              path="financeiro/contas-a-pagar"
               element={<FiscalAccountsPayablePage />}
             />
-            <Route path="fiscal/xml" element={<FiscalXmlPage />} />
             <Route path="faturamento" element={<FaturamentoPage />} />
+            <Route
+              path="faturamento/xml"
+              element={<Navigate to="/faturamento" replace />}
+            />
+            <Route
+              path="fiscal"
+              element={<Navigate to="/financeiro" replace />}
+            />
+            <Route
+              path="fiscal/despesas-fixas"
+              element={<Navigate to="/financeiro/despesas-fixas" replace />}
+            />
+            <Route
+              path="fiscal/contas-a-pagar"
+              element={<Navigate to="/financeiro/contas-a-pagar" replace />}
+            />
+            <Route
+              path="fiscal/xml"
+              element={<Navigate to="/faturamento" replace />}
+            />
             <Route path="comissao" element={<CommissionHubPage />} />
             <Route path="comissao/faixas" element={<CommissionTiersPage />} />
             <Route path="comissao/metas" element={<CommissionGoalsPage />} />
@@ -227,7 +260,17 @@ function AppRoutes() {
             <Route path="equipes" element={<TeamsPage />} />
             <Route path="clientes" element={<CustomersPage />} />
             <Route path="notificacoes" element={<NotificationsPage />} />
-            <Route path="permissoes" element={<PermissionsPage />} />
+            <Route
+              path="permissoes"
+              element={
+                <Navigate to="/configuracoes?abrir=permissoes" replace />
+              }
+            />
+            <Route
+              path="auditoria"
+              element={<Navigate to="/configuracoes?abrir=auditoria" replace />}
+            />
+            <Route path="configuracoes" element={<SystemSettingsPage />} />
             <Route path="relatorios" element={<ReportsHubPage />} />
             <Route
               path="relatorios/clientes"

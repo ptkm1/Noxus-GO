@@ -10,21 +10,27 @@ import {
   orderStatusBadgeLabel,
   orderStatusDetailLabel,
 } from "@/lib/utils/order-status";
-import { FileText, Share2 } from "lucide-react-native";
+import { FileText, RotateCcw, Share2 } from "lucide-react-native";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 function orderCodeLabel(order: {
   orderNumber?: number | null;
-  id: string;
 }): string {
-  if (order.orderNumber != null) return `#${order.orderNumber}`;
-  return `#${order.id.slice(0, 8).toUpperCase()}`;
+  if (order.orderNumber != null) return String(order.orderNumber);
+  return "—";
 }
 
 export default function SaleDetailScreen() {
   const { colors } = useTheme();
-  const { order, isLoading, pdfPending, pdfErr, shareOrderPdf } =
-    useSaleDetailScreen();
+  const {
+    order,
+    isLoading,
+    pdfPending,
+    pdfErr,
+    shareOrderPdf,
+    canRepeatSale,
+    repeatThisSale,
+  } = useSaleDetailScreen();
 
   return (
     <SafeScreen variant="tab">
@@ -58,10 +64,25 @@ export default function SaleDetailScreen() {
           <ThemedText variant="bodySm" muted>
             {new Date(order.createdAt).toLocaleString("pt-BR")} ·{" "}
             {orderStatusDetailLabel(order.status)}
+            {order.situation?.name ? ` · ${order.situation.name}` : ""}
           </ThemedText>
 
           <ThemedCard style={styles.card}>
-            <ThemedText variant="caption" muted>
+            {order.situation?.name ? (
+              <>
+                <ThemedText variant="caption" muted>
+                  Situação
+                </ThemedText>
+                <ThemedText variant="titleSm" style={{ marginTop: 4 }}>
+                  {order.situation.name}
+                </ThemedText>
+              </>
+            ) : null}
+            <ThemedText
+              variant="caption"
+              muted
+              style={order.situation?.name ? { marginTop: 12 } : undefined}
+            >
               Cliente
             </ThemedText>
             <ThemedText variant="titleSm" style={{ marginTop: 4 }}>
@@ -137,6 +158,24 @@ export default function SaleDetailScreen() {
             <ThemedText variant="bodySm" style={{ color: colors.danger }}>
               {pdfErr}
             </ThemedText>
+          ) : null}
+
+          {canRepeatSale ? (
+            <ThemedButton
+              variant="outline"
+              style={styles.pdfBtn}
+              onPress={repeatThisSale}
+            >
+              <View style={styles.pdfBtnInner}>
+                <RotateCcw size={18} color={colors.primary} />
+                <ThemedText
+                  variant="body"
+                  style={{ color: colors.primary, fontWeight: "700" }}
+                >
+                  Repetir esta venda
+                </ThemedText>
+              </View>
+            </ThemedButton>
           ) : null}
 
           <ThemedButton

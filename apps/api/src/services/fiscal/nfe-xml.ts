@@ -33,10 +33,17 @@ function fmtMoney(n: number): string {
 function orderCode(order: {
   id: string;
   orderNumber: number | null;
-  createdAt: Date;
 }): string {
   if (order.orderNumber != null) return String(order.orderNumber);
-  return order.id.slice(0, 8).toUpperCase();
+  return "—";
+}
+
+function orderFileSlug(order: {
+  id: string;
+  orderNumber: number | null;
+}): string {
+  if (order.orderNumber != null) return String(order.orderNumber);
+  return order.id;
 }
 
 /** Número provisório da NF a partir do orderNumber ou hash estável do id. */
@@ -103,6 +110,7 @@ export async function buildNfeXml(
   const nNF = provisionalNnf(order);
   const dhEmi = order.createdAt.toISOString().replace(/\.\d{3}Z$/, "-03:00");
   const code = orderCode(order);
+  const fileSlug = orderFileSlug(order);
 
   let vProd = 0;
   const detXml = order.items
@@ -174,7 +182,7 @@ export async function buildNfeXml(
       <indFinal>1</indFinal>
       <indPres>1</indPres>
       <procEmi>0</procEmi>
-      <verProc>Pedidos-provisorio-1.0</verProc>
+      <verProc>PedixPro-1.0</verProc>
     </ide>
     <emit>
       <CNPJ>${esc(emitCnpj)}</CNPJ>
@@ -229,7 +237,7 @@ ${detXml}
 </NFe>
 `;
 
-  return { xml, filename: `nfe-${code}.xml` };
+  return { xml, filename: `nfe-${fileSlug}.xml` };
 }
 
 export async function listFiscalOrders(
@@ -283,4 +291,128 @@ export async function listFiscalOrders(
     sellerName: o.seller.user.name,
     itemCount: o._count.items,
   }));
+}
+
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(data: Buffer): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < data.length; i++) {
+    c = CRC_TABLE[(c ^ data[i]!) & 0xff]! ^ (c >>> 8);
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/** ZIP store (sem compressão) — suficiente para XML texto. */
+function zipStore(files: { name: string; content: string }[]): Buffer {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+
+  for (const file of files) {
+    const nameBuf = Buffer.from(file.name, "utf8");
+    const data = Buffer.from(file.content, "utf8");
+    const crc = crc32(data);
+
+    const local = Buffer.alloc(30 + nameBuf.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt16LE(0, 10);
+    local.writeUInt16LE(0, 12);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26);
+    local.writeUInt16LE(0, 28);
+    nameBuf.copy(local, 30);
+
+    const central = Buffer.alloc(46 + nameBuf.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(0, 10);
+    central.writeUInt16LE(0, 12);
+    central.writeUInt16LE(0, 14);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(nameBuf.length, 28);
+    central.writeUInt16LE(0, 30);
+    central.writeUInt16LE(0, 32);
+    central.writeUInt16LE(0, 34);
+    central.writeUInt16LE(0, 36);
+    central.writeUInt32LE(0, 38);
+    central.writeUInt32LE(offset, 42);
+    nameBuf.copy(central, 46);
+
+    locals.push(local, data);
+    centrals.push(central);
+    offset += local.length + data.length;
+  }
+
+  const centralDir = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(0, 4);
+  end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(files.length, 8);
+  end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(centralDir.length, 12);
+  end.writeUInt32LE(offset, 16);
+  end.writeUInt16LE(0, 20);
+
+  return Buffer.concat([...locals, centralDir, end]);
+}
+
+export async function buildNfeXmlZip(
+  organizationId: string,
+  filters: { from?: string; to?: string } = {},
+): Promise<{ zip: Buffer; filename: string; count: number }> {
+  const orders = await listFiscalOrders(organizationId, filters);
+  if (orders.length === 0) {
+    throw new NfeXmlError("Nenhum pedido confirmado no período.");
+  }
+
+  const usedNames = new Set<string>();
+  const files: { name: string; content: string }[] = [];
+
+  for (const order of orders) {
+    try {
+      const { xml, filename } = await buildNfeXml(organizationId, order.id);
+      let name = filename;
+      if (usedNames.has(name)) {
+        name = `nfe-${orderFileSlug(order)}-${order.id.slice(0, 6)}.xml`;
+      }
+      usedNames.add(name);
+      files.push({ name, content: xml });
+    } catch (e) {
+      if (e instanceof NfeXmlError) continue;
+      throw e;
+    }
+  }
+
+  if (files.length === 0) {
+    throw new NfeXmlError("Não foi possível gerar XML para os pedidos do período.");
+  }
+
+  const fromPart = filters.from?.replace(/-/g, "") || "inicio";
+  const toPart = filters.to?.replace(/-/g, "") || "fim";
+  return {
+    zip: zipStore(files),
+    filename: `nfe-xml-${fromPart}-${toPart}.zip`,
+    count: files.length,
+  };
 }

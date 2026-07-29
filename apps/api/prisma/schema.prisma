@@ -26,10 +26,44 @@ enum CreditPolicy {
   REQUIRE_APPROVAL
 }
 
+/// Como o app do vendedor envia pedidos ao servidor.
+enum OrderSyncMode {
+  AUTO
+  MANUAL
+}
+
+/// Cadastro de cliente pelo vendedor: imediato ou aguarda validação no escritório.
+enum CustomerRegistrationMode {
+  AUTO
+  REQUIRE_APPROVAL
+}
+
+/// Estado de validação do cadastro do cliente (escritório).
+enum CustomerApprovalStatus {
+  APPROVED
+  PENDING
+  REJECTED
+}
+
+/// Situação comercial do cliente (ativo / inativo por falta de movimento).
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
 enum CreditTitleStatus {
   OPEN
   PAID
   CANCELLED
+}
+
+/// Status da assinatura SaaS da organização.
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
 }
 
 /// Quem pode usufruir da promoção neste produto.
@@ -104,9 +138,22 @@ enum FiscalManifestationType {
   NAO_REALIZADA
 }
 
+/// Fila assíncrona de transmissão NF-e (sem Redis).
+enum FiscalTransmitJobStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
 enum CustomerDocumentType {
   CNPJ
   CPF
+}
+
+/// Tipo de operação comercial do pedido (digitação de vendas).
+enum OrderOperation {
+  SALE
 }
 
 /// Classificação comercial do produto (cadastro).
@@ -157,10 +204,26 @@ model Organization {
   creditPolicy     CreditPolicy       @default(WARN_ONLY)
   /// Desconto máximo extra do vendedor (%) quando o produto não define `maxSellerDiscountPercent`.
   defaultMaxSellerDiscountPercent Decimal @default(50) @db.Decimal(5, 2)
+  /// AUTO = tenta enviar na hora + auto-flush da fila; MANUAL = sempre fila local até sync manual.
+  orderSyncMode    OrderSyncMode      @default(AUTO)
+  /// Se false, vendedores só veem clientes atribuídos a eles (sem “carteira” / sellerId null).
+  sellerShowUnassignedCustomers Boolean @default(true)
+  /// AUTO = cadastro do vendedor já aprovado; REQUIRE_APPROVAL = fica pendente até o escritório validar.
+  customerRegistrationMode CustomerRegistrationMode @default(AUTO)
+  /// Se true, o vendedor pode editar quantidades de vendas na fila offline antes de sincronizar.
+  sellerCanEditQueuedSales Boolean @default(false)
+  /// Se true, clientes sem pedido confirmado há 6 meses passam a INACTIVE (reativam ao comprar).
+  autoInactivateCustomersAfterMonths Boolean @default(false)
+  /// Indicadores do painel home (até 3 chaves ordenadas). Null = defaults do shared.
+  homeIndicators   Json?
+  /// Layout dos indicadores na home: "stack" | "grid".
+  homeIndicatorsLayout String @default("stack")
   /// TODO futuro: CNPJ do emitente para NF-e real / certificado.
   cnpj             String?
   /// TODO futuro: Inscrição estadual do emitente.
   stateRegistration String?
+  /// Roles habilitados na org (JSON array de Role). ADMIN sempre presente.
+  enabledRoles     Json               @default("[\"ADMIN\",\"MANAGER\",\"SELLER\"]")
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   users            User[]
@@ -176,6 +239,8 @@ model Organization {
   sellerMonthlyGoals SellerMonthlyGoal[]
   customers        Customer[]
   orders           Order[]
+  paymentConditions PaymentCondition[]
+  orderSituations  OrderSituation[]
   customerCreditTitles CustomerCreditTitle[]
   sellerCustomerVisits SellerCustomerVisit[]
   sellerLiveLocations  SellerLiveLocation[]
@@ -190,11 +255,75 @@ model Organization {
   fixedExpenses      OperationalFixedExpense[]
   accountsPayables   AccountsPayable[]
   rolePermissions    OrganizationRolePermission[]
+  profiles           OrganizationProfile[]
   fiscalConfig          OrganizationFiscalConfig?
   fiscalNcms            FiscalNcm[]
   fiscalOperations      FiscalOperation[]
   fiscalInvoices        FiscalInvoice[]
+  fiscalTransmitJobs    FiscalTransmitJob[]
   productStocks         ProductStock[]
+  stockExpiryAlerts     StockExpiryAlert[]
+  dailyInsights         OrganizationDailyInsight[]
+  subscription          OrganizationSubscription?
+  checkoutIntents       CheckoutIntent[]
+}
+
+/// Resumo matinal baseado em regras (1 por org por dia civil America/Sao_Paulo).
+model OrganizationDailyInsight {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Dia civil (YYYY-MM-DD) no fuso America/Sao_Paulo, armazenado como Date.
+  date           DateTime     @db.Date
+  /// Array de tips: { id, severity, title, reason, href? }.
+  tips           Json
+  generatedAt    DateTime     @default(now())
+  /// Preenchido quando a notificação in-app do dia foi enviada.
+  notifiedAt     DateTime?
+
+  @@unique([organizationId, date])
+  @@index([organizationId, date])
+}
+
+/// Assinatura SaaS (1:1 com Organization). planId alinha com @pedidos/shared PLAN_CATALOG.
+model OrganizationSubscription {
+  id                     String             @id @default(cuid())
+  organizationId         String             @unique
+  organization           Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// starter | growth | pro
+  planId                 String             @default("starter")
+  status                 SubscriptionStatus @default(TRIAL)
+  /// none | stripe | other
+  provider               String             @default("none")
+  providerCustomerId     String?
+  providerSubscriptionId String?
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean            @default(false)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  @@index([status, planId])
+}
+
+/// Intent de checkout (landing → futuro Stripe/MP). Sem cobrança real ainda.
+model CheckoutIntent {
+  id             String        @id @default(cuid())
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  planId         String
+  email          String
+  companyName    String
+  phone          String?
+  document       String?
+  /// Payload serializado pronto para o provedor (snapshot).
+  checkoutPayload Json
+  status         String        @default("pending")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([email, createdAt])
+  @@index([status, createdAt])
 }
 
 /// Matriz de permissões por organização (defaults seedados; ADMIN edita via painel).
@@ -213,26 +342,61 @@ model OrganizationRolePermission {
   @@index([organizationId])
 }
 
+/// Perfil personalizado da organização (além dos roles de sistema).
+model OrganizationProfile {
+  id               String                           @id @default(cuid())
+  organizationId   String
+  organization     Organization                     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name             String
+  /// Matrix/API key, unique per org (e.g. custom_abc123)
+  key              String
+  enabled          Boolean                          @default(true)
+  /// Used as User.role when this profile is assigned; also seeds default permissions
+  baseRole         Role                             @default(MANAGER)
+  hasSellerProfile Boolean                          @default(false)
+  permissions      OrganizationProfilePermission[]
+  users            User[]
+  createdAt        DateTime                         @default(now())
+  updatedAt        DateTime                         @updatedAt
+
+  @@unique([organizationId, key])
+  @@index([organizationId, enabled])
+}
+
+model OrganizationProfilePermission {
+  id        String              @id @default(cuid())
+  profileId String
+  profile   OrganizationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  resource  String
+  level     AccessLevel
+
+  @@unique([profileId, resource])
+}
+
 model User {
-  id             String       @id @default(cuid())
-  email          String       @unique
-  passwordHash   String
-  name           String
+  id                    String               @id @default(cuid())
+  email                 String               @unique
+  passwordHash          String
+  name                  String
   /// Matrícula funcional (única por organização quando preenchida).
-  matricula      String?
-  role           Role
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  seller         Seller?
-  managedSellers Seller[]     @relation("SellerManager")
-  notifications  Notification[]
-  pushDevices    PushDevice[]
-  stockMovements StockMovement[]
-  auditLogs      AuditLog[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  matricula             String?
+  role                  Role
+  organizationId        String
+  organization          Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationProfileId String?
+  organizationProfile   OrganizationProfile? @relation(fields: [organizationProfileId], references: [id], onDelete: SetNull)
+  seller                Seller?
+  managedSellers        Seller[]             @relation("SellerManager")
+  notifications         Notification[]
+  pushDevices           PushDevice[]
+  stockMovements        StockMovement[]
+  auditLogs             AuditLog[]
+  approvedCustomers     Customer[]           @relation("CustomerApprovedBy")
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
 
   @@unique([organizationId, matricula])
+  @@index([organizationProfileId])
 }
 
 model Seller {
@@ -497,12 +661,28 @@ model ProductLot {
   expiresAt      DateTime
   qty            Int            @default(0)
   movements      StockMovement[]
+  expiryAlerts   StockExpiryAlert[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
   @@unique([productId, lotCode])
   @@index([organizationId, expiresAt])
   @@index([productId, expiresAt])
+}
+
+/// Dedupe de push de validade: um aviso por lote × limiar (30/7/3/0 dias).
+model StockExpiryAlert {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lotId          String
+  lot            ProductLot   @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  /// Limiar cruzado: 30 | 7 | 3 | 0 (vencido).
+  thresholdDays  Int
+  notifiedAt     DateTime     @default(now())
+
+  @@unique([lotId, thresholdDays])
+  @@index([organizationId, notifiedAt])
 }
 
 /// Ledger de movimentações de estoque.
@@ -735,8 +915,21 @@ model Customer {
   stateRegistration String?
   buyerName      String?
   notes          String?
+  /// Validação do cadastro (default APPROVED para clientes já existentes / criados pelo admin).
+  approvalStatus CustomerApprovalStatus @default(APPROVED)
+  approvalNote   String?
+  approvedAt     DateTime?
+  approvedByUserId String?
+  approvedBy     User?              @relation("CustomerApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  rejectedAt     DateTime?
+  rejectionReason String?
+  /// Situação comercial: ACTIVE / INACTIVE (inativação automática opcional por org).
+  status         CustomerStatus     @default(ACTIVE)
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
+
+  @@index([organizationId, approvalStatus])
+  @@index([organizationId, status])
 
   @@unique([organizationId, cnpj])
   @@unique([organizationId, cpf])
@@ -784,6 +977,48 @@ model SellerCustomerVisit {
   @@index([organizationId, checkedInAt])
 }
 
+/// Condição de pagamento cadastrada por organização (ex.: À vista, BL 7 dias).
+model PaymentCondition {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Código curto exibido na lista (ex.: "1", "8").
+  code           String
+  name           String
+  /// Prazo principal em dias (0 = à vista).
+  days           Int          @default(0)
+  active         Boolean      @default(true)
+  sortOrder      Int          @default(0)
+  orders         Order[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, code])
+  @@index([organizationId, active, sortOrder])
+}
+
+/// Situação operacional/logística do pedido (ex.: Enviado, Entregue) — distinta de OrderStatus (crédito/confirmação).
+model OrderSituation {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Código estável por org (ex.: SENT, DELIVERED).
+  code           String
+  name           String
+  sortOrder      Int          @default(0)
+  active         Boolean      @default(true)
+  /// Situações padrão criadas pelo sistema (não excluir; só desativar).
+  isSystem       Boolean      @default(false)
+  /// Indica que a situação representa cancelamento operacional (metadado; não altera OrderStatus).
+  mapsToCancel   Boolean      @default(false)
+  orders         Order[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, code])
+  @@index([organizationId, active, sortOrder])
+}
+
 model Order {
   id             String       @id @default(cuid())
   status         OrderStatus  @default(DRAFT)
@@ -793,6 +1028,12 @@ model Order {
   seller         Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   customerId     String?
   customer       Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  paymentConditionId String?
+  paymentCondition   PaymentCondition? @relation(fields: [paymentConditionId], references: [id], onDelete: SetNull)
+  /// Situação operacional (enviado/entregue/etc.) — independente de `status` financeiro.
+  situationId    String?
+  situation      OrderSituation? @relation(fields: [situationId], references: [id], onDelete: SetNull)
+  operation      OrderOperation @default(SALE)
   totalAmount    Decimal      @db.Decimal(14, 2)
   /// Total descontado por combos aplicados sobre as linhas (já refletido em `totalAmount`).
   comboDiscountTotal Decimal   @default(0) @db.Decimal(14, 2)
@@ -815,6 +1056,8 @@ model Order {
 
   @@unique([organizationId, orderNumber])
   @@index([organizationId, createdAt])
+  @@index([organizationId, paymentConditionId])
+  @@index([organizationId, situationId])
 }
 
 model OrderItem {
@@ -843,7 +1086,7 @@ model Notification {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String
   body      String
-  /// SALE_CONFIRMED | CREDIT_PENDING | GOAL_UPDATED | CREDIT_RESOLVED | …
+  /// SALE_CONFIRMED | CREDIT_PENDING | GOAL_UPDATED | CREDIT_RESOLVED | CUSTOMER_PENDING_APPROVAL | …
   type      String   @default("GENERIC")
   data      Json?
   read      Boolean  @default(false)
@@ -975,10 +1218,17 @@ model OrganizationFiscalConfig {
   nfeEnvironment            NfeEnvironment  @default(HOMOLOGATION)
   nfeSeries                 Int             @default(1)
   nfeLastNumber             Int             @default(0)
+  /// Série NFC-e (modelo 65) — arquitetura; emissão ainda não implementada.
+  nfceSeries                Int?
+  nfceLastNumber            Int?
+  /// Hook para contingência SVC (emissão SVC real ainda não implementada).
+  contingencyEnabled        Boolean         @default(false)
   certificatePfxEncrypted   Bytes?
   certificatePasswordEncrypted String?
   certificateExpiresAt      DateTime?
   certificateCnpj           String?
+  /// Último limiar de alerta de validade notificado (60|30|15|7|0). Null = nenhum.
+  certificateLastAlertThreshold Int?
   autoStockOnInboundInvoice Boolean         @default(false)
   /// Imagem da logo exibida no DANFE (PNG/JPEG/WebP).
   danfeLogoBytes            Bytes?
@@ -999,6 +1249,8 @@ model FiscalNcm {
   icmsRate         Decimal?     @db.Decimal(5, 2)
   pisRate          Decimal?     @db.Decimal(5, 2)
   cofinsRate       Decimal?     @db.Decimal(5, 2)
+  /// Alíquota FCP (%) quando aplicável; 0/null = sem FCP no XML.
+  fcpRate          Decimal?     @db.Decimal(5, 2)
   active           Boolean      @default(true)
   products         Product[]
   createdAt        DateTime     @default(now())
@@ -1032,6 +1284,17 @@ model FiscalInvoice {
   organization     Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   direction        FiscalDocumentDirection
   status           FiscalInvoiceStatus     @default(DRAFT)
+  /// 55 = NF-e; 65 = NFC-e (arquitetura — emissão 65 ainda não implementada).
+  documentModel    Int                     @default(55)
+  /// Tipo de emissão SEFAZ (1=normal). Contingência SVC: hooks apenas.
+  tpEmis           String                  @default("1")
+  contingencyJustification String?
+  /// Modalidade frete NF-e (0–9). Default 9 = sem frete.
+  modFrete         String                  @default("9")
+  freightAmount    Decimal?                @db.Decimal(14, 2)
+  volumeQty        Decimal?                @db.Decimal(14, 4)
+  grossWeightKg    Decimal?                @db.Decimal(14, 3)
+  netWeightKg      Decimal?                @db.Decimal(14, 3)
   orderId          String?
   order            Order?                  @relation(fields: [orderId], references: [id], onDelete: SetNull)
   supplierId       String?
@@ -1052,11 +1315,33 @@ model FiscalInvoice {
   manifestationType FiscalManifestationType?
   items            FiscalInvoiceItem[]
   events           FiscalInvoiceEvent[]
+  transmitJobs     FiscalTransmitJob[]
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 
   @@index([organizationId, direction, status])
   @@index([organizationId, orderId])
+}
+
+/// Job de transmissão/poll assíncrono da NF-e.
+model FiscalTransmitJob {
+  id             String                  @id @default(cuid())
+  organizationId String
+  organization   Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoiceId      String
+  invoice        FiscalInvoice           @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  status         FiscalTransmitJobStatus @default(PENDING)
+  attempts       Int                     @default(0)
+  nextRunAt      DateTime                @default(now())
+  lastError      String?
+  /// Recibo SEFAZ (nRec) quando cStat 103 — para poll posterior.
+  sefazReceipt   String?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  @@index([status, nextRunAt])
+  @@index([organizationId, status])
+  @@index([invoiceId])
 }
 
 model FiscalInvoiceItem {

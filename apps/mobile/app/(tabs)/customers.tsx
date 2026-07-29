@@ -140,14 +140,31 @@ export default function CustomersScreen() {
                 </ThemedText>
               </View>
             }
-            renderItem={({ item }) => (
-              <ClienteCard
-                nome={item.name}
-                endereco={customerSubtitle(item)}
-                inadimplente={Boolean(item.creditBlocked)}
-                onPress={() => openCustomer(item.id)}
-              />
-            )}
+            renderItem={({ item }) => {
+              const approval = item.approvalStatus;
+              const statusLabel =
+                approval === "PENDING"
+                  ? "Aguardando validação"
+                  : approval === "REJECTED"
+                    ? "Cadastro rejeitado"
+                    : null;
+              const statusTone =
+                approval === "PENDING"
+                  ? ("warning" as const)
+                  : approval === "REJECTED"
+                    ? ("danger" as const)
+                    : null;
+              return (
+                <ClienteCard
+                  nome={item.name}
+                  endereco={customerSubtitle(item)}
+                  inadimplente={Boolean(item.creditBlocked)}
+                  statusLabel={statusLabel}
+                  statusTone={statusTone}
+                  onPress={() => openCustomer(item.id)}
+                />
+              );
+            }}
           />
         </KeyboardAvoidingScreen>
       )}

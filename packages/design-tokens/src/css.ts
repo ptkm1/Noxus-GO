@@ -41,7 +41,7 @@ const cssVarMap: Record<string, string> = {
   "sidebar-ring": darkColorsOklch.sidebarRing,
 };
 
-/** Bloco :root para injetar em index.css (VendaForce dark). */
+/** Bloco :root para injetar em index.css (PedixPro dark). */
 export function cssRootBlock(selector = ":root"): string {
   const lines = Object.entries(cssVarMap).map(([k, v]) => `  --${k}: ${v};`);
   return `${selector} {\n${lines.join("\n")}\n  --radius: 0.625rem;\n}`;
