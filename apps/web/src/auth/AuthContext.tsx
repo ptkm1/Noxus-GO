@@ -34,11 +34,12 @@ export type User = {
   matricula?: string | null;
   role: Role;
   organizationId: string;
+  organizationProfileId?: string | null;
   sellerId: string | null;
   isTeamLeader?: boolean;
   teamId?: string | null;
   teamName?: string | null;
-  /** Permissões efetivas da org para o role atual (`/auth/me`). */
+  /** Permissões efetivas da org para o role/perfil atual (`/auth/me`). */
   permissions?: Partial<Record<PermissionResource, PermissionLevel>>;
   subscription?: UserSubscription;
 };

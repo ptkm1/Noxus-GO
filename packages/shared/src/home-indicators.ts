@@ -57,3 +57,33 @@ export function normalizeHomeIndicators(
   }
   return out.length > 0 ? out : [...DEFAULT_HOME_INDICATORS];
 }
+
+/** Layout dos widgets na home: empilhado ou grade. */
+export const HOME_INDICATORS_LAYOUTS = ["stack", "grid"] as const;
+
+export type HomeIndicatorsLayout = (typeof HOME_INDICATORS_LAYOUTS)[number];
+
+export const DEFAULT_HOME_INDICATORS_LAYOUT: HomeIndicatorsLayout = "stack";
+
+export const HOME_INDICATORS_LAYOUT_LABELS: Record<
+  HomeIndicatorsLayout,
+  string
+> = {
+  stack: "Empilhado (um abaixo do outro)",
+  grid: "Grade (lado a lado)",
+};
+
+export function isHomeIndicatorsLayout(
+  value: unknown,
+): value is HomeIndicatorsLayout {
+  return (
+    typeof value === "string" &&
+    (HOME_INDICATORS_LAYOUTS as readonly string[]).includes(value)
+  );
+}
+
+export function normalizeHomeIndicatorsLayout(
+  raw: unknown,
+): HomeIndicatorsLayout {
+  return isHomeIndicatorsLayout(raw) ? raw : DEFAULT_HOME_INDICATORS_LAYOUT;
+}

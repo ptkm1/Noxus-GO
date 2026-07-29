@@ -148,10 +148,18 @@ import { buildStockPdf } from "../services/reports/stock-pdf.js";
 import {
   adminPathToResource,
   buildEffectivePermissionsMatrix,
-  canReadEffective,
+  canReadEffectiveForUser,
   canWriteEffective,
+  setOrgEnabledRoles,
   updateOrgRolePermissions,
 } from "../services/role-permissions.js";
+import {
+  createOrgProfile,
+  deleteOrgProfile,
+  listOrgProfiles,
+  OrgProfileError,
+  updateOrgProfile,
+} from "../services/org-profiles.js";
 import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
 import {
   createSalesTeam,
@@ -375,8 +383,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       if (auth.role === "MANAGER" && method === "GET") {
         const resource = adminPathToResource(routePath);
         if (resource) {
-          const allowed = await canReadEffective(
+          const allowed = await canReadEffectiveForUser(
             auth.organizationId,
+            auth.sub,
             auth.role,
             resource,
           );
@@ -1403,6 +1412,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         cnpj: true,
       },
     },
+    priceTableItems: {
+      select: {
+        id: true,
+        priceTableId: true,
+        price: true,
+        priceTable: { select: { id: true, name: true } },
+      },
+    },
   } as const;
 
   /* --- Fornecedores --- */
@@ -1958,12 +1975,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         updates: z
           .array(
             z.object({
-              role: z.enum(["MANAGER", "SELLER", "SUPERVISOR", "ADMIN"]),
+              role: z.string().min(1),
               resource: z.string().min(1),
               level: z.enum(["none", "read", "write"]),
             }),
           )
-          .min(1),
+          .optional(),
+        enabledRoles: z
+          .array(z.enum(["ADMIN", "MANAGER", "SELLER", "SUPERVISOR"]))
+          .optional(),
       })
       .safeParse(req.body);
     if (!body.success) {
@@ -1972,31 +1992,164 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         .send({ error: "Dados inválidos", details: body.error.flatten() });
     }
 
-    const updates = body.data.updates.filter((u) =>
-      isPermissionResource(u.resource),
-    );
-    if (updates.length === 0) {
-      return reply.status(400).send({ error: "Nenhum recurso válido" });
+    if (
+      body.data.enabledRoles === undefined &&
+      (body.data.updates === undefined || body.data.updates.length === 0)
+    ) {
+      return reply
+        .status(400)
+        .send({ error: "Informe updates e/ou enabledRoles" });
     }
 
-    const matrix = await updateOrgRolePermissions(
-      auth.organizationId,
-      updates.map((u) => ({
-        role: u.role,
-        resource:
-          u.resource as import("../auth/permissions.js").PermissionResource,
-        level: u.level,
-      })),
-    );
+    if (body.data.enabledRoles !== undefined) {
+      await setOrgEnabledRoles(auth.organizationId, body.data.enabledRoles);
+    }
+
+    let matrix;
+    if (body.data.updates && body.data.updates.length > 0) {
+      const updates = body.data.updates.filter((u) =>
+        isPermissionResource(u.resource),
+      );
+      if (updates.length === 0 && body.data.enabledRoles === undefined) {
+        return reply.status(400).send({ error: "Nenhum recurso válido" });
+      }
+      matrix = await updateOrgRolePermissions(
+        auth.organizationId,
+        updates.map((u) => ({
+          role: u.role,
+          resource:
+            u.resource as import("../auth/permissions.js").PermissionResource,
+          level: u.level,
+        })),
+      );
+    } else {
+      matrix = await buildEffectivePermissionsMatrix(auth.organizationId);
+    }
 
     await auditFromAuth(auth, {
       action: AUDIT_ACTION.PERMISSIONS_UPDATE,
       entityType: AUDIT_ENTITY.OrganizationRolePermission,
       entityId: auth.organizationId,
-      metadata: { updateCount: updates.length },
+      metadata: {
+        updateCount: body.data.updates?.length ?? 0,
+        enabledRoles: body.data.enabledRoles,
+      },
     });
 
     return matrix;
+  });
+
+  app.get("/profiles", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    return listOrgProfiles(auth.organizationId);
+  });
+
+  app.post("/profiles", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+
+    const body = z
+      .object({
+        name: z.string().trim().min(1),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
+    }
+
+    try {
+      const created = await createOrgProfile(auth.organizationId, body.data);
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.CREATE,
+        entityType: AUDIT_ENTITY.OrganizationRolePermission,
+        entityId: created.id,
+        metadata: {
+          kind: "OrganizationProfile",
+          name: created.name,
+          key: created.key,
+        },
+      });
+      return created;
+    } catch (e) {
+      if (e instanceof OrgProfileError) {
+        return reply.status(400).send({ error: e.message });
+      }
+      throw e;
+    }
+  });
+
+  app.patch("/profiles/:id", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+
+    const body = z
+      .object({
+        name: z.string().trim().min(1).optional(),
+        enabled: z.boolean().optional(),
+        hasSellerProfile: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
+    }
+    if (
+      body.data.name === undefined &&
+      body.data.enabled === undefined &&
+      body.data.hasSellerProfile === undefined
+    ) {
+      return reply.status(400).send({ error: "Nenhuma alteração informada" });
+    }
+
+    try {
+      const updated = await updateOrgProfile(
+        auth.organizationId,
+        id,
+        body.data,
+      );
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.UPDATE,
+        entityType: AUDIT_ENTITY.OrganizationRolePermission,
+        entityId: id,
+        metadata: {
+          kind: "OrganizationProfile",
+          fields: Object.keys(body.data),
+        },
+      });
+      return updated;
+    } catch (e) {
+      if (e instanceof OrgProfileError) {
+        return reply.status(400).send({ error: e.message });
+      }
+      throw e;
+    }
+  });
+
+  app.delete("/profiles/:id", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+
+    try {
+      await deleteOrgProfile(auth.organizationId, id);
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.DELETE,
+        entityType: AUDIT_ENTITY.OrganizationRolePermission,
+        entityId: id,
+        metadata: { kind: "OrganizationProfile" },
+      });
+      return { ok: true };
+    } catch (e) {
+      if (e instanceof OrgProfileError) {
+        return reply.status(400).send({ error: e.message });
+      }
+      throw e;
+    }
   });
 
   app.get("/audit-logs", async (req) => {
@@ -2097,6 +2250,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         outboundOperationId: z.string().nullable().optional(),
         stockQty: z.number().int().min(0).optional(),
         blockSaleWhenOutOfStock: z.boolean().optional(),
+        priceTableId: z.string().optional(),
         ...productCadastroFieldsSchema,
       })
       .safeParse(req.body);
@@ -2117,6 +2271,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     );
     if (!supplierOk)
       return reply.status(400).send({ error: "Fornecedor inválido" });
+
+    if (body.data.priceTableId) {
+      const tableOk = await prisma.priceTable.findFirst({
+        where: {
+          id: body.data.priceTableId,
+          organizationId: auth.organizationId,
+        },
+      });
+      if (!tableOk)
+        return reply.status(400).send({ error: "Tabela de preço inválida" });
+    }
 
     const defs = await loadCategoryDefs(resolvedCatId, auth.organizationId);
     const attrsRaw = body.data.attributes ?? {};
@@ -2193,6 +2358,23 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         include: productRelationsInclude,
       });
 
+      if (body.data.priceTableId) {
+        await prisma.priceTableItem.upsert({
+          where: {
+            priceTableId_productId: {
+              priceTableId: body.data.priceTableId,
+              productId: created.id,
+            },
+          },
+          create: {
+            priceTableId: body.data.priceTableId,
+            productId: created.id,
+            price: body.data.basePrice,
+          },
+          update: { price: body.data.basePrice },
+        });
+      }
+
       const actor = await prisma.user.findUnique({
         where: { id: auth.sub },
         select: { matricula: true },
@@ -2218,10 +2400,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         action: AUDIT_ACTION.CREATE,
         entityType: AUDIT_ENTITY.Product,
         entityId: created.id,
-        metadata: { name: created.name, stockQty: initialQty },
+        metadata: {
+          name: created.name,
+          stockQty: initialQty,
+          priceTableId: body.data.priceTableId ?? null,
+        },
       });
 
-      return created;
+      return prisma.product.findFirstOrThrow({
+        where: { id: created.id },
+        include: productRelationsInclude,
+      });
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -2269,6 +2458,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         outboundOperationId: z.string().nullable().optional(),
         stockQty: z.number().int().min(0).optional(),
         blockSaleWhenOutOfStock: z.boolean().optional(),
+        priceTablePrices: z
+          .array(
+            z.object({
+              priceTableId: z.string().min(1),
+              price: z.number().nonnegative(),
+            }),
+          )
+          .optional(),
         ...productCadastroFieldsSchema,
       })
       .safeParse(req.body);
@@ -2426,13 +2623,53 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         },
         include: productRelationsInclude,
       });
+
+      if (body.data.priceTablePrices && body.data.priceTablePrices.length > 0) {
+        const tableIds = body.data.priceTablePrices.map((p) => p.priceTableId);
+        const tables = await prisma.priceTable.findMany({
+          where: {
+            id: { in: tableIds },
+            organizationId: auth.organizationId,
+          },
+          select: { id: true },
+        });
+        const okIds = new Set(tables.map((t) => t.id));
+        const invalid = tableIds.filter((tid) => !okIds.has(tid));
+        if (invalid.length > 0) {
+          return reply
+            .status(400)
+            .send({ error: "Tabela de preço inválida" });
+        }
+        await prisma.$transaction(
+          body.data.priceTablePrices.map((row) =>
+            prisma.priceTableItem.upsert({
+              where: {
+                priceTableId_productId: {
+                  priceTableId: row.priceTableId,
+                  productId: id,
+                },
+              },
+              create: {
+                priceTableId: row.priceTableId,
+                productId: id,
+                price: row.price,
+              },
+              update: { price: row.price },
+            }),
+          ),
+        );
+      }
+
       await auditFromAuth(auth, {
         action: AUDIT_ACTION.UPDATE,
         entityType: AUDIT_ENTITY.Product,
         entityId: id,
         metadata: { name: updated.name, fields: Object.keys(body.data) },
       });
-      return updated;
+      return prisma.product.findFirstOrThrow({
+        where: { id },
+        include: productRelationsInclude,
+      });
     } catch (e) {
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
@@ -2743,6 +2980,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         email: true,
         name: true,
         role: true,
+        organizationProfileId: true,
+        organizationProfile: {
+          select: { id: true, name: true, key: true, baseRole: true },
+        },
         createdAt: true,
       },
       orderBy: [{ role: "asc" }, { name: "asc" }],
@@ -2758,7 +2999,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         email: z.string().email(),
         password: z.string().min(6),
         name: z.string().min(1),
-        role: z.enum(["ADMIN", "MANAGER"]),
+        role: z.enum(["ADMIN", "MANAGER"]).optional(),
+        organizationProfileId: z.string().min(1).nullable().optional(),
       })
       .safeParse(req.body);
     if (!body.success)
@@ -2783,20 +3025,50 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) return reply.status(409).send({ error: "Email já cadastrado" });
 
+    let role: "ADMIN" | "MANAGER" = body.data.role ?? "MANAGER";
+    let organizationProfileId: string | null =
+      body.data.organizationProfileId ?? null;
+
+    if (organizationProfileId) {
+      const profile = await prisma.organizationProfile.findFirst({
+        where: {
+          id: organizationProfileId,
+          organizationId: auth.organizationId,
+          enabled: true,
+        },
+        select: { id: true, baseRole: true },
+      });
+      if (!profile) {
+        return reply.status(400).send({ error: "Perfil personalizado inválido" });
+      }
+      // Perfil custom: User.role técnico fica MANAGER; permissões vêm do perfil.
+      role = "MANAGER";
+      organizationProfileId = profile.id;
+    } else if (!body.data.role) {
+      return reply.status(400).send({ error: "Informe o perfil" });
+    }
+
+    if (role === "ADMIN") organizationProfileId = null;
+
     const passwordHash = await hashPassword(body.data.password);
     const created = await prisma.user.create({
       data: {
         email,
         passwordHash,
         name: body.data.name.trim(),
-        role: body.data.role,
+        role,
         organizationId: auth.organizationId,
+        organizationProfileId,
       },
       select: {
         id: true,
         email: true,
         name: true,
         role: true,
+        organizationProfileId: true,
+        organizationProfile: {
+          select: { id: true, name: true, key: true, baseRole: true },
+        },
         createdAt: true,
       },
     });
@@ -2812,7 +3084,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       action: AUDIT_ACTION.CREATE,
       entityType: AUDIT_ENTITY.User,
       entityId: created.id,
-      metadata: { email: created.email, role: created.role },
+      metadata: {
+        email: created.email,
+        role: created.role,
+        organizationProfileId: created.organizationProfileId,
+      },
     });
 
     return created;
@@ -2836,6 +3112,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         email: true,
         name: true,
         role: true,
+        organizationProfileId: true,
         createdAt: true,
       },
     });
@@ -2940,7 +3217,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
     await prisma.user.updateMany({
       where: { organizationId: auth.organizationId, id: { in: ids } },
-      data: { role: body.data.role },
+      data: { role: body.data.role, organizationProfileId: null },
     });
     await auditFromAuth(auth, {
       action: AUDIT_ACTION.UPDATE,
@@ -2967,6 +3244,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         password: z.string().min(6).optional(),
         name: z.string().min(1).optional(),
         role: z.enum(["ADMIN", "MANAGER"]).optional(),
+        organizationProfileId: z.string().min(1).nullable().optional(),
       })
       .safeParse(req.body);
     if (!body.success)
@@ -2979,8 +3257,34 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(404).send({ error: "Usuário não encontrado" });
 
     const d = body.data;
+    let nextRole = d.role ?? existing.role;
+    let nextProfileId =
+      d.organizationProfileId === undefined
+        ? existing.organizationProfileId
+        : d.organizationProfileId;
+
+    if (d.organizationProfileId) {
+      const profile = await prisma.organizationProfile.findFirst({
+        where: {
+          id: d.organizationProfileId,
+          organizationId: auth.organizationId,
+          enabled: true,
+        },
+        select: { id: true, baseRole: true },
+      });
+      if (!profile) {
+        return reply.status(400).send({ error: "Perfil personalizado inválido" });
+      }
+      nextRole = "MANAGER";
+      nextProfileId = profile.id;
+    } else if (d.organizationProfileId === null || d.role) {
+      nextProfileId = null;
+    }
+
+    if (nextRole === "ADMIN") nextProfileId = null;
+
     if (
-      d.role === "MANAGER" &&
+      nextRole === "MANAGER" &&
       existing.role === "ADMIN" &&
       (await countOrgAdmins(auth.organizationId)) <= 1
     ) {
@@ -3003,7 +3307,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       data: {
         name: d.name?.trim(),
         email: d.email?.toLowerCase(),
-        role: d.role,
+        role: nextRole,
+        organizationProfileId: nextProfileId,
         ...(d.password ? { passwordHash: await hashPassword(d.password) } : {}),
       },
       select: {
@@ -3011,6 +3316,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         email: true,
         name: true,
         role: true,
+        organizationProfileId: true,
+        organizationProfile: {
+          select: { id: true, name: true, key: true, baseRole: true },
+        },
         createdAt: true,
       },
     });
@@ -3023,6 +3332,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         fields: Object.keys(d),
         email: updated.email,
         role: updated.role,
+        organizationProfileId: updated.organizationProfileId,
       },
     });
 
@@ -4444,6 +4754,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         status: z
           .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
           .optional(),
+        situationId: z.string().optional(),
         /** Número do pedido (apenas dígitos; inteiro positivo). */
         orderNumber: z.string().optional(),
         /** Alias de orderNumber. */
@@ -4462,6 +4773,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (q.success) {
       if (q.data.sellerId) where.sellerId = q.data.sellerId;
       if (q.data.status) where.status = q.data.status as OrderStatus;
+      if (q.data.situationId) where.situationId = q.data.situationId;
 
       const codeRaw = (q.data.orderNumber ?? q.data.q)?.trim();
       if (codeRaw) {
@@ -4580,8 +4892,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/orders/:id/pdf-80mm", async (req, reply) => {
     const auth = req.auth!;
-    const allowed = await canReadEffective(
+    const allowed = await canReadEffectiveForUser(
       auth.organizationId,
+      auth.sub,
       auth.role,
       "orders_print_80mm",
     );
