@@ -147,7 +147,6 @@ export function summarizeMetadata(metadata: unknown): string {
       continue;
     }
     if (key === "fromStatus" || key === "toStatus") continue;
-    if (key === "source") continue;
     if (
       typeof v === "string" ||
       typeof v === "number" ||

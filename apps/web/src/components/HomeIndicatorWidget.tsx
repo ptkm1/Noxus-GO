@@ -61,9 +61,11 @@ const EMPTY_HINT: Record<HomeIndicatorKey, string> = {
 
 type Props = {
   indicatorKey: HomeIndicatorKey;
+  /** Layout compacto para grade lado a lado. */
+  compact?: boolean;
 };
 
-export function HomeIndicatorWidget({ indicatorKey }: Props) {
+export function HomeIndicatorWidget({ indicatorKey, compact = false }: Props) {
   const [preset, setPreset] = useState<PeriodPreset>("this_month");
   const range = useMemo(() => periodRange(preset), [preset]);
 
@@ -85,8 +87,8 @@ export function HomeIndicatorWidget({ indicatorKey }: Props) {
   });
 
   const isRefetching = q.isFetching && !q.isLoading;
-  const isProfit = (q.data?.metric ?? indicatorKey.startsWith("profit_")) ===
-    "profit";
+  const isProfit =
+    (q.data?.metric ?? indicatorKey.startsWith("profit_")) === "profit";
   const valueLabel = isProfit ? "Margem" : "Vendas";
 
   const data = (q.data?.rows ?? []).map((s) => ({
@@ -114,27 +116,52 @@ export function HomeIndicatorWidget({ indicatorKey }: Props) {
   }
 
   return (
-    <section className="surface-card mt-6 p-4 sm:p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">
+    <section
+      className={cn(
+        "surface-card h-full p-4",
+        compact ? "sm:p-4" : "mt-6 sm:p-6",
+      )}
+    >
+      <div
+        className={cn(
+          "flex flex-col gap-3",
+          !compact && "sm:flex-row sm:items-start sm:justify-between",
+        )}
+      >
+        <div className="min-w-0">
+          <h2
+            className={cn(
+              "font-semibold text-foreground",
+              compact ? "text-sm leading-snug" : "text-lg",
+            )}
+          >
             {HOME_INDICATOR_SHORT_LABELS[indicatorKey]}
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {isProfit
-              ? "Margem (receita − custo do produto) no período"
-              : "Vendas confirmadas no período"}
-            {subtitleParts.length > 0 ? ` · ${subtitleParts.join(" · ")}` : ""}
+          <p
+            className={cn(
+              "mt-1 text-muted-foreground",
+              compact ? "line-clamp-2 text-xs" : "text-sm",
+            )}
+          >
+            {compact
+              ? (subtitleParts[0] ??
+                (isProfit ? "Margem no período" : "Vendas no período"))
+              : `${
+                  isProfit
+                    ? "Margem (receita − custo do produto) no período"
+                    : "Vendas confirmadas no período"
+                }${subtitleParts.length > 0 ? ` · ${subtitleParts.join(" · ")}` : ""}`}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className={cn("flex flex-wrap gap-1.5", !compact && "gap-2")}>
           {PRESETS.map((p) => (
             <button
               key={p}
               type="button"
               onClick={() => setPreset(p)}
               className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                "rounded-md font-medium transition-colors",
+                compact ? "px-2 py-1 text-[10px]" : "px-3 py-1.5 text-xs",
                 preset === p
                   ? "bg-sidebar-primary text-sidebar-primary-foreground"
                   : "border border-border bg-card text-muted-foreground hover:bg-muted",
@@ -146,7 +173,9 @@ export function HomeIndicatorWidget({ indicatorKey }: Props) {
         </div>
       </div>
 
-      <div className="relative mt-6 h-64 w-full">
+      <div
+        className={cn("relative w-full", compact ? "mt-3 h-48" : "mt-6 h-64")}
+      >
         {q.isLoading ? (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -173,11 +202,11 @@ export function HomeIndicatorWidget({ indicatorKey }: Props) {
                 />
                 <XAxis
                   dataKey="name"
-                  tick={{ fontSize: 12 }}
+                  tick={{ fontSize: compact ? 10 : 12 }}
                   className="fill-muted-foreground"
                 />
                 <YAxis
-                  tick={{ fontSize: 12 }}
+                  tick={{ fontSize: compact ? 10 : 12 }}
                   className="fill-muted-foreground"
                   tickFormatter={(v: number) =>
                     v >= 1000 || v <= -1000
