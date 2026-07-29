@@ -19,6 +19,7 @@ import {
   evaluateOrderCredit,
   violationsToJson,
 } from "../services/credit.js";
+import { reactivateCustomerOnSale } from "../services/customer-status.js";
 import {
   customerBodySchema,
   customerPatchSchema,
@@ -110,6 +111,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         sellerShowUnassignedCustomers: true,
         customerRegistrationMode: true,
         sellerCanEditQueuedSales: true,
+        autoInactivateCustomersAfterMonths: true,
       },
     });
     if (!org)
@@ -119,6 +121,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       sellerShowUnassignedCustomers: org.sellerShowUnassignedCustomers,
       customerRegistrationMode: org.customerRegistrationMode,
       sellerCanEditQueuedSales: org.sellerCanEditQueuedSales,
+      autoInactivateCustomersAfterMonths:
+        org.autoInactivateCustomersAfterMonths,
     };
   });
 
@@ -510,6 +514,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
           "CONFIRMED",
           auth.sub,
         );
+        void reactivateCustomerOnSale(order.customerId);
         void notifySaleConfirmed({
           organizationId: auth.organizationId,
           order: {

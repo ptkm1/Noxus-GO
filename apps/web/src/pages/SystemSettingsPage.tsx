@@ -13,10 +13,19 @@ import {
 import {
   canRead,
   getPlanDefinition,
+  HOME_INDICATOR_KEYS,
+  HOME_INDICATOR_LABELS,
+  HOME_INDICATORS_LAYOUT_LABELS,
+  HOME_INDICATORS_LAYOUTS,
+  MAX_HOME_INDICATORS,
+  normalizeHomeIndicators,
+  normalizeHomeIndicatorsLayout,
   planHasFeature,
+  type HomeIndicatorKey,
+  type HomeIndicatorsLayout,
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, History, Shield } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp, History, Shield } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -51,6 +60,9 @@ type SystemSettings = {
   sellerShowUnassignedCustomers: boolean;
   customerRegistrationMode: CustomerRegistrationMode;
   sellerCanEditQueuedSales: boolean;
+  autoInactivateCustomersAfterMonths: boolean;
+  homeIndicators: HomeIndicatorKey[];
+  homeIndicatorsLayout: HomeIndicatorsLayout;
 };
 
 type SettingsModal = "permissions" | "audit" | null;
@@ -97,8 +109,42 @@ export function SystemSettingsPage() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin", "system-settings"] });
+      void qc.invalidateQueries({
+        queryKey: ["admin", "reports", "home-dashboard-config"],
+      });
     },
   });
+
+  const selectedIndicators = normalizeHomeIndicators(settings?.homeIndicators);
+  const indicatorsLayout = normalizeHomeIndicatorsLayout(
+    settings?.homeIndicatorsLayout,
+  );
+
+  function toggleIndicator(key: HomeIndicatorKey) {
+    const current = selectedIndicators;
+    const exists = current.includes(key);
+    let next: HomeIndicatorKey[];
+    if (exists) {
+      next = current.filter((k) => k !== key);
+      if (next.length === 0) return;
+    } else {
+      if (current.length >= MAX_HOME_INDICATORS) return;
+      next = [...current, key];
+    }
+    patch.mutate({ homeIndicators: next });
+  }
+
+  function moveIndicator(key: HomeIndicatorKey, direction: -1 | 1) {
+    const current = [...selectedIndicators];
+    const idx = current.indexOf(key);
+    if (idx < 0) return;
+    const target = idx + direction;
+    if (target < 0 || target >= current.length) return;
+    const tmp = current[idx]!;
+    current[idx] = current[target]!;
+    current[target] = tmp;
+    patch.mutate({ homeIndicators: current });
+  }
 
   useEffect(() => {
     const abrir = searchParams.get("abrir");
@@ -296,6 +342,150 @@ export function SystemSettingsPage() {
                 />
               </FormField>
             </FormGrid>
+          </FormSection>
+
+          <FormSection
+            title="Inativação automática de clientes"
+            description="Marca como inativo o cliente sem pedido confirmado há 6 meses. Ao comprar de novo, o status volta para ativo."
+          >
+            <label className="flex max-w-xl cursor-pointer items-start gap-3 text-sm text-foreground">
+              <Checkbox
+                className="mt-0.5"
+                checked={settings?.autoInactivateCustomersAfterMonths ?? false}
+                disabled={
+                  isLoading || patch.isPending || settings === undefined
+                }
+                onCheckedChange={(v) =>
+                  patch.mutate({
+                    autoInactivateCustomersAfterMonths: v === true,
+                  })
+                }
+              />
+              <span>
+                <span className="font-medium">
+                  Inativar clientes sem movimento há 6 meses
+                </span>
+                <span className="mt-0.5 block text-muted-foreground">
+                  Desligado por padrão. Quando ligado, a situação comercial do
+                  cliente passa a Inativo sem compra confirmada no período; uma
+                  nova venda confirmada reativa automaticamente.
+                </span>
+              </span>
+            </label>
+          </FormSection>
+
+          <FormSection
+            title="Indicadores do painel"
+            description={`Escolha até ${MAX_HOME_INDICATORS} indicadores exibidos na home. A ordem abaixo é a ordem no painel.`}
+          >
+            <div className="max-w-xl space-y-3">
+              <FormField
+                label="Tipo de visualização"
+                htmlFor="home-indicators-layout"
+                hint={
+                  indicatorsLayout === "grid"
+                    ? "Os gráficos ficam na mesma grade, lado a lado (até 3 colunas no desktop)."
+                    : "Cada gráfico ocupa a largura inteira, um abaixo do outro."
+                }
+              >
+                <AppSelect
+                  id="home-indicators-layout"
+                  value={indicatorsLayout}
+                  disabled={
+                    isLoading || patch.isPending || settings === undefined
+                  }
+                  options={HOME_INDICATORS_LAYOUTS.map((layout) => ({
+                    value: layout,
+                    label: HOME_INDICATORS_LAYOUT_LABELS[layout],
+                  }))}
+                  onValueChange={(v) =>
+                    patch.mutate({
+                      homeIndicatorsLayout: v as HomeIndicatorsLayout,
+                    })
+                  }
+                />
+              </FormField>
+              <p className="text-xs text-muted-foreground">
+                Selecionados: {selectedIndicators.length}/{MAX_HOME_INDICATORS}
+                {selectedIndicators.length >= MAX_HOME_INDICATORS
+                  ? " — desmarque um para escolher outro."
+                  : null}
+              </p>
+              <ul className="divide-y divide-border rounded-xl border border-border bg-card">
+                {HOME_INDICATOR_KEYS.map((key) => {
+                  const checked = selectedIndicators.includes(key);
+                  const orderIdx = selectedIndicators.indexOf(key);
+                  const atCap =
+                    !checked &&
+                    selectedIndicators.length >= MAX_HOME_INDICATORS;
+                  return (
+                    <li
+                      key={key}
+                      className="flex items-center gap-3 px-3 py-2.5"
+                    >
+                      <Checkbox
+                        checked={checked}
+                        disabled={
+                          isLoading ||
+                          patch.isPending ||
+                          settings === undefined ||
+                          atCap ||
+                          (checked && selectedIndicators.length <= 1)
+                        }
+                        onCheckedChange={() => toggleIndicator(key)}
+                      />
+                      <span className="min-w-0 flex-1 text-sm text-foreground">
+                        {HOME_INDICATOR_LABELS[key]}
+                        {checked ? (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            #{orderIdx + 1}
+                          </span>
+                        ) : null}
+                      </span>
+                      {checked ? (
+                        <span className="flex shrink-0 gap-0.5">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            disabled={
+                              orderIdx <= 0 ||
+                              patch.isPending ||
+                              isLoading
+                            }
+                            onClick={() => moveIndicator(key, -1)}
+                            aria-label="Mover para cima"
+                          >
+                            <ChevronUp className="size-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            disabled={
+                              orderIdx < 0 ||
+                              orderIdx >= selectedIndicators.length - 1 ||
+                              patch.isPending ||
+                              isLoading
+                            }
+                            onClick={() => moveIndicator(key, 1)}
+                            aria-label="Mover para baixo"
+                          >
+                            <ChevronDown className="size-4" />
+                          </Button>
+                        </span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="text-xs text-muted-foreground">
+                Rentabilidade = receita − custo do produto cadastrado. Itens sem
+                custo aparecem com custo zero e são sinalizados no gráfico.
+              </p>
+            </div>
           </FormSection>
 
           <FormSection

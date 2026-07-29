@@ -20,7 +20,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
-import type { CustomerFormValues, CustomerRecord } from "@pedidos/shared";
+import { cn } from "@/lib/utils";
+import type {
+  CustomerFormValues,
+  CustomerRecord,
+  CustomerStatus,
+} from "@pedidos/shared";
 import {
   canWrite,
   customerToForm,
@@ -31,11 +36,32 @@ import {
   validateCustomerForm,
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { CustomerFormFields } from "../components/CustomerFormFields";
 import { CustomerTitlesPanel } from "../components/CustomerTitlesPanel";
 import { apiFetch } from "../lib/api";
+
+const CUSTOMER_STATUS_OPTIONS: {
+  value: CustomerStatus;
+  label: string;
+}[] = [
+  { value: "ACTIVE", label: "Ativo" },
+  { value: "INACTIVE", label: "Inativo" },
+];
+
+function selectAllState(
+  allSelected: boolean,
+  someSelected: boolean,
+): boolean | "indeterminate" {
+  if (allSelected) return true;
+  if (someSelected) return "indeterminate";
+  return false;
+}
+
+function customerStatusLabel(status: CustomerStatus | undefined): string {
+  return status === "INACTIVE" ? "Inativo" : "Ativo";
+}
 
 type Seller = { id: string; user: { name: string } };
 
@@ -81,6 +107,21 @@ function approvalBadge(status: CustomerRecord["approvalStatus"]) {
     );
   }
   return null;
+}
+
+function statusBadge(status: CustomerRecord["status"]) {
+  if (status === "INACTIVE") {
+    return (
+      <span className="rounded bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-800">
+        Inativo
+      </span>
+    );
+  }
+  return (
+    <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-900">
+      Ativo
+    </span>
+  );
 }
 
 export function CustomersPage() {
@@ -169,8 +210,46 @@ export function CustomersPage() {
   const [sellerId, setSellerId] = useState("");
   const [creditLimitStr, setCreditLimitStr] = useState("");
   const [creditBlockedEdit, setCreditBlockedEdit] = useState(false);
+  const [statusEdit, setStatusEdit] = useState<CustomerStatus>("ACTIVE");
   const [geoLatStr, setGeoLatStr] = useState("");
   const [geoLngStr, setGeoLngStr] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const canEditCustomers = Boolean(
+    user &&
+      (user.role === "ADMIN" ||
+        canWrite(user.role, "customers", user.permissions)),
+  );
+
+  const customerIds = useMemo(() => customers.map((c) => c.id), [customers]);
+  const allSelected =
+    customerIds.length > 0 && customerIds.every((id) => selectedIds.has(id));
+  const someSelected =
+    customerIds.some((id) => selectedIds.has(id)) && !allSelected;
+  const hasSelection = selectedIds.size > 0;
+
+  useEffect(() => {
+    const valid = new Set(customerIds);
+    setSelectedIds((prev) => {
+      const next = new Set([...prev].filter((id) => valid.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [customerIds]);
+
+  function toggleOne(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleAll(checked: boolean) {
+    setSelectedIds(checked ? new Set(customerIds) : new Set());
+  }
 
   function patchForm(patch: Partial<CustomerFormValues>) {
     setForm((prev) => ({ ...prev, ...patch }));
@@ -183,6 +262,7 @@ export function CustomersPage() {
     setSellerId("");
     setCreditLimitStr("");
     setCreditBlockedEdit(false);
+    setStatusEdit("ACTIVE");
     setGeoLatStr("");
     setGeoLngStr("");
   }
@@ -197,6 +277,7 @@ export function CustomersPage() {
     setForm(customerToForm(c));
     setSellerId(c.sellerId ?? "");
     setCreditBlockedEdit(Boolean(c.creditBlocked));
+    setStatusEdit(c.status === "INACTIVE" ? "INACTIVE" : "ACTIVE");
     setCreditLimitStr(
       c.creditLimit != null && c.creditLimit !== ""
         ? String(Number(c.creditLimit as string))
@@ -274,6 +355,7 @@ export function CustomersPage() {
                 ? null
                 : Number(creditLimitStr.replace(",", ".")),
             creditBlocked: creditBlockedEdit,
+            status: statusEdit,
             ...geo,
           }),
         }),
@@ -298,6 +380,53 @@ export function CustomersPage() {
     onSuccess: () =>
       void qc.invalidateQueries({ queryKey: ["admin", "customers"] }),
   });
+
+  const batchPatch = useMutation({
+    mutationFn: (body: {
+      ids: string[];
+      status?: CustomerStatus;
+      creditBlocked?: boolean;
+    }) =>
+      apiFetch<{ updated: number }>("/admin/customers/batch", {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      setActionError(null);
+      setBulkStatus("");
+      setSelectedIds(new Set());
+      void qc.invalidateQueries({ queryKey: ["admin", "customers"] });
+    },
+    onError: (err) => {
+      setBulkStatus("");
+      setActionError(
+        err instanceof Error ? err.message : "Erro ao atualizar clientes",
+      );
+    },
+  });
+
+  const batchBusy = batchPatch.isPending;
+
+  async function applyBatchStatus(status: CustomerStatus) {
+    if (!canEditCustomers || !hasSelection || batchBusy) return;
+    const ok = await confirm({
+      title: `Alterar status de ${selectedIds.size} cliente(s)?`,
+      description: `A situação comercial será alterada para “${customerStatusLabel(status)}”.`,
+      confirmLabel: "Alterar status",
+      tone: status === "INACTIVE" ? "destructive" : "default",
+    });
+    if (!ok) {
+      setBulkStatus("");
+      return;
+    }
+    setBulkStatus(status);
+    batchPatch.mutate({ ids: [...selectedIds], status });
+  }
+
+  function applyBatchCreditBlocked(blocked: boolean) {
+    if (!canEditCustomers || !hasSelection || batchBusy) return;
+    batchPatch.mutate({ ids: [...selectedIds], creditBlocked: blocked });
+  }
 
   const formErrors = useMemo(
     () => (showValidation ? validateCustomerForm(form) : {}),
@@ -504,35 +633,56 @@ export function CustomersPage() {
         </div>
 
         {editing ? (
-          <FormGrid
-            cols={2}
-            className="mt-4 rounded-lg border border-border bg-background/80 p-4"
-          >
-            <FormField
-              label="Crédito"
-              className="flex flex-row items-center gap-2 sm:col-span-2"
+          <div className="mt-4 space-y-4">
+            <FormSection
+              title="Situação comercial"
+              description="Ativo ou inativo. Cliente inativo pode voltar a ativo ao confirmar uma nova compra (se a regra automática estiver ligada) ou ao alterar aqui."
+              className="border-border bg-muted/30"
             >
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                <Checkbox
-                  checked={creditBlockedEdit}
-                  onCheckedChange={(v) => setCreditBlockedEdit(v === true)}
+              <FormField
+                label="Status do cliente"
+                htmlFor="cust-status"
+                className="max-w-sm"
+              >
+                <AppSelect
+                  id="cust-status"
+                  value={statusEdit}
+                  options={CUSTOMER_STATUS_OPTIONS}
+                  onValueChange={(v) => setStatusEdit(v as CustomerStatus)}
                 />
-                Cliente bloqueado para vendas
-              </label>
-            </FormField>
-            <FormField
-              label="Limite de crédito (R$)"
-              htmlFor="cust-credit-limit"
-              hint="Vazio = sem limite"
+              </FormField>
+            </FormSection>
+
+            <FormGrid
+              cols={2}
+              className="rounded-lg border border-border bg-background/80 p-4"
             >
-              <Input
-                id="cust-credit-limit"
-                placeholder="Sem limite"
-                value={creditLimitStr}
-                onChange={(e) => setCreditLimitStr(e.target.value)}
-              />
-            </FormField>
-          </FormGrid>
+              <FormField
+                label="Crédito"
+                className="flex flex-row items-center gap-2 sm:col-span-2"
+              >
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                  <Checkbox
+                    checked={creditBlockedEdit}
+                    onCheckedChange={(v) => setCreditBlockedEdit(v === true)}
+                  />
+                  Cliente bloqueado para vendas
+                </label>
+              </FormField>
+              <FormField
+                label="Limite de crédito (R$)"
+                htmlFor="cust-credit-limit"
+                hint="Vazio = sem limite"
+              >
+                <Input
+                  id="cust-credit-limit"
+                  placeholder="Sem limite"
+                  value={creditLimitStr}
+                  onChange={(e) => setCreditLimitStr(e.target.value)}
+                />
+              </FormField>
+            </FormGrid>
+          </div>
         ) : null}
 
         {editing ? <CustomerTitlesPanel customerId={editing.id} /> : null}
@@ -547,6 +697,52 @@ export function CustomersPage() {
         ) : null}
       </FormSheet>
 
+      {canEditCustomers && customers.length > 0 ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            {hasSelection
+              ? `${selectedIds.size} cliente(s) selecionado(s)`
+              : "Selecione clientes para editar em lote"}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <AppSelect
+              value={bulkStatus}
+              disabled={!hasSelection || batchBusy}
+              placeholder="Alterar status…"
+              emptyLabel="Alterar status…"
+              triggerClassName="w-[11.5rem]"
+              options={CUSTOMER_STATUS_OPTIONS}
+              onValueChange={(v) => {
+                if (v === "ACTIVE" || v === "INACTIVE")
+                  void applyBatchStatus(v);
+              }}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!hasSelection || batchBusy}
+              onClick={() => applyBatchCreditBlocked(false)}
+            >
+              Desbloquear crédito
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!hasSelection || batchBusy}
+              onClick={() => applyBatchCreditBlocked(true)}
+            >
+              Bloquear crédito
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {actionError ? (
+        <p className="text-sm text-destructive">{actionError}</p>
+      ) : null}
+
       {isLoading ? (
         <p className="text-muted-foreground">Carregando…</p>
       ) : (
@@ -554,6 +750,16 @@ export function CustomersPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                {canEditCustomers ? (
+                  <TableHead className="w-10 px-4">
+                    <Checkbox
+                      checked={selectAllState(allSelected, someSelected)}
+                      disabled={batchBusy}
+                      onCheckedChange={(v) => toggleAll(v === true)}
+                      aria-label="Selecionar todos"
+                    />
+                  </TableHead>
+                ) : null}
                 <TableHead className="px-4">Nome</TableHead>
                 <TableHead className="px-4">Documento</TableHead>
                 <TableHead className="px-4">Cidade/UF</TableHead>
@@ -561,77 +767,101 @@ export function CustomersPage() {
                 <TableHead className="px-4">Vendedor</TableHead>
                 <TableHead className="px-4">Mapa</TableHead>
                 <TableHead className="px-4">Status</TableHead>
+                <TableHead className="px-4">Validação</TableHead>
                 <TableHead className="px-4">Crédito</TableHead>
                 <TableHead className="px-4" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {customers.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell className="px-4 py-3">{c.name}</TableCell>
-                  <TableCell className="px-4 py-3 font-mono text-xs">
-                    {formatDocument(c)}
-                  </TableCell>
-                  <TableCell className="px-4 py-3">{formatCityUf(c)}</TableCell>
-                  <TableCell className="px-4 py-3">{c.phone ?? "—"}</TableCell>
-                  <TableCell className="px-4 py-3">
-                    {(
-                      c as CustomerRecord & {
-                        seller?: { user: { name: string } };
-                      }
-                    ).seller?.user.name ?? "—"}
-                  </TableCell>
-                  <TableCell className="px-4 py-3">
-                    {customerHasMapCoords(c) ? (
-                      <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                        Sim
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">Não</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="px-4 py-3">
-                    {approvalBadge(c.approvalStatus) ?? (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="px-4 py-3">
-                    {c.creditBlocked ? (
-                      <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-900">
-                        Bloqueado
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      className="text-primary"
-                      onClick={() => openEdit(c)}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      className="ml-3 text-destructive"
-                      onClick={() => {
-                        void confirm({
-                          title: "Excluir cliente?",
-                          description:
-                            "O cliente será removido permanentemente do sistema.",
-                          confirmLabel: "Excluir",
-                          tone: "destructive",
-                        }).then((ok) => {
-                          if (ok) remove.mutate(c.id);
-                        });
-                      }}
-                    >
-                      Excluir
-                    </button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {customers.map((c) => {
+                const selected = selectedIds.has(c.id);
+                return (
+                  <TableRow
+                    key={c.id}
+                    className={cn(selected && "bg-muted/40")}
+                  >
+                    {canEditCustomers ? (
+                      <TableCell className="px-4 py-3">
+                        <Checkbox
+                          checked={selected}
+                          disabled={batchBusy}
+                          onCheckedChange={(v) => toggleOne(c.id, v === true)}
+                          aria-label={`Selecionar ${c.name}`}
+                        />
+                      </TableCell>
+                    ) : null}
+                    <TableCell className="px-4 py-3">{c.name}</TableCell>
+                    <TableCell className="px-4 py-3 font-mono text-xs">
+                      {formatDocument(c)}
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      {formatCityUf(c)}
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      {c.phone ?? "—"}
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      {(
+                        c as CustomerRecord & {
+                          seller?: { user: { name: string } };
+                        }
+                      ).seller?.user.name ?? "—"}
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      {customerHasMapCoords(c) ? (
+                        <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                          Sim
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">Não</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      {statusBadge(c.status)}
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      {approvalBadge(c.approvalStatus) ?? (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="px-4 py-3">
+                      {c.creditBlocked ? (
+                        <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-900">
+                          Bloqueado
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        className="text-primary"
+                        onClick={() => openEdit(c)}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        className="ml-3 text-destructive"
+                        onClick={() => {
+                          void confirm({
+                            title: "Excluir cliente?",
+                            description:
+                              "O cliente será removido permanentemente do sistema.",
+                            confirmLabel: "Excluir",
+                            tone: "destructive",
+                          }).then((ok) => {
+                            if (ok) remove.mutate(c.id);
+                          });
+                        }}
+                      >
+                        Excluir
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>

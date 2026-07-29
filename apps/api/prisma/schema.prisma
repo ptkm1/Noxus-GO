@@ -45,6 +45,12 @@ enum CustomerApprovalStatus {
   REJECTED
 }
 
+/// Situação comercial do cliente (ativo / inativo por falta de movimento).
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
 enum CreditTitleStatus {
   OPEN
   PAID
@@ -206,6 +212,12 @@ model Organization {
   customerRegistrationMode CustomerRegistrationMode @default(AUTO)
   /// Se true, o vendedor pode editar quantidades de vendas na fila offline antes de sincronizar.
   sellerCanEditQueuedSales Boolean @default(false)
+  /// Se true, clientes sem pedido confirmado há 6 meses passam a INACTIVE (reativam ao comprar).
+  autoInactivateCustomersAfterMonths Boolean @default(false)
+  /// Indicadores do painel home (até 3 chaves ordenadas). Null = defaults do shared.
+  homeIndicators   Json?
+  /// Layout dos indicadores na home: "stack" | "grid".
+  homeIndicatorsLayout String @default("stack")
   /// TODO futuro: CNPJ do emitente para NF-e real / certificado.
   cnpj             String?
   /// TODO futuro: Inscrição estadual do emitente.
@@ -874,10 +886,13 @@ model Customer {
   approvedBy     User?              @relation("CustomerApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
   rejectedAt     DateTime?
   rejectionReason String?
+  /// Situação comercial: ACTIVE / INACTIVE (inativação automática opcional por org).
+  status         CustomerStatus     @default(ACTIVE)
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
   @@index([organizationId, approvalStatus])
+  @@index([organizationId, status])
 
   @@unique([organizationId, cnpj])
   @@unique([organizationId, cpf])

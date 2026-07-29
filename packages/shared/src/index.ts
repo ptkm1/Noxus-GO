@@ -101,6 +101,7 @@ export type {
   CustomerFormErrors,
   CustomerFormValues,
   CustomerRecord,
+  CustomerStatus,
 } from "./customer-form.js";
 export {
   FISCAL_INVOICE_STATUS_LABELS,
@@ -121,6 +122,24 @@ export {
   formatRelativeSaleDate,
   formatSaleItemCount,
 } from "./format-sale-date.js";
+export {
+  DEFAULT_HOME_INDICATORS,
+  DEFAULT_HOME_INDICATORS_LAYOUT,
+  HOME_INDICATOR_KEYS,
+  HOME_INDICATOR_LABELS,
+  HOME_INDICATOR_SHORT_LABELS,
+  HOME_INDICATORS_LAYOUT_LABELS,
+  HOME_INDICATORS_LAYOUTS,
+  isHomeIndicatorKey,
+  isHomeIndicatorsLayout,
+  MAX_HOME_INDICATORS,
+  normalizeHomeIndicators,
+  normalizeHomeIndicatorsLayout,
+} from "./home-indicators.js";
+export type {
+  HomeIndicatorKey,
+  HomeIndicatorsLayout,
+} from "./home-indicators.js";
 export {
   NOTIFICATION_TYPES,
   notificationBodyDisplay,

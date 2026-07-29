@@ -32,6 +32,18 @@ export type OrderSituation = {
   mapsToCancel: boolean;
 };
 
+/** Gera código UPPER_SNAKE_CASE a partir do nome (ex.: "Em separação" → "EM_SEPARACAO"). */
+export function situationCodeFromName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toUpperCase()
+    .trim()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+}
+
 export function OrderSituationsPanel() {
   const qc = useQueryClient();
   const { confirm } = useConfirm();
@@ -42,8 +54,6 @@ export function OrderSituationsPanel() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingIsSystem, setEditingIsSystem] = useState(false);
-  const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [sortOrder, setSortOrder] = useState("0");
   const [active, setActive] = useState(true);
@@ -53,8 +63,6 @@ export function OrderSituationsPanel() {
 
   function resetForm() {
     setEditingId(null);
-    setEditingIsSystem(false);
-    setCode("");
     setName("");
     setSortOrder("0");
     setActive(true);
@@ -70,8 +78,6 @@ export function OrderSituationsPanel() {
 
   function openEdit(row: OrderSituation) {
     setEditingId(row.id);
-    setEditingIsSystem(row.isSystem);
-    setCode(row.code);
     setName(row.name);
     setSortOrder(String(row.sortOrder));
     setActive(row.active);
@@ -91,10 +97,10 @@ export function OrderSituationsPanel() {
     mutationFn: async () => {
       const sortN = Number(sortOrder);
       const sort = Number.isFinite(sortN) ? Math.max(0, Math.trunc(sortN)) : 0;
+      const trimmedName = name.trim();
       if (editingId) {
         const payload = {
-          ...(editingIsSystem ? {} : { code: code.trim() }),
-          name: name.trim(),
+          name: trimmedName,
           sortOrder: sort,
           active,
           mapsToCancel,
@@ -108,8 +114,8 @@ export function OrderSituationsPanel() {
         );
       }
       const payload = {
-        code: code.trim(),
-        name: name.trim(),
+        code: situationCodeFromName(trimmedName),
+        name: trimmedName,
         sortOrder: sort,
         active,
         mapsToCancel,
@@ -147,8 +153,15 @@ export function OrderSituationsPanel() {
 
   function submitSave() {
     setShowValidation(true);
-    if (!code.trim() || !name.trim()) {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
       setFormError(null);
+      return;
+    }
+    if (!editingId && !situationCodeFromName(trimmedName)) {
+      setFormError(
+        "Não foi possível gerar um código a partir do nome. Use letras ou números.",
+      );
       return;
     }
     setFormError(null);
@@ -158,10 +171,9 @@ export function OrderSituationsPanel() {
   const fieldErrors = useMemo(() => {
     if (!showValidation) return {} as Record<string, string>;
     const e: Record<string, string> = {};
-    if (!code.trim()) e.code = "Código é obrigatório.";
     if (!name.trim()) e.name = "Nome é obrigatório.";
     return e;
-  }, [showValidation, code, name]);
+  }, [showValidation, name]);
 
   useScrollToFirstError(
     Object.keys(fieldErrors).length > 0 ? fieldErrors : formError,
@@ -187,7 +199,7 @@ export function OrderSituationsPanel() {
           else setSheetOpen(true);
         }}
         title={editingId ? "Editar situação" : "Nova situação"}
-        description="Código, nome e ordem de exibição."
+        description="Nome, ordem de exibição e opções da situação."
         footer={
           <FormSheetActions
             onCancel={closeSheet}
@@ -199,41 +211,27 @@ export function OrderSituationsPanel() {
       >
         <FormGrid cols={2}>
           <FormField
-            label="Código"
-            htmlFor="os-code"
-            required
-            hint={
-              editingIsSystem
-                ? "Código padrão do sistema (não editável)"
-                : "Ex.: SENT ou EM_ROTA"
-            }
-            error={fieldErrors.code}
-          >
-            <Input
-              id="os-code"
-              placeholder="SENT"
-              aria-invalid={fieldErrors.code ? true : undefined}
-              value={code}
-              disabled={editingIsSystem}
-              onChange={(e) => setCode(e.target.value)}
-            />
-          </FormField>
-          <FormField
             label="Nome"
             htmlFor="os-name"
             required
+            className="sm:col-span-2"
+            hint={
+              editingId
+                ? undefined
+                : "O código interno é gerado automaticamente a partir do nome."
+            }
             error={fieldErrors.name}
           >
             <Input
               id="os-name"
-              placeholder="Enviado"
+              placeholder="Ex.: Em separação"
               aria-invalid={fieldErrors.name ? true : undefined}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           </FormField>
           <FormField
-            label="Ordem"
+            label="Ordem de exibição"
             htmlFor="os-sort"
             hint="Menor número aparece primeiro"
           >

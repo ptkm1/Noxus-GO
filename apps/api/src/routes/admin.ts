@@ -1,4 +1,13 @@
 import {
+  HOME_INDICATOR_KEYS,
+  HOME_INDICATORS_LAYOUTS,
+  MAX_HOME_INDICATORS,
+  normalizeHomeIndicators,
+  normalizeHomeIndicatorsLayout,
+  type HomeIndicatorKey,
+  type HomeIndicatorsLayout,
+} from "@pedidos/shared";
+import {
   Prisma,
   type OrderStatus,
   type PromotionKind,
@@ -41,12 +50,17 @@ import {
 } from "../services/billing/entitlements.js";
 import { assertAdminPathPlanFeature } from "../services/billing/plan-gate.js";
 import {
+  maybeInactivateStaleCustomersForOrg,
+  reactivateCustomerOnSale,
+} from "../services/customer-status.js";
+import {
   customerBodySchema,
   customerPatchSchema,
   parseCompleteCustomerBody,
   toCustomerPrismaData,
 } from "../services/customer-validation.js";
 import { buildDistributorInsights } from "../services/distributor-insights.js";
+import { buildHomeIndicator } from "../services/home-dashboard-indicators.js";
 import {
   AccountsPayableError,
   createAccountsPayable,
@@ -454,6 +468,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         sellerShowUnassignedCustomers: true,
         customerRegistrationMode: true,
         sellerCanEditQueuedSales: true,
+        autoInactivateCustomersAfterMonths: true,
+        homeIndicators: true,
+        homeIndicatorsLayout: true,
       },
     });
     return {
@@ -462,11 +479,29 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       customerRegistrationMode:
         org?.customerRegistrationMode ?? ("AUTO" as const),
       sellerCanEditQueuedSales: org?.sellerCanEditQueuedSales ?? false,
+      autoInactivateCustomersAfterMonths:
+        org?.autoInactivateCustomersAfterMonths ?? false,
+      homeIndicators: normalizeHomeIndicators(org?.homeIndicators),
+      homeIndicatorsLayout: normalizeHomeIndicatorsLayout(
+        org?.homeIndicatorsLayout,
+      ),
     };
   });
 
   app.patch("/system-settings", async (req, reply) => {
     const auth = req.auth!;
+    const homeIndicatorKeySchema = z.enum(
+      HOME_INDICATOR_KEYS as unknown as [
+        HomeIndicatorKey,
+        ...HomeIndicatorKey[],
+      ],
+    );
+    const homeIndicatorsLayoutSchema = z.enum(
+      HOME_INDICATORS_LAYOUTS as unknown as [
+        HomeIndicatorsLayout,
+        ...HomeIndicatorsLayout[],
+      ],
+    );
     const body = z
       .object({
         orderSyncMode: z.enum(["AUTO", "MANUAL"]).optional(),
@@ -475,6 +510,13 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .enum(["AUTO", "REQUIRE_APPROVAL"])
           .optional(),
         sellerCanEditQueuedSales: z.boolean().optional(),
+        autoInactivateCustomersAfterMonths: z.boolean().optional(),
+        homeIndicators: z
+          .array(homeIndicatorKeySchema)
+          .min(1)
+          .max(MAX_HOME_INDICATORS)
+          .optional(),
+        homeIndicatorsLayout: homeIndicatorsLayoutSchema.optional(),
       })
       .safeParse(req.body);
     if (!body.success)
@@ -484,10 +526,22 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       body.data.orderSyncMode === undefined &&
       body.data.sellerShowUnassignedCustomers === undefined &&
       body.data.customerRegistrationMode === undefined &&
-      body.data.sellerCanEditQueuedSales === undefined
+      body.data.sellerCanEditQueuedSales === undefined &&
+      body.data.autoInactivateCustomersAfterMonths === undefined &&
+      body.data.homeIndicators === undefined &&
+      body.data.homeIndicatorsLayout === undefined
     ) {
       return reply.status(400).send({ error: "Nada para atualizar" });
     }
+
+    const homeIndicators =
+      body.data.homeIndicators !== undefined
+        ? normalizeHomeIndicators(body.data.homeIndicators)
+        : undefined;
+    const homeIndicatorsLayout =
+      body.data.homeIndicatorsLayout !== undefined
+        ? normalizeHomeIndicatorsLayout(body.data.homeIndicatorsLayout)
+        : undefined;
 
     const updated = await prisma.organization.update({
       where: { id: auth.organizationId },
@@ -511,12 +565,27 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
               sellerCanEditQueuedSales: body.data.sellerCanEditQueuedSales,
             }
           : {}),
+        ...(body.data.autoInactivateCustomersAfterMonths !== undefined
+          ? {
+              autoInactivateCustomersAfterMonths:
+                body.data.autoInactivateCustomersAfterMonths,
+            }
+          : {}),
+        ...(homeIndicators !== undefined
+          ? { homeIndicators }
+          : {}),
+        ...(homeIndicatorsLayout !== undefined
+          ? { homeIndicatorsLayout }
+          : {}),
       },
       select: {
         orderSyncMode: true,
         sellerShowUnassignedCustomers: true,
         customerRegistrationMode: true,
         sellerCanEditQueuedSales: true,
+        autoInactivateCustomersAfterMonths: true,
+        homeIndicators: true,
+        homeIndicatorsLayout: true,
       },
     });
     return {
@@ -525,6 +594,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       sellerShowUnassignedCustomers: updated.sellerShowUnassignedCustomers,
       customerRegistrationMode: updated.customerRegistrationMode,
       sellerCanEditQueuedSales: updated.sellerCanEditQueuedSales,
+      autoInactivateCustomersAfterMonths:
+        updated.autoInactivateCustomersAfterMonths,
+      homeIndicators: normalizeHomeIndicators(updated.homeIndicators),
+      homeIndicatorsLayout: normalizeHomeIndicatorsLayout(
+        updated.homeIndicatorsLayout,
+      ),
     };
   });
 
@@ -3543,14 +3618,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       .object({
         sellerId: z.string().optional(),
         approvalStatus: z.enum(["APPROVED", "PENDING", "REJECTED"]).optional(),
+        status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
       })
       .safeParse(req.query);
+    await maybeInactivateStaleCustomersForOrg(auth.organizationId);
     const where: Prisma.CustomerWhereInput = {
       organizationId: auth.organizationId,
     };
     if (q.success && q.data.sellerId) where.sellerId = q.data.sellerId;
     if (q.success && q.data.approvalStatus)
       where.approvalStatus = q.data.approvalStatus;
+    if (q.success && q.data.status) where.status = q.data.status;
     return prisma.customer.findMany({
       where,
       orderBy: { name: "asc" },
@@ -3559,6 +3637,66 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         region: { select: { id: true, code: true, name: true } },
       },
     });
+  });
+
+  app.patch("/customers/batch", async (req, reply) => {
+    const auth = req.auth!;
+    if (
+      auth.role === "MANAGER" &&
+      !(await canWriteEffective(auth.organizationId, auth.role, "customers"))
+    ) {
+      return reply
+        .status(403)
+        .send({ error: "Sem permissão para editar clientes" });
+    }
+    const body = z
+      .object({
+        ids: z.array(z.string().min(1)).min(1).max(100),
+        status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
+        creditBlocked: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const { ids: rawIds, ...patch } = body.data;
+    if (patch.status === undefined && patch.creditBlocked === undefined) {
+      return reply.status(400).send({ error: "Nenhuma alteração informada" });
+    }
+
+    const ids = [...new Set(rawIds)];
+    const targets = await prisma.customer.findMany({
+      where: { organizationId: auth.organizationId, id: { in: ids } },
+      select: { id: true, name: true },
+    });
+    if (targets.length !== ids.length) {
+      return reply
+        .status(400)
+        .send({ error: "Um ou mais clientes não foram encontrados" });
+    }
+
+    await prisma.customer.updateMany({
+      where: { organizationId: auth.organizationId, id: { in: ids } },
+      data: {
+        ...(patch.status !== undefined ? { status: patch.status } : {}),
+        ...(patch.creditBlocked !== undefined
+          ? { creditBlocked: patch.creditBlocked }
+          : {}),
+      },
+    });
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.UPDATE,
+      entityType: AUDIT_ENTITY.Customer,
+      entityId: auth.organizationId,
+      metadata: {
+        batch: true,
+        count: targets.length,
+        status: patch.status ?? null,
+        creditBlocked: patch.creditBlocked ?? null,
+        names: targets.map((t) => t.name).slice(0, 20),
+      },
+    });
+    return { updated: targets.length };
   });
 
   app.get("/customers/pending-approval", async (req) => {
@@ -3826,6 +3964,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         body.data.creditBlocked !== undefined
           ? body.data.creditBlocked
           : existing.creditBlocked,
+      status:
+        body.data.status !== undefined ? body.data.status : existing.status,
     };
 
     const complete = parseCompleteCustomerBody(merged);
@@ -3839,9 +3979,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     try {
       const updated = await prisma.customer.update({
         where: { id },
-        data: toCustomerPrismaData(complete.data, {
-          includeCredit: true,
-        }) as Prisma.CustomerUncheckedUpdateInput,
+        data: {
+          ...(toCustomerPrismaData(complete.data, {
+            includeCredit: true,
+          }) as Prisma.CustomerUncheckedUpdateInput),
+          ...(body.data.status !== undefined
+            ? { status: body.data.status }
+            : {}),
+        },
       });
       await auditFromAuth(auth, {
         action: AUDIT_ACTION.UPDATE,
@@ -3850,6 +3995,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         metadata: {
           name: updated.name,
           fields: Object.keys(body.data),
+          ...(body.data.status !== undefined
+            ? { status: body.data.status }
+            : {}),
         },
       });
       return updated;
@@ -4507,6 +4655,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
 
     if (body.data.status === "CONFIRMED" && existing.status !== "CONFIRMED") {
+      void reactivateCustomerOnSale(updated.customerId);
       void notifySaleConfirmed({
         organizationId: auth.organizationId,
         order: {
@@ -4731,6 +4880,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           "CONFIRMED",
           auth.sub,
         );
+        void reactivateCustomerOnSale(order.customerId);
         void notifySaleConfirmed({
           organizationId: auth.organizationId,
           order: {
@@ -5592,6 +5742,68 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       from: q.success ? q.data.from : undefined,
       to: q.success ? q.data.to : undefined,
       limit: q.success ? q.data.limit : undefined,
+    });
+  });
+
+  /** Preferências de widgets do painel (leitura para admin/gestor). */
+  app.get("/reports/home-dashboard-config", async (req) => {
+    const auth = req.auth!;
+    const org = await prisma.organization.findUnique({
+      where: { id: auth.organizationId },
+      select: { homeIndicators: true, homeIndicatorsLayout: true },
+    });
+    return {
+      homeIndicators: normalizeHomeIndicators(org?.homeIndicators),
+      homeIndicatorsLayout: normalizeHomeIndicatorsLayout(
+        org?.homeIndicatorsLayout,
+      ),
+    };
+  });
+
+  /** Ranking genérico para widgets configuráveis do painel. */
+  app.get("/reports/home-indicator", async (req, reply) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        key: z.enum(
+          HOME_INDICATOR_KEYS as unknown as [
+            HomeIndicatorKey,
+            ...HomeIndicatorKey[],
+          ],
+        ),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(20).optional(),
+      })
+      .safeParse(req.query);
+    if (!q.success)
+      return reply.status(400).send({ error: "Parâmetros inválidos" });
+
+    if (
+      q.data.key.startsWith("profit_") &&
+      isTeamLeaderAuth(auth)
+    ) {
+      return reply.status(403).send({
+        error: "Indicadores de rentabilidade disponíveis apenas para admin/gestor",
+      });
+    }
+
+    let sellerIds: string[] | undefined;
+    if (auth.role === "MANAGER" || isTeamLeaderAuth(auth)) {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+
+    return buildHomeIndicator({
+      organizationId: auth.organizationId,
+      key: q.data.key,
+      sellerIds,
+      from: q.data.from,
+      to: q.data.to,
+      limit: q.data.limit,
     });
   });
 

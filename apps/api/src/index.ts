@@ -1,6 +1,7 @@
 import { buildApp } from "./app.js";
 import { prisma } from "./db.js";
 import "./load-env.js";
+import { scheduleCustomerInactivationCron } from "./services/customer-inactivation-cron.js";
 import { scheduleFiscalTransmitCron } from "./services/fiscal-transmit-cron.js";
 import { scheduleMorningBriefCron } from "./services/morning-brief-cron.js";
 import { scheduleStockExpiryCron } from "./services/stock-expiry-cron.js";
@@ -39,6 +40,7 @@ try {
   scheduleStockExpiryCron(app.log);
   scheduleMorningBriefCron(app.log);
   scheduleFiscalTransmitCron(app.log);
+  scheduleCustomerInactivationCron(app.log);
 } catch (err) {
   app.log.error(err);
   process.exit(1);

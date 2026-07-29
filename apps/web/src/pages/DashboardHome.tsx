@@ -1,11 +1,17 @@
 import { useAuth } from "@/auth/AuthContext";
+import { HomeIndicatorWidget } from "@/components/HomeIndicatorWidget";
 import { RecentSalesList } from "@/components/RecentSalesList";
-import { TopSuppliersChart } from "@/components/TopSuppliersChart";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch } from "@/lib/api";
 import { periodRange } from "@/lib/period-presets";
 import { isWebAdmin, isWebTeamLeader } from "@/lib/staff";
 import { cn } from "@/lib/utils";
+import {
+  normalizeHomeIndicators,
+  normalizeHomeIndicatorsLayout,
+  type HomeIndicatorKey,
+  type HomeIndicatorsLayout,
+} from "@pedidos/shared";
 import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -240,6 +246,33 @@ export function DashboardHome() {
     staleTime: 60_000,
   });
 
+  const { data: homeConfig } = useQuery({
+    queryKey: ["admin", "reports", "home-dashboard-config"],
+    queryFn: () =>
+      apiFetch<{
+        homeIndicators: HomeIndicatorKey[];
+        homeIndicatorsLayout: HomeIndicatorsLayout;
+      }>("/admin/reports/home-dashboard-config"),
+    staleTime: 60_000,
+    meta: { silentError: true },
+  });
+
+  const homeIndicators = (() => {
+    const selected = normalizeHomeIndicators(homeConfig?.homeIndicators);
+    if (teamLeader) {
+      const salesOnly = selected.filter((k) => !k.startsWith("profit_"));
+      return salesOnly.length > 0
+        ? salesOnly
+        : (["sales_by_supplier", "sales_by_seller"] as HomeIndicatorKey[]);
+    }
+    return selected;
+  })();
+
+  const homeLayout = normalizeHomeIndicatorsLayout(
+    homeConfig?.homeIndicatorsLayout,
+  );
+  const indicatorsInGrid = homeLayout === "grid";
+
   const pendingCount = pendingCredit?.count ?? 0;
 
   return (
@@ -328,7 +361,35 @@ export function DashboardHome() {
         </div>
       ) : null}
 
-      <TopSuppliersChart />
+      {admin ? (
+        <div className="mt-6 flex items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            Indicadores do painel (até 3)
+          </p>
+          <Link
+            to="/configuracoes"
+            className="text-xs font-medium text-primary hover:underline"
+          >
+            Personalizar indicadores
+          </Link>
+        </div>
+      ) : null}
+
+      <div
+        className={
+          indicatorsInGrid
+            ? "mt-6 grid gap-4 lg:grid-cols-3 sm:grid-cols-2"
+            : undefined
+        }
+      >
+        {homeIndicators.map((key) => (
+          <HomeIndicatorWidget
+            key={key}
+            indicatorKey={key}
+            compact={indicatorsInGrid}
+          />
+        ))}
+      </div>
 
       <RecentSalesList
         orders={recentOrders}
