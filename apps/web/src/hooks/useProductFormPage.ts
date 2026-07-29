@@ -65,6 +65,11 @@ export function useProductFormPage() {
   const [fieldErrors, setFieldErrors] = useState<
     Partial<Record<keyof ProductFormValues, string>>
   >({});
+  const [selectedPriceTableId, setSelectedPriceTableId] = useState<string>("");
+  const [priceTablePrices, setPriceTablePrices] = useState<
+    Record<string, string>
+  >({});
+  const [addPriceTableId, setAddPriceTableId] = useState("");
 
   const setField = useCallback(
     <K extends keyof ProductFormValues>(
@@ -92,6 +97,12 @@ export function useProductFormPage() {
     queryFn: () => apiFetch<SupplierBrief[]>("/admin/suppliers"),
   });
 
+  const { data: priceTables = [] } = useQuery({
+    queryKey: ["admin", "price-tables"],
+    queryFn: () =>
+      apiFetch<Array<{ id: string; name: string }>>("/admin/price-tables"),
+  });
+
   const selectedDefs = useMemo(() => {
     const cat = categories.find((c) => c.id === values.categoryId);
     return coerceDefs(cat?.attributeSchema);
@@ -117,6 +128,20 @@ export function useProductFormPage() {
     if (product) {
       setValues(productToForm(product));
       setAttrs(normalizeAttrsJson(product.attributes));
+      const items =
+        (
+          product as ProductRecord & {
+            priceTableItems?: Array<{
+              priceTableId: string;
+              price: unknown;
+            }>;
+          }
+        ).priceTableItems ?? [];
+      const map: Record<string, string> = {};
+      for (const item of items) {
+        map[item.priceTableId] = String(Number(item.price));
+      }
+      setPriceTablePrices(map);
     }
   }, [product]);
 
@@ -128,20 +153,27 @@ export function useProductFormPage() {
   }, [values.costPrice, values.basePrice]);
 
   const create = useMutation({
-    mutationFn: (body: ReturnType<typeof formToProductPayload>) =>
+    mutationFn: (
+      body: ReturnType<typeof formToProductPayload> & { priceTableId?: string },
+    ) =>
       apiFetch<ProductRecord>("/admin/products", {
         method: "POST",
         body: JSON.stringify(body),
       }),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["admin", "products"] });
+      await qc.invalidateQueries({ queryKey: ["admin", "price-tables"] });
       navigate("/produtos");
     },
     onError: (e: Error) => setFormError(e.message),
   });
 
   const update = useMutation({
-    mutationFn: (body: ReturnType<typeof formToProductPayload>) =>
+    mutationFn: (
+      body: ReturnType<typeof formToProductPayload> & {
+        priceTablePrices?: Array<{ priceTableId: string; price: number }>;
+      },
+    ) =>
       apiFetch<ProductRecord>(`/admin/products/${productId}`, {
         method: "PATCH",
         body: JSON.stringify(body),
@@ -149,6 +181,7 @@ export function useProductFormPage() {
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["admin", "products"] });
       await qc.invalidateQueries({ queryKey: ["admin", "product", productId] });
+      await qc.invalidateQueries({ queryKey: ["admin", "price-tables"] });
       navigate("/produtos");
     },
     onError: (e: Error) => setFormError(e.message),
@@ -160,6 +193,14 @@ export function useProductFormPage() {
     (e: FormEvent) => {
       e.preventDefault();
       setFormError(null);
+
+      if (!isEdit && !selectedPriceTableId) {
+        setActiveTab("precos");
+        setFormError(
+          "Na aba Preços, selecione a tabela em que o produto será cadastrado.",
+        );
+        return;
+      }
 
       const validation = validateProductForm(values);
       if (!validation.ok) {
@@ -174,15 +215,38 @@ export function useProductFormPage() {
         const payload = formToProductPayload(values, attrs);
         if (isEdit) {
           const { stockQty: _stockQty, ...rest } = payload;
-          update.mutate(rest as typeof payload);
+          const syncPrices = Object.entries(priceTablePrices)
+            .filter(([, raw]) => raw.trim() !== "")
+            .map(([priceTableId, raw]) => ({
+              priceTableId,
+              price: Number(raw),
+            }))
+            .filter((row) => !Number.isNaN(row.price) && row.price >= 0);
+          update.mutate({
+            ...(rest as typeof payload),
+            ...(syncPrices.length > 0
+              ? { priceTablePrices: syncPrices }
+              : {}),
+          });
         } else {
-          create.mutate(payload);
+          create.mutate({
+            ...payload,
+            priceTableId: selectedPriceTableId,
+          });
         }
       } catch (err) {
         setFormError(err instanceof Error ? err.message : "Erro ao salvar.");
       }
     },
-    [attrs, create, isEdit, update, values],
+    [
+      attrs,
+      create,
+      isEdit,
+      priceTablePrices,
+      selectedPriceTableId,
+      update,
+      values,
+    ],
   );
 
   const onCategoryChange = useCallback(
@@ -200,6 +264,22 @@ export function useProductFormPage() {
     (key: keyof ProductFormValues) => fieldErrors[key],
     [fieldErrors],
   );
+
+  const setPriceForTable = useCallback((tableId: string, price: string) => {
+    setPriceTablePrices((prev) => ({ ...prev, [tableId]: price }));
+  }, []);
+
+  const addProductToPriceTable = useCallback(() => {
+    if (!addPriceTableId) return;
+    setPriceTablePrices((prev) => {
+      if (prev[addPriceTableId] !== undefined) return prev;
+      return {
+        ...prev,
+        [addPriceTableId]: values.basePrice || "0",
+      };
+    });
+    setAddPriceTableId("");
+  }, [addPriceTableId, values.basePrice]);
 
   return {
     productId,
@@ -219,11 +299,19 @@ export function useProductFormPage() {
     fieldError,
     categories,
     suppliers,
+    priceTables,
     selectedDefs,
     selectedSupplier,
     markupPercent,
     handleSubmit,
     onCategoryChange,
     pending,
+    selectedPriceTableId,
+    setSelectedPriceTableId,
+    priceTablePrices,
+    setPriceForTable,
+    addPriceTableId,
+    setAddPriceTableId,
+    addProductToPriceTable,
   };
 }

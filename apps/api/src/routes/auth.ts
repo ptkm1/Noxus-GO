@@ -8,9 +8,10 @@ import {
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { prisma } from "../db.js";
 import { getOrgEntitlements } from "../services/billing/entitlements.js";
+import { ensureDefaultOrderSituations } from "../services/order-situations.js";
 import {
   ensureOrgRolePermissions,
-  getRolePermissionsMap,
+  getPermissionsMapForUser,
 } from "../services/role-permissions.js";
 import {
   resolveTeamLeaderContext,
@@ -43,15 +44,17 @@ async function userResponseForMe(user: {
   matricula: string | null;
   role: import("@prisma/client").Role;
   organizationId: string;
+  organizationProfileId?: string | null;
   seller: {
     id: string;
     commissionPercent: import("@prisma/client").Prisma.Decimal;
   } | null;
 }) {
   const leader = await resolveTeamLeaderContext(user.seller?.id ?? null);
-  const permissions = await getRolePermissionsMap(
+  const permissions = await getPermissionsMapForUser(
     user.organizationId,
     user.role,
+    user.organizationProfileId,
   );
   const subscription = await getOrgEntitlements(user.organizationId);
   return {
@@ -61,6 +64,7 @@ async function userResponseForMe(user: {
     matricula: user.matricula,
     role: user.role,
     organizationId: user.organizationId,
+    organizationProfileId: user.organizationProfileId ?? null,
     sellerId: user.seller?.id ?? null,
     commissionPercent: user.seller
       ? Number(user.seller.commissionPercent)
@@ -142,6 +146,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     });
 
     await ensureOrgRolePermissions(user.organizationId);
+    await ensureDefaultOrderSituations(user.organizationId);
 
     const accessToken = signAccessToken(await accessPayloadForUser(user));
     const refreshToken = signRefreshToken(user.id);
@@ -200,6 +205,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       );
       return reply.status(401).send({ error: "Email ou senha incorretos" });
     }
+
+    await ensureOrgRolePermissions(user.organizationId);
+    await ensureDefaultOrderSituations(user.organizationId);
 
     const accessToken = signAccessToken(await accessPayloadForUser(user));
     const refreshToken = signRefreshToken(user.id);

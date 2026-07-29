@@ -222,6 +222,8 @@ model Organization {
   cnpj             String?
   /// TODO futuro: Inscrição estadual do emitente.
   stateRegistration String?
+  /// Roles habilitados na org (JSON array de Role). ADMIN sempre presente.
+  enabledRoles     Json               @default("[\"ADMIN\",\"MANAGER\",\"SELLER\"]")
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   users            User[]
@@ -253,6 +255,7 @@ model Organization {
   fixedExpenses      OperationalFixedExpense[]
   accountsPayables   AccountsPayable[]
   rolePermissions    OrganizationRolePermission[]
+  profiles           OrganizationProfile[]
   fiscalConfig          OrganizationFiscalConfig?
   fiscalNcms            FiscalNcm[]
   fiscalOperations      FiscalOperation[]
@@ -339,27 +342,61 @@ model OrganizationRolePermission {
   @@index([organizationId])
 }
 
+/// Perfil personalizado da organização (além dos roles de sistema).
+model OrganizationProfile {
+  id               String                           @id @default(cuid())
+  organizationId   String
+  organization     Organization                     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name             String
+  /// Matrix/API key, unique per org (e.g. custom_abc123)
+  key              String
+  enabled          Boolean                          @default(true)
+  /// Used as User.role when this profile is assigned; also seeds default permissions
+  baseRole         Role                             @default(MANAGER)
+  hasSellerProfile Boolean                          @default(false)
+  permissions      OrganizationProfilePermission[]
+  users            User[]
+  createdAt        DateTime                         @default(now())
+  updatedAt        DateTime                         @updatedAt
+
+  @@unique([organizationId, key])
+  @@index([organizationId, enabled])
+}
+
+model OrganizationProfilePermission {
+  id        String              @id @default(cuid())
+  profileId String
+  profile   OrganizationProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  resource  String
+  level     AccessLevel
+
+  @@unique([profileId, resource])
+}
+
 model User {
-  id             String       @id @default(cuid())
-  email          String       @unique
-  passwordHash   String
-  name           String
+  id                    String               @id @default(cuid())
+  email                 String               @unique
+  passwordHash          String
+  name                  String
   /// Matrícula funcional (única por organização quando preenchida).
-  matricula      String?
-  role           Role
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  seller         Seller?
-  managedSellers Seller[]     @relation("SellerManager")
-  notifications  Notification[]
-  pushDevices    PushDevice[]
-  stockMovements StockMovement[]
-  auditLogs      AuditLog[]
-  approvedCustomers Customer[] @relation("CustomerApprovedBy")
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  matricula             String?
+  role                  Role
+  organizationId        String
+  organization          Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationProfileId String?
+  organizationProfile   OrganizationProfile? @relation(fields: [organizationProfileId], references: [id], onDelete: SetNull)
+  seller                Seller?
+  managedSellers        Seller[]             @relation("SellerManager")
+  notifications         Notification[]
+  pushDevices           PushDevice[]
+  stockMovements        StockMovement[]
+  auditLogs             AuditLog[]
+  approvedCustomers     Customer[]           @relation("CustomerApprovedBy")
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
 
   @@unique([organizationId, matricula])
+  @@index([organizationProfileId])
 }
 
 model Seller {

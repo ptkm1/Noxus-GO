@@ -77,12 +77,20 @@ export function ProductFormPage() {
     fieldError,
     categories,
     suppliers,
+    priceTables,
     selectedDefs,
     selectedSupplier,
     markupPercent,
     handleSubmit,
     onCategoryChange,
     pending,
+    selectedPriceTableId,
+    setSelectedPriceTableId,
+    priceTablePrices,
+    setPriceForTable,
+    addPriceTableId,
+    setAddPriceTableId,
+    addProductToPriceTable,
   } = useProductFormPage();
 
   useScrollToFirstError(
@@ -326,6 +334,47 @@ export function ProductFormPage() {
             title="Preços"
             description="Valores de custo, venda e limites comerciais."
           >
+            {!isEdit ? (
+              <div className="mb-4 space-y-3 rounded-xl border border-border bg-muted/30 p-4">
+                <FormField
+                  label="Tabela de preço"
+                  htmlFor="prod-price-table"
+                  required
+                  hint="O preço de venda será registrado nesta tabela ao salvar."
+                >
+                  <AppSelect
+                    id="prod-price-table"
+                    value={selectedPriceTableId}
+                    onValueChange={setSelectedPriceTableId}
+                    placeholder="Selecione…"
+                    emptyLabel="Selecione…"
+                    options={priceTables.map((t) => ({
+                      value: t.id,
+                      label: t.name,
+                    }))}
+                  />
+                </FormField>
+                {priceTables.length === 0 ? (
+                  <p className="text-sm text-amber-700 dark:text-amber-400">
+                    Nenhuma tabela cadastrada.{" "}
+                    <Link to="/tabelas-preco" className="underline">
+                      Criar tabela de preço
+                    </Link>
+                  </p>
+                ) : !selectedPriceTableId ? (
+                  <p className="text-sm text-muted-foreground">
+                    Selecione a tabela para liberar os campos de preço abaixo.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            <fieldset
+              disabled={!isEdit && !selectedPriceTableId}
+              className={cn(
+                "min-w-0 border-0 p-0",
+                !isEdit && !selectedPriceTableId && "opacity-60",
+              )}
+            >
             <FormGrid cols={2}>
               <FormField
                 label="Preço custo (R$)"
@@ -343,26 +392,15 @@ export function ProductFormPage() {
               </FormField>
 
               <FormField
-                label="Preço fábrica (R$)"
-                htmlFor="prod-factory"
-                error={fieldError("factoryPrice")}
-              >
-                <Input
-                  id="prod-factory"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={values.factoryPrice}
-                  onChange={(e) => setField("factoryPrice", e.target.value)}
-                />
-              </FormField>
-
-              <FormField
                 label="Preço venda (R$)"
                 htmlFor="prod-price"
                 required
                 error={fieldError("basePrice")}
-                hint="Usado quando não há preço em tabela de preços."
+                hint={
+                  !isEdit && selectedPriceTableId
+                    ? `Será gravado na tabela “${priceTables.find((t) => t.id === selectedPriceTableId)?.name ?? "selecionada"}”.`
+                    : "Usado quando não há preço em tabela de preços."
+                }
               >
                 <Input
                   id="prod-price"
@@ -452,6 +490,87 @@ export function ProductFormPage() {
                 />
               </FormField>
             </FormGrid>
+            </fieldset>
+
+            {isEdit ? (
+              <div className="mt-6 space-y-3 border-t border-border pt-6">
+                <div>
+                  <h3 className="text-sm font-medium text-foreground">
+                    Preços por tabela
+                  </h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Edite o preço deste produto em cada tabela ou associe a
+                    outra tabela.
+                  </p>
+                </div>
+                {Object.keys(priceTablePrices).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Produto ainda não está em nenhuma tabela.
+                  </p>
+                ) : (
+                  <FormGrid cols={2}>
+                    {Object.entries(priceTablePrices).map(([tableId, price]) => {
+                      const tableName =
+                        priceTables.find((t) => t.id === tableId)?.name ??
+                        tableId;
+                      return (
+                        <FormField
+                          key={tableId}
+                          label={tableName}
+                          htmlFor={`pt-price-${tableId}`}
+                        >
+                          <Input
+                            id={`pt-price-${tableId}`}
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={price}
+                            onChange={(e) =>
+                              setPriceForTable(tableId, e.target.value)
+                            }
+                          />
+                        </FormField>
+                      );
+                    })}
+                  </FormGrid>
+                )}
+                <div className="flex flex-wrap items-end gap-2">
+                  <FormField
+                    label="Adicionar à tabela"
+                    htmlFor="prod-add-pt"
+                    className="min-w-[14rem] flex-1"
+                  >
+                    <AppSelect
+                      id="prod-add-pt"
+                      value={addPriceTableId}
+                      onValueChange={setAddPriceTableId}
+                      placeholder="Selecione…"
+                      emptyLabel="Selecione…"
+                      options={priceTables
+                        .filter((t) => priceTablePrices[t.id] === undefined)
+                        .map((t) => ({ value: t.id, label: t.name }))}
+                    />
+                  </FormField>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!addPriceTableId}
+                    onClick={addProductToPriceTable}
+                  >
+                    Adicionar
+                  </Button>
+                </div>
+              </div>
+            ) : selectedPriceTableId ? (
+              <p className="mt-4 text-sm text-muted-foreground">
+                Ao salvar, o preço de venda será registrado na tabela{" "}
+                <span className="font-medium text-foreground">
+                  {priceTables.find((t) => t.id === selectedPriceTableId)
+                    ?.name ?? "—"}
+                </span>
+                .
+              </p>
+            ) : null}
           </FormSection>
         ) : null}
 

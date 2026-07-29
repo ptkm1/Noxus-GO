@@ -33,7 +33,23 @@ type StaffUser = {
   email: string;
   name: string;
   role: "ADMIN" | "MANAGER";
+  organizationProfileId?: string | null;
+  organizationProfile?: {
+    id: string;
+    name: string;
+    key: string;
+    baseRole: string;
+  } | null;
   createdAt: string;
+};
+
+type CustomProfile = {
+  id: string;
+  name: string;
+  key: string;
+  enabled: boolean;
+  baseRole: Role;
+  hasSellerProfile: boolean;
 };
 
 const CREATABLE_ROLES: { value: "ADMIN" | "MANAGER"; label: string }[] = [
@@ -43,6 +59,19 @@ const CREATABLE_ROLES: { value: "ADMIN" | "MANAGER"; label: string }[] = [
 
 function roleLabel(role: Role): string {
   return ROLE_LABELS[role] ?? role;
+}
+
+function staffProfileLabel(u: StaffUser): string {
+  if (u.organizationProfile?.name) return u.organizationProfile.name;
+  return roleLabel(u.role);
+}
+
+function profileSelectValue(
+  role: "ADMIN" | "MANAGER",
+  organizationProfileId: string | null,
+): string {
+  if (organizationProfileId) return `profile:${organizationProfileId}`;
+  return role;
 }
 
 function formatDate(iso: string): string {
@@ -72,12 +101,37 @@ export function UsersPage() {
     enabled: admin,
   });
 
+  const { data: customProfiles = [] } = useQuery({
+    queryKey: ["admin", "profiles"],
+    queryFn: () => apiFetch<CustomProfile[]>("/admin/profiles"),
+    enabled: admin,
+  });
+
+  const staffCustomProfiles = useMemo(
+    () => customProfiles.filter((p) => p.enabled),
+    [customProfiles],
+  );
+
+  const profileOptions = useMemo(
+    () => [
+      ...CREATABLE_ROLES,
+      ...staffCustomProfiles.map((p) => ({
+        value: `profile:${p.id}`,
+        label: p.name,
+      })),
+    ],
+    [staffCustomProfiles],
+  );
+
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"ADMIN" | "MANAGER">("MANAGER");
+  const [organizationProfileId, setOrganizationProfileId] = useState<
+    string | null
+  >(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [showValidation, setShowValidation] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -109,6 +163,7 @@ export function UsersPage() {
     setEmail("");
     setPassword("");
     setRole("MANAGER");
+    setOrganizationProfileId(null);
     setFormError(null);
     setShowValidation(false);
   }
@@ -124,9 +179,23 @@ export function UsersPage() {
     setEmail(u.email);
     setPassword("");
     setRole(u.role);
+    setOrganizationProfileId(u.organizationProfileId ?? null);
     setFormError(null);
     setShowValidation(false);
     setSheetOpen(true);
+  }
+
+  function applyProfileSelection(value: string) {
+    if (value.startsWith("profile:")) {
+      const id = value.slice("profile:".length);
+      setOrganizationProfileId(id);
+      setRole("MANAGER");
+      return;
+    }
+    if (value === "ADMIN" || value === "MANAGER") {
+      setRole(value);
+      setOrganizationProfileId(null);
+    }
   }
 
   function closeSheet() {
@@ -158,6 +227,7 @@ export function UsersPage() {
         name: name.trim(),
         email: email.trim(),
         role,
+        organizationProfileId,
       };
       if (password.length > 0) payload.password = password;
 
@@ -424,11 +494,9 @@ export function UsersPage() {
           >
             <AppSelect
               id="user-role"
-              value={role}
-              onValueChange={(v) => {
-                if (v === "ADMIN" || v === "MANAGER") setRole(v);
-              }}
-              options={CREATABLE_ROLES}
+              value={profileSelectValue(role, organizationProfileId)}
+              onValueChange={applyProfileSelection}
+              options={profileOptions}
               placeholder="Selecione o perfil"
             />
           </FormField>
@@ -522,7 +590,9 @@ export function UsersPage() {
                       ) : null}
                     </TableCell>
                     <TableCell className="px-4">{u.email}</TableCell>
-                    <TableCell className="px-4">{roleLabel(u.role)}</TableCell>
+                    <TableCell className="px-4">
+                      {staffProfileLabel(u)}
+                    </TableCell>
                     <TableCell className="px-4 text-muted-foreground">
                       {formatDate(u.createdAt)}
                     </TableCell>
