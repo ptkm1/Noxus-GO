@@ -1,6 +1,6 @@
 import { KeyboardAvoidingScreen, SafeScreen } from "@/components/layout";
 import { APP_BRAND_TAGLINE } from "@pedidos/shared";
-import { Redirect } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Pressable,
@@ -21,6 +21,7 @@ import type { AppColors } from "../lib/theme/types";
 export default function LoginScreen() {
   const styles = useThemedStyles(createLoginStyles);
   const { colors } = useTheme();
+  const router = useRouter();
   const {
     email,
     setEmail,
@@ -76,6 +77,12 @@ export default function LoginScreen() {
                 <Text style={styles.btnText}>Entrar</Text>
               )}
             </Pressable>
+            <Pressable
+              onPress={() => router.push("/forgot-password")}
+              hitSlop={8}
+            >
+              <Text style={styles.forgot}>Esqueci minha senha</Text>
+            </Pressable>
           </View>
           <DevToolsEntry variant="login" />
           <DevToolsVersionTap variant="onDark" />
@@ -118,5 +125,12 @@ function createLoginStyles(c: AppColors) {
     },
     btnDisabled: { opacity: 0.6 },
     btnText: { color: c.primaryForeground, fontWeight: "600", fontSize: 16 },
+    forgot: {
+      textAlign: "center",
+      color: c.primary,
+      fontWeight: "600",
+      fontSize: 14,
+      marginTop: 4,
+    },
   });
 }

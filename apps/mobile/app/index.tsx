@@ -1,10 +1,10 @@
+import { SafeScreen } from "@/components/layout";
 import { Redirect } from "expo-router";
 import { ActivityIndicator } from "react-native";
-import { SafeScreen } from "@/components/layout";
 import { useAuth } from "../context/AuthContext";
 
 export default function Index() {
-  const { user, loading, sellerAccessBlocked } = useAuth();
+  const { user, loading, sellerAccessBlocked, orgAccessBlocked } = useAuth();
 
   if (loading) {
     return (
@@ -15,6 +15,7 @@ export default function Index() {
   }
 
   if (sellerAccessBlocked) return <Redirect href="/seller-access-block" />;
+  if (orgAccessBlocked) return <Redirect href="/org-access-block" />;
 
   if (!user) return <Redirect href="/login" />;
 

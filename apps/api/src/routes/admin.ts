@@ -45,7 +45,6 @@ import {
 } from "../services/audit-log.js";
 import {
   countOrgSellers,
-  countOrgUsers,
   getOrgEntitlements,
 } from "../services/billing/entitlements.js";
 import { assertAdminPathPlanFeature } from "../services/billing/plan-gate.js";
@@ -60,7 +59,6 @@ import {
   toCustomerPrismaData,
 } from "../services/customer-validation.js";
 import { buildDistributorInsights } from "../services/distributor-insights.js";
-import { buildHomeIndicator } from "../services/home-dashboard-indicators.js";
 import {
   AccountsPayableError,
   createAccountsPayable,
@@ -92,6 +90,7 @@ import {
   listFiscalOrders,
   NfeXmlError,
 } from "../services/fiscal/nfe-xml.js";
+import { buildHomeIndicator } from "../services/home-dashboard-indicators.js";
 import {
   buildCommissionStatement,
   buildCreditAgingReport,
@@ -118,6 +117,13 @@ import {
   ensureDefaultOrderSituations,
   normalizeSituationCode,
 } from "../services/order-situations.js";
+import {
+  createOrgProfile,
+  deleteOrgProfile,
+  listOrgProfiles,
+  OrgProfileError,
+  updateOrgProfile,
+} from "../services/org-profiles.js";
 import type { AttributeFieldDef } from "../services/product-attributes.js";
 import {
   parseCategoryAttributeSchema,
@@ -153,13 +159,6 @@ import {
   setOrgEnabledRoles,
   updateOrgRolePermissions,
 } from "../services/role-permissions.js";
-import {
-  createOrgProfile,
-  deleteOrgProfile,
-  listOrgProfiles,
-  OrgProfileError,
-  updateOrgProfile,
-} from "../services/org-profiles.js";
 import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
 import {
   createSalesTeam,
@@ -580,12 +579,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
                 body.data.autoInactivateCustomersAfterMonths,
             }
           : {}),
-        ...(homeIndicators !== undefined
-          ? { homeIndicators }
-          : {}),
-        ...(homeIndicatorsLayout !== undefined
-          ? { homeIndicatorsLayout }
-          : {}),
+        ...(homeIndicators !== undefined ? { homeIndicators } : {}),
+        ...(homeIndicatorsLayout !== undefined ? { homeIndicatorsLayout } : {}),
       },
       select: {
         orderSyncMode: true,
@@ -2636,9 +2631,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         const okIds = new Set(tables.map((t) => t.id));
         const invalid = tableIds.filter((tid) => !okIds.has(tid));
         if (invalid.length > 0) {
-          return reply
-            .status(400)
-            .send({ error: "Tabela de preço inválida" });
+          return reply.status(400).send({ error: "Tabela de preço inválida" });
         }
         await prisma.$transaction(
           body.data.priceTablePrices.map((row) =>
@@ -2997,10 +2990,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({
         email: z.string().email(),
-        password: z.string().min(6),
+        password: z.string().min(6).optional(),
         name: z.string().min(1),
         role: z.enum(["ADMIN", "MANAGER"]).optional(),
         organizationProfileId: z.string().min(1).nullable().optional(),
+        invite: z.boolean().optional(),
       })
       .safeParse(req.body);
     if (!body.success)
@@ -3008,17 +3002,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         .status(400)
         .send({ error: "Dados inválidos", details: body.error.flatten() });
 
-    const entUsers = await getOrgEntitlements(auth.organizationId);
-    if (entUsers.limits.maxUsers != null) {
-      const n = await countOrgUsers(auth.organizationId);
-      if (n >= entUsers.limits.maxUsers) {
-        return reply.status(403).send({
-          error: `Seu plano permite no máximo ${entUsers.limits.maxUsers} usuário(s)`,
-          code: "PLAN_LIMIT_USERS",
-          planId: entUsers.planId,
-          limit: entUsers.limits.maxUsers,
-        });
-      }
+    try {
+      const { assertCanAddSeat } = await import("../services/billing/seats.js");
+      await assertCanAddSeat(auth.organizationId);
+    } catch (err) {
+      const e = err as { message?: string; code?: string; limit?: number };
+      return reply.status(403).send({
+        error: e.message || "Limite de usuários atingido",
+        code: e.code || "PLAN_LIMIT_USERS",
+        limit: e.limit,
+      });
     }
 
     const email = body.data.email.toLowerCase();
@@ -3039,7 +3032,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         select: { id: true, baseRole: true },
       });
       if (!profile) {
-        return reply.status(400).send({ error: "Perfil personalizado inválido" });
+        return reply
+          .status(400)
+          .send({ error: "Perfil personalizado inválido" });
       }
       // Perfil custom: User.role técnico fica MANAGER; permissões vêm do perfil.
       role = "MANAGER";
@@ -3050,7 +3045,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
     if (role === "ADMIN") organizationProfileId = null;
 
-    const passwordHash = await hashPassword(body.data.password);
+    const useInvite = body.data.invite === true || !body.data.password;
+    const { createActivationToken, unusablePasswordHash } =
+      await import("../services/billing/account-activation.js");
+    const { sendUserInviteEmail } =
+      await import("../services/billing/activation-email.js");
+
+    const passwordHash = useInvite
+      ? await unusablePasswordHash()
+      : await hashPassword(body.data.password!);
     const created = await prisma.user.create({
       data: {
         email,
@@ -3059,6 +3062,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         role,
         organizationId: auth.organizationId,
         organizationProfileId,
+        activatedAt: useInvite ? null : new Date(),
       },
       select: {
         id: true,
@@ -3072,6 +3076,24 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         createdAt: true,
       },
     });
+
+    if (useInvite) {
+      const { rawToken, expiresAt } = await createActivationToken(
+        created.id,
+        "USER_INVITE",
+      );
+      const org = await prisma.organization.findUnique({
+        where: { id: auth.organizationId },
+        select: { name: true, displayName: true },
+      });
+      await sendUserInviteEmail({
+        to: created.email,
+        name: created.name,
+        companyName: org?.displayName || org?.name || "PedixPro",
+        rawToken,
+        expiresAt,
+      });
+    }
 
     const actor = await prisma.user.findUnique({
       where: { id: auth.sub },
@@ -3273,7 +3295,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         select: { id: true, baseRole: true },
       });
       if (!profile) {
-        return reply.status(400).send({ error: "Perfil personalizado inválido" });
+        return reply
+          .status(400)
+          .send({ error: "Perfil personalizado inválido" });
       }
       nextRole = "MANAGER";
       nextProfileId = profile.id;
@@ -3487,7 +3511,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({
         email: z.string().email(),
-        password: z.string().min(6),
+        password: z.string().min(6).optional(),
+        invite: z.boolean().optional(),
         name: z.string().min(1),
         matricula: z.string().min(1).max(40).optional(),
         commissionType: sellerCommissionTypeSchema.default("FIXED"),
@@ -3512,6 +3537,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         });
       }
     }
+    try {
+      const { assertCanAddSeat } = await import("../services/billing/seats.js");
+      await assertCanAddSeat(auth.organizationId);
+    } catch (err) {
+      const e = err as { message?: string; code?: string; limit?: number };
+      return reply.status(403).send({
+        error: e.message || "Limite de usuários atingido",
+        code: e.code || "PLAN_LIMIT_USERS",
+        limit: e.limit,
+      });
+    }
 
     const { commissionType } = body.data;
     const commissionPercent =
@@ -3523,7 +3559,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) return reply.status(409).send({ error: "Email já cadastrado" });
 
-    const passwordHash = await hashPassword(body.data.password);
+    const useInvite = body.data.invite === true || !body.data.password;
+    const { createActivationToken, unusablePasswordHash } =
+      await import("../services/billing/account-activation.js");
+    const { sendUserInviteEmail } =
+      await import("../services/billing/activation-email.js");
+    const passwordHash = useInvite
+      ? await unusablePasswordHash()
+      : await hashPassword(body.data.password!);
 
     if (body.data.teamId) {
       const team = await prisma.salesTeam.findFirst({
@@ -3542,6 +3585,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           matricula: body.data.matricula?.trim() || null,
           role: "SELLER",
           organizationId: auth.organizationId,
+          activatedAt: useInvite ? null : new Date(),
           seller: {
             create: {
               organizationId: auth.organizationId,
@@ -3555,6 +3599,24 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         include: { seller: true },
       });
 
+      if (useInvite) {
+        const { rawToken, expiresAt } = await createActivationToken(
+          user.id,
+          "USER_INVITE",
+        );
+        const org = await prisma.organization.findUnique({
+          where: { id: auth.organizationId },
+          select: { name: true, displayName: true },
+        });
+        await sendUserInviteEmail({
+          to: user.email,
+          name: user.name,
+          companyName: org?.displayName || org?.name || "PedixPro",
+          rawToken,
+          expiresAt,
+        });
+      }
+
       await auditFromAuth(auth, {
         action: AUDIT_ACTION.CREATE,
         entityType: AUDIT_ENTITY.User,
@@ -3563,6 +3625,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           sellerId: user.seller!.id,
           email: user.email,
           role: "SELLER",
+          invited: useInvite,
         },
       });
 
@@ -3575,6 +3638,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         commissionType: user.seller!.commissionType,
         commissionPercent: decToNum(user.seller!.commissionPercent),
         active: user.seller!.active,
+        invited: useInvite,
       };
     } catch (e) {
       if (
@@ -6092,12 +6156,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!q.success)
       return reply.status(400).send({ error: "Parâmetros inválidos" });
 
-    if (
-      q.data.key.startsWith("profit_") &&
-      isTeamLeaderAuth(auth)
-    ) {
+    if (q.data.key.startsWith("profit_") && isTeamLeaderAuth(auth)) {
       return reply.status(403).send({
-        error: "Indicadores de rentabilidade disponíveis apenas para admin/gestor",
+        error:
+          "Indicadores de rentabilidade disponíveis apenas para admin/gestor",
       });
     }
 

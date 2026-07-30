@@ -43,6 +43,9 @@ export type User = {
   /** Permissões efetivas da org para o role/perfil atual (`/auth/me`). */
   permissions?: Partial<Record<PermissionResource, PermissionLevel>>;
   subscription?: UserSubscription;
+  accessStatus?: string;
+  orgAccessMessage?: string | null;
+  canUseApp?: boolean;
 };
 
 export type RegisterInput = {

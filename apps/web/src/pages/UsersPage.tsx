@@ -128,6 +128,7 @@ export function UsersPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [sendInvite, setSendInvite] = useState(true);
   const [role, setRole] = useState<"ADMIN" | "MANAGER">("MANAGER");
   const [organizationProfileId, setOrganizationProfileId] = useState<
     string | null
@@ -162,6 +163,7 @@ export function UsersPage() {
     setName("");
     setEmail("");
     setPassword("");
+    setSendInvite(true);
     setRole("MANAGER");
     setOrganizationProfileId(null);
     setFormError(null);
@@ -237,9 +239,15 @@ export function UsersPage() {
           body: JSON.stringify(payload),
         });
       }
+      const createBody: Record<string, unknown> = { ...payload };
+      if (sendInvite || !password) {
+        createBody.invite = true;
+      } else {
+        createBody.password = password;
+      }
       return apiFetch<StaffUser>("/admin/users", {
         method: "POST",
-        body: JSON.stringify({ ...payload, password }),
+        body: JSON.stringify(createBody),
       });
     },
     onSuccess: () => {
@@ -322,14 +330,14 @@ export function UsersPage() {
     const e: Record<string, string> = {};
     if (!name.trim()) e.name = "Nome é obrigatório.";
     if (!email.trim()) e.email = "Email é obrigatório.";
-    if (!editingId && password.length < 6) {
+    if (!editingId && !sendInvite && password.length < 6) {
       e.password = "Senha deve ter no mínimo 6 caracteres.";
     } else if (editingId && password.length > 0 && password.length < 6) {
       e.password = "Senha deve ter no mínimo 6 caracteres.";
     }
     if (!role) e.role = "Perfil é obrigatório.";
     return e;
-  }, [showValidation, name, email, password, role, editingId]);
+  }, [showValidation, name, email, password, role, editingId, sendInvite]);
 
   useScrollToFirstError(
     Object.keys(fieldErrors).length > 0 ? fieldErrors : formError,
@@ -340,7 +348,7 @@ export function UsersPage() {
     setShowValidation(true);
     setFormError(null);
     if (!name.trim() || !email.trim() || !role) return;
-    if (!editingId && password.length < 6) return;
+    if (!editingId && !sendInvite && password.length < 6) return;
     if (editingId && password.length > 0 && password.length < 6) return;
     save.mutate();
   }
@@ -418,13 +426,19 @@ export function UsersPage() {
         description={
           editingId
             ? "Atualize nome, email, perfil ou defina uma nova senha."
-            : "Defina nome, email, senha inicial e perfil de acesso."
+            : "Envie um convite por e-mail (padrão) ou defina uma senha inicial."
         }
         footer={
           <FormSheetActions
             onCancel={closeSheet}
             onSubmit={trySubmit}
-            submitLabel={editingId ? "Salvar" : "Criar usuário"}
+            submitLabel={
+              editingId
+                ? "Salvar"
+                : sendInvite
+                  ? "Enviar convite"
+                  : "Criar usuário"
+            }
             pending={save.isPending}
           />
         }
@@ -462,29 +476,51 @@ export function UsersPage() {
               autoComplete="email"
             />
           </FormField>
-          <FormField
-            label="Senha"
-            htmlFor="user-password"
-            required={!editingId}
-            hint={
-              editingId
-                ? "Deixe em branco para manter a senha atual"
-                : "Mínimo 6 caracteres"
-            }
-            error={fieldErrors.password}
-          >
-            <Input
-              id="user-password"
-              type="password"
-              placeholder={
-                editingId ? "Nova senha (opcional)" : "Senha inicial"
+          {!editingId ? (
+            <FormField
+              label="Convite por e-mail"
+              htmlFor="user-invite"
+              className="sm:col-span-2"
+              hint="O usuário recebe um link para definir a própria senha."
+            >
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  id="user-invite"
+                  checked={sendInvite}
+                  onCheckedChange={(v) => {
+                    setSendInvite(v === true);
+                    if (v === true) setPassword("");
+                  }}
+                />
+                Enviar convite (recomendado)
+              </label>
+            </FormField>
+          ) : null}
+          {(editingId || !sendInvite) && (
+            <FormField
+              label="Senha"
+              htmlFor="user-password"
+              required={!editingId && !sendInvite}
+              hint={
+                editingId
+                  ? "Deixe em branco para manter a senha atual"
+                  : "Mínimo 6 caracteres"
               }
-              aria-invalid={fieldErrors.password ? true : undefined}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password"
-            />
-          </FormField>
+              error={fieldErrors.password}
+            >
+              <Input
+                id="user-password"
+                type="password"
+                placeholder={
+                  editingId ? "Nova senha (opcional)" : "Senha inicial"
+                }
+                aria-invalid={fieldErrors.password ? true : undefined}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+            </FormField>
+          )}
           <FormField
             label="Perfil"
             htmlFor="user-role"

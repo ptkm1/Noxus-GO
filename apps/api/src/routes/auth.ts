@@ -1,4 +1,5 @@
 import { isPlanId, type PlanId } from "@pedidos/shared";
+import rateLimit from "@fastify/rate-limit";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
@@ -8,7 +9,14 @@ import {
 } from "../auth/jwt.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { prisma } from "../db.js";
+import {
+  consumeActivationToken,
+  consumePasswordResetToken,
+  createActivationToken,
+} from "../services/billing/account-activation.js";
+import { sendPasswordResetEmail } from "../services/billing/activation-email.js";
 import { getOrgEntitlements } from "../services/billing/entitlements.js";
+import { syncOrgAccessFromSubscription } from "../services/billing/subscription-access.js";
 import { ensureDefaultOrderSituations } from "../services/order-situations.js";
 import {
   ensureOrgRolePermissions,
@@ -46,6 +54,7 @@ async function userResponseForMe(user: {
   role: import("@prisma/client").Role;
   organizationId: string;
   organizationProfileId?: string | null;
+  activatedAt?: Date | null;
   seller: {
     id: string;
     commissionPercent: import("@prisma/client").Prisma.Decimal;
@@ -58,6 +67,7 @@ async function userResponseForMe(user: {
     user.organizationProfileId,
   );
   const subscription = await getOrgEntitlements(user.organizationId);
+  const access = await syncOrgAccessFromSubscription(user.organizationId);
   return {
     id: user.id,
     email: user.email,
@@ -75,6 +85,12 @@ async function userResponseForMe(user: {
     teamName: leader?.teamName ?? null,
     permissions,
     subscription,
+    accessStatus: access.accessStatus,
+    orgAccessMessage: access.message,
+    canUseApp: access.canUseApp,
+    activatedAt: (user as { activatedAt?: Date | null }).activatedAt
+      ? (user as { activatedAt: Date }).activatedAt.toISOString()
+      : null,
   };
 }
 
@@ -113,8 +129,13 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         .send({ error: "Dados inválidos", details: parsed.error.flatten() });
     }
 
-    const { organizationName, name, email, password, planId: rawPlanId } =
-      parsed.data;
+    const {
+      organizationName,
+      name,
+      email,
+      password,
+      planId: rawPlanId,
+    } = parsed.data;
     let planId: PlanId = "starter";
     if (rawPlanId) {
       if (!isPlanId(rawPlanId)) {
@@ -129,7 +150,11 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const passwordHash = await hashPassword(password);
     const user = await prisma.$transaction(async (tx) => {
       const org = await tx.organization.create({
-        data: { name: organizationName, displayName: organizationName },
+        data: {
+          name: organizationName,
+          displayName: organizationName,
+          accessStatus: "ACTIVE",
+        },
       });
       const now = new Date();
       const trialEnd = new Date(now);
@@ -151,6 +176,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
           name,
           role: "ADMIN",
           organizationId: org.id,
+          activatedAt: new Date(),
         },
         include: { seller: true },
       });
@@ -217,6 +243,42 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(401).send({ error: "Email ou senha incorretos" });
     }
 
+    if (!user.activatedAt) {
+      return reply.status(403).send({
+        error:
+          "Conta ainda não ativada. Use o link enviado por e-mail para criar sua senha.",
+        code: "ACCOUNT_NOT_ACTIVATED",
+      });
+    }
+
+    const access = await syncOrgAccessFromSubscription(user.organizationId);
+    if (!access.canUseApp && user.role !== "ADMIN") {
+      return reply.status(403).send({
+        error:
+          access.message ||
+          "O acesso desta organização está temporariamente indisponível.",
+        code: "ORG_ACCESS_BLOCKED",
+        accessStatus: access.accessStatus,
+      });
+    }
+    if (access.pendingPayment) {
+      return reply.status(403).send({
+        error: access.message || "Pagamento pendente.",
+        code: "ORG_PENDING_PAYMENT",
+        accessStatus: access.accessStatus,
+      });
+    }
+    if (
+      access.accessStatus === "SUSPENDED" ||
+      access.accessStatus === "CANCELED"
+    ) {
+      return reply.status(403).send({
+        error: access.message || "Organização suspensa.",
+        code: "ORG_ACCESS_BLOCKED",
+        accessStatus: access.accessStatus,
+      });
+    }
+
     await ensureOrgRolePermissions(user.organizationId);
     await ensureDefaultOrderSituations(user.organizationId);
 
@@ -267,5 +329,165 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(404).send({ error: "Usuário não encontrado" });
 
     return userResponseForMe(user);
+  });
+
+  app.post("/activate-account", async (req, reply) => {
+    const body = z
+      .object({
+        token: z.string().min(10),
+        password: z.string().min(6, "Senha com pelo menos 6 caracteres"),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
+    }
+
+    try {
+      const result = await consumeActivationToken({
+        rawToken: body.data.token,
+        password: body.data.password,
+      });
+      const user = await prisma.user.findUnique({
+        where: { id: result.userId },
+        include: { seller: true },
+      });
+      if (!user) {
+        return reply.status(404).send({ error: "Usuário não encontrado" });
+      }
+
+      const access = await syncOrgAccessFromSubscription(user.organizationId);
+      if (!access.canUseApp && access.pendingPayment) {
+        return {
+          ok: true,
+          message: "Senha definida. Aguarde a confirmação do pagamento.",
+          needsLogin: true,
+        };
+      }
+
+      await ensureOrgRolePermissions(user.organizationId);
+      const accessToken = signAccessToken(await accessPayloadForUser(user));
+      const refreshToken = signRefreshToken(user.id);
+      return {
+        ok: true,
+        accessToken,
+        refreshToken,
+        user: await userResponseForMe(user),
+      };
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      const status =
+        code === "ACTIVATION_TOKEN_EXPIRED" ||
+        code === "ACTIVATION_TOKEN_INVALID"
+          ? 400
+          : 500;
+      return reply.status(status).send({
+        error: err instanceof Error ? err.message : "Falha na ativação",
+        code,
+      });
+    }
+  });
+
+  /** Forgot / reset — rate-limit por IP; resposta genérica no forgot. */
+  await app.register(async (limited) => {
+    await limited.register(rateLimit, {
+      max: 8,
+      timeWindow: "1 minute",
+      keyGenerator: (req) => req.ip,
+    });
+
+    const forgotBody = z.object({
+      email: z
+        .string()
+        .email()
+        .transform((e) => e.trim().toLowerCase()),
+    });
+
+    const resetBody = z.object({
+      token: z.string().min(10),
+      password: z.string().min(6, "Senha com pelo menos 6 caracteres"),
+    });
+
+    const FORGOT_OK = {
+      ok: true as const,
+      message:
+        "Se existir uma conta ativa com este e-mail, enviaremos instruções para redefinir a senha.",
+    };
+
+    limited.post("/forgot-password", async (req, reply) => {
+      const parsed = forgotBody.safeParse(req.body);
+      if (!parsed.success) {
+        return reply
+          .status(400)
+          .send({ error: "Dados inválidos", details: parsed.error.flatten() });
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { email: parsed.data.email },
+      });
+
+      // Não vazar existência; só envia se conta já ativada.
+      if (user?.activatedAt) {
+        try {
+          const { rawToken, expiresAt } = await createActivationToken(
+            user.id,
+            "PASSWORD_RESET",
+          );
+          const emailResult = await sendPasswordResetEmail({
+            to: user.email,
+            name: user.name,
+            rawToken,
+            expiresAt,
+          });
+          if (!emailResult.sent) {
+            app.log.warn(
+              { email: user.email, reason: emailResult.reason },
+              "forgot-password: e-mail não enviado",
+            );
+          }
+        } catch (err) {
+          app.log.warn(
+            { err, email: parsed.data.email },
+            "forgot-password: falha ao criar/enviar reset",
+          );
+        }
+      }
+
+      return reply.send(FORGOT_OK);
+    });
+
+    limited.post("/reset-password", async (req, reply) => {
+      const parsed = resetBody.safeParse(req.body);
+      if (!parsed.success) {
+        return reply
+          .status(400)
+          .send({ error: "Dados inválidos", details: parsed.error.flatten() });
+      }
+
+      try {
+        await consumePasswordResetToken({
+          rawToken: parsed.data.token,
+          password: parsed.data.password,
+        });
+        return {
+          ok: true,
+          message: "Senha atualizada. Você já pode entrar com a nova senha.",
+        };
+      } catch (err) {
+        const code = (err as { code?: string }).code;
+        const status =
+          code === "RESET_TOKEN_EXPIRED" ||
+          code === "RESET_TOKEN_INVALID" ||
+          code === "ACCOUNT_NOT_ACTIVATED"
+            ? 400
+            : 500;
+        return reply.status(status).send({
+          error:
+            err instanceof Error ? err.message : "Falha ao redefinir senha",
+          code,
+        });
+      }
+    });
   });
 };

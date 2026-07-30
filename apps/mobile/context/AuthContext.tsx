@@ -21,6 +21,9 @@ export type User = {
   role: Role;
   organizationId: string;
   sellerId: string | null;
+  accessStatus?: string;
+  orgAccessMessage?: string | null;
+  canUseApp?: boolean;
 };
 
 const ME_SNAPSHOT_KEY = "pedidos_me_snapshot";
@@ -43,13 +46,24 @@ async function clearMeSnapshot(): Promise<void> {
   await AsyncStorage.removeItem(ME_SNAPSHOT_KEY);
 }
 
+function isOrgBlocked(user: User): boolean {
+  if (user.canUseApp === false) return true;
+  return (
+    user.accessStatus === "SUSPENDED" ||
+    user.accessStatus === "CANCELED" ||
+    user.accessStatus === "PENDING_PAYMENT"
+  );
+}
+
 type AuthState = {
   user: User | null;
   loading: boolean;
   sellerAccessBlocked: null | { role: Role };
+  orgAccessBlocked: null | { message: string };
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   clearSellerAccessBlocked: () => void;
+  clearOrgAccessBlocked: () => void;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -60,12 +74,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [sellerAccessBlocked, setSellerAccessBlocked] = useState<null | {
     role: Role;
   }>(null);
+  const [orgAccessBlocked, setOrgAccessBlocked] = useState<null | {
+    message: string;
+  }>(null);
 
   const loadMe = useCallback(async () => {
     const t = await getAccessToken();
     if (!t) {
       setUser(null);
       setSellerAccessBlocked(null);
+      setOrgAccessBlocked(null);
       setLoading(false);
       return;
     }
@@ -76,9 +94,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await clearTokens();
         await clearMeSnapshot();
         setSellerAccessBlocked({ role: me.role });
+        setOrgAccessBlocked(null);
+        setUser(null);
+      } else if (isOrgBlocked(me)) {
+        await unregisterCurrentPushDevice();
+        await clearTokens();
+        await clearMeSnapshot();
+        setOrgAccessBlocked({
+          message:
+            me.orgAccessMessage ||
+            "O acesso desta organização está temporariamente indisponível. Entre em contato com o administrador da empresa.",
+        });
+        setSellerAccessBlocked(null);
         setUser(null);
       } else {
         setSellerAccessBlocked(null);
+        setOrgAccessBlocked(null);
         setUser(me);
         await saveMeSnapshot(me);
       }
@@ -89,13 +120,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSellerAccessBlocked(null);
           setUser(snap);
         }
-        // Mantém tokens — cold start offline não manda para login
       } else {
         await unregisterCurrentPushDevice();
         await clearTokens();
         await clearMeSnapshot();
         setUser(null);
         setSellerAccessBlocked(null);
+        setOrgAccessBlocked(null);
       }
     } finally {
       setLoading(false);
@@ -119,23 +150,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (res.user.role !== "SELLER") {
       throw new Error(sellerMobileLoginRejectedMessage(res.user.role));
     }
+    if (isOrgBlocked(res.user)) {
+      throw new Error(
+        res.user.orgAccessMessage ||
+          "O acesso desta organização está temporariamente indisponível. Entre em contato com o administrador da empresa.",
+      );
+    }
     await setTokens(res.accessToken, res.refreshToken);
     await saveMeSnapshot(res.user);
     setSellerAccessBlocked(null);
+    setOrgAccessBlocked(null);
     setUser(res.user);
   }, []);
 
   const logout = useCallback(async () => {
-    // Enquanto o access token ainda vale — desassocia o device da conta
     await unregisterCurrentPushDevice();
     await clearTokens();
     await clearMeSnapshot();
     setUser(null);
     setSellerAccessBlocked(null);
+    setOrgAccessBlocked(null);
   }, []);
 
   const clearSellerAccessBlocked = useCallback(() => {
     setSellerAccessBlocked(null);
+  }, []);
+
+  const clearOrgAccessBlocked = useCallback(() => {
+    setOrgAccessBlocked(null);
   }, []);
 
   const value = useMemo(
@@ -143,17 +185,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       sellerAccessBlocked,
+      orgAccessBlocked,
       login,
       logout,
       clearSellerAccessBlocked,
+      clearOrgAccessBlocked,
     }),
     [
       user,
       loading,
       sellerAccessBlocked,
+      orgAccessBlocked,
       login,
       logout,
       clearSellerAccessBlocked,
+      clearOrgAccessBlocked,
     ],
   );
 

@@ -17,6 +17,7 @@ export type OrgEntitlements = {
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
   provider: string;
+  accessStatus?: string;
 };
 
 export async function getOrgEntitlements(
@@ -24,6 +25,10 @@ export async function getOrgEntitlements(
 ): Promise<OrgEntitlements> {
   const sub = await ensureOrgSubscription(organizationId);
   const def = getPlanDefinition(sub.planId);
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { accessStatus: true },
+  });
   return {
     planId: def.id,
     status: sub.status,
@@ -34,6 +39,7 @@ export async function getOrgEntitlements(
       : null,
     cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
     provider: sub.provider,
+    accessStatus: org?.accessStatus,
   };
 }
 

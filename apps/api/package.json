@@ -9,6 +9,8 @@
     "dev:mac": "sh scripts/dev.sh",
     "build": "tsc",
     "typecheck:prisma": "tsc -p tsconfig.prisma.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "start": "node dist/index.js",
     "prisma": "prisma",
     "smoke:push": "tsx scripts/smoke-push.ts"
@@ -50,6 +52,7 @@
     "@types/xmldom": "^0.1.34",
     "prisma": "^7.8.0",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^3.2.7"
   }
 }

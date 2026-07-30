@@ -76,6 +76,7 @@ export function SellersPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [sendInvite, setSendInvite] = useState(true);
   const [name, setName] = useState("");
   const [matricula, setMatricula] = useState("");
   const [commissionType, setCommissionType] =
@@ -112,6 +113,7 @@ export function SellersPage() {
     setEditingId(null);
     setEmail("");
     setPassword("");
+    setSendInvite(true);
     setName("");
     setMatricula("");
     setCommissionType("FIXED");
@@ -184,18 +186,23 @@ export function SellersPage() {
           body: JSON.stringify(payload),
         });
       }
+      const createBody: Record<string, unknown> = {
+        email: email.trim(),
+        name: name.trim(),
+        ...(matricula.trim() ? { matricula: matricula.trim() } : {}),
+        commissionType,
+        ...(commissionType === "FIXED"
+          ? { commissionPercent: Number(commission) }
+          : {}),
+      };
+      if (sendInvite || !password) {
+        createBody.invite = true;
+      } else {
+        createBody.password = password;
+      }
       return apiFetch("/admin/sellers", {
         method: "POST",
-        body: JSON.stringify({
-          email: email.trim(),
-          password,
-          name: name.trim(),
-          ...(matricula.trim() ? { matricula: matricula.trim() } : {}),
-          commissionType,
-          ...(commissionType === "FIXED"
-            ? { commissionPercent: Number(commission) }
-            : {}),
-        }),
+        body: JSON.stringify(createBody),
       });
     },
     onSuccess: () => {
@@ -301,13 +308,13 @@ export function SellersPage() {
     const e: Record<string, string> = {};
     if (!name.trim()) e.name = "Nome é obrigatório.";
     if (!email.trim()) e.email = "Email é obrigatório.";
-    if (!editingId && password.length < 6) {
+    if (!editingId && !sendInvite && password.length < 6) {
       e.password = "Senha deve ter no mínimo 6 caracteres.";
     } else if (editingId && password.length > 0 && password.length < 6) {
       e.password = "Senha deve ter no mínimo 6 caracteres.";
     }
     return e;
-  }, [showValidation, name, email, password, editingId]);
+  }, [showValidation, name, email, password, editingId, sendInvite]);
 
   useScrollToFirstError(
     Object.keys(fieldErrors).length > 0 ? fieldErrors : formError,
@@ -318,7 +325,7 @@ export function SellersPage() {
     setShowValidation(true);
     setFormError(null);
     if (!name.trim() || !email.trim()) return;
-    if (!editingId && password.length < 6) return;
+    if (!editingId && !sendInvite && password.length < 6) return;
     if (editingId && password.length > 0 && password.length < 6) return;
     save.mutate();
   }
@@ -389,13 +396,19 @@ export function SellersPage() {
         description={
           editingId
             ? "Atualize dados, comissão, gestor ou defina uma nova senha."
-            : "O admin define email e senha inicial (sem cadastro público)."
+            : "Envie um convite por e-mail (padrão) ou defina uma senha inicial."
         }
         footer={
           <FormSheetActions
             onCancel={closeSheet}
             onSubmit={trySubmit}
-            submitLabel={editingId ? "Salvar" : "Criar vendedor"}
+            submitLabel={
+              editingId
+                ? "Salvar"
+                : sendInvite
+                  ? "Enviar convite"
+                  : "Criar vendedor"
+            }
             pending={save.isPending}
           />
         }
@@ -439,28 +452,50 @@ export function SellersPage() {
               onChange={(e) => setEmail(e.target.value)}
             />
           </FormField>
-          <FormField
-            label="Senha"
-            htmlFor="seller-password"
-            required={!editingId}
-            hint={
-              editingId
-                ? "Deixe em branco para manter a senha atual"
-                : "Mínimo 6 caracteres"
-            }
-            error={fieldErrors.password}
-          >
-            <Input
-              id="seller-password"
-              type="password"
-              placeholder={
-                editingId ? "Nova senha (opcional)" : "Senha inicial"
+          {!editingId ? (
+            <FormField
+              label="Convite por e-mail"
+              htmlFor="seller-invite"
+              className="sm:col-span-2"
+              hint="O vendedor recebe um link para definir a própria senha."
+            >
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  id="seller-invite"
+                  checked={sendInvite}
+                  onCheckedChange={(v) => {
+                    setSendInvite(v === true);
+                    if (v === true) setPassword("");
+                  }}
+                />
+                Enviar convite (recomendado)
+              </label>
+            </FormField>
+          ) : null}
+          {(editingId || !sendInvite) && (
+            <FormField
+              label="Senha"
+              htmlFor="seller-password"
+              required={!editingId && !sendInvite}
+              hint={
+                editingId
+                  ? "Deixe em branco para manter a senha atual"
+                  : "Mínimo 6 caracteres"
               }
-              aria-invalid={fieldErrors.password ? true : undefined}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </FormField>
+              error={fieldErrors.password}
+            >
+              <Input
+                id="seller-password"
+                type="password"
+                placeholder={
+                  editingId ? "Nova senha (opcional)" : "Senha inicial"
+                }
+                aria-invalid={fieldErrors.password ? true : undefined}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </FormField>
+          )}
           {editingId ? (
             <>
               <FormField label="Gestor" htmlFor="seller-manager">

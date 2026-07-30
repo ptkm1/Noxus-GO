@@ -4,7 +4,7 @@ import Fastify, { type FastifyRequest } from "fastify";
 import { verifyAccessToken, type AccessPayload } from "./auth/jwt.js";
 import { adminRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
-import { billingRoutes } from "./routes/billing.js";
+import { asaasWebhookRoutes, billingRoutes } from "./routes/billing.js";
 import { integrationsRoutes } from "./routes/integrations.js";
 import { jobsRoutes } from "./routes/jobs.js";
 import { sellerRoutes } from "./routes/seller.js";
@@ -28,6 +28,7 @@ export async function buildApp() {
       "content-type",
       "authorization",
       "x-cron-secret",
+      "asaas-access-token",
       "ngrok-skip-browser-warning",
     ],
   });
@@ -47,6 +48,8 @@ export async function buildApp() {
   });
 
   const v1 = API_PREFIX;
+
+  await app.register(asaasWebhookRoutes, { prefix: `${v1}/webhooks` });
 
   await app.register(
     async (r) => {

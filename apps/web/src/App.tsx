@@ -16,12 +16,13 @@ import {
   planFeatureForPath,
   resourceForPath,
 } from "./components/layout/navConfig";
-import { PlanFeatureGate } from "./components/PlanFeatureGate";
 import { PublicAuthLayout } from "./components/layout/PublicAuthLayout";
+import { PlanFeatureGate } from "./components/PlanFeatureGate";
 import { AppNotificationsProvider } from "./lib/app-notifications";
 import { createAppQueryClient } from "./lib/query-client";
 import { isWebStaff, isWebTeamLeader } from "./lib/staff";
 import { ThemeProvider } from "./lib/theme";
+import { ActivateAccountPage } from "./pages/ActivateAccountPage";
 import { BroadcastNotificationsPage } from "./pages/BroadcastNotificationsPage";
 import { CommissionGoalsPage } from "./pages/CommissionGoalsPage";
 import { CommissionHubPage } from "./pages/CommissionHubPage";
@@ -31,9 +32,11 @@ import { CustomerVisitsPage } from "./pages/CustomerVisitsPage";
 import { DashboardHome } from "./pages/DashboardHome";
 import { DashboardLayout } from "./pages/DashboardLayout";
 import { FaturamentoPage } from "./pages/FaturamentoPage";
+import { FirstAccessPage } from "./pages/FirstAccessPage";
 import { FiscalAccountsPayablePage } from "./pages/FiscalAccountsPayablePage";
 import { FiscalFixedExpensesPage } from "./pages/FiscalFixedExpensesPage";
 import { FiscalHubPage } from "./pages/FiscalHubPage";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
@@ -46,6 +49,7 @@ import { ProductFormPage } from "./pages/ProductFormPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ReportCustomersPage } from "./pages/ReportCustomersPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { ReportOrderItemsPage } from "./pages/ReportOrderItemsPage";
 import { ReportOrdersPage } from "./pages/ReportOrdersPage";
 import { ReportsHubPage } from "./pages/ReportsHubPage";
@@ -139,7 +143,7 @@ function PermissionRouteGuard() {
 }
 
 function StaffGate({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center text-muted-foreground">
@@ -148,6 +152,28 @@ function StaffGate({ children }: { children: React.ReactNode }) {
     );
   }
   if (!user) return <Navigate to="/login" replace />;
+  if (
+    user.accessStatus === "SUSPENDED" ||
+    user.accessStatus === "CANCELED" ||
+    user.accessStatus === "PENDING_PAYMENT"
+  ) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
+        <h1 className="text-xl font-semibold">Acesso indisponível</h1>
+        <p className="max-w-md text-sm text-muted-foreground">
+          {user.orgAccessMessage ||
+            "O acesso desta organização está temporariamente indisponível. Entre em contato com o administrador da empresa."}
+        </p>
+        <button
+          type="button"
+          className="text-sm font-medium text-primary underline"
+          onClick={() => logout()}
+        >
+          Sair
+        </button>
+      </div>
+    );
+  }
   if (!isWebStaff(user)) {
     return <SellerNotice />;
   }
@@ -180,6 +206,38 @@ function AppRoutes() {
               <RegisterPage />
             </PublicAuthLayout>
           )
+        }
+      />
+      <Route
+        path="/ativar-conta"
+        element={
+          <PublicAuthLayout variant="login">
+            <ActivateAccountPage />
+          </PublicAuthLayout>
+        }
+      />
+      <Route
+        path="/esqueci-senha"
+        element={
+          <PublicAuthLayout variant="login">
+            <ForgotPasswordPage />
+          </PublicAuthLayout>
+        }
+      />
+      <Route
+        path="/redefinir-senha"
+        element={
+          <PublicAuthLayout variant="login">
+            <ResetPasswordPage />
+          </PublicAuthLayout>
+        }
+      />
+      <Route
+        path="/primeiro-acesso"
+        element={
+          <StaffGate>
+            <FirstAccessPage />
+          </StaffGate>
         }
       />
       <Route

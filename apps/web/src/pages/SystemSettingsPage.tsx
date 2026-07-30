@@ -25,7 +25,13 @@ import {
   type HomeIndicatorsLayout,
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, ChevronUp, History, Shield } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  History,
+  Shield,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -35,8 +41,7 @@ import { OrderSituationsPanel } from "./OrderSituationsPanel";
 import { PermissionsPanel } from "./PermissionsPage";
 
 function plansUrl(): string {
-  const base =
-    import.meta.env.VITE_SITE_URL?.trim() || "http://localhost:3001";
+  const base = import.meta.env.VITE_SITE_URL?.trim() || "http://localhost:3001";
   return `${base.replace(/\/$/, "")}/#planos`;
 }
 
@@ -91,8 +96,7 @@ export function SystemSettingsPage() {
   const periodEnd = sub?.currentPeriodEnd
     ? new Date(sub.currentPeriodEnd).toLocaleDateString("pt-BR")
     : null;
-  const statusLabel =
-    STATUS_LABELS[sub?.status ?? ""] ?? sub?.status ?? "—";
+  const statusLabel = STATUS_LABELS[sub?.status ?? ""] ?? sub?.status ?? "—";
   const limits = sub?.limits ?? planDef.limits;
 
   const { data: settings, isLoading } = useQuery({
@@ -188,9 +192,7 @@ export function SystemSettingsPage() {
             {periodEnd ? (
               <p className="text-muted-foreground">
                 Período até {periodEnd}
-                {sub?.cancelAtPeriodEnd
-                  ? " · cancela ao fim do período"
-                  : null}
+                {sub?.cancelAtPeriodEnd ? " · cancela ao fim do período" : null}
               </p>
             ) : null}
             <p className="text-muted-foreground">
@@ -198,11 +200,33 @@ export function SystemSettingsPage() {
               {formatLimit(limits.maxUsers)} usuários
             </p>
           </div>
-          <Button asChild variant="outline" className="shrink-0">
-            <a href={plansUrl()} target="_blank" rel="noreferrer">
-              Ver planos / upgrade
-            </a>
-          </Button>
+          <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+            <Button asChild variant="outline">
+              <a href={plansUrl()} target="_blank" rel="noreferrer">
+                Ver planos / upgrade
+              </a>
+            </Button>
+            {isAdmin && sub && !sub.cancelAtPeriodEnd ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-destructive"
+                disabled={patch.isPending}
+                onClick={() => {
+                  void apiFetch("/billing/cancel", { method: "POST" }).then(
+                    () => {
+                      void qc.invalidateQueries({
+                        queryKey: ["admin", "system-settings"],
+                      });
+                      window.location.reload();
+                    },
+                  );
+                }}
+              >
+                Cancelar renovação
+              </Button>
+            ) : null}
+          </div>
         </div>
       </FormSection>
 
@@ -450,9 +474,7 @@ export function SystemSettingsPage() {
                             size="icon"
                             className="size-8"
                             disabled={
-                              orderIdx <= 0 ||
-                              patch.isPending ||
-                              isLoading
+                              orderIdx <= 0 || patch.isPending || isLoading
                             }
                             onClick={() => moveIndicator(key, -1)}
                             aria-label="Mover para cima"

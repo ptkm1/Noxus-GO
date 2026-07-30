@@ -36,6 +36,10 @@ function RootStack() {
           options={{ title: "Entrar", headerShown: false }}
         />
         <Stack.Screen
+          name="forgot-password"
+          options={{ title: "Esqueci a senha", headerShown: false }}
+        />
+        <Stack.Screen
           name="seller-access-block"
           options={{ title: "Acesso", headerShown: false }}
         />

@@ -1,130 +1,194 @@
-import { getPlanDefinition, isPlanId, listPlans } from "@pedidos/shared";
+import rateLimit from "@fastify/rate-limit";
+import { listPlans } from "@pedidos/shared";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { requireAdmin } from "../auth/org-roles.js";
 import { prisma } from "../db.js";
+import { readAsaasConfig } from "../services/billing/asaas/asaas-config.js";
+import { createAsaasPaymentGateway } from "../services/billing/asaas/asaas-payment-gateway.js";
+import {
+  processAsaasWebhook,
+  validateAsaasWebhookToken,
+} from "../services/billing/asaas/webhook-processor.js";
+import {
+  createSubscriptionIntent,
+  getPublicIntentStatus,
+  retrySubscriptionCheckout,
+} from "../services/billing/subscription-intent-service.js";
+import { getAuth } from "../util/guards.js";
 
-const SITE_URL =
-  process.env.SITE_PUBLIC_URL?.trim() ||
-  process.env.NEXT_PUBLIC_APP_URL?.trim() ||
-  "http://localhost:3001";
-const APP_URL = process.env.WEB_PUBLIC_URL?.trim() || "http://localhost:5173";
-
-const checkoutBody = z.object({
+const intentBody = z.object({
   planId: z.string().min(1),
+  companyName: z.string().trim().min(1),
+  adminName: z.string().trim().min(1),
   email: z
     .string()
     .email()
     .transform((e) => e.trim().toLowerCase()),
-  companyName: z.string().trim().min(1),
   phone: z.string().trim().optional(),
-  document: z.string().trim().optional(),
-  organizationId: z.string().trim().optional(),
+  document: z.string().trim().min(11),
+  termsAccepted: z.boolean(),
+  privacyAccepted: z.boolean(),
 });
 
-/**
- * Billing público (landing) + leitura de planos.
- * Checkout é stub: persiste intent + payload pronto para Stripe/MP.
- */
+function httpErr(err: unknown): {
+  status: number;
+  body: Record<string, unknown>;
+} {
+  const e = err as {
+    message?: string;
+    code?: string;
+    http?: number;
+    intentId?: string;
+  };
+  return {
+    status: e.http ?? 500,
+    body: {
+      error: e.message || "Erro interno",
+      code: e.code,
+      intentId: e.intentId,
+    },
+  };
+}
+
 export const billingRoutes: FastifyPluginAsync = async (app) => {
-  app.get("/plans", async () => ({
-    plans: listPlans().map((p) => ({
-      id: p.id,
-      name: p.name,
-      shortName: p.shortName,
-      description: p.description,
-      monthlyPriceBrl: p.monthlyPriceBrl,
-      features: p.features,
-      limits: p.limits,
-      highlighted: Boolean(p.highlighted),
-    })),
-  }));
+  await app.register(async (publicApp) => {
+    await publicApp.register(rateLimit, {
+      max: 20,
+      timeWindow: "1 minute",
+      keyGenerator: (req) => req.ip,
+    });
 
-  app.post("/checkout-intent", async (req, reply) => {
-    const parsed = checkoutBody.safeParse(req.body);
-    if (!parsed.success) {
-      return reply
-        .status(400)
-        .send({ error: "Dados inválidos", details: parsed.error.flatten() });
+    publicApp.get("/plans", async () => ({
+      plans: listPlans().map((p) => ({
+        id: p.id,
+        name: p.name,
+        shortName: p.shortName,
+        description: p.description,
+        monthlyPriceBrl: p.monthlyPriceBrl,
+        features: p.features,
+        limits: p.limits,
+        highlighted: Boolean(p.highlighted),
+      })),
+    }));
+
+    publicApp.post("/subscription-intents", async (req, reply) => {
+      const parsed = intentBody.safeParse(req.body);
+      if (!parsed.success) {
+        return reply
+          .status(400)
+          .send({ error: "Dados inválidos", details: parsed.error.flatten() });
+      }
+      try {
+        const result = await createSubscriptionIntent(parsed.data);
+        return {
+          intentId: result.intentId,
+          checkoutUrl: result.checkoutUrl,
+          message: "Redirecionando para o pagamento seguro...",
+        };
+      } catch (err) {
+        const { status, body } = httpErr(err);
+        req.log.warn(
+          { err: body.code, intentId: body.intentId },
+          "subscription-intent failed",
+        );
+        return reply.status(status).send(body);
+      }
+    });
+
+    publicApp.post("/subscription-intents/:id/retry", async (req, reply) => {
+      const id = (req.params as { id: string }).id;
+      try {
+        const result = await retrySubscriptionCheckout(id);
+        return {
+          intentId: result.intentId,
+          checkoutUrl: result.checkoutUrl,
+          message: "Redirecionando para o pagamento seguro...",
+        };
+      } catch (err) {
+        const { status, body } = httpErr(err);
+        return reply.status(status).send(body);
+      }
+    });
+
+    publicApp.get("/subscription-intents/:id/status", async (req, reply) => {
+      const id = (req.params as { id: string }).id;
+      const status = await getPublicIntentStatus(id);
+      if (!status) return reply.status(404).send({ error: "Não encontrado" });
+      return status;
+    });
+  });
+
+  /** Stub legado — mantido para compatibilidade; preferir subscription-intents. */
+  app.post("/checkout-intent", async (_req, reply) => {
+    return reply.status(410).send({
+      error: "Endpoint substituído. Use POST /billing/subscription-intents",
+      code: "GONE",
+    });
+  });
+
+  app.post("/cancel", async (req, reply) => {
+    const auth = getAuth(req, reply);
+    if (!auth) return;
+    if (!requireAdmin(reply, auth)) return;
+
+    const sub = await prisma.organizationSubscription.findUnique({
+      where: { organizationId: auth.organizationId },
+    });
+    if (!sub) {
+      return reply.status(404).send({ error: "Assinatura não encontrada" });
     }
 
-    const { planId, email, companyName, phone, document, organizationId } =
-      parsed.data;
-    if (!isPlanId(planId)) {
-      return reply.status(400).send({ error: "Plano inválido" });
-    }
-
-    if (organizationId) {
-      const org = await prisma.organization.findUnique({
-        where: { id: organizationId },
-        select: { id: true },
-      });
-      if (!org) {
-        return reply.status(400).send({ error: "Organização inválida" });
+    const cfg = readAsaasConfig();
+    if (sub.provider === "asaas" && sub.providerSubscriptionId && cfg) {
+      try {
+        const gw = createAsaasPaymentGateway(cfg);
+        await gw.cancelSubscription(sub.providerSubscriptionId);
+      } catch (err) {
+        req.log.warn(
+          { err: err instanceof Error ? err.message : "cancel_failed" },
+          "asaas cancel subscription",
+        );
       }
     }
 
-    const def = getPlanDefinition(planId);
-    const intentIdPlaceholder = "pending";
+    await prisma.organizationSubscription.update({
+      where: { organizationId: auth.organizationId },
+      data: { cancelAtPeriodEnd: true },
+    });
 
-    const checkout = {
-      mode: "subscription" as const,
-      interval: "month" as const,
-      planId: def.id,
-      planName: def.name,
-      amountBrl: def.monthlyPriceBrl,
-      currency: "BRL" as const,
-      customer: {
-        email,
-        name: companyName,
-        phone: phone ?? null,
-        document: document ?? null,
-      },
-      metadata: {
-        organizationId: organizationId ?? null,
-        intentId: intentIdPlaceholder,
-        planId: def.id,
-      },
-      successUrl: `${SITE_URL}/checkout/sucesso?plan=${def.id}`,
-      cancelUrl: `${SITE_URL}/#planos`,
-      appUrl: APP_URL,
-      // provider adapter: criar sessão Stripe/MP com este objeto
-      provider: "none" as const,
-    };
-
-    const intent = await prisma.checkoutIntent.create({
+    await prisma.auditLog.create({
       data: {
-        organizationId: organizationId ?? null,
-        planId: def.id,
-        email,
-        companyName,
-        phone: phone ?? null,
-        document: document ?? null,
-        checkoutPayload: {
-          ...checkout,
-          metadata: { ...checkout.metadata, intentId: "will-set" },
-        },
-        status: "pending",
+        organizationId: auth.organizationId,
+        userId: auth.sub,
+        action: "subscription.cancel_requested",
+        entityType: "OrganizationSubscription",
+        entityId: sub.id,
+        metadata: { cancelAtPeriodEnd: true },
       },
     });
 
-    const checkoutFinal = {
-      ...checkout,
-      metadata: {
-        ...checkout.metadata,
-        intentId: intent.id,
-      },
-    };
+    return { ok: true, cancelAtPeriodEnd: true };
+  });
+};
 
-    await prisma.checkoutIntent.update({
-      where: { id: intent.id },
-      data: { checkoutPayload: checkoutFinal },
-    });
-
-    return {
-      intentId: intent.id,
-      message:
-        "Pedido recebido. Em breve redirecionaremos ao pagamento online.",
-      checkout: checkoutFinal,
-    };
+export const asaasWebhookRoutes: FastifyPluginAsync = async (app) => {
+  app.post("/asaas", async (req, reply) => {
+    if (!validateAsaasWebhookToken(req.headers["asaas-access-token"])) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
+    try {
+      const result = await processAsaasWebhook(
+        (req.body ?? {}) as Parameters<typeof processAsaasWebhook>[0],
+      );
+      return { ...result, received: true };
+    } catch (err) {
+      req.log.error(
+        { err: err instanceof Error ? err.message : "webhook_error" },
+        "asaas webhook processing failed",
+      );
+      // Ainda 200 se possível após persistir — aqui falhou: 500 para retry Asaas
+      return reply.status(500).send({ error: "processing_failed" });
+    }
   });
 };

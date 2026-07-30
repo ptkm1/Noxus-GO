@@ -95,7 +95,9 @@ export default function HomePage() {
             <BrandMark size={28} color="#ffffff" />
             {APP_BRAND_NAME}
           </a>
-          <nav style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+          <nav
+            style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}
+          >
             <a
               href="#planos"
               className="btn btn-ghost"
@@ -211,8 +213,11 @@ export default function HomePage() {
           >
             Por que equipes escolhem o {APP_BRAND_NAME}
           </h2>
-          <p style={{ margin: "0 0 2rem", color: "var(--muted)", maxWidth: 520 }}>
-            Do primeiro pedido ao fechamento do mês, com o que cada plano libera.
+          <p
+            style={{ margin: "0 0 2rem", color: "var(--muted)", maxWidth: 520 }}
+          >
+            Do primeiro pedido ao fechamento do mês, com o que cada plano
+            libera.
           </p>
           <div
             style={{
@@ -226,7 +231,13 @@ export default function HomePage() {
                 <h3 style={{ margin: "0 0 0.4rem", fontSize: "1.1rem" }}>
                   {b.title}
                 </h3>
-                <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.95rem" }}>
+                <p
+                  style={{
+                    margin: 0,
+                    color: "var(--muted)",
+                    fontSize: "0.95rem",
+                  }}
+                >
                   {b.body}
                 </p>
               </div>
@@ -253,7 +264,9 @@ export default function HomePage() {
           >
             Planos
           </h2>
-          <p style={{ margin: "0 0 2rem", color: "var(--muted)", maxWidth: 480 }}>
+          <p
+            style={{ margin: "0 0 2rem", color: "var(--muted)", maxWidth: 480 }}
+          >
             Preços mensais em BRL. Limites de vendedores e usuários conforme o
             plano.
           </p>
@@ -298,7 +311,9 @@ export default function HomePage() {
                       Mais popular
                     </span>
                   ) : null}
-                  <h3 style={{ margin: 0, fontSize: "1.25rem" }}>{plan.name}</h3>
+                  <h3 style={{ margin: 0, fontSize: "1.25rem" }}>
+                    {plan.name}
+                  </h3>
                   <p
                     style={{
                       margin: "0.35rem 0 0",
@@ -323,7 +338,13 @@ export default function HomePage() {
                     /mês
                   </span>
                 </p>
-                <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--muted)" }}>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: "0.85rem",
+                    color: "var(--muted)",
+                  }}
+                >
                   Até {formatLimit(plan.limits.maxSellers)} vendedores ·{" "}
                   {formatLimit(plan.limits.maxUsers)} usuários
                 </p>
@@ -344,7 +365,9 @@ export default function HomePage() {
                 </ul>
                 <a
                   href={`?plan=${plan.id}#checkout`}
-                  className={plan.highlighted ? "btn btn-primary" : "btn btn-outline"}
+                  className={
+                    plan.highlighted ? "btn btn-primary" : "btn btn-outline"
+                  }
                   style={{ width: "100%" }}
                 >
                   Escolher {plan.shortName}
@@ -373,15 +396,19 @@ export default function HomePage() {
                 letterSpacing: "-0.02em",
               }}
             >
-              Criar conta
+              Contratar PedixPro
             </h2>
             <p style={{ margin: 0, color: "var(--muted)", maxWidth: 420 }}>
-              Escolha o plano, preencha os dados da empresa e defina a senha do
-              administrador. Em seguida, o pagamento online entra em uma próxima
-              etapa.
+              Escolha o plano, preencha os dados da empresa e do administrador.
+              Em seguida você será redirecionado ao pagamento seguro. A senha de
+              acesso é definida depois da confirmação, por e-mail.
             </p>
           </div>
-          <Suspense fallback={<p style={{ color: "var(--muted)" }}>Carregando formulário…</p>}>
+          <Suspense
+            fallback={
+              <p style={{ color: "var(--muted)" }}>Carregando formulário…</p>
+            }
+          >
             <CheckoutForm />
           </Suspense>
         </div>
@@ -410,7 +437,13 @@ export default function HomePage() {
                 <h3 style={{ margin: "0 0 0.35rem", fontSize: "1rem" }}>
                   {item.q}
                 </h3>
-                <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.95rem" }}>
+                <p
+                  style={{
+                    margin: 0,
+                    color: "var(--muted)",
+                    fontSize: "0.95rem",
+                  }}
+                >
                   {item.a}
                 </p>
               </div>

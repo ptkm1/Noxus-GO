@@ -1,6 +1,17 @@
 /** Rotas base da API v1 (alinhar com apps/api) */
 export const API_PREFIX = "/api/v1";
 
+export {
+  CHECKOUT_INTENT_STATUSES,
+  isCheckoutIntentStatus,
+  mapIntentToPublicStatus,
+} from "./billing.js";
+export type {
+  CheckoutIntentStatus,
+  PublicIntentNextAction,
+  PublicIntentStatus,
+} from "./billing.js";
+
 export type Role = "ADMIN" | "SELLER" | "SUPERVISOR" | "MANAGER";
 
 export type OrderStatus =
