@@ -1,3 +1,4 @@
+import { isPlanId, type PlanId } from "@pedidos/shared";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
@@ -100,6 +101,7 @@ const registerBody = z.object({
     .email()
     .transform((e) => e.trim().toLowerCase()),
   password: z.string().min(6, "Senha com pelo menos 6 caracteres"),
+  planId: z.string().trim().optional(),
 });
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
@@ -111,7 +113,16 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         .send({ error: "Dados inválidos", details: parsed.error.flatten() });
     }
 
-    const { organizationName, name, email, password } = parsed.data;
+    const { organizationName, name, email, password, planId: rawPlanId } =
+      parsed.data;
+    let planId: PlanId = "starter";
+    if (rawPlanId) {
+      if (!isPlanId(rawPlanId)) {
+        return reply.status(400).send({ error: "Plano inválido" });
+      }
+      planId = rawPlanId;
+    }
+
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) return reply.status(409).send({ error: "Email já cadastrado" });
 
@@ -126,7 +137,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       await tx.organizationSubscription.create({
         data: {
           organizationId: org.id,
-          planId: "starter",
+          planId,
           status: "TRIAL",
           provider: "none",
           currentPeriodStart: now,

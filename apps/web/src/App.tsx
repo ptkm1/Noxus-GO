@@ -72,10 +72,7 @@ function SellerNotice() {
           <AppLogo to="/login" />
           <button
             type="button"
-            onClick={() => {
-              logout();
-              window.location.href = "/login";
-            }}
+            onClick={() => logout()}
             className="rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:bg-background"
           >
             Sair

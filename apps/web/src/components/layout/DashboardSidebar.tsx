@@ -1,7 +1,9 @@
 import { useAuth } from "@/auth/AuthContext";
 import { CommerceProWordmark } from "@/components/brand/CommerceProBrand";
+import { Button } from "@/components/ui/button";
 import { isWebTeamLeader } from "@/lib/staff";
 import { cn } from "@/lib/utils";
+import { LogOut } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { navForRole } from "./navConfig";
 
@@ -11,7 +13,7 @@ type Props = {
 };
 
 export function DashboardSidebar({ onNavigate, className }: Props) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const navItems = navForRole(user);
 
   return (
@@ -64,6 +66,18 @@ export function DashboardSidebar({ onNavigate, className }: Props) {
               ? "Líder de equipe"
               : "Administrador"}
         </p>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-3 w-full justify-start text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          onClick={() => {
+            onNavigate?.();
+            logout();
+          }}
+        >
+          <LogOut className="mr-2 h-4 w-4" />
+          Sair
+        </Button>
       </div>
     </aside>
   );

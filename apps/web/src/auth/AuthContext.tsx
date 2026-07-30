@@ -15,6 +15,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiFetch, clearTokens, getAccessToken, setTokens } from "../lib/api";
 
 export type UserSubscription = {
@@ -62,7 +63,21 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+function clearBrowserStorage() {
+  try {
+    localStorage.clear();
+  } catch {
+    /* ignore */
+  }
+  try {
+    sessionStorage.clear();
+  } catch {
+    /* ignore */
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -138,8 +153,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     clearTokens();
+    clearBrowserStorage();
     setUser(null);
-  }, []);
+    navigate("/login", { replace: true });
+  }, [navigate]);
 
   const value = useMemo(
     () => ({ user, loading, login, register, logout, refreshUser }),

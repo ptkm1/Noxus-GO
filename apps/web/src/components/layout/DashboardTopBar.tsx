@@ -84,8 +84,8 @@ export function DashboardTopBar() {
         <Button
           variant="ghost"
           size="sm"
-          className="hidden sm:inline-flex"
           onClick={() => logout()}
+          aria-label="Sair"
         >
           <LogOut className="mr-2 h-4 w-4" />
           Sair

@@ -373,11 +373,12 @@ export default function HomePage() {
                 letterSpacing: "-0.02em",
               }}
             >
-              Solicitar assinatura
+              Criar conta
             </h2>
             <p style={{ margin: 0, color: "var(--muted)", maxWidth: 420 }}>
-              Preencha os dados da empresa. Guardamos o pedido e, em breve,
-              redirecionamos ao pagamento online.
+              Escolha o plano, preencha os dados da empresa e defina a senha do
+              administrador. Em seguida, o pagamento online entra em uma próxima
+              etapa.
             </p>
           </div>
           <Suspense fallback={<p style={{ color: "var(--muted)" }}>Carregando formulário…</p>}>
