@@ -107,6 +107,20 @@ export function RegisterPage() {
           <Button type="submit" disabled={pending} className="w-full">
             {pending ? "A criar conta…" : "Criar conta"}
           </Button>
+          <p className="text-center text-xs leading-5 text-muted-foreground">
+            Ao criar a conta, você declara que leu e aceitou os{" "}
+            <Link to="/legal/termos" className="font-medium text-primary">
+              Termos de Uso
+            </Link>{" "}
+            e a{" "}
+            <Link
+              to="/legal/privacidade"
+              className="font-medium text-primary"
+            >
+              Política de Privacidade
+            </Link>
+            .
+          </p>
         </form>
         <p className="mt-6 text-center text-sm text-muted-foreground">
           Já tens conta?{" "}

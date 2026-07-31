@@ -35,7 +35,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "O pagamento já está ativo?",
-    a: "Por enquanto registramos o interesse (checkout intent). O redirecionamento Stripe/Mercado Pago vem em seguida.",
+    a: "Sim. O checkout seguro é processado pelo Asaas; após a confirmação, enviamos o e-mail de ativação da conta.",
   },
 ];
 

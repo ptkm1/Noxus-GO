@@ -134,6 +134,19 @@ export {
   formatSaleItemCount,
 } from "./format-sale-date.js";
 export {
+  getLegalDocument,
+  LEGAL_COMPANY_PLACEHOLDER,
+  LEGAL_CONTACT_EMAIL,
+  LEGAL_DOCUMENTS,
+  PRIVACY_POLICY_DOCUMENT,
+  TERMS_OF_USE_DOCUMENT,
+} from "./legal-documents.js";
+export type {
+  LegalArticle,
+  LegalChapter,
+  LegalDocument,
+} from "./legal-documents.js";
+export {
   DEFAULT_HOME_INDICATORS,
   DEFAULT_HOME_INDICATORS_LAYOUT,
   HOME_INDICATOR_KEYS,

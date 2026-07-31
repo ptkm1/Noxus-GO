@@ -1,6 +1,7 @@
 "use client";
 
 import { isPlanId, listPlans, type PlanId } from "@pedidos/shared";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
@@ -209,7 +210,10 @@ export function CheckoutForm({
           onChange={(e) => setTermsAccepted(e.target.checked)}
           disabled={loading}
         />
-        Li e aceito os Termos de Uso
+        Li e aceito os{" "}
+        <Link href="/termos" target="_blank">
+          Termos de Uso
+        </Link>
       </label>
 
       <label className="checkout-check">
@@ -219,7 +223,10 @@ export function CheckoutForm({
           onChange={(e) => setPrivacyAccepted(e.target.checked)}
           disabled={loading}
         />
-        Li e aceito a Política de Privacidade
+        Li e aceito a{" "}
+        <Link href="/privacidade" target="_blank">
+          Política de Privacidade
+        </Link>
       </label>
 
       <p className="checkout-hint">

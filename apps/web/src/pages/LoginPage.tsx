@@ -88,6 +88,20 @@ export function LoginPage() {
               Criar conta
             </Link>
           </p>
+          <p className="mt-4 text-center text-xs leading-5 text-muted-foreground">
+            Ao acessar, você concorda com os{" "}
+            <Link to="/legal/termos" className="font-medium text-primary">
+              Termos de Uso
+            </Link>{" "}
+            e com a{" "}
+            <Link
+              to="/legal/privacidade"
+              className="font-medium text-primary"
+            >
+              Política de Privacidade
+            </Link>
+            .
+          </p>
         </CardContent>
       </Card>
     </div>

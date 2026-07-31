@@ -12,6 +12,10 @@ export function DevToolsBootstrap({ children }: Props) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    if (!__DEV__) {
+      setReady(true);
+      return;
+    }
     void bootstrapApiBaseOverride().finally(() => setReady(true));
   }, []);
 

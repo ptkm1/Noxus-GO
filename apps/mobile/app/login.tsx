@@ -3,6 +3,7 @@ import { APP_BRAND_TAGLINE } from "@pedidos/shared";
 import { Redirect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -83,6 +84,27 @@ export default function LoginScreen() {
             >
               <Text style={styles.forgot}>Esqueci minha senha</Text>
             </Pressable>
+            <Text style={styles.legalText}>
+              Ao acessar, você concorda com os{" "}
+              <Text
+                style={styles.legalLink}
+                onPress={() =>
+                  void Linking.openURL("https://pedixpro.com.br/termos")
+                }
+              >
+                Termos de Uso
+              </Text>{" "}
+              e com a{" "}
+              <Text
+                style={styles.legalLink}
+                onPress={() =>
+                  void Linking.openURL("https://pedixpro.com.br/privacidade")
+                }
+              >
+                Política de Privacidade
+              </Text>
+              .
+            </Text>
           </View>
           <DevToolsEntry variant="login" />
           <DevToolsVersionTap variant="onDark" />
@@ -131,6 +153,17 @@ function createLoginStyles(c: AppColors) {
       fontWeight: "600",
       fontSize: 14,
       marginTop: 4,
+    },
+    legalText: {
+      color: c.textSecondary,
+      fontSize: 11,
+      lineHeight: 17,
+      textAlign: "center",
+      marginTop: 4,
+    },
+    legalLink: {
+      color: c.primary,
+      fontWeight: "700",
     },
   });
 }

@@ -4,10 +4,15 @@ import {
   clearLocalPushRegistration,
   hrefFromNotificationData,
   registerForPushNotifications,
+  unregisterCurrentPushDevice,
 } from "@/lib/push";
+import {
+  isPushNotificationsEnabled,
+  subscribePrivacyPreferences,
+} from "@/lib/privacy-preferences";
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 
 /**
@@ -19,9 +24,27 @@ export function PushBootstrap() {
   const router = useRouter();
   const { showToast } = useAppToast();
   const tokenRef = useRef<string | null>(null);
+  const [pushEnabled, setPushEnabled] = useState(false);
 
   useEffect(() => {
-    if (!user) {
+    let mounted = true;
+    const refresh = () => {
+      void isPushNotificationsEnabled().then((enabled) => {
+        if (mounted) setPushEnabled(enabled);
+      });
+    };
+
+    refresh();
+    const unsub = subscribePrivacyPreferences(refresh);
+    return () => {
+      mounted = false;
+      unsub();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user || !pushEnabled) {
+      if (user && !pushEnabled) void unregisterCurrentPushDevice();
       tokenRef.current = null;
       clearLocalPushRegistration();
       return;
@@ -49,7 +72,7 @@ export function PushBootstrap() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id]);
+  }, [user, user?.id, pushEnabled]);
 
   useEffect(() => {
     const subReceive = Notifications.addNotificationReceivedListener((n) => {

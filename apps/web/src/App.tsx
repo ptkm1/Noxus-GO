@@ -38,6 +38,7 @@ import { FiscalFixedExpensesPage } from "./pages/FiscalFixedExpensesPage";
 import { FiscalHubPage } from "./pages/FiscalHubPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { InsightsPage } from "./pages/InsightsPage";
+import { LegalDocumentPage } from "./pages/LegalDocumentPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { OrderDetailPage } from "./pages/OrderDetailPage";
@@ -195,6 +196,12 @@ function AppRoutes() {
             </PublicAuthLayout>
           )
         }
+      />
+      <Route path="/legal/:slug" element={<LegalDocumentPage />} />
+      <Route path="/termos" element={<Navigate to="/legal/termos" replace />} />
+      <Route
+        path="/privacidade"
+        element={<Navigate to="/legal/privacidade" replace />}
       />
       <Route
         path="/cadastro"

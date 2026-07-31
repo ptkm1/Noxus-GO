@@ -1,9 +1,11 @@
 import { MobileHeader, MobileScreen, SafeScreen } from "@/components/layout";
-import { LogOut } from "lucide-react-native";
+import { ExternalLink, LogOut } from "lucide-react-native";
 import {
   ActivityIndicator,
+  Linking,
   Pressable,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from "react-native";
@@ -16,7 +18,16 @@ import type { AppColors } from "../lib/theme/types";
 export default function SettingsScreen() {
   const styles = useThemedStyles(createSettingsStyles);
   const { colors } = useTheme();
-  const { apiUrl, logoutAndGoLogin, logoutPending } = useSettingsScreen();
+  const {
+    apiUrl,
+    locationTrackingEnabled,
+    pushNotificationsEnabled,
+    privacyLinks,
+    setLocationTracking,
+    setPushNotifications,
+    logoutAndGoLogin,
+    logoutPending,
+  } = useSettingsScreen();
 
   return (
     <SafeScreen>
@@ -31,6 +42,63 @@ export default function SettingsScreen() {
           Escolha o tema do app ou siga o do sistema.
         </Text>
         <ThemePreferencePicker />
+
+        <Text style={styles.section}>Privacidade</Text>
+        <Text style={styles.hint}>
+          Você controla os recursos sensíveis do aparelho. A localização de rota
+          só é enviada quando o rastreamento estiver ativado.
+        </Text>
+        <View style={styles.preferenceCard}>
+          <View style={styles.preferenceText}>
+            <Text style={styles.preferenceTitle}>Rastreamento de rota</Text>
+            <Text style={styles.preferenceHint}>
+              Compartilha sua localização com a gestão durante visitas e rotas
+              de trabalho.
+            </Text>
+          </View>
+          <Switch
+            value={locationTrackingEnabled}
+            onValueChange={(value) => void setLocationTracking(value)}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={colors.primaryForeground}
+          />
+        </View>
+        <View style={styles.preferenceCard}>
+          <View style={styles.preferenceText}>
+            <Text style={styles.preferenceTitle}>Notificações</Text>
+            <Text style={styles.preferenceHint}>
+              Receba alertas operacionais de pedidos, aprovações, estoque e
+              comissão.
+            </Text>
+          </View>
+          <Switch
+            value={pushNotificationsEnabled}
+            onValueChange={(value) => void setPushNotifications(value)}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={colors.primaryForeground}
+          />
+        </View>
+        <Pressable
+          style={styles.linkRow}
+          onPress={() => void Linking.openURL(privacyLinks.privacyPolicy)}
+        >
+          <Text style={styles.linkText}>Política de Privacidade</Text>
+          <ExternalLink color={colors.primary} size={18} />
+        </Pressable>
+        <Pressable
+          style={styles.linkRow}
+          onPress={() => void Linking.openURL(privacyLinks.terms)}
+        >
+          <Text style={styles.linkText}>Termos de Uso</Text>
+          <ExternalLink color={colors.primary} size={18} />
+        </Pressable>
+        <Pressable
+          style={styles.linkRow}
+          onPress={() => void Linking.openURL(privacyLinks.accountDeletion)}
+        >
+          <Text style={styles.linkText}>Solicitar exclusão da conta e dados</Text>
+          <ExternalLink color={colors.primary} size={18} />
+        </Pressable>
 
         <Text style={styles.section}>API</Text>
         <Text style={styles.hint}>
@@ -76,6 +144,44 @@ function createSettingsStyles(c: AppColors) {
       fontSize: 14,
       color: c.textSecondary,
       lineHeight: 22,
+    },
+    preferenceCard: {
+      borderWidth: 1,
+      borderColor: c.border,
+      backgroundColor: c.card,
+      borderRadius: 12,
+      padding: 14,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+    },
+    preferenceText: { flex: 1, minWidth: 0, gap: 4 },
+    preferenceTitle: {
+      fontSize: 15,
+      fontWeight: "700",
+      color: c.text,
+    },
+    preferenceHint: {
+      fontSize: 13,
+      color: c.textSecondary,
+      lineHeight: 18,
+    },
+    linkRow: {
+      minHeight: 46,
+      borderWidth: 1,
+      borderColor: c.border,
+      borderRadius: 10,
+      paddingHorizontal: 14,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+    },
+    linkText: {
+      flex: 1,
+      color: c.primary,
+      fontSize: 14,
+      fontWeight: "700",
     },
     danger: {
       marginTop: 12,

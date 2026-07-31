@@ -29,6 +29,18 @@ export function PublicSiteHeader({ variant }: Props) {
       <div className="mx-auto flex h-14 max-w-lg items-center justify-between px-4 sm:max-w-none sm:px-6">
         <AppLogo to="/login" inverted />
         <div className="flex items-center gap-2">
+          <Link
+            to="/legal/termos"
+            className="hidden rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-primary hover:underline sm:inline-flex"
+          >
+            Termos
+          </Link>
+          <Link
+            to="/legal/privacidade"
+            className="hidden rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-primary hover:underline sm:inline-flex"
+          >
+            Privacidade
+          </Link>
           <ThemeToggle />
           {secondary}
         </div>

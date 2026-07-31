@@ -37,7 +37,14 @@
     "production": {
       "autoIncrement": true,
       "node": "22.12.0",
-      "pnpm": "10.22.0"
+      "pnpm": "10.22.0",
+      "env": {
+        "EXPO_USE_LOCAL_CLI": "1",
+        "EXPO_PUBLIC_API_URL": "https://noxus-go.onrender.com"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   },
   "submit": {
