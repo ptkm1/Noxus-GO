@@ -1,5 +1,10 @@
-import { isPlanId, type PlanId } from "@pedidos/shared";
 import rateLimit from "@fastify/rate-limit";
+import {
+  cnpjDigitsOnly,
+  isPlanId,
+  isValidCnpj,
+  type PlanId,
+} from "@pedidos/shared";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
@@ -17,6 +22,8 @@ import {
 import { sendPasswordResetEmail } from "../services/billing/activation-email.js";
 import { getOrgEntitlements } from "../services/billing/entitlements.js";
 import { syncOrgAccessFromSubscription } from "../services/billing/subscription-access.js";
+import { fiscalConfigCreateData } from "../services/cnpj/fiscal-emitente.js";
+import { lookupFiscalEmitente } from "../services/cnpj/lookup-fiscal-emitente.js";
 import { ensureDefaultOrderSituations } from "../services/order-situations.js";
 import {
   ensureOrgRolePermissions,
@@ -118,6 +125,7 @@ const registerBody = z.object({
     .transform((e) => e.trim().toLowerCase()),
   password: z.string().min(6, "Senha com pelo menos 6 caracteres"),
   planId: z.string().trim().optional(),
+  cnpj: z.string().trim().min(1, "CNPJ obrigatório"),
 });
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
@@ -135,7 +143,12 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       email,
       password,
       planId: rawPlanId,
+      cnpj: rawCnpj,
     } = parsed.data;
+    const cnpj = cnpjDigitsOnly(rawCnpj);
+    if (!isValidCnpj(cnpj)) {
+      return reply.status(400).send({ error: "CNPJ inválido" });
+    }
     let planId: PlanId = "starter";
     if (rawPlanId) {
       if (!isPlanId(rawPlanId)) {
@@ -147,6 +160,16 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) return reply.status(409).send({ error: "Email já cadastrado" });
 
+    const existingDoc = await prisma.organization.findFirst({
+      where: { document: cnpj },
+      select: { id: true },
+    });
+    if (existingDoc) {
+      return reply.status(409).send({ error: "CNPJ já cadastrado" });
+    }
+
+    const emitente = await lookupFiscalEmitente(cnpj);
+
     const passwordHash = await hashPassword(password);
     const user = await prisma.$transaction(async (tx) => {
       const org = await tx.organization.create({
@@ -154,7 +177,12 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
           name: organizationName,
           displayName: organizationName,
           accessStatus: "ACTIVE",
+          document: cnpj,
+          cnpj,
         },
+      });
+      await tx.organizationFiscalConfig.create({
+        data: fiscalConfigCreateData(org.id, emitente),
       });
       const now = new Date();
       const trialEnd = new Date(now);
@@ -427,24 +455,36 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         where: { email: parsed.data.email },
       });
 
-      // Não vazar existência; só envia se conta já ativada.
-      if (user?.activatedAt) {
+      // Não vazar existência. Conta pendente recebe o convite de ativação de novo.
+      if (user) {
         try {
-          const { rawToken, expiresAt } = await createActivationToken(
-            user.id,
-            "PASSWORD_RESET",
-          );
-          const emailResult = await sendPasswordResetEmail({
-            to: user.email,
-            name: user.name,
-            rawToken,
-            expiresAt,
-          });
-          if (!emailResult.sent) {
-            app.log.warn(
-              { email: user.email, reason: emailResult.reason },
-              "forgot-password: e-mail não enviado",
+          if (!user.activatedAt) {
+            const { sendInviteForExistingUser } =
+              await import("../services/billing/activation-email.js");
+            const emailResult = await sendInviteForExistingUser(user.id);
+            if (!emailResult.sent) {
+              app.log.warn(
+                { email: user.email, reason: emailResult.reason },
+                "forgot-password: convite de ativação não enviado",
+              );
+            }
+          } else {
+            const { rawToken, expiresAt } = await createActivationToken(
+              user.id,
+              "PASSWORD_RESET",
             );
+            const emailResult = await sendPasswordResetEmail({
+              to: user.email,
+              name: user.name,
+              rawToken,
+              expiresAt,
+            });
+            if (!emailResult.sent) {
+              app.log.warn(
+                { email: user.email, reason: emailResult.reason },
+                "forgot-password: e-mail não enviado",
+              );
+            }
           }
         } catch (err) {
           app.log.warn(

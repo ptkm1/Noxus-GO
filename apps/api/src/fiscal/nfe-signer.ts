@@ -7,13 +7,35 @@ const C14N_ALG = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315";
 const RSA_SHA1 = "http://www.w3.org/2000/09/xmldsig#rsa-sha1";
 const SHA1 = "http://www.w3.org/2000/09/xmldsig#sha1";
 const ENVELOPED = "http://www.w3.org/2000/09/xmldsig#enveloped-signature";
+const NFE_NS = "http://www.portalfiscal.inf.br/nfe";
 
-function sha1Base64(data: string): string {
-  return createHash("sha1").update(data, "utf8").digest("base64");
+/** SEFAZ cStat 587: xmlns padrão só no NFe/enviNFe, não em infNFe/infEvento. */
+export function stripNfeDefaultXmlns(xml: string): string {
+  return xml.replace(/\sxmlns="http:\/\/www\.portalfiscal\.inf\.br\/nfe"/g, "");
 }
 
-/** Canonicalização C14N 1.0 (inclusive) conforme XMLDSig / NF-e. */
-function canonicalizeXml(xmlFragment: string): string {
+/** SEFAZ cStat 588: sem espaço, tab ou quebra de linha entre tags. */
+export function compactNfeXml(xml: string): string {
+  return xml
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .replace(/>\s+</g, "><");
+}
+
+function firstElementChild(node: {
+  childNodes: ArrayLike<{ nodeType: number }>;
+}): {
+  nodeType: number;
+} | null {
+  const kids = node.childNodes;
+  for (let i = 0; i < kids.length; i++) {
+    const c = kids[i];
+    if (c && c.nodeType === 1) return c;
+  }
+  return null;
+}
+
+function parseXmlRoot(xmlFragment: string) {
   const doc = new DOMParser().parseFromString(xmlFragment, "text/xml");
   const root = doc.documentElement;
   if (!root) {
@@ -23,9 +45,33 @@ function canonicalizeXml(xmlFragment: string): string {
   if (parserError) {
     throw new Error("Falha ao parsear XML para C14N");
   }
+  return root;
+}
+
+function sha1Base64(data: string): string {
+  return createHash("sha1").update(data, "utf8").digest("base64");
+}
+
+/** Canonicalização C14N 1.0 (inclusive) conforme XMLDSig / NF-e. */
+function canonicalizeXml(xmlFragment: string): string {
+  const root = parseXmlRoot(xmlFragment);
   const c14n = new C14nCanonicalization();
-  // xml-crypto tipa DOM Node do browser; @xmldom/xmldom é compatível em runtime.
   return c14n.process(root as unknown as Node, {});
+}
+
+/**
+ * C14N de infNFe/infEvento no contexto do namespace padrão da NF-e.
+ * O XML enviado não leva xmlns nesses nós (cStat 587); o digest precisa do xmlns herdado.
+ */
+export function canonicalizeInNfeNamespace(elementXml: string): string {
+  const inner = compactNfeXml(stripNfeDefaultXmlns(elementXml));
+  const root = parseXmlRoot(`<NFe xmlns="${NFE_NS}">${inner}</NFe>`);
+  const el = firstElementChild(root);
+  if (!el) {
+    throw new Error("XML inválido para canonicalização C14N");
+  }
+  const c14n = new C14nCanonicalization();
+  return c14n.process(el as unknown as Node, {});
 }
 
 function buildSignatureBlock(
@@ -57,9 +103,9 @@ export function signInfNFe(
   privateKeyPem: string,
   certPem: string,
 ): string {
-  const canonical = canonicalizeXml(infNFeXml);
-  const digestValue = sha1Base64(canonical);
-  const idMatch = /Id="([^"]+)"/.exec(infNFeXml);
+  const inf = compactNfeXml(stripNfeDefaultXmlns(infNFeXml));
+  const digestValue = sha1Base64(canonicalizeInNfeNamespace(inf));
+  const idMatch = /Id="([^"]+)"/.exec(inf);
   const referenceUri = idMatch ? `#${idMatch[1]}` : "";
   const signatureBlock = buildSignatureBlock(
     digestValue,
@@ -67,7 +113,7 @@ export function signInfNFe(
     privateKeyPem,
     certPem,
   );
-  return `<NFe xmlns="http://www.portalfiscal.inf.br/nfe">${infNFeXml}${signatureBlock}</NFe>`;
+  return `<NFe xmlns="${NFE_NS}">${inf}${signatureBlock}</NFe>`;
 }
 
 function signXmlBlock(
@@ -76,9 +122,9 @@ function signXmlBlock(
   certPem: string,
   wrapperTag: string,
 ): string {
-  const canonical = canonicalizeXml(xmlBlock);
-  const digestValue = sha1Base64(canonical);
-  const idMatch = /Id="([^"]+)"/.exec(xmlBlock);
+  const inner = compactNfeXml(stripNfeDefaultXmlns(xmlBlock));
+  const digestValue = sha1Base64(canonicalizeInNfeNamespace(inner));
+  const idMatch = /Id="([^"]+)"/.exec(inner);
   const referenceUri = idMatch ? `#${idMatch[1]}` : "";
   const signatureBlock = buildSignatureBlock(
     digestValue,
@@ -86,7 +132,7 @@ function signXmlBlock(
     privateKeyPem,
     certPem,
   );
-  return `<${wrapperTag} versao="1.00">${xmlBlock}${signatureBlock}</${wrapperTag}>`;
+  return `<${wrapperTag} xmlns="${NFE_NS}" versao="1.00">${inner}${signatureBlock}</${wrapperTag}>`;
 }
 
 export function signInfEvento(
@@ -159,16 +205,20 @@ function tag(xml: string, name: string): string | null {
   return re.exec(xml)?.[1]?.trim() ?? null;
 }
 
+export function stripXmlDeclaration(xml: string): string {
+  return xml.replace(/^\uFEFF?\s*<\?xml\b[^?]*\?>\s*/i, "").trim();
+}
+
+/**
+ * Envelope SOAP 1.2 da NF-e. O payload entra como XML (xs:any), não como texto
+ * escapado — o ASMX da SEFAZ rejeita `&lt;enviNFe` e `<?xml?>` dentro do Body.
+ */
 export function buildSoapEnvelope(
   bodyInnerXml: string,
   wsdlNs: string,
 ): string {
-  const escaped = bodyInnerXml
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-  return `<?xml version="1.0" encoding="utf-8"?><soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"><soap12:Body><nfeDadosMsg xmlns="${wsdlNs}">${escaped}</nfeDadosMsg></soap12:Body></soap12:Envelope>`;
+  const inner = stripXmlDeclaration(bodyInnerXml);
+  return `<?xml version="1.0" encoding="utf-8"?><soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"><soap12:Body><nfeDadosMsg xmlns="${wsdlNs}">${inner}</nfeDadosMsg></soap12:Body></soap12:Envelope>`;
 }
 
 export function extractSoapBody(xml: string): string {

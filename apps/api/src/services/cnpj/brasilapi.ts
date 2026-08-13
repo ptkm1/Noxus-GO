@@ -1,5 +1,6 @@
 import type { CnpjCompanyData } from "@pedidos/shared";
 import { brasilApiHeaders } from "../brasilapi/headers.js";
+import { cnpjCityIbgeCode } from "./fiscal-emitente.js";
 
 const BRASIL_API_CNPJ = "https://brasilapi.com.br/api/cnpj/v1";
 
@@ -40,6 +41,7 @@ export function mapBrasilApiCnpj(
     cep: formatCep(json.cep),
     uf: typeof json.uf === "string" ? json.uf : null,
     municipio: typeof json.municipio === "string" ? json.municipio : null,
+    cityIbgeCode: cnpjCityIbgeCode(json),
     logradouro:
       typeof json.logradouro === "string" ? json.logradouro.trim() : null,
     numero: typeof json.numero === "string" ? json.numero.trim() : null,

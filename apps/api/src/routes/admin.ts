@@ -2981,6 +2981,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           select: { id: true, name: true, key: true, baseRole: true },
         },
         createdAt: true,
+        activatedAt: true,
       },
       orderBy: [{ role: "asc" }, { name: "asc" }],
     });
@@ -3080,6 +3081,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       },
     });
 
+    let inviteEmailSent: boolean | undefined;
+    let inviteEmailError: string | undefined;
     if (useInvite) {
       const { rawToken, expiresAt } = await createActivationToken(
         created.id,
@@ -3089,13 +3092,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         where: { id: auth.organizationId },
         select: { name: true, displayName: true },
       });
-      await sendUserInviteEmail({
+      const emailResult = await sendUserInviteEmail({
         to: created.email,
         name: created.name,
         companyName: org?.displayName || org?.name || "PedixPro",
         rawToken,
         expiresAt,
       });
+      inviteEmailSent = emailResult.sent;
+      inviteEmailError = emailResult.sent ? undefined : emailResult.reason;
     }
 
     const actor = await prisma.user.findUnique({
@@ -3113,10 +3118,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         email: created.email,
         role: created.role,
         organizationProfileId: created.organizationProfileId,
+        invited: useInvite,
       },
     });
 
-    return created;
+    return {
+      ...created,
+      invited: useInvite,
+      inviteEmailSent,
+      inviteEmailError,
+    };
   });
 
   async function countOrgAdmins(organizationId: string): Promise<number> {
@@ -3142,6 +3153,23 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       },
     });
   }
+
+  app.post("/users/:id/resend-invite", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+    const staff = await findStaffUser(auth.organizationId, id);
+    if (!staff) return reply.status(404).send({ error: "Não encontrado" });
+    const { sendInviteForExistingUser } =
+      await import("../services/billing/activation-email.js");
+    const result = await sendInviteForExistingUser(staff.id);
+    if (!result.sent) {
+      return reply.status(502).send({
+        error: result.reason ?? "Não foi possível enviar o convite.",
+      });
+    }
+    return { ok: true, inviteEmailSent: true };
+  });
 
   app.post("/users/batch-delete", async (req, reply) => {
     const auth = req.auth!;
@@ -3500,6 +3528,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
             name: true,
             role: true,
             matricula: true,
+            activatedAt: true,
           },
         },
         manager: { select: { id: true, name: true, email: true } },
@@ -3602,6 +3631,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         include: { seller: true },
       });
 
+      let inviteEmailSent: boolean | undefined;
+      let inviteEmailError: string | undefined;
       if (useInvite) {
         const { rawToken, expiresAt } = await createActivationToken(
           user.id,
@@ -3611,13 +3642,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           where: { id: auth.organizationId },
           select: { name: true, displayName: true },
         });
-        await sendUserInviteEmail({
+        const emailResult = await sendUserInviteEmail({
           to: user.email,
           name: user.name,
           companyName: org?.displayName || org?.name || "PedixPro",
           rawToken,
           expiresAt,
         });
+        inviteEmailSent = emailResult.sent;
+        inviteEmailError = emailResult.sent ? undefined : emailResult.reason;
       }
 
       await auditFromAuth(auth, {
@@ -3642,6 +3675,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         commissionPercent: decToNum(user.seller!.commissionPercent),
         active: user.seller!.active,
         invited: useInvite,
+        inviteEmailSent,
+        inviteEmailError,
       };
     } catch (e) {
       if (
@@ -3664,6 +3699,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         name: true,
         role: true,
         matricula: true,
+        activatedAt: true,
       },
     },
     manager: { select: { id: true, name: true, email: true } },
@@ -3679,6 +3715,22 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       },
     });
   }
+
+  app.post("/sellers/:id/resend-invite", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const seller = await findOrgSeller(auth.organizationId, id);
+    if (!seller) return reply.status(404).send({ error: "Não encontrado" });
+    const { sendInviteForExistingUser } =
+      await import("../services/billing/activation-email.js");
+    const result = await sendInviteForExistingUser(seller.userId);
+    if (!result.sent) {
+      return reply.status(502).send({
+        error: result.reason ?? "Não foi possível enviar o convite.",
+      });
+    }
+    return { ok: true, inviteEmailSent: true };
+  });
 
   app.post("/sellers/batch-delete", async (req, reply) => {
     const auth = req.auth!;

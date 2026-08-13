@@ -453,7 +453,7 @@ export function FaturamentoPage() {
       void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
     },
     onError: (e) =>
-      notifyError(getErrorMessage(e), "SEFAZ rejeitou a transmissão"),
+      notifyError(getErrorMessage(e), "Falha na transmissão da NF-e"),
   });
 
   const sendInvoiceEmail = useMutation({
@@ -2048,6 +2048,34 @@ export function FaturamentoPage() {
                   value={form.uf}
                   maxLength={2}
                   onChange={(e) => setForm({ ...form, uf: e.target.value })}
+                />
+              </FormField>
+              <FormField label="Cidade">
+                <Input
+                  value={form.city}
+                  onChange={(e) => setForm({ ...form, city: e.target.value })}
+                />
+              </FormField>
+              <FormField label="Logradouro">
+                <Input
+                  value={form.street}
+                  onChange={(e) => setForm({ ...form, street: e.target.value })}
+                />
+              </FormField>
+              <FormField label="Número">
+                <Input
+                  value={form.addressNumber}
+                  onChange={(e) =>
+                    setForm({ ...form, addressNumber: e.target.value })
+                  }
+                />
+              </FormField>
+              <FormField label="CEP">
+                <Input
+                  value={form.zipCode}
+                  onChange={(e) =>
+                    setForm({ ...form, zipCode: e.target.value })
+                  }
                 />
               </FormField>
               <FormField label="Regime">

@@ -1,3 +1,4 @@
+import { useConfirm } from "@/context/ConfirmContext";
 import { apiFetch } from "@/lib/api";
 import {
   fetchSellerCustomer,
@@ -17,7 +18,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { useConfirm } from "@/context/ConfirmContext";
 
 function parseCoord(value: unknown): number | null {
   if (value == null) return null;
@@ -92,6 +92,7 @@ export function useCustomerForm(customerId?: string) {
         neighborhood: data.bairro ?? form.neighborhood,
         state: data.uf?.toUpperCase() ?? form.state,
         city: data.municipio ?? form.city,
+        cityIbgeCode: data.cityIbgeCode ?? form.cityIbgeCode,
       });
     } catch (e) {
       await alert({

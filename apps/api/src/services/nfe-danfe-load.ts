@@ -1,6 +1,7 @@
 import type { FastifyReply } from "fastify";
 import { prisma } from "../db.js";
 import { customerFiscalDocument } from "../fiscal/customer-fiscal.js";
+import { normalizeNfeNature } from "../fiscal/nfe-xml-builder.js";
 import {
   parseNfeXmlForDanfe,
   type DanfeNfeData,
@@ -93,6 +94,9 @@ function buildFallbackFromInvoice(
     issuedAt: invoice.issuedAt,
     protocol: invoice.protocol ?? undefined,
     cancelled: invoice.status === "CANCELLED",
+    nature: issuerSnap?.nature
+      ? normalizeNfeNature(issuerSnap.nature)
+      : undefined,
     emitter,
     recipient,
     totalNfe: Number(invoice.totalAmount),
@@ -122,12 +126,18 @@ export async function buildDanfePdfForInvoice(
     };
   }
 
-  const xml = invoice.xmlAuthorized ?? invoice.xmlSigned;
+  // xmlAuthorized costuma ser só o protocolo SEFAZ (sem ide/natOp/itens).
+  // Preferir o XML assinado completo; protocolo/protocolDate vêm do fallback.
+  const xml = invoice.xmlSigned ?? invoice.xmlAuthorized;
   if (!xml && invoice.items.length === 0) {
     return { ok: false, error: "XML da nota não disponível" };
   }
 
-  const fallback = buildFallbackFromInvoice(invoice);
+  const fallback = await enrichFallbackNature(
+    invoice.organizationId,
+    buildFallbackFromInvoice(invoice),
+    invoice,
+  );
   const parsed = xml ? parseNfeXmlForDanfe(xml, fallback) : null;
   const data =
     parsed ?? (fallback.accessKey ? (fallback as DanfeNfeData) : null);
@@ -136,6 +146,16 @@ export async function buildDanfePdfForInvoice(
       ok: false,
       error: "Não foi possível montar DANFE para esta nota",
     };
+  }
+  if (!data.nature?.trim() && fallback.nature) {
+    data.nature = fallback.nature;
+  } else if (
+    fallback.nature &&
+    /^VENDA$/i.test((data.nature ?? "").trim()) &&
+    !/^VENDA$/i.test(fallback.nature.trim())
+  ) {
+    // Notas antigas gravavam natOp fixo "VENDA"; preferir o cadastro do CFOP no DANFE.
+    data.nature = fallback.nature;
   }
 
   const logo = await loadFiscalDanfeLogo(invoice.organizationId);
@@ -146,6 +166,40 @@ export async function buildDanfePdfForInvoice(
   const pdf = await buildDanfePdf(data as DanfeNfeData);
   const filename = danfePdfFilename(invoice.id, invoice.number);
   return { ok: true, pdf, filename };
+}
+
+async function enrichFallbackNature(
+  organizationId: string,
+  fallback: Partial<DanfeNfeData>,
+  invoice: NonNullable<Awaited<ReturnType<typeof loadInvoiceForDanfe>>>,
+): Promise<Partial<DanfeNfeData>> {
+  if (fallback.nature?.trim()) return fallback;
+
+  for (const it of invoice.items) {
+    const snap = it.taxSnapshot as { natOp?: string } | null;
+    if (snap?.natOp?.trim()) {
+      return { ...fallback, nature: normalizeNfeNature(snap.natOp) };
+    }
+  }
+
+  const cfop = invoice.items.find((i) => i.cfop?.trim())?.cfop?.trim();
+  if (!cfop) {
+    return { ...fallback, nature: normalizeNfeNature(null) };
+  }
+
+  const op = await prisma.fiscalOperation.findFirst({
+    where: {
+      organizationId,
+      direction: "OUTBOUND",
+      cfop,
+      active: true,
+    },
+    select: { nature: true, description: true },
+  });
+  return {
+    ...fallback,
+    nature: normalizeNfeNature(op?.nature || op?.description),
+  };
 }
 
 export async function sendDanfePdfReply(

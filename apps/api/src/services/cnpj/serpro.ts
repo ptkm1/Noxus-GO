@@ -1,4 +1,5 @@
 import type { CnpjCompanyData } from "@pedidos/shared";
+import { cnpjCityIbgeCode } from "./fiscal-emitente.js";
 
 const SERPRO_TOKEN_URL = "https://gateway.apiserpro.serpro.gov.br/token";
 const SERPRO_CNPJ_BASE = "https://gateway.apiserpro.serpro.gov.br/consulta-cnpj-df/v2";
@@ -102,6 +103,7 @@ export function mapSerproCnpj(json: Record<string, unknown>): CnpjCompanyData {
     cep: formatCep(endereco?.cep ?? json.cep),
     uf: pickString(endereco ?? json, "uf"),
     municipio: pickString(endereco ?? json, "municipio", "descricaoMunicipio"),
+    cityIbgeCode: cnpjCityIbgeCode(endereco ?? json),
     logradouro: pickString(endereco ?? json, "logradouro", "tipoLogradouro"),
     numero: pickString(endereco ?? json, "numero"),
     complemento: pickString(endereco ?? json, "complemento"),

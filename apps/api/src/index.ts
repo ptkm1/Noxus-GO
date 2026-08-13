@@ -2,6 +2,7 @@ import { buildApp } from "./app.js";
 import { prisma } from "./db.js";
 import "./load-env.js";
 import { scheduleCustomerInactivationCron } from "./services/customer-inactivation-cron.js";
+import { readEmailOutboundConfig } from "./services/email-send.js";
 import { scheduleFiscalTransmitCron } from "./services/fiscal-transmit-cron.js";
 import { scheduleMorningBriefCron } from "./services/morning-brief-cron.js";
 import { scheduleStockExpiryCron } from "./services/stock-expiry-cron.js";
@@ -37,6 +38,14 @@ try {
     `[db] ${userCount} utilizador(es). Se for 0, na raiz do repo: pnpm db:seed`,
   );
   app.log.info(`API http://${host}:${port}`);
+  const emailCfg = readEmailOutboundConfig();
+  if (emailCfg) {
+    app.log.info(`[email] ${emailCfg.provider} ativo · ${emailCfg.fromRaw}`);
+  } else {
+    app.log.warn(
+      "[email] desligado: defina RESEND_API_KEY (ou SENDGRID_API_KEY) e EMAIL_FROM",
+    );
+  }
   scheduleStockExpiryCron(app.log);
   scheduleMorningBriefCron(app.log);
   scheduleFiscalTransmitCron(app.log);

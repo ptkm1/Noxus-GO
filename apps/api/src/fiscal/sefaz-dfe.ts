@@ -1,6 +1,7 @@
-import { getDistribuicaoDfeUrl } from "./sefaz-endpoints.js";
-import { extractSoapBody } from "./nfe-signer.js";
 import { escapeXml, onlyDigits } from "./nfe-access-key.js";
+import { extractSoapBody } from "./nfe-signer.js";
+import { getDistribuicaoDfeUrl } from "./sefaz-endpoints.js";
+import { describeSefazTransportError, postSefazSoap } from "./sefaz-tls.js";
 
 const DIST_NS = "http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe";
 
@@ -53,7 +54,8 @@ export function parseDistDfeResponse(xml: string): DistDfeResult {
   const maxNSU = tag(xml, "maxNSU");
   const documents: DistDfeDoc[] = [];
 
-  const docRe = /<docZip[^>]*NSU="(\d+)"[^>]*schema="([^"]+)"[^>]*>([^<]+)<\/docZip>/gi;
+  const docRe =
+    /<docZip[^>]*NSU="(\d+)"[^>]*schema="([^"]+)"[^>]*>([^<]+)<\/docZip>/gi;
   let m: RegExpExecArray | null;
   while ((m = docRe.exec(xml))) {
     const nsu = m[1]!;
@@ -104,14 +106,17 @@ export async function consultDistDfe(input: {
   const soap =
     `<?xml version="1.0" encoding="utf-8"?>` +
     `<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">` +
-    `<soap12:Body><nfeDistDFeInteresse xmlns="${DIST_NS}"><nfeDadosMsg>${distXml
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")}</nfeDadosMsg></nfeDistDFeInteresse></soap12:Body></soap12:Envelope>`;
+    `<soap12:Body><nfeDistDFeInteresse xmlns="${DIST_NS}"><nfeDadosMsg>${distXml}</nfeDadosMsg></nfeDistDFeInteresse></soap12:Body></soap12:Envelope>`;
   const url = new URL(getDistribuicaoDfeUrl(input.homologation));
 
   try {
-    const raw = await postSoap(url, soap, input.pfx, input.password);
+    const raw = await postSefazSoap(
+      url,
+      soap,
+      input.pfx,
+      input.password,
+      `${DIST_NS}/nfeDistDFeInteresse`,
+    );
     const body = extractSoapBody(raw);
     const parsed = parseDistDfeResponse(body);
     // decompress gzip docs
@@ -136,46 +141,7 @@ export async function consultDistDfe(input: {
       ok: false,
       documents: [],
       rawResponse: "",
-      error: e instanceof Error ? e.message : "Erro DistDFe",
+      error: describeSefazTransportError(e),
     };
   }
-}
-
-function postSoap(url: URL, soapBody: string, pfx: Buffer, password: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    import("node:https").then(({ default: https }) => {
-      const agent = new https.Agent({
-        pfx,
-        passphrase: password,
-        rejectUnauthorized: true,
-        minVersion: "TLSv1.2",
-      });
-      const req = https.request(
-        url,
-        {
-          method: "POST",
-          agent,
-          headers: {
-            "Content-Type": "application/soap+xml; charset=utf-8",
-            "Content-Length": Buffer.byteLength(soapBody, "utf8"),
-          },
-        },
-        (res) => {
-          const chunks: Buffer[] = [];
-          res.on("data", (c) => chunks.push(c));
-          res.on("end", () => {
-            const text = Buffer.concat(chunks).toString("utf8");
-            if (res.statusCode && res.statusCode >= 400) {
-              reject(new Error(`SEFAZ HTTP ${res.statusCode}: ${text.slice(0, 500)}`));
-              return;
-            }
-            resolve(text);
-          });
-        },
-      );
-      req.on("error", reject);
-      req.write(soapBody);
-      req.end();
-    });
-  });
 }

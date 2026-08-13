@@ -19,6 +19,7 @@ import {
 } from "../fiscal/nfe-signer.js";
 import {
   buildSignedNfePackage,
+  normalizeNfeNature,
   wrapEnviNFe,
 } from "../fiscal/nfe-xml-builder.js";
 import {
@@ -100,7 +101,8 @@ export async function buildOutboundInvoiceFromOrder(
 
   const invoiceItems = order.items.map((item, idx) => {
     const ncm = item.product.fiscalNcm;
-    const cfop = item.product.outboundOperation?.cfop ?? "5102";
+    const op = item.product.outboundOperation;
+    const cfop = op?.cfop ?? "5102";
     const orig = item.product.fiscalOrigin ?? item.product.nfeOrigin;
     if (orig == null) {
       throw new Error(
@@ -135,6 +137,11 @@ export async function buildOutboundInvoiceFromOrder(
         orig,
         csosn: ncm?.defaultCsosn ?? taxes.csosn,
         cst: ncm?.defaultCstIcms ?? taxes.cst,
+        cProd: item.product.sku ?? item.product.barcode ?? item.productId,
+        gtin: item.product.fiscalGtin ?? item.product.barcode ?? null,
+        cest: item.product.fiscalCest ?? ncm?.cest ?? null,
+        ncmException: item.product.ncmException ?? null,
+        natOp: normalizeNfeNature(op?.nature || op?.description),
       },
       _grossWeightKg: item.product.grossWeightKg
         ? Number(item.product.grossWeightKg) * item.quantity
@@ -149,6 +156,7 @@ export async function buildOutboundInvoiceFromOrder(
   const grossWeightKg = invoiceItems.reduce((s, i) => s + i._grossWeightKg, 0);
   const netWeightKg = invoiceItems.reduce((s, i) => s + i._netWeightKg, 0);
   const volumeQty = order.items.reduce((s, i) => s + i.quantity, 0);
+  const nature = resolveInvoiceNature(invoiceItems);
 
   const invoice = await prisma.$transaction(async (tx) => {
     await tx.organizationFiscalConfig.update({
@@ -172,7 +180,7 @@ export async function buildOutboundInvoiceFromOrder(
         number: nextNumber,
         series: cfg.nfeSeries,
         totalAmount,
-        issuerSnapshot: buildIssuerSnapshot(cfg),
+        issuerSnapshot: buildIssuerSnapshot(cfg, nature),
         recipientSnapshot: buildRecipientSnapshot(order.customer!),
         items: {
           create: invoiceItems.map(
@@ -236,6 +244,7 @@ export async function transmitOutboundInvoice(
   if (!recipient)
     return { ok: false as const, error: "Destinatário não encontrado na nota" };
 
+  const nature = await resolveNatureForInvoice(organizationId, invoice);
   const { accessKey, infNFeXml, issuedAt } = buildSignedNfePackage({
     config: config!,
     invoice,
@@ -244,10 +253,18 @@ export async function transmitOutboundInvoice(
     payment: {
       days: invoice.order?.paymentCondition?.days ?? 0,
     },
+    nature,
   });
 
   const signedNFe = signInfNFe(infNFeXml, cert.privateKeyPem, cert.certPem);
   const enviNFe = wrapEnviNFe(signedNFe);
+  const issuerSnapshot = {
+    ...(typeof invoice.issuerSnapshot === "object" &&
+    invoice.issuerSnapshot != null
+      ? (invoice.issuerSnapshot as Record<string, unknown>)
+      : {}),
+    ...buildIssuerSnapshot(config!, nature),
+  };
 
   const homolog = config!.nfeEnvironment === "HOMOLOGATION";
   const sefaz = await authorizeNfe({
@@ -283,6 +300,7 @@ export async function transmitOutboundInvoice(
           protocol: sefaz.parsed.nProt ?? null,
           issuedAt,
           rejectionReason: null,
+          issuerSnapshot,
         },
         include: { items: true, order: true },
       });
@@ -297,6 +315,7 @@ export async function transmitOutboundInvoice(
           xmlSigned: signedNFe,
           issuedAt,
           rejectionReason: null,
+          issuerSnapshot,
         },
         include: { items: true, order: true },
       });
@@ -311,6 +330,7 @@ export async function transmitOutboundInvoice(
         issuedAt,
         rejectionReason:
           sefaz.error ?? sefaz.parsed.xMotivo ?? "Rejeitada pela SEFAZ",
+        issuerSnapshot,
       },
       include: { items: true, order: true },
     });
@@ -718,7 +738,10 @@ export async function inutilizarNumeracao(input: {
   };
 }
 
-function buildIssuerSnapshot(cfg: OrganizationFiscalConfig) {
+function buildIssuerSnapshot(
+  cfg: OrganizationFiscalConfig,
+  nature?: string | null,
+) {
   return {
     cnpj: cfg.cnpj,
     ie: cfg.stateRegistration,
@@ -726,7 +749,44 @@ function buildIssuerSnapshot(cfg: OrganizationFiscalConfig) {
     city: cfg.city,
     street: cfg.street,
     number: cfg.addressNumber,
+    nature: normalizeNfeNature(nature),
   };
+}
+
+function resolveInvoiceNature(items: { taxSnapshot?: unknown }[]): string {
+  for (const item of items) {
+    const snap = item.taxSnapshot as { natOp?: string } | null;
+    if (snap?.natOp?.trim()) return normalizeNfeNature(snap.natOp);
+  }
+  return normalizeNfeNature(null);
+}
+
+async function resolveNatureForInvoice(
+  organizationId: string,
+  invoice: {
+    issuerSnapshot?: unknown;
+    items: { cfop?: string | null; taxSnapshot?: unknown }[];
+  },
+): Promise<string> {
+  const snap = invoice.issuerSnapshot as { nature?: string } | null;
+  if (snap?.nature?.trim()) return normalizeNfeNature(snap.nature);
+
+  const fromItems = resolveInvoiceNature(invoice.items);
+  if (fromItems !== "VENDA DE MERCADORIA") return fromItems;
+
+  const cfop = invoice.items.find((i) => i.cfop?.trim())?.cfop?.trim();
+  if (!cfop) return normalizeNfeNature(null);
+
+  const op = await prisma.fiscalOperation.findFirst({
+    where: {
+      organizationId,
+      direction: "OUTBOUND",
+      cfop,
+      active: true,
+    },
+    select: { nature: true, description: true },
+  });
+  return normalizeNfeNature(op?.nature || op?.description);
 }
 
 function buildRecipientSnapshot(

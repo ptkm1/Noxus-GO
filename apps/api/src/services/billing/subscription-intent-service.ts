@@ -1,5 +1,10 @@
 import { getPlanDefinition, isPlanId, type PlanId } from "@pedidos/shared";
 import { prisma } from "../../db.js";
+import {
+  emptyFiscalEmitente,
+  fiscalConfigCreateData,
+} from "../cnpj/fiscal-emitente.js";
+import { lookupFiscalEmitente } from "../cnpj/lookup-fiscal-emitente.js";
 import { ensureDefaultOrderSituations } from "../order-situations.js";
 import { ensureOrgRolePermissions } from "../role-permissions.js";
 import { unusablePasswordHash } from "./account-activation.js";
@@ -87,6 +92,10 @@ export async function createSubscriptionIntent(
 
   const passwordHash = await unusablePasswordHash();
   const now = new Date();
+  const emitente =
+    document.length === 14
+      ? await lookupFiscalEmitente(document)
+      : emptyFiscalEmitente("");
 
   const { intent, orgId, userId } = await prisma.$transaction(async (tx) => {
     const org = await tx.organization.create({
@@ -97,6 +106,10 @@ export async function createSubscriptionIntent(
         cnpj: document.length === 14 ? document : null,
         accessStatus: "PENDING_PAYMENT",
       },
+    });
+
+    await tx.organizationFiscalConfig.create({
+      data: fiscalConfigCreateData(org.id, emitente),
     });
 
     await tx.organizationSubscription.create({

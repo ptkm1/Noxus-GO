@@ -16,6 +16,8 @@ export type DanfeParty = {
 export type DanfeItem = {
   lineNumber: number;
   productCode?: string;
+  /** GTIN / cEAN quando informado (exibe sob a descrição no DANFE). */
+  barcode?: string;
   description: string;
   ncm?: string;
   csosn?: string;
@@ -58,6 +60,18 @@ export type DanfeNfeData = {
   protocolDate?: Date | null;
   cancelled: boolean;
   freightMode?: string;
+  transporterName?: string;
+  transporterDocument?: string;
+  transporterIe?: string;
+  transporterAddress?: string;
+  transporterCity?: string;
+  transporterState?: string;
+  vehiclePlate?: string;
+  vehicleState?: string;
+  anttCode?: string;
+  volumeSpecies?: string;
+  volumeBrand?: string;
+  volumeNumbering?: string;
   grossWeight?: number;
   netWeight?: number;
   volumeQty?: number;
@@ -115,6 +129,8 @@ export function parseNfeXmlForDanfe(xml: string, fallback?: Partial<DanfeNfeData
   const prot = block(xml, "protNFe") || block(xml, "infProt");
   const transp = block(nfeXml, "transp");
   const vol = block(transp, "vol");
+  const transporta = block(transp, "transporta");
+  const veicTransp = block(transp, "veicTransp");
 
   const detBlocks = nfeXml.match(/<det[\s\S]*?<\/det>/gi) ?? [];
   const items: DanfeItem[] = detBlocks.map((det, idx) => {
@@ -125,9 +141,16 @@ export function parseNfeXmlForDanfe(xml: string, fallback?: Partial<DanfeNfeData
     const q = Number(tag(prod, "qCom") ?? tag(prod, "qTrib") ?? "0");
     const unitPrice = Number(tag(prod, "vUnCom") ?? tag(prod, "vUnTrib") ?? "0");
     const totalPrice = Number(tag(prod, "vProd") ?? String(q * unitPrice));
+    const eanRaw = tag(prod, "cEAN") ?? tag(prod, "cEANTrib") ?? "";
+    const eanDigits = eanRaw.replace(/\D/g, "");
+    const barcode =
+      eanDigits.length >= 8 && !/^0+$/.test(eanDigits) && !/SEM\s*GTIN/i.test(eanRaw)
+        ? eanDigits
+        : undefined;
     return {
       lineNumber: Number(tag(det, "nItem") ?? String(idx + 1)),
       productCode: tag(prod, "cProd"),
+      barcode,
       description: tag(prod, "xProd") ?? "Item",
       ncm: tag(prod, "NCM"),
       csosn: tag(icmsChild, "CSOSN") ?? tag(icmsChild, "CST"),
@@ -185,6 +208,23 @@ export function parseNfeXmlForDanfe(xml: string, fallback?: Partial<DanfeNfeData
     protocolDate: dhRecbto ? new Date(dhRecbto) : fallback?.protocolDate ?? null,
     cancelled,
     freightMode: tag(transp, "modFrete") ?? fallback?.freightMode,
+    transporterName: tag(transporta, "xNome") ?? fallback?.transporterName,
+    transporterDocument:
+      (tag(transporta, "CNPJ") ?? tag(transporta, "CPF") ?? "").replace(
+        /\D/g,
+        "",
+      ) || fallback?.transporterDocument,
+    transporterIe: tag(transporta, "IE") ?? fallback?.transporterIe,
+    transporterAddress:
+      tag(transporta, "xEnder") ?? fallback?.transporterAddress,
+    transporterCity: tag(transporta, "xMun") ?? fallback?.transporterCity,
+    transporterState: tag(transporta, "UF") ?? fallback?.transporterState,
+    vehiclePlate: tag(veicTransp, "placa") ?? fallback?.vehiclePlate,
+    vehicleState: tag(veicTransp, "UF") ?? fallback?.vehicleState,
+    anttCode: tag(veicTransp, "RNTC") ?? fallback?.anttCode,
+    volumeSpecies: tag(vol, "esp") ?? fallback?.volumeSpecies,
+    volumeBrand: tag(vol, "marca") ?? fallback?.volumeBrand,
+    volumeNumbering: tag(vol, "nVol") ?? fallback?.volumeNumbering,
     grossWeight: num(tag(vol, "pesoB")) || fallback?.grossWeight,
     netWeight: num(tag(vol, "pesoL")) || fallback?.netWeight,
     volumeQty: num(tag(vol, "qVol")) || fallback?.volumeQty,

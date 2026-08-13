@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { CnpjCompanyData } from "@pedidos/shared";
-import { suggestedTradeName } from "@pedidos/shared";
+import { isValidCnpj, suggestedTradeName } from "@pedidos/shared";
 import { useAuth } from "../auth/AuthContext";
 import { CnpjLookupField } from "../components/CnpjLookupField";
 import { FormField, FormGrid } from "@/components/forms";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 export function RegisterPage() {
   const { register } = useAuth();
   const nav = useNavigate();
+  const [cnpj, setCnpj] = useState("");
   const [organizationName, setOrganizationName] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -22,13 +23,17 @@ export function RegisterPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    if (!isValidCnpj(cnpj)) {
+      setErr("Informe um CNPJ válido da empresa.");
+      return;
+    }
     if (password !== confirmPassword) {
       setErr("As senhas não coincidem");
       return;
     }
     setPending(true);
     try {
-      await register({ organizationName, name, email, password });
+      await register({ organizationName, name, email, password, cnpj });
       nav("/", { replace: true });
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : "Erro ao cadastrar");
@@ -44,8 +49,12 @@ export function RegisterPage() {
         <p className="mt-1 text-sm text-muted-foreground">Nova empresa e administrador</p>
         <form className="mt-8 space-y-4" onSubmit={onSubmit}>
           <CnpjLookupField
+            required
             disabled={pending}
+            digits={cnpj}
+            onDigitsChange={setCnpj}
             onApply={(d: CnpjCompanyData) => {
+              setCnpj(d.cnpj);
               setOrganizationName(suggestedTradeName(d));
             }}
           />

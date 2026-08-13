@@ -60,6 +60,7 @@ export function CustomerFormFields({
       neighborhood: data.bairro ?? values.neighborhood,
       state: data.uf?.toUpperCase() ?? values.state,
       city: data.municipio ?? values.city,
+      cityIbgeCode: data.cityIbgeCode ?? values.cityIbgeCode,
     });
   }
 

@@ -3,6 +3,12 @@
  * TODO futuro: autorização SEFAZ / certificado digital.
  */
 import { prisma } from "../../db.js";
+import {
+  nfeCest,
+  nfeCProd,
+  nfeExtIpi,
+  nfeGtin,
+} from "../../fiscal/nfe-prod-fields.js";
 import { decToNum } from "../../util/money.js";
 
 export class NfeXmlError extends Error {
@@ -30,10 +36,7 @@ function fmtMoney(n: number): string {
   return n.toFixed(2);
 }
 
-function orderCode(order: {
-  id: string;
-  orderNumber: number | null;
-}): string {
+function orderCode(order: { id: string; orderNumber: number | null }): string {
   if (order.orderNumber != null) return String(order.orderNumber);
   return "—";
 }
@@ -78,7 +81,11 @@ export async function buildNfeXml(
               sku: true,
               barcode: true,
               ncm: true,
+              ncmException: true,
               nfeOrigin: true,
+              fiscalGtin: true,
+              fiscalCest: true,
+              fiscalUnit: true,
               name: true,
             },
           },
@@ -124,21 +131,33 @@ export async function buildNfeXml(
         .padEnd(8, "0")
         .slice(0, 8);
       const orig = it.product.nfeOrigin ?? 0;
-      const cProd =
-        it.product.sku || it.product.barcode || it.productId.slice(0, 8);
+      const cProd = nfeCProd({
+        sku: it.product.sku,
+        barcode: it.product.barcode,
+        productId: it.productId,
+        lineNumber: idx + 1,
+      });
+      const gtin = nfeGtin(it.product.fiscalGtin ?? it.product.barcode);
+      const cest = nfeCest(it.product.fiscalCest);
+      const extIpi = nfeExtIpi(it.product.ncmException);
+      const unit = it.product.fiscalUnit?.trim() || "UN";
+      const cestXml = cest ? `\n        <CEST>${cest}</CEST>` : "";
+      const extIpiXml = extIpi
+        ? `\n        <EXTIPI>${esc(extIpi)}</EXTIPI>`
+        : "";
       return `    <det nItem="${idx + 1}">
       <prod>
         <cProd>${esc(cProd)}</cProd>
-        <cEAN>${esc(it.product.barcode || "SEM GTIN")}</cEAN>
+        <cEAN>${esc(gtin)}</cEAN>
         <xProd>${esc(it.productName || it.product.name)}</xProd>
-        <NCM>${esc(ncm)}</NCM>
+        <NCM>${esc(ncm)}</NCM>${cestXml}${extIpiXml}
         <CFOP>5102</CFOP>
-        <uCom>UN</uCom>
+        <uCom>${esc(unit)}</uCom>
         <qCom>${qCom}.0000</qCom>
         <vUnCom>${fmtMoney(vUnCom)}</vUnCom>
         <vProd>${fmtMoney(vItem)}</vProd>
-        <cEANTrib>${esc(it.product.barcode || "SEM GTIN")}</cEANTrib>
-        <uTrib>UN</uTrib>
+        <cEANTrib>${esc(gtin)}</cEANTrib>
+        <uTrib>${esc(unit)}</uTrib>
         <qTrib>${qCom}.0000</qTrib>
         <vUnTrib>${fmtMoney(vUnCom)}</vUnTrib>
         <indTot>1</indTot>
@@ -405,7 +424,9 @@ export async function buildNfeXmlZip(
   }
 
   if (files.length === 0) {
-    throw new NfeXmlError("Não foi possível gerar XML para os pedidos do período.");
+    throw new NfeXmlError(
+      "Não foi possível gerar XML para os pedidos do período.",
+    );
   }
 
   const fromPart = filters.from?.replace(/-/g, "") || "inicio";

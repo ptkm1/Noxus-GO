@@ -1,4 +1,6 @@
+import { prisma } from "../../db.js";
 import {
+  explainEmailSendFailure,
   readEmailOutboundConfig,
   sendTransactionalHtmlEmail,
 } from "../email-send.js";
@@ -8,6 +10,7 @@ import {
   resolveWebAppPublicUrl,
   userInviteEmailContent,
 } from "../email-templates.js";
+import { createActivationToken } from "./account-activation.js";
 
 function logEmailFailure(
   kind: string,
@@ -18,6 +21,18 @@ function logEmailFailure(
   console.warn(
     `[email] ${kind} não enviado para ${to}: ${result.reason ?? "unknown"}`,
   );
+}
+
+function notConfigured(
+  kind: string,
+  to: string,
+): { sent: false; reason: string } {
+  const result = {
+    sent: false as const,
+    reason: explainEmailSendFailure("EMAIL_NOT_CONFIGURED"),
+  };
+  logEmailFailure(kind, to, result);
+  return result;
 }
 
 export async function sendOwnerActivationEmail(params: {
@@ -32,11 +47,7 @@ export async function sendOwnerActivationEmail(params: {
   const appUrl = resolveWebAppPublicUrl();
   const activateUrl = `${appUrl}/ativar-conta?token=${encodeURIComponent(params.rawToken)}`;
 
-  if (!cfg) {
-    const result = { sent: false as const, reason: "EMAIL_NOT_CONFIGURED" };
-    logEmailFailure("owner-activation", params.to, result);
-    return result;
-  }
+  if (!cfg) return notConfigured("owner-activation", params.to);
 
   const { subject, html } = ownerActivationEmailContent({
     adminName: params.adminName,
@@ -71,11 +82,7 @@ export async function sendUserInviteEmail(params: {
   const appUrl = resolveWebAppPublicUrl();
   const activateUrl = `${appUrl}/ativar-conta?token=${encodeURIComponent(params.rawToken)}`;
 
-  if (!cfg) {
-    const result = { sent: false as const, reason: "EMAIL_NOT_CONFIGURED" };
-    logEmailFailure("user-invite", params.to, result);
-    return result;
-  }
+  if (!cfg) return notConfigured("user-invite", params.to);
 
   const { subject, html } = userInviteEmailContent({
     name: params.name,
@@ -108,11 +115,7 @@ export async function sendPasswordResetEmail(params: {
   const appUrl = resolveWebAppPublicUrl();
   const resetUrl = `${appUrl}/redefinir-senha?token=${encodeURIComponent(params.rawToken)}`;
 
-  if (!cfg) {
-    const result = { sent: false as const, reason: "EMAIL_NOT_CONFIGURED" };
-    logEmailFailure("password-reset", params.to, result);
-    return result;
-  }
+  if (!cfg) return notConfigured("password-reset", params.to);
 
   const { subject, html } = passwordResetEmailContent({
     name: params.name,
@@ -132,4 +135,32 @@ export async function sendPasswordResetEmail(params: {
     : { sent: false as const, reason: sendResult.message };
   logEmailFailure("password-reset", params.to, result);
   return result;
+}
+
+/** Gera token de convite e envia o e-mail (contas ainda não ativadas). */
+export async function sendInviteForExistingUser(
+  userId: string,
+): Promise<{ sent: boolean; reason?: string }> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      organization: { select: { name: true, displayName: true } },
+    },
+  });
+  if (!user) return { sent: false, reason: "Usuário não encontrado." };
+  if (user.activatedAt) {
+    return { sent: false, reason: "Esta conta já está ativada." };
+  }
+  const { rawToken, expiresAt } = await createActivationToken(
+    user.id,
+    "USER_INVITE",
+  );
+  return sendUserInviteEmail({
+    to: user.email,
+    name: user.name,
+    companyName:
+      user.organization.displayName || user.organization.name || "PedixPro",
+    rawToken,
+    expiresAt,
+  });
 }

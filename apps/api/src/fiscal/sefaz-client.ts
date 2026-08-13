@@ -1,4 +1,3 @@
-import https from "node:https";
 import { onlyDigits } from "./nfe-access-key.js";
 import {
   buildSoapEnvelope,
@@ -12,6 +11,7 @@ import {
   getInutilizacaoUrl,
   getRecepcaoEventoUrl,
 } from "./sefaz-endpoints.js";
+import { describeSefazTransportError, postSefazSoap } from "./sefaz-tls.js";
 
 const AUTORIZACAO_NS =
   "http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4";
@@ -21,6 +21,11 @@ const CONSULTA_NS =
 const INUTILIZACAO_NS =
   "http://www.portalfiscal.inf.br/nfe/wsdl/NFeInutilizacao4";
 
+const AUTORIZACAO_ACTION = `${AUTORIZACAO_NS}/nfeAutorizacaoLote`;
+const EVENTO_ACTION = `${EVENTO_NS}/nfeRecepcaoEvento`;
+const CONSULTA_ACTION = `${CONSULTA_NS}/nfeConsultaNF`;
+const INUTILIZACAO_ACTION = `${INUTILIZACAO_NS}/nfeInutilizacaoNF`;
+
 export type SefazAuthResult = {
   ok: boolean;
   /** Lote aceito (cStat 103) — aguarda poll de protocolo. */
@@ -29,8 +34,6 @@ export type SefazAuthResult = {
   parsed: ReturnType<typeof parseSefazAuthorizationResponse>;
   error?: string;
 };
-
-const SEFAZ_TIMEOUT_MS = 60_000;
 
 export async function authorizeNfe(input: {
   uf: string;
@@ -43,7 +46,13 @@ export async function authorizeNfe(input: {
   const soap = buildSoapEnvelope(input.enviNFeXml, AUTORIZACAO_NS);
 
   try {
-    const rawResponse = await postSoap(url, soap, input.pfx, input.password);
+    const rawResponse = await postSefazSoap(
+      url,
+      soap,
+      input.pfx,
+      input.password,
+      AUTORIZACAO_ACTION,
+    );
     const body = extractSoapBody(rawResponse);
     const parsed = parseSefazAuthorizationResponse(body);
     if (parsed.pending) {
@@ -67,7 +76,7 @@ export async function authorizeNfe(input: {
       ok: false,
       rawResponse: "",
       parsed: { success: false },
-      error: e instanceof Error ? e.message : "Erro de comunicação com SEFAZ",
+      error: describeSefazTransportError(e),
     };
   }
 }
@@ -90,7 +99,13 @@ export async function sendNfeEvento(input: {
   const soap = buildSoapEnvelope(input.envEventoXml, EVENTO_NS);
 
   try {
-    const rawResponse = await postSoap(url, soap, input.pfx, input.password);
+    const rawResponse = await postSefazSoap(
+      url,
+      soap,
+      input.pfx,
+      input.password,
+      EVENTO_ACTION,
+    );
     const body = extractSoapBody(rawResponse);
     const parsed = parseSefazEventResponse(body);
     return {
@@ -106,7 +121,7 @@ export async function sendNfeEvento(input: {
       ok: false,
       rawResponse: "",
       parsed: { success: false },
-      error: e instanceof Error ? e.message : "Erro de comunicação com SEFAZ",
+      error: describeSefazTransportError(e),
     };
   }
 }
@@ -128,7 +143,13 @@ export async function consultNfeProtocolo(input: {
   const soap = buildSoapEnvelope(consSit, CONSULTA_NS);
 
   try {
-    const rawResponse = await postSoap(url, soap, input.pfx, input.password);
+    const rawResponse = await postSefazSoap(
+      url,
+      soap,
+      input.pfx,
+      input.password,
+      CONSULTA_ACTION,
+    );
     const body = extractSoapBody(rawResponse);
     const parsed = parseSefazEventResponse(body);
     const cStat = parsed.cStat;
@@ -152,7 +173,7 @@ export async function consultNfeProtocolo(input: {
       ok: false,
       rawResponse: "",
       parsed: { success: false },
-      error: e instanceof Error ? e.message : "Erro de comunicação com SEFAZ",
+      error: describeSefazTransportError(e),
     };
   }
 }
@@ -168,7 +189,13 @@ export async function sendNfeInutilizacao(input: {
   const soap = buildSoapEnvelope(input.inutNFeXml, INUTILIZACAO_NS);
 
   try {
-    const rawResponse = await postSoap(url, soap, input.pfx, input.password);
+    const rawResponse = await postSefazSoap(
+      url,
+      soap,
+      input.pfx,
+      input.password,
+      INUTILIZACAO_ACTION,
+    );
     const body = extractSoapBody(rawResponse);
     const parsed = parseSefazEventResponse(body);
     const ok = parsed.cStat === "102" || parsed.success;
@@ -185,56 +212,7 @@ export async function sendNfeInutilizacao(input: {
       ok: false,
       rawResponse: "",
       parsed: { success: false },
-      error: e instanceof Error ? e.message : "Erro de comunicação com SEFAZ",
+      error: describeSefazTransportError(e),
     };
   }
-}
-
-function postSoap(
-  url: URL,
-  soapBody: string,
-  pfx: Buffer,
-  password: string,
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const agent = new https.Agent({
-      pfx,
-      passphrase: password,
-      rejectUnauthorized: true,
-      minVersion: "TLSv1.2",
-    });
-
-    const req = https.request(
-      url,
-      {
-        method: "POST",
-        agent,
-        timeout: SEFAZ_TIMEOUT_MS,
-        headers: {
-          "Content-Type": "application/soap+xml; charset=utf-8",
-          "Content-Length": Buffer.byteLength(soapBody, "utf8"),
-        },
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (c) => chunks.push(c));
-        res.on("end", () => {
-          const text = Buffer.concat(chunks).toString("utf8");
-          if (res.statusCode && res.statusCode >= 400) {
-            reject(
-              new Error(`SEFAZ HTTP ${res.statusCode}: ${text.slice(0, 500)}`),
-            );
-            return;
-          }
-          resolve(text);
-        });
-      },
-    );
-    req.setTimeout(SEFAZ_TIMEOUT_MS, () => {
-      req.destroy(new Error(`Timeout SEFAZ (${SEFAZ_TIMEOUT_MS}ms)`));
-    });
-    req.on("error", reject);
-    req.write(soapBody);
-    req.end();
-  });
 }

@@ -10,7 +10,18 @@ import {
   generateAccessKey,
   onlyDigits,
 } from "./nfe-access-key.js";
+import { nfeCest, nfeCProd, nfeExtIpi, nfeGtin } from "./nfe-prod-fields.js";
+import { compactNfeXml } from "./nfe-signer.js";
 import { UF_IBGE } from "./sefaz-endpoints.js";
+
+/** Limite do schema NF-e para `ide/natOp`. */
+export const NFE_NAT_OP_MAX = 60;
+
+export function normalizeNfeNature(raw: string | null | undefined): string {
+  const t = (raw ?? "").trim().replace(/\s+/g, " ");
+  if (!t) return "VENDA DE MERCADORIA";
+  return t.slice(0, NFE_NAT_OP_MAX);
+}
 
 type Recipient = {
   name: string;
@@ -211,6 +222,8 @@ export function buildSignedNfePackage(input: {
   emitterName: string;
   accessKey?: string;
   payment?: NfePaymentInfo;
+  /** Texto de `ide/natOp` (natureza da operação / CFOP). */
+  nature?: string | null;
 }) {
   if ((input.invoice.documentModel ?? 55) !== 55) {
     throw new Error(
@@ -236,6 +249,7 @@ export function buildSignedNfePackage(input: {
     accessKey,
     issuedAt,
     payment: input.payment,
+    nature: input.nature,
   });
 
   return { accessKey, infNFeXml: infNFe, issuedAt };
@@ -249,6 +263,7 @@ function buildInfNFe(input: {
   accessKey: string;
   issuedAt: Date;
   payment?: NfePaymentInfo;
+  nature?: string | null;
 }) {
   const { config, invoice, recipient, accessKey, issuedAt, emitterName } =
     input;
@@ -267,25 +282,40 @@ function buildInfNFe(input: {
   const freight = Number(invoice.freightAmount ?? 0);
   const totals = sumTaxSnapshots(invoice.items);
   const vNF = totals.vProd + freight + totals.vIPI;
+  const natOp = normalizeNfeNature(input.nature);
 
   const det = invoice.items
     .map((item) => {
       const tax = (item.taxSnapshot as Record<string, unknown> | null) ?? {};
       const vProd = Number(item.totalPrice);
       const ipiXml = buildIpiXml(tax);
+      const gtin = nfeGtin(tax.gtin != null ? String(tax.gtin) : null);
+      const cest = nfeCest(tax.cest != null ? String(tax.cest) : null);
+      const extIpi = nfeExtIpi(
+        tax.ncmException != null ? String(tax.ncmException) : null,
+      );
+      const cProd = nfeCProd({
+        sku: tax.cProd != null ? String(tax.cProd) : null,
+        productId: item.productId,
+        lineNumber: item.lineNumber,
+      });
+      const cestXml = cest ? `\n        <CEST>${cest}</CEST>` : "";
+      const extIpiXml = extIpi
+        ? `\n        <EXTIPI>${escapeXml(extIpi)}</EXTIPI>`
+        : "";
       return `
     <det nItem="${item.lineNumber}">
       <prod>
-        <cProd>${escapeXml(item.productId ?? String(item.lineNumber))}</cProd>
-        <cEAN>SEM GTIN</cEAN>
+        <cProd>${escapeXml(cProd)}</cProd>
+        <cEAN>${escapeXml(gtin)}</cEAN>
         <xProd>${escapeXml(item.description)}</xProd>
-        <NCM>${escapeXml((item.ncm ?? "00000000").replace(/\D/g, "").padStart(8, "0"))}</NCM>
+        <NCM>${escapeXml((item.ncm ?? "00000000").replace(/\D/g, "").padStart(8, "0"))}</NCM>${cestXml}${extIpiXml}
         <CFOP>${escapeXml(item.cfop ?? "5102")}</CFOP>
         <uCom>${escapeXml(item.unit ?? "UN")}</uCom>
         <qCom>${formatNfeDecimal(Number(item.quantity), 4)}</qCom>
         <vUnCom>${formatNfeDecimal(Number(item.unitPrice))}</vUnCom>
         <vProd>${formatNfeDecimal(vProd)}</vProd>
-        <cEANTrib>SEM GTIN</cEANTrib>
+        <cEANTrib>${escapeXml(gtin)}</cEANTrib>
         <uTrib>${escapeXml(item.unit ?? "UN")}</uTrib>
         <qTrib>${formatNfeDecimal(Number(item.quantity), 4)}</qTrib>
         <vUnTrib>${formatNfeDecimal(Number(item.unitPrice))}</vUnTrib>
@@ -300,11 +330,11 @@ function buildInfNFe(input: {
     })
     .join("");
 
-  return `<infNFe xmlns="http://www.portalfiscal.inf.br/nfe" Id="NFe${accessKey}" versao="4.00">
+  return `<infNFe Id="NFe${accessKey}" versao="4.00">
   <ide>
     <cUF>${cUF}</cUF>
     <cNF>${accessKey.slice(35, 43)}</cNF>
-    <natOp>VENDA</natOp>
+    <natOp>${escapeXml(natOp)}</natOp>
     <mod>55</mod>
     <serie>${invoice.series ?? config.nfeSeries}</serie>
     <nNF>${invoice.number}</nNF>
@@ -401,5 +431,7 @@ function buildPagXml(total: number, payment?: NfePaymentInfo): string {
 }
 
 export function wrapEnviNFe(signedNFeXml: string, idLote = "1"): string {
-  return `<?xml version="1.0" encoding="UTF-8"?><enviNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00"><idLote>${idLote}</idLote><indSinc>1</indSinc>${signedNFeXml}</enviNFe>`;
+  return compactNfeXml(
+    `<?xml version="1.0" encoding="UTF-8"?><enviNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00"><idLote>${idLote}</idLote><indSinc>1</indSinc>${signedNFeXml}</enviNFe>`,
+  );
 }

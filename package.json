@@ -25,6 +25,8 @@
     "db:push": "dotenv -e apps/api/.env -- prisma db push --config apps/api/prisma.config.ts",
     "db:seed": "dotenv -e apps/api/.env -- prisma db seed --config apps/api/prisma.config.ts",
     "db:seed:route": "dotenv -e apps/api/.env -- tsx apps/api/prisma/seed-route-customer.ts",
+    "db:seed:pimentinha": "dotenv -e apps/api/.env -- tsx apps/api/prisma/seed-pimentinha-saltbits.ts",
+    "db:unlock-org": "dotenv -e apps/api/.env -- tsx apps/api/prisma/unlock-org-full.ts",
     "db:seed:sales-chart": "dotenv -e apps/api/.env -- tsx apps/api/prisma/seed-sales-chart-demo.ts",
     "predb:seed": "pnpm db:generate",
     "db:generate": "dotenv -e apps/api/.env -- prisma generate --config apps/api/prisma.config.ts",

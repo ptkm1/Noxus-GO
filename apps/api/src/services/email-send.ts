@@ -53,6 +53,33 @@ export function readEmailOutboundConfig(): EmailOutboundConfig | null {
   return { provider, apiKey, fromRaw };
 }
 
+/** Mensagem acionável a partir do erro cru do provedor. */
+export function explainEmailSendFailure(raw: string): string {
+  const jsonStart = raw.indexOf("{");
+  let t = raw.trim();
+  if (jsonStart >= 0) {
+    try {
+      const parsed = JSON.parse(raw.slice(jsonStart)) as { message?: string };
+      if (parsed.message?.trim()) t = parsed.message.trim();
+    } catch {
+      /* usa o texto cru */
+    }
+  }
+  if (t === "EMAIL_NOT_CONFIGURED" || t === "unknown") {
+    return "E-mail não configurado. Defina RESEND_API_KEY e EMAIL_FROM no .env da API.";
+  }
+  if (/only send testing emails to your own email/i.test(t)) {
+    const allowed = t.match(/\(([^)]+@[^)]+)\)/)?.[1];
+    return allowed
+      ? `O Resend está em modo de teste e só entrega para ${allowed}. Verifique um domínio em resend.com/domains e altere EMAIL_FROM para um e-mail desse domínio.`
+      : "O Resend está em modo de teste. Verifique um domínio em resend.com/domains e altere EMAIL_FROM para um e-mail desse domínio.";
+  }
+  if (/Invalid `to` field/i.test(t)) {
+    return "Destinatário recusado pelo Resend. Use um e-mail real (em modo de teste, só o e-mail da conta Resend).";
+  }
+  return t;
+}
+
 export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -102,7 +129,9 @@ async function sendViaResend(params: {
     const errBody = await res.text().catch(() => "");
     return {
       ok: false,
-      message: `Resend HTTP ${res.status}: ${errBody.slice(0, 400)}`,
+      message: explainEmailSendFailure(
+        `Resend HTTP ${res.status}: ${errBody.slice(0, 400)}`,
+      ),
     };
   }
   return { ok: true };
