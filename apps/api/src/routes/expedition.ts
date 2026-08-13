@@ -100,9 +100,13 @@ export const expeditionRoutes: FastifyPluginAsync = async (app) => {
     }
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const body = z
-      .object({ barcode: z.string().min(1).max(80) })
+      .object({
+        barcode: z.string().min(1).max(80).optional(),
+        orderItemId: z.string().optional(),
+        qty: z.number().int().min(1).max(99_999).optional(),
+      })
       .safeParse(req.body);
-    if (!body.success) {
+    if (!body.success || (!body.data.barcode && !body.data.orderItemId)) {
       return reply.status(400).send({
         error: "Informe o código de barras.",
         code: "EMPTY_CODE",
@@ -113,6 +117,8 @@ export const expeditionRoutes: FastifyPluginAsync = async (app) => {
         auth,
         orderId: id,
         barcode: body.data.barcode,
+        orderItemId: body.data.orderItemId,
+        qty: body.data.qty,
       });
     } catch (e) {
       return sendExpeditionError(reply, e);

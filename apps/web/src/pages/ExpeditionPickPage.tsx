@@ -36,6 +36,17 @@ type PickEvent = {
   user: { name: string };
 };
 
+type ScanMatch = {
+  orderItemId: string;
+  productId: string;
+  productName: string;
+  barcode: string | null;
+  sku?: string | null;
+  requestedQty: number;
+  checkedQty: number;
+  remainingQty: number;
+};
+
 type PickDetail = {
   id: string;
   status: string;
@@ -65,6 +76,7 @@ type PickDetail = {
     percent: number;
     complete: boolean;
   };
+  scanMatch?: ScanMatch;
 };
 
 type ApiErr = { message?: string; code?: string };
@@ -109,7 +121,10 @@ export function ExpeditionPickPage() {
   const qc = useQueryClient();
   const { confirm } = useConfirm();
   const inputRef = useRef<HTMLInputElement>(null);
+  const qtyRef = useRef<HTMLInputElement>(null);
   const [barcode, setBarcode] = useState("");
+  const [pending, setPending] = useState<ScanMatch | null>(null);
+  const [qtyInput, setQtyInput] = useState("");
   const [flash, setFlash] = useState<"ok" | "err" | null>(null);
   const [flashMsg, setFlashMsg] = useState<string | null>(null);
   const [reason, setReason] = useState("");
@@ -135,6 +150,13 @@ export function ExpeditionPickPage() {
 
   function focusScan() {
     window.setTimeout(() => inputRef.current?.focus(), 30);
+  }
+
+  function focusQty() {
+    window.setTimeout(() => {
+      qtyRef.current?.focus();
+      qtyRef.current?.select();
+    }, 30);
   }
 
   function showFlash(kind: "ok" | "err", message: string) {
@@ -169,11 +191,12 @@ export function ExpeditionPickPage() {
     if (
       detail?.expedition &&
       detail.expedition.status !== "COMPLETED" &&
-      !adjusting
+      !adjusting &&
+      !pending
     ) {
       focusScan();
     }
-  }, [detail?.expedition, detail?.progress.checkedUnits, adjusting]);
+  }, [detail?.expedition, detail?.progress.checkedUnits, adjusting, pending]);
 
   const scan = useMutation({
     mutationFn: (code: string) =>
@@ -184,13 +207,43 @@ export function ExpeditionPickPage() {
     onSuccess: (data) => {
       void qc.setQueryData(["admin", "expedition", "order", orderId], data);
       setBarcode("");
-      showFlash("ok", "Produto conferido");
+      if (data.scanMatch) {
+        setPending(data.scanMatch);
+        setQtyInput(String(data.scanMatch.remainingQty));
+        showFlash("ok", data.scanMatch.productName);
+        focusQty();
+        return;
+      }
       focusScan();
     },
     onError: (e: ApiErr) => {
       showFlash("err", e.message ?? "Falha na leitura");
       setBarcode("");
+      setPending(null);
       focusScan();
+    },
+  });
+
+  const confirmQty = useMutation({
+    mutationFn: (body: {
+      orderItemId: string;
+      qty: number;
+      barcode?: string;
+    }) =>
+      apiFetch<PickDetail>(`/admin/expedition/orders/${orderId}/scan`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (data) => {
+      void qc.setQueryData(["admin", "expedition", "order", orderId], data);
+      setPending(null);
+      setQtyInput("");
+      showFlash("ok", "Quantidade conferida");
+      focusScan();
+    },
+    onError: (e: ApiErr) => {
+      showFlash("err", e.message ?? "Falha ao conferir quantidade");
+      focusQty();
     },
   });
 
@@ -250,8 +303,41 @@ export function ExpeditionPickPage() {
   async function onScanSubmit(e: React.FormEvent) {
     e.preventDefault();
     const code = barcode.trim();
-    if (!code || scan.isPending || detail?.locked) return;
+    if (!code || scan.isPending || confirmQty.isPending || detail?.locked)
+      return;
     scan.mutate(code);
+  }
+
+  function onQtySubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pending || confirmQty.isPending) return;
+    const raw = qtyInput.trim();
+    if (raw.length >= 8) {
+      setPending(null);
+      setQtyInput("");
+      scan.mutate(raw);
+      return;
+    }
+    const qty = Number(raw);
+    if (!Number.isInteger(qty) || qty < 1) {
+      showFlash("err", "Informe a quantidade conferida.");
+      focusQty();
+      return;
+    }
+    if (qty > pending.remainingQty) {
+      showFlash(
+        "err",
+        "Quantidade já conferida. Este produto não possui mais unidades pendentes.",
+      );
+      setQtyInput(String(pending.remainingQty));
+      focusQty();
+      return;
+    }
+    confirmQty.mutate({
+      orderItemId: pending.orderItemId,
+      qty,
+      barcode: pending.barcode ?? undefined,
+    });
   }
 
   async function onFinish() {
@@ -343,29 +429,87 @@ export function ExpeditionPickPage() {
       ) : null}
 
       {started ? (
-        <form
-          onSubmit={(e) => void onScanSubmit(e)}
-          className="surface-card p-4"
-        >
-          <label htmlFor="exp-scan" className="text-sm font-semibold">
-            Código de barras
-          </label>
-          <Input
-            id="exp-scan"
-            ref={inputRef}
-            autoFocus
-            autoComplete="off"
-            disabled={packed || scan.isPending}
-            value={barcode}
-            onChange={(e) => setBarcode(e.target.value)}
-            placeholder="Bipe o produto e pressione Enter"
-            className="mt-2 h-12 text-lg"
-          />
-          <p className="mt-2 text-xs text-muted-foreground">
-            A pistola USB funciona como teclado: o código entra neste campo e o
-            Enter confirma a leitura.
-          </p>
-        </form>
+        <div className="surface-card space-y-4 p-4">
+          <form onSubmit={(e) => void onScanSubmit(e)}>
+            <label htmlFor="exp-scan" className="text-sm font-semibold">
+              Código de barras
+            </label>
+            <Input
+              id="exp-scan"
+              ref={inputRef}
+              autoFocus
+              autoComplete="off"
+              disabled={packed || scan.isPending || confirmQty.isPending}
+              value={barcode}
+              onChange={(e) => setBarcode(e.target.value)}
+              placeholder="Bipe o produto e pressione Enter"
+              className="mt-2 h-12 text-lg"
+            />
+            <p className="mt-2 text-xs text-muted-foreground">
+              A pistola USB funciona como teclado: o código entra neste campo e
+              o Enter identifica o produto.
+            </p>
+          </form>
+
+          {pending ? (
+            <form
+              onSubmit={(e) => void onQtySubmit(e)}
+              className="rounded-md border border-primary/30 bg-primary/5 p-4"
+            >
+              <p className="text-sm font-semibold">{pending.productName}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Solicitado: {pending.requestedQty} · Já conferido:{" "}
+                {pending.checkedQty} · Pendente: {pending.remainingQty}
+              </p>
+              <label
+                htmlFor="exp-qty"
+                className="mt-3 block text-sm font-semibold"
+              >
+                Quantidade desta leitura
+              </label>
+              <Input
+                id="exp-qty"
+                ref={qtyRef}
+                autoComplete="off"
+                inputMode="numeric"
+                disabled={confirmQty.isPending}
+                value={qtyInput}
+                onChange={(e) =>
+                  setQtyInput(e.target.value.replace(/[^\d]/g, ""))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setPending(null);
+                    setQtyInput("");
+                    focusScan();
+                  }
+                }}
+                className="mt-2 h-14 text-center text-2xl font-semibold tabular-nums"
+              />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button type="submit" disabled={confirmQty.isPending}>
+                  Confirmar quantidade
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setPending(null);
+                    setQtyInput("");
+                    focusScan();
+                  }}
+                >
+                  Cancelar
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Digite a quantidade e pressione Enter. O valor já vem com o
+                restante pendente.
+              </p>
+            </form>
+          ) : null}
+        </div>
       ) : null}
 
       <div className="surface-card p-4">
@@ -402,7 +546,12 @@ export function ExpeditionPickPage() {
             {detail.items.map((it) => (
               <tr
                 key={it.orderItemId}
-                className={cn("border-b", lineClass(it.lineStatus))}
+                className={cn(
+                  "border-b",
+                  lineClass(it.lineStatus),
+                  pending?.orderItemId === it.orderItemId &&
+                    "ring-2 ring-inset ring-primary",
+                )}
               >
                 <td className="px-4 py-3 font-medium">{it.productName}</td>
                 <td className="px-4 py-3 font-mono text-xs">

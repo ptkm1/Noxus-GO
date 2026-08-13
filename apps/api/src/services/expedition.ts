@@ -361,80 +361,165 @@ async function loadOpenExpedition(auth: AccessPayload, orderId: string) {
   return order.expedition;
 }
 
-export async function scanExpeditionItem(params: {
+type ExpeditionLine = Awaited<
+  ReturnType<typeof loadOpenExpedition>
+>["items"][number];
+
+function scanMatchOf(line: ExpeditionLine) {
+  const remainingQty = Math.max(0, line.requestedQty - line.checkedQty);
+  return {
+    orderItemId: line.orderItemId,
+    productId: line.productId,
+    productName: line.orderItem.productName,
+    barcode: line.orderItem.product.barcode,
+    sku: line.orderItem.product.sku,
+    requestedQty: line.requestedQty,
+    checkedQty: line.checkedQty,
+    remainingQty,
+  };
+}
+
+async function rejectUnknownBarcode(params: {
+  auth: AccessPayload;
+  expeditionId: string;
+  barcode: string;
+}): Promise<never> {
+  const trimmed = params.barcode.trim();
+  const digits = trimmed.replace(/\D/g, "");
+  const variants = [
+    ...new Set(
+      [
+        trimmed,
+        digits,
+        digits.length === 12 ? `0${digits}` : "",
+        digits.length === 13 && digits.startsWith("0") ? digits.slice(1) : "",
+      ].filter(Boolean),
+    ),
+  ];
+  const orgHit = await prisma.product.findFirst({
+    where: {
+      organizationId: params.auth.organizationId,
+      OR: [
+        { barcode: { in: variants } },
+        { sku: { in: variants } },
+        { fiscalGtin: { in: variants } },
+      ],
+    },
+    select: { id: true },
+  });
+  const known = Boolean(orgHit);
+  await prisma.orderExpeditionEvent.create({
+    data: {
+      expeditionId: params.expeditionId,
+      userId: params.auth.sub,
+      type: known ? "REJECT_WRONG" : "REJECT_UNKNOWN",
+      barcode: params.barcode,
+    },
+  });
+  throw new ExpeditionError(
+    known
+      ? "Produto não pertence a este pedido."
+      : "Código de barras não encontrado.",
+    known ? "WRONG_PRODUCT" : "UNKNOWN_BARCODE",
+  );
+}
+
+async function matchOpenLine(params: {
   auth: AccessPayload;
   orderId: string;
-  barcode: string;
+  barcode?: string;
+  orderItemId?: string;
 }) {
-  const raw = params.barcode.trim();
+  const exp = await loadOpenExpedition(params.auth, params.orderId);
+  if (params.orderItemId) {
+    const line = exp.items.find((i) => i.orderItemId === params.orderItemId);
+    if (!line) {
+      throw new ExpeditionError(
+        "Produto não pertence a este pedido.",
+        "WRONG_PRODUCT",
+      );
+    }
+    return {
+      exp,
+      line,
+      barcode: params.barcode?.trim() || line.orderItem.product.barcode || "",
+    };
+  }
+
+  const raw = params.barcode?.trim() ?? "";
   if (!raw) {
     throw new ExpeditionError("Informe o código de barras.", "EMPTY_CODE");
   }
-  const exp = await loadOpenExpedition(params.auth, params.orderId);
-
   const catalog = exp.items.map((i) => i.orderItem.product);
   const inOrder = findProductByBarcode(catalog, raw);
-
   if (!inOrder) {
-    const trimmed = raw.trim();
-    const digits = trimmed.replace(/\D/g, "");
-    const variants = [
-      ...new Set(
-        [
-          trimmed,
-          digits,
-          digits.length === 12 ? `0${digits}` : "",
-          digits.length === 13 && digits.startsWith("0") ? digits.slice(1) : "",
-        ].filter(Boolean),
-      ),
-    ];
-    const orgHit = await prisma.product.findFirst({
-      where: {
-        organizationId: params.auth.organizationId,
-        OR: [
-          { barcode: { in: variants } },
-          { sku: { in: variants } },
-          { fiscalGtin: { in: variants } },
-        ],
-      },
-      select: { id: true },
+    return await rejectUnknownBarcode({
+      auth: params.auth,
+      expeditionId: exp.id,
+      barcode: raw,
     });
-    const known = Boolean(orgHit);
-    const type = known ? "REJECT_WRONG" : "REJECT_UNKNOWN";
-    await prisma.orderExpeditionEvent.create({
-      data: {
-        expeditionId: exp.id,
-        userId: params.auth.sub,
-        type,
-        barcode: raw,
-      },
-    });
-    throw new ExpeditionError(
-      known
-        ? "Produto não pertence a este pedido."
-        : "Código de barras não encontrado.",
-      known ? "WRONG_PRODUCT" : "UNKNOWN_BARCODE",
-    );
   }
-
   const line =
     exp.items.find(
       (i) => i.productId === inOrder.id && i.checkedQty < i.requestedQty,
     ) ?? exp.items.find((i) => i.productId === inOrder.id);
-
   if (!line) {
     throw new ExpeditionError(
       "Produto não pertence a este pedido.",
       "WRONG_PRODUCT",
     );
   }
+  return { exp, line, barcode: raw };
+}
+
+export async function scanExpeditionItem(params: {
+  auth: AccessPayload;
+  orderId: string;
+  barcode?: string;
+  orderItemId?: string;
+  qty?: number;
+}) {
+  const { exp, line, barcode } = await matchOpenLine(params);
+  const remaining = line.requestedQty - line.checkedQty;
+  if (remaining <= 0) {
+    await prisma.orderExpeditionEvent.create({
+      data: {
+        expeditionId: exp.id,
+        userId: params.auth.sub,
+        type: "REJECT_OVER",
+        orderItemId: line.orderItemId,
+        productId: line.productId,
+        barcode,
+      },
+    });
+    throw new ExpeditionError(
+      "Quantidade já conferida. Este produto não possui mais unidades pendentes.",
+      "OVER_QTY",
+    );
+  }
+
+  if (params.qty == null) {
+    const detail = await getExpeditionOrder(params.auth, params.orderId);
+    return { ...detail, scanMatch: scanMatchOf(line) };
+  }
+
+  const qty = params.qty;
+  if (!Number.isInteger(qty) || qty < 1) {
+    throw new ExpeditionError("Informe uma quantidade válida.", "INVALID_QTY");
+  }
+  if (qty > remaining) {
+    throw new ExpeditionError(
+      "Quantidade já conferida. Este produto não possui mais unidades pendentes.",
+      "OVER_QTY",
+    );
+  }
 
   const updated = await prisma.orderExpeditionItem.updateMany({
     where: {
       id: line.id,
-      checkedQty: { lt: line.requestedQty },
+      checkedQty: { lte: line.requestedQty - qty },
     },
-    data: { checkedQty: { increment: 1 } },
+    data: { checkedQty: { increment: qty } },
   });
 
   if (updated.count === 0) {
@@ -445,7 +530,7 @@ export async function scanExpeditionItem(params: {
         type: "REJECT_OVER",
         orderItemId: line.orderItemId,
         productId: line.productId,
-        barcode: raw,
+        barcode,
       },
     });
     throw new ExpeditionError(
@@ -461,8 +546,8 @@ export async function scanExpeditionItem(params: {
       type: "SCAN",
       orderItemId: line.orderItemId,
       productId: line.productId,
-      barcode: raw,
-      qtyDelta: 1,
+      barcode,
+      qtyDelta: qty,
     },
   });
 
