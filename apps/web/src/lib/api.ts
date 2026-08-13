@@ -98,14 +98,62 @@ export async function apiFetch<T>(path: string, opts: Opt = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function downloadPdf(pathWithQuery: string, filename: string) {
-  const blob = await fetchAuthenticatedBlob(pathWithQuery);
+export async function fetchAuthenticatedBlob(
+  pathWithQuery: string,
+  init?: RequestInit,
+): Promise<Blob> {
+  const h = new Headers(init?.headers);
+  const t = getAccessToken();
+  if (t) h.set("Authorization", `Bearer ${t}`);
+  if (init?.body && !h.has("Content-Type")) {
+    h.set("Content-Type", "application/json");
+  }
+  const pdfUrl = apiUrl(pathWithQuery);
+  applyTunnelHeaders(h, pdfUrl);
+  const res = await fetch(pdfUrl, { ...init, headers: h });
+  if (!res.ok) throw await errorFromResponse(res);
+  return res.blob();
+}
+
+export async function downloadPdf(
+  pathWithQuery: string,
+  filename: string,
+  init?: RequestInit,
+) {
+  const blob = await fetchAuthenticatedBlob(pathWithQuery, init);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/** Abre o diálogo de impressão do navegador com o PDF. */
+export async function printPdf(pathWithQuery: string, init?: RequestInit) {
+  const blob = await fetchAuthenticatedBlob(pathWithQuery, init);
+  const url = URL.createObjectURL(blob);
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  iframe.src = url;
+  document.body.appendChild(iframe);
+  iframe.onload = () => {
+    iframe.contentWindow?.focus();
+    iframe.contentWindow?.print();
+    window.setTimeout(() => {
+      document.body.removeChild(iframe);
+      URL.revokeObjectURL(url);
+    }, 1000);
+  };
+}
+
+export function openPdfBlob(blob: Blob): string {
+  return URL.createObjectURL(blob);
 }
 
 export async function downloadXml(pathWithQuery: string, filename: string) {
@@ -126,40 +174,4 @@ export async function downloadXml(pathWithQuery: string, filename: string) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-}
-
-export async function fetchAuthenticatedBlob(
-  pathWithQuery: string,
-): Promise<Blob> {
-  const h = new Headers();
-  const t = getAccessToken();
-  if (t) h.set("Authorization", `Bearer ${t}`);
-  const pdfUrl = apiUrl(pathWithQuery);
-  applyTunnelHeaders(h, pdfUrl);
-  const res = await fetch(pdfUrl, { headers: h });
-  if (!res.ok) throw await errorFromResponse(res);
-  return res.blob();
-}
-
-/** Abre o diálogo de impressão do navegador com o PDF do pedido. */
-export async function printPdf(pathWithQuery: string) {
-  const blob = await fetchAuthenticatedBlob(pathWithQuery);
-  const url = URL.createObjectURL(blob);
-  const iframe = document.createElement("iframe");
-  iframe.style.position = "fixed";
-  iframe.style.right = "0";
-  iframe.style.bottom = "0";
-  iframe.style.width = "0";
-  iframe.style.height = "0";
-  iframe.style.border = "0";
-  iframe.src = url;
-  document.body.appendChild(iframe);
-  iframe.onload = () => {
-    iframe.contentWindow?.focus();
-    iframe.contentWindow?.print();
-    window.setTimeout(() => {
-      document.body.removeChild(iframe);
-      URL.revokeObjectURL(url);
-    }, 1000);
-  };
 }

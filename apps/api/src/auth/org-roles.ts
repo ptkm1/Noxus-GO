@@ -28,6 +28,8 @@ const MANAGER_GET_ALLOW = [
   /^\/reports\/credit-aging$/,
   /^\/reports\/fiscal-reconciliation$/,
   /^\/reports\/visit-effectiveness$/,
+  /^\/reports\/route-romaneio\.pdf$/,
+  /^\/expedition/,
   /^\/notifications$/,
   /^\/notifications\/unread-count$/,
   /^\/push-vapid-public-key$/,
@@ -41,6 +43,8 @@ const MANAGER_WRITE_ALLOW = [
   /^\/push-devices$/,
   /^\/customers\/[^/]+\/approve$/,
   /^\/customers\/[^/]+\/reject$/,
+  /^\/reports\/route-romaneio\.pdf$/,
+  /^\/expedition/,
 ] as const;
 
 export function isManagerWriteAllowed(routePath: string): boolean {
@@ -65,6 +69,7 @@ const TEAM_LEADER_GET_ALLOW = [
   /^\/reports\/sales-by-supplier$/,
   /^\/reports\/scorecard$/,
   /^\/reports\/visit-effectiveness$/,
+  /^\/reports\/route-romaneio\.pdf$/,
 ] as const;
 
 export function isOrgStaff(role: Role): boolean {

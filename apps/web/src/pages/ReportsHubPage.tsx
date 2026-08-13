@@ -27,6 +27,13 @@ const CARDS: Array<{
     icon: ShoppingCart,
   },
   {
+    to: "/romaneio-rota",
+    title: "Romaneio de rota",
+    description:
+      "Selecione pedidos da carga e gere o documento A4 para conferência.",
+    icon: ClipboardList,
+  },
+  {
     to: "/relatorios/itens",
     title: "Itens de pedidos",
     description: "Linhas vendidas com código, quantidade, preços e totais.",

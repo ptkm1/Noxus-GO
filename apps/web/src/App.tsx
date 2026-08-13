@@ -31,6 +31,8 @@ import { CustomersPage } from "./pages/CustomersPage";
 import { CustomerVisitsPage } from "./pages/CustomerVisitsPage";
 import { DashboardHome } from "./pages/DashboardHome";
 import { DashboardLayout } from "./pages/DashboardLayout";
+import { ExpeditionPickPage } from "./pages/ExpeditionPickPage";
+import { ExpeditionQueuePage } from "./pages/ExpeditionQueuePage";
 import { FaturamentoPage } from "./pages/FaturamentoPage";
 import { FirstAccessPage } from "./pages/FirstAccessPage";
 import { FiscalAccountsPayablePage } from "./pages/FiscalAccountsPayablePage";
@@ -50,12 +52,13 @@ import { ProductFormPage } from "./pages/ProductFormPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ReportCustomersPage } from "./pages/ReportCustomersPage";
-import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { ReportOrderItemsPage } from "./pages/ReportOrderItemsPage";
 import { ReportOrdersPage } from "./pages/ReportOrdersPage";
 import { ReportsHubPage } from "./pages/ReportsHubPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { ReportStockPage } from "./pages/ReportStockPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { RouteRomaneioPage } from "./pages/RouteRomaneioPage";
 import { SellerProductsPage } from "./pages/SellerProductsPage";
 import { SellersPage } from "./pages/SellersPage";
 import { SellerTrackingPage } from "./pages/SellerTrackingPage";
@@ -99,6 +102,7 @@ const TEAM_LEADER_ROUTE_PREFIXES = [
   "/rastreio",
   "/visitas",
   "/pedidos",
+  "/romaneio-rota",
   "/vendas",
   "/insights",
   "/relatorios",
@@ -346,6 +350,9 @@ function AppRoutes() {
             <Route path="rastreio" element={<SellerTrackingPage />} />
             <Route path="pedidos" element={<OrdersPage />} />
             <Route path="pedidos/:orderId" element={<OrderDetailPage />} />
+            <Route path="romaneio-rota" element={<RouteRomaneioPage />} />
+            <Route path="expedicao" element={<ExpeditionQueuePage />} />
+            <Route path="expedicao/:orderId" element={<ExpeditionPickPage />} />
             <Route path="vendas" element={<LegacyVendasRedirect />} />
             <Route path="vendas/:orderId" element={<LegacyVendasRedirect />} />
             <Route path="insights" element={<InsightsPage />} />

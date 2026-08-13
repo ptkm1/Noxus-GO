@@ -9,12 +9,14 @@ import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
   Bell,
+  ClipboardList,
   FileText,
   LayoutDashboard,
   Lightbulb,
   MapPin,
   Navigation,
   Package,
+  PackageCheck,
   Receipt,
   Settings,
   ShoppingCart,
@@ -116,6 +118,18 @@ export const DASHBOARD_NAV: NavItem[] = [
   },
   { to: "/pedidos", label: "Pedidos", icon: ShoppingCart, resource: "orders" },
   {
+    to: "/romaneio-rota",
+    label: "Romaneio de rota",
+    icon: ClipboardList,
+    resource: "orders",
+  },
+  {
+    to: "/expedicao",
+    label: "Expedição",
+    icon: PackageCheck,
+    resource: "expedition",
+  },
+  {
     to: "/financeiro",
     label: "Financeiro",
     icon: Receipt,
@@ -168,6 +182,12 @@ export const TEAM_LEADER_NAV: NavItem[] = [
   },
   { to: "/pedidos", label: "Pedidos", icon: ShoppingCart, resource: "orders" },
   {
+    to: "/romaneio-rota",
+    label: "Romaneio de rota",
+    icon: ClipboardList,
+    resource: "orders",
+  },
+  {
     to: "/insights",
     label: "Insights da equipe",
     icon: BarChart3,
@@ -195,6 +215,8 @@ export function resourceForPath(pathname: string): PermissionResource | null {
   if (pathname.startsWith("/rastreio")) return "tracking";
   if (pathname.startsWith("/pedidos") || pathname.startsWith("/vendas"))
     return "orders";
+  if (pathname.startsWith("/romaneio-rota")) return "orders";
+  if (pathname.startsWith("/expedicao")) return "expedition";
   if (
     pathname.startsWith("/financeiro") ||
     pathname.startsWith("/fiscal") ||
