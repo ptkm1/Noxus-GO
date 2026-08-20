@@ -23,7 +23,7 @@
       "pnpm": "10.22.0",
       "env": {
         "EXPO_USE_LOCAL_CLI": "1",
-        "EXPO_PUBLIC_API_URL": "https://noxus-go.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://api.pedixpro.com.br"
       },
       "android": {
         "buildType": "apk",
@@ -40,7 +40,7 @@
       "pnpm": "10.22.0",
       "env": {
         "EXPO_USE_LOCAL_CLI": "1",
-        "EXPO_PUBLIC_API_URL": "https://noxus-go.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://api.pedixpro.com.br"
       },
       "android": {
         "buildType": "app-bundle"

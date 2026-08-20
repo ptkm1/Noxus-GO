@@ -1,10 +1,14 @@
-import type { User } from "@prisma/client";
+import type { Prisma, User } from "@prisma/client";
 import { prisma } from "../../db.js";
 
 /** Usuário dono da intenção, após pagamento confirmado e org ativa. */
 export async function resolveUserForCompletedCheckout(
   intentId: string,
-): Promise<User & { seller: { id: string } | null }> {
+): Promise<
+  User & {
+    seller: { id: string; commissionPercent: Prisma.Decimal } | null;
+  }
+> {
   const intent = await prisma.checkoutIntent.findUnique({
     where: { id: intentId },
     select: {

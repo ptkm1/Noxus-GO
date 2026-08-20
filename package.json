@@ -17,7 +17,14 @@
     "build:mobile:android": "pnpm --filter @pedidos/mobile build:preview:android",
     "build:mobile:dev:android": "pnpm --filter @pedidos/mobile build:dev:android",
     "build:mobile:ios": "pnpm --filter @pedidos/mobile build:preview:ios",
+    "build:mobile:prod:android": "pnpm --filter @pedidos/mobile build:production:android",
+    "build:mobile:prod:ios": "pnpm --filter @pedidos/mobile build:production:ios",
     "build": "pnpm -r run build",
+    "build:api": "pnpm build:shared && pnpm db:generate && pnpm --filter @pedidos/api build",
+    "build:web": "pnpm build:shared && pnpm build:design-tokens && pnpm --filter @pedidos/web build",
+    "build:site": "pnpm build:shared && pnpm build:design-tokens && pnpm --filter @pedidos/site build",
+    "typecheck:mobile": "pnpm --filter @pedidos/mobile typecheck",
+    "deploy:preflight": "bash scripts/release-preflight.sh --migrate --build",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:migrate": "dotenv -e apps/api/.env -- prisma migrate dev --config apps/api/prisma.config.ts",
@@ -45,7 +52,8 @@
       "@prisma/client",
       "@prisma/engines",
       "esbuild",
-      "prisma"
+      "prisma",
+      "sharp"
     ]
   },
   "devDependencies": {
