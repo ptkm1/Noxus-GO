@@ -1,5 +1,5 @@
 import { SubscriptionCardForm } from "@/components/billing/SubscriptionCardForm";
-import { getPlanDefinition } from "@pedidos/shared";
+import { getPlanDefinition, isPlanId, type PlanId } from "@pedidos/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth, type User } from "../auth/AuthContext";
@@ -58,7 +58,7 @@ export function PaymentPendingPage() {
 
   const [intentId, setIntentId] = useState(params.get("intentId") || "");
   const [fakeGateway, setFakeGateway] = useState(false);
-  const [planId, setPlanId] = useState(
+  const [planId, setPlanId] = useState<PlanId>(
     user?.subscription?.planId ?? "starter",
   );
   const [billingDefaults, setBillingDefaults] = useState<
@@ -169,7 +169,7 @@ export function PaymentPendingPage() {
   );
   applyStatusRef.current = async (data: IntentStatus) => {
     setIntentId(data.intentId);
-    setPlanId(data.planId);
+    setPlanId(isPlanId(data.planId) ? data.planId : "starter");
     setFakeGateway(Boolean(data.fakeGateway));
     if (data.billingDefaults) setBillingDefaults(data.billingDefaults);
     if (data.changeType) {
@@ -218,7 +218,9 @@ export function PaymentPendingPage() {
         }
         if (open.intent) {
           setIntentId(open.intent.id);
-          setPlanId(open.intent.planId);
+          setPlanId(
+            isPlanId(open.intent.planId) ? open.intent.planId : "starter",
+          );
         }
       } catch (ex) {
         setError(ex instanceof Error ? ex.message : "Falha ao carregar pagamento");

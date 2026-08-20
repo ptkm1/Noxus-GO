@@ -61,9 +61,7 @@ export function SubscriptionCardForm({
   const [addressNumber, setAddressNumber] = useState(
     defaults?.addressNumber ?? "",
   );
-  const [addressComplement, setAddressComplement] = useState(
-    defaults?.addressComplement ?? "",
-  );
+  const addressComplement = defaults?.addressComplement ?? "";
   const [mobilePhone, setMobilePhone] = useState(defaults?.mobilePhone ?? "");
   const [pending, setPending] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
