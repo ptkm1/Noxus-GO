@@ -12,6 +12,16 @@ export {
 } from "./barcode.js";
 export type { BarcodeSearchable } from "./barcode.js";
 export {
+  formatCardExpiryInput,
+  formatCardNumberInput,
+  isValidCardExpiry,
+  isValidCvv,
+  isValidLuhn,
+  maskCardNumberLast4,
+  normalizeCardNumber,
+  parseCardExpiry,
+} from "./billing-card.js";
+export {
   CHECKOUT_INTENT_STATUSES,
   isCheckoutIntentStatus,
   mapIntentToPublicStatus,
@@ -215,6 +225,7 @@ export {
   PLAN_FEATURE_LABELS,
   PLAN_IDS,
   planHasFeature,
+  planIdFromMonthlyPrice,
 } from "./plans.js";
 export type {
   PlanDefinition,

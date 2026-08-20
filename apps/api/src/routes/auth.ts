@@ -233,7 +233,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     await ensureOrgRolePermissions(user.organizationId);
     await ensureDefaultOrderSituations(user.organizationId);
 
-    let checkout: { intentId: string; checkoutUrl: string } | null = null;
+    let checkout: { intentId: string; checkoutUrl: string | null } | null = null;
     let checkoutError: string | null = null;
     if (payRequired) {
       try {

@@ -2,11 +2,11 @@ import type { Prisma } from "@prisma/client";
 import { timingSafeEqual } from "node:crypto";
 import { prisma } from "../../../db.js";
 import {
-  activateOrganizationFromPayment,
-  markIntentCanceled,
-  markIntentExpired,
-  markOrganizationCanceled,
-  markOrganizationPastDue,
+    activateOrganizationFromPayment,
+    markIntentCanceled,
+    markIntentExpired,
+    markOrganizationCanceled,
+    markOrganizationPastDue,
 } from "../subscription-activation.js";
 import { readAsaasConfig } from "./asaas-config.js";
 import { mapAsaasPaymentEventToInternalStatus } from "./map-status.js";
@@ -106,7 +106,14 @@ export async function processAsaasWebhook(
     body.payment?.customer || body.subscription?.customer || null;
 
   let organizationId: string | null = null;
-  if (!intentId && providerCustomerId) {
+  if (intentId) {
+    const intent = await prisma.checkoutIntent.findUnique({
+      where: { id: intentId },
+      select: { organizationId: true },
+    });
+    organizationId = intent?.organizationId ?? null;
+  }
+  if (!organizationId && providerCustomerId) {
     const sub = await prisma.organizationSubscription.findFirst({
       where: { providerCustomerId },
       select: { organizationId: true },

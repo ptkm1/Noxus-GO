@@ -8,15 +8,6 @@ import { FormField, FormGrid } from "@/components/forms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-function isAsaasCheckoutUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return u.hostname === "asaas.com" || u.hostname.endsWith(".asaas.com");
-  } catch {
-    return false;
-  }
-}
-
 export function RegisterPage() {
   const { register } = useAuth();
   const nav = useNavigate();
@@ -58,10 +49,6 @@ export function RegisterPage() {
       });
       if (result.requiresPayment) {
         if (result.checkoutError) setErr(result.checkoutError);
-        if (result.checkoutUrl && isAsaasCheckoutUrl(result.checkoutUrl)) {
-          window.location.assign(result.checkoutUrl);
-          return;
-        }
         const q = result.intentId
           ? `?intentId=${encodeURIComponent(result.intentId)}`
           : "";

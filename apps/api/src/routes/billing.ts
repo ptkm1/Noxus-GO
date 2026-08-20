@@ -15,9 +15,13 @@ import {
     createSubscriptionIntent,
     getOpenCheckoutForOrg,
     getPublicIntentStatus,
+    paySubscriptionIntentWithCard,
     retrySubscriptionCheckout,
     simulateFakePayment,
 } from "../services/billing/subscription-intent-service.js";
+import { subscriptionCardPayBodySchema } from "../services/billing/card-pay-validation.js";
+import { reconcileOrganizationBilling } from "../services/billing/reconcile-asaas-billing.js";
+import { resolveClientRemoteIp } from "../util/client-ip.js";
 import { getAuth } from "../util/guards.js";
 
 const intentBody = z.object({
@@ -87,7 +91,7 @@ export const billingRoutes: FastifyPluginAsync = async (app) => {
         return {
           intentId: result.intentId,
           checkoutUrl: result.checkoutUrl,
-          message: "Redirecionando para o pagamento seguro...",
+          message: "Prossiga com o pagamento no formulário seguro.",
         };
       } catch (err) {
         const { status, body } = httpErr(err);
@@ -106,7 +110,7 @@ export const billingRoutes: FastifyPluginAsync = async (app) => {
         return {
           intentId: result.intentId,
           checkoutUrl: result.checkoutUrl,
-          message: "Redirecionando para o pagamento seguro...",
+          message: "Prossiga com o pagamento no formulário seguro.",
         };
       } catch (err) {
         const { status, body } = httpErr(err);
@@ -128,7 +132,7 @@ export const billingRoutes: FastifyPluginAsync = async (app) => {
 
   await app.register(async (pollApp) => {
     await pollApp.register(rateLimit, {
-      max: 120,
+      max: 60,
       timeWindow: "1 minute",
       keyGenerator: (req) => req.ip,
     });
@@ -137,6 +141,55 @@ export const billingRoutes: FastifyPluginAsync = async (app) => {
       const status = await getPublicIntentStatus(id);
       if (!status) return reply.status(404).send({ error: "Não encontrado" });
       return status;
+    });
+  });
+
+  await app.register(async (payApp) => {
+    await payApp.register(rateLimit, {
+      max: 15,
+      timeWindow: "1 minute",
+      keyGenerator: (req) => req.ip,
+    });
+    payApp.post("/subscription-intents/:id/pay", async (req, reply) => {
+      const id = (req.params as { id: string }).id;
+      const parsed = subscriptionCardPayBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.status(400).send({
+          error: "Dados do cartão inválidos",
+          details: parsed.error.flatten(),
+        });
+      }
+
+      const remoteIp = resolveClientRemoteIp(req);
+      let auth: { organizationId: string; userId: string; role: string } | undefined;
+      if (req.auth) {
+        auth = {
+          organizationId: req.auth.organizationId,
+          userId: req.auth.sub,
+          role: req.auth.role,
+        };
+      }
+
+      try {
+        const result = await paySubscriptionIntentWithCard(
+          id,
+          parsed.data,
+          remoteIp,
+          auth,
+        );
+        return {
+          intentId: result.intentId,
+          status: result.status,
+          message:
+            result.status === "ACTIVE"
+              ? "Pagamento confirmado."
+              : "Pagamento em processamento. Aguarde a confirmação.",
+        };
+      } catch (err) {
+        const { status, body } = httpErr(err);
+        req.log.warn({ err: body.code, intentId: id }, "card pay failed");
+        return reply.status(status).send(body);
+      }
     });
   });
 
@@ -274,6 +327,44 @@ export const billingRoutes: FastifyPluginAsync = async (app) => {
     });
 
     return { ok: true, cancelAtPeriodEnd: true };
+  });
+
+  const reconcileBody = z.object({
+    dryRun: z.boolean().optional(),
+  });
+
+  app.post("/reconcile", async (req, reply) => {
+    const auth = getAuth(req, reply);
+    if (!auth) return;
+    if (!requireAdmin(reply, auth)) return;
+
+    const parsed = reconcileBody.safeParse(req.body ?? {});
+    const dryRun = parsed.success ? (parsed.data.dryRun ?? false) : false;
+
+    try {
+      const report = await reconcileOrganizationBilling(auth.organizationId, {
+        dryRun,
+      });
+      if (!dryRun) {
+        await prisma.auditLog.create({
+          data: {
+            organizationId: auth.organizationId,
+            userId: auth.sub,
+            action: "subscription.reconciled",
+            entityType: "OrganizationSubscription",
+            entityId: auth.organizationId,
+            metadata: {
+              fixed: report.fixed,
+              issues: report.issues,
+            },
+          },
+        });
+      }
+      return report;
+    } catch (err) {
+      const { status, body } = httpErr(err);
+      return reply.status(status).send(body);
+    }
   });
 };
 

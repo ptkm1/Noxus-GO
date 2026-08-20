@@ -5,6 +5,9 @@ import {
     type GatewayCustomerInput,
     type GatewaySubscriptionCheckout,
     type GatewaySubscriptionCheckoutInput,
+    type GatewaySubscriptionUpgradeInput,
+    type GatewaySubscriptionWithCardInput,
+    type GatewaySubscriptionWithCardResult,
     type PaymentGateway,
 } from "../payment-gateway.js";
 import { asaasFetch } from "./asaas-client.js";
@@ -18,6 +21,16 @@ type AsaasCheckoutResponse = {
   url?: string;
   expirationDate?: string;
 };
+type AsaasSubscriptionResponse = {
+  id: string;
+  customer?: string;
+  status?: string;
+  creditCard?: {
+    creditCardNumber?: string;
+    creditCardBrand?: string;
+    creditCardToken?: string;
+  };
+};
 
 /** Limite do campo `name` nos itens do checkout Asaas. */
 function asaasCheckoutItemName(text: string, max = 30): string {
@@ -29,14 +42,20 @@ function asaasCheckoutItemName(text: string, max = 30): string {
 async function findCustomerByCpfCnpj(
   cfg: AsaasConfig,
   cpfCnpj: string,
+  externalReference?: string,
 ): Promise<string | null> {
-  const q = encodeURIComponent(cpfCnpj);
-  const data = await asaasFetch<AsaasCustomerListResponse>(
-    cfg,
-    `/customers?cpfCnpj=${q}&limit=1`,
-    { method: "GET" },
+  const { listAsaasCustomersByCpfCnpj } = await import(
+    "./asaas-customer-resolver.js"
   );
-  return data?.data?.[0]?.id ?? null;
+  const matches = await listAsaasCustomersByCpfCnpj(cfg, cpfCnpj);
+  if (externalReference) {
+    const scoped = matches.find(
+      (c) => c.externalReference === externalReference && c.id,
+    );
+    if (scoped?.id) return scoped.id;
+    return null;
+  }
+  return matches[0]?.id ?? null;
 }
 
 function formatAsaasPhone(raw: string): string {
@@ -138,7 +157,11 @@ export function createAsaasPaymentGateway(cfg: AsaasConfig): PaymentGateway {
         ) {
           throw err;
         }
-        const existingId = await findCustomerByCpfCnpj(cfg, input.cpfCnpj);
+        const existingId = await findCustomerByCpfCnpj(
+          cfg,
+          input.cpfCnpj,
+          input.externalReference,
+        );
         if (!existingId) throw err;
         try {
           await asaasFetch(cfg, `/customers/${existingId}`, {
@@ -225,6 +248,142 @@ export function createAsaasPaymentGateway(cfg: AsaasConfig): PaymentGateway {
       await asaasFetch(cfg, `/subscriptions/${subscriptionId}`, {
         method: "DELETE",
       });
+    },
+
+    async createSubscriptionWithCard(
+      input: GatewaySubscriptionWithCardInput,
+    ): Promise<GatewaySubscriptionWithCardResult> {
+      let customerId = input.customerId;
+      if (!customerId && input.customer) {
+        const created = await this.createCustomer(input.customer);
+        customerId = created.id;
+      }
+      if (!customerId) {
+        throw new PaymentGatewayError(
+          "Cliente Asaas obrigatório",
+          "ASAAS_CUSTOMER_REQUIRED",
+          400,
+        );
+      }
+
+      if (input.customer && input.customerBilling) {
+        await syncCustomerBilling(
+          cfg,
+          customerId,
+          input.customer.name,
+          input.customer.email,
+          input.customerBilling,
+        );
+      }
+
+      const body: Record<string, unknown> = {
+        customer: customerId,
+        billingType: "CREDIT_CARD",
+        value: input.value,
+        cycle: input.cycle,
+        nextDueDate: input.nextDueDate,
+        description: input.description.slice(0, 500),
+        externalReference: input.externalReference,
+        creditCard: {
+          holderName: input.creditCard.holderName,
+          number: input.creditCard.number,
+          expiryMonth: input.creditCard.expiryMonth,
+          expiryYear: input.creditCard.expiryYear,
+          ccv: input.creditCard.ccv,
+        },
+        creditCardHolderInfo: {
+          name: input.creditCardHolderInfo.name,
+          email: input.creditCardHolderInfo.email,
+          cpfCnpj: input.creditCardHolderInfo.cpfCnpj,
+          postalCode: input.creditCardHolderInfo.postalCode,
+          addressNumber: input.creditCardHolderInfo.addressNumber,
+          addressComplement:
+            input.creditCardHolderInfo.addressComplement || undefined,
+          phone: input.creditCardHolderInfo.phone || undefined,
+          mobilePhone: input.creditCardHolderInfo.mobilePhone,
+        },
+        remoteIp: input.remoteIp,
+      };
+
+      const data = await asaasFetch<AsaasSubscriptionResponse>(
+        cfg,
+        "/subscriptions",
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+        },
+      );
+
+      if (!data?.id) {
+        throw new PaymentGatewayError(
+          "Assinatura Asaas inválida",
+          "ASAAS_SUBSCRIPTION_INVALID",
+        );
+      }
+
+      return {
+        subscriptionId: data.id,
+        customerId,
+        creditCardToken: data.creditCard?.creditCardToken ?? null,
+        creditCardBrand: data.creditCard?.creditCardBrand ?? null,
+        creditCardLast4: data.creditCard?.creditCardNumber ?? null,
+        status: data.status ?? null,
+      };
+    },
+
+    async upgradeSubscriptionWithCard(
+      input: GatewaySubscriptionUpgradeInput,
+    ): Promise<GatewaySubscriptionWithCardResult> {
+      await asaasFetch<AsaasSubscriptionResponse>(
+        cfg,
+        `/subscriptions/${input.subscriptionId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            value: input.value,
+            description: input.description.slice(0, 500),
+            updatePendingPayments: input.updatePendingPayments,
+          }),
+        },
+      );
+
+      const data = await asaasFetch<AsaasSubscriptionResponse>(
+        cfg,
+        `/subscriptions/${input.subscriptionId}/creditCard`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            creditCard: {
+              holderName: input.creditCard.holderName,
+              number: input.creditCard.number,
+              expiryMonth: input.creditCard.expiryMonth,
+              expiryYear: input.creditCard.expiryYear,
+              ccv: input.creditCard.ccv,
+            },
+            creditCardHolderInfo: {
+              name: input.creditCardHolderInfo.name,
+              email: input.creditCardHolderInfo.email,
+              cpfCnpj: input.creditCardHolderInfo.cpfCnpj,
+              postalCode: input.creditCardHolderInfo.postalCode,
+              addressNumber: input.creditCardHolderInfo.addressNumber,
+              addressComplement:
+                input.creditCardHolderInfo.addressComplement || undefined,
+              phone: input.creditCardHolderInfo.phone || undefined,
+              mobilePhone: input.creditCardHolderInfo.mobilePhone,
+            },
+            remoteIp: input.remoteIp,
+          }),
+        },
+      );
+
+      return {
+        subscriptionId: input.subscriptionId,
+        customerId: input.customerId,
+        creditCardToken: data.creditCard?.creditCardToken ?? null,
+        creditCardBrand: data.creditCard?.creditCardBrand ?? null,
+        creditCardLast4: data.creditCard?.creditCardNumber ?? null,
+        status: data.status ?? null,
+      };
     },
   };
 }

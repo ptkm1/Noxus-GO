@@ -1,13 +1,14 @@
 import {
-  getPlanDefinition,
-  planHasFeature,
-  type PlanFeature,
-  type PlanId,
-  type PlanLimits,
+    getPlanDefinition,
+    planHasFeature,
+    type PlanFeature,
+    type PlanId,
+    type PlanLimits,
 } from "@pedidos/shared";
 import type { SubscriptionStatus } from "@prisma/client";
 import { prisma } from "../../db.js";
 import { ensureOrgSubscription } from "./subscription.js";
+import { syncPlanFromAsaasProvider } from "./sync-asaas-subscription.js";
 
 export type OrgEntitlements = {
   planId: PlanId;
@@ -23,6 +24,7 @@ export type OrgEntitlements = {
 export async function getOrgEntitlements(
   organizationId: string,
 ): Promise<OrgEntitlements> {
+  await syncPlanFromAsaasProvider(organizationId, { force: true });
   const sub = await ensureOrgSubscription(organizationId);
   const def = getPlanDefinition(sub.planId);
   const org = await prisma.organization.findUnique({

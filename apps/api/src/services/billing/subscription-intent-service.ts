@@ -9,24 +9,64 @@ import { ensureDefaultOrderSituations } from "../order-situations.js";
 import { ensureOrgRolePermissions } from "../role-permissions.js";
 import { unusablePasswordHash } from "./account-activation.js";
 import {
-    isAllowedAsaasCheckoutUrl,
-    readAsaasConfig,
-} from "./asaas/asaas-config.js";
-import {
-    checkoutReturnUrls,
     nextDueDateIso,
-    type CheckoutReturnSource,
+    type CheckoutReturnSource
 } from "./checkout-urls.js";
 import { isValidCpfOrCnpj, normalizeDocument } from "./document.js";
+import {
+    sanitizePaymentErrorMessage,
+    toGatewayCardPayload,
+    type SubscriptionCardPayBody,
+} from "./card-pay-validation.js";
 import { PaymentGatewayError, type PaymentGateway } from "./payment-gateway.js";
 import {
     isFakePaymentGatewayEnabled,
     resolvePaymentGateway,
 } from "./resolve-payment-gateway.js";
 import { activateOrganizationFromPayment } from "./subscription-activation.js";
+import { syncPlanFromAsaasProvider } from "./sync-asaas-subscription.js";
+import { readAsaasConfig } from "./asaas/asaas-config.js";
+import {
+    assertAsaasSubscriptionBelongsToCustomer,
+    resolveAsaasCustomerForOrg,
+} from "./asaas/asaas-customer-resolver.js";
 
 export type { CheckoutReturnSource } from "./checkout-urls.js";
 export { checkoutReturnUrls, nextDueDateIso } from "./checkout-urls.js";
+
+function readCheckoutChangeType(
+  payload: unknown,
+): "plan_change" | "initial" | null {
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "changeType" in payload &&
+    (payload as { changeType: unknown }).changeType === "plan_change"
+  ) {
+    return "plan_change";
+  }
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "changeType" in payload &&
+    (payload as { changeType: unknown }).changeType === "initial"
+  ) {
+    return "initial";
+  }
+  return null;
+}
+
+function readPreviousPlanId(payload: unknown): string | null {
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "previousPlanId" in payload &&
+    typeof (payload as { previousPlanId: unknown }).previousPlanId === "string"
+  ) {
+    return (payload as { previousPlanId: string }).previousPlanId;
+  }
+  return null;
+}
 
 function readStoredReturnSource(
   payload: unknown,
@@ -102,39 +142,6 @@ function requireGateway(gateway?: PaymentGateway): PaymentGateway {
   return gw;
 }
 
-function assertAsaasCheckoutCallbackUrls(
-  urls: { successUrl: string; cancelUrl: string; expiredUrl: string },
-  fake: boolean,
-): void {
-  if (fake) return;
-  for (const url of [urls.successUrl, urls.cancelUrl, urls.expiredUrl]) {
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      throw new PaymentGatewayError(
-        "URL de retorno do checkout inválida",
-        "ASAAS_CALLBACK_URL_INVALID",
-        400,
-      );
-    }
-    const host = parsed.hostname.toLowerCase();
-    if (host === "localhost" || host === "127.0.0.1") {
-      throw new PaymentGatewayError(
-        "O Asaas exige URLs HTTPS públicas nos callbacks. Configure ASAAS_CALLBACK_APP_URL (ex.: túnel ngrok apontando para o web) e reinicie a API.",
-        "ASAAS_CALLBACK_URL_LOCALHOST",
-        400,
-      );
-    }
-    if (parsed.protocol !== "https:") {
-      throw new PaymentGatewayError(
-        "O Asaas exige URLs HTTPS nos callbacks de checkout. Use ASAAS_CALLBACK_APP_URL com https://…",
-        "ASAAS_CALLBACK_URL_HTTPS_REQUIRED",
-        400,
-      );
-    }
-  }
-}
 
 async function loadCustomerBillingProfile(
   organizationId: string,
@@ -162,114 +169,59 @@ async function loadCustomerBillingProfile(
   };
 }
 
-async function attachProviderCheckout(params: {
+async function finalizeIntentForInAppPayment(params: {
   intentId: string;
   organizationId: string;
   planId: PlanId;
-  companyName: string;
-  adminName: string;
-  email: string;
-  document: string;
-  phone?: string | null;
-  existingCustomerId?: string | null;
   source: CheckoutReturnSource;
   gateway?: PaymentGateway;
-}): Promise<{ intentId: string; checkoutUrl: string }> {
+}): Promise<{ intentId: string; checkoutUrl: null }> {
   const def = getPlanDefinition(params.planId);
-  const urls = checkoutReturnUrls(params.intentId, params.source);
-  const gw = requireGateway(params.gateway);
-  const cfg = readAsaasConfig();
   const fake = isFakePaymentGatewayEnabled();
 
-  assertAsaasCheckoutCallbackUrls(urls, fake);
+  const existing = await prisma.checkoutIntent.findUnique({
+    where: { id: params.intentId },
+    select: { checkoutPayload: true },
+  });
+  const prevPayload =
+    existing?.checkoutPayload &&
+    typeof existing.checkoutPayload === "object" &&
+    !Array.isArray(existing.checkoutPayload)
+      ? (existing.checkoutPayload as Record<string, unknown>)
+      : {};
 
-  try {
-    const billing = await loadCustomerBillingProfile(
-      params.organizationId,
-      params.phone,
-    );
-
-    const checkout = await gw.createSubscriptionCheckout({
-      customerData: {
-        name: params.companyName.trim(),
-        email: params.email,
-        cpfCnpj: params.document,
-        billing,
+  await prisma.checkoutIntent.update({
+    where: { id: params.intentId },
+    data: {
+      status: "CREATED",
+      checkoutUrl: null,
+      providerCheckoutId: null,
+      expiresAt: null,
+      errorCode: null,
+      checkoutPayload: {
+        ...prevPayload,
+        planId: params.planId,
+        amountBrl: def.monthlyPriceBrl,
+        returnSource: params.source,
+        paymentMode: "in_app_card",
       },
-      items: [
-        {
-          name: `Assinatura PedixPro — Plano ${def.name}`,
-          description: `Assinatura mensal PedixPro (${def.id})`,
-          quantity: 1,
-          value: def.monthlyPriceBrl,
-        },
-      ],
-      cycle: "MONTHLY",
-      nextDueDate: nextDueDateIso(),
-      minutesToExpire: 120,
-      externalReference: params.intentId,
-      ...urls,
-    });
+    },
+  });
 
-    if (
-      !fake &&
-      cfg &&
-      !isAllowedAsaasCheckoutUrl(checkout.link, cfg.checkoutUrlPrefix)
-    ) {
-      throw new PaymentGatewayError(
-        "URL de checkout inválida",
-        "ASAAS_CHECKOUT_URL_INVALID",
-      );
-    }
+  await prisma.organizationSubscription.update({
+    where: { organizationId: params.organizationId },
+    data: {
+      provider: fake ? "fake" : "asaas",
+    },
+  });
 
-    await prisma.checkoutIntent.update({
-      where: { id: params.intentId },
-      data: {
-        status: "CHECKOUT_CREATED",
-        providerCustomerId: params.existingCustomerId,
-        providerCheckoutId: checkout.id,
-        checkoutUrl: checkout.link,
-        expiresAt: checkout.expiresAt,
-        errorCode: null,
-        checkoutPayload: {
-          planId: params.planId,
-          amountBrl: def.monthlyPriceBrl,
-          returnSource: params.source,
-          providerCheckoutId: checkout.id,
-        },
-      },
-    });
-
-    await prisma.organizationSubscription.update({
-      where: { organizationId: params.organizationId },
-      data: {
-        provider: fake ? "fake" : "asaas",
-        providerCheckoutId: checkout.id,
-      },
-    });
-
-    return { intentId: params.intentId, checkoutUrl: checkout.link };
-  } catch (err) {
-    const code = err instanceof PaymentGatewayError ? err.code : "ASAAS_FAILED";
-    const http =
-      err instanceof PaymentGatewayError && err.status ? err.status : 502;
-    await prisma.checkoutIntent.update({
-      where: { id: params.intentId },
-      data: { status: "FAILED", errorCode: code },
-    });
-    throw Object.assign(
-      new Error(
-        err instanceof Error ? err.message : "Falha ao preparar pagamento",
-      ),
-      { code, http, intentId: params.intentId },
-    );
-  }
+  return { intentId: params.intentId, checkoutUrl: null };
 }
 
 export async function createSubscriptionIntent(
   input: CreateSubscriptionIntentInput,
   gateway?: PaymentGateway,
-): Promise<{ intentId: string; checkoutUrl: string }> {
+): Promise<{ intentId: string; checkoutUrl: null }> {
   if (!input.termsAccepted || !input.privacyAccepted) {
     throw Object.assign(new Error("Aceite os termos e a privacidade"), {
       code: "TERMS_REQUIRED",
@@ -381,15 +333,10 @@ export async function createSubscriptionIntent(
   await ensureOrgRolePermissions(orgId);
   await ensureDefaultOrderSituations(orgId);
 
-  return attachProviderCheckout({
+  return finalizeIntentForInAppPayment({
     intentId: intent.id,
     organizationId: orgId,
     planId,
-    companyName: input.companyName,
-    adminName: input.adminName,
-    email,
-    document,
-    phone: input.phone,
     source: "landing",
     gateway,
   });
@@ -410,16 +357,23 @@ export async function createCheckoutForRegisteredOrg(
     lockAccessUntilPaid: boolean;
   },
   gateway?: PaymentGateway,
-): Promise<{ intentId: string; checkoutUrl: string }> {
+): Promise<{ intentId: string; checkoutUrl: null }> {
   requireGateway(gateway);
   const def = getPlanDefinition(input.planId);
   const now = new Date();
   const fake = isFakePaymentGatewayEnabled();
   const provider = fake ? "fake" : "asaas";
 
+  await syncPlanFromAsaasProvider(input.organizationId, { force: true });
+
   const sub = await prisma.organizationSubscription.findUnique({
     where: { organizationId: input.organizationId },
   });
+  const isPlanChange =
+    !input.lockAccessUntilPaid &&
+    sub?.status === "ACTIVE" &&
+    Boolean(sub.providerSubscriptionId) &&
+    sub.planId !== input.planId;
 
   const intent = await prisma.checkoutIntent.create({
     data: {
@@ -439,6 +393,8 @@ export async function createCheckoutForRegisteredOrg(
         planId: input.planId,
         amountBrl: def.monthlyPriceBrl,
         returnSource: "app",
+        changeType: isPlanChange ? "plan_change" : "initial",
+        previousPlanId: isPlanChange ? sub?.planId ?? null : null,
       },
     },
   });
@@ -456,23 +412,17 @@ export async function createCheckoutForRegisteredOrg(
         provider,
       },
     });
-  } else {
+  } else if (!isPlanChange) {
     await prisma.organizationSubscription.update({
       where: { organizationId: input.organizationId },
       data: { planId: input.planId, provider },
     });
   }
 
-  return attachProviderCheckout({
+  return finalizeIntentForInAppPayment({
     intentId: intent.id,
     organizationId: input.organizationId,
     planId: input.planId,
-    companyName: input.companyName,
-    adminName: input.adminName,
-    email: input.email,
-    document: input.document,
-    phone: input.phone,
-    existingCustomerId: sub?.providerCustomerId,
     source: "app",
     gateway,
   });
@@ -481,7 +431,7 @@ export async function createCheckoutForRegisteredOrg(
 export async function retrySubscriptionCheckout(
   intentId: string,
   gateway?: PaymentGateway,
-): Promise<{ intentId: string; checkoutUrl: string }> {
+): Promise<{ intentId: string; checkoutUrl: null }> {
   const intent = await prisma.checkoutIntent.findUnique({
     where: { id: intentId },
   });
@@ -518,19 +468,231 @@ export async function retrySubscriptionCheckout(
   const planId = isPlanId(intent.planId) ? intent.planId : "starter";
   const source = await resolveCheckoutReturnSource(intent);
 
-  return attachProviderCheckout({
+  await prisma.checkoutIntent.update({
+    where: { id: intent.id },
+    data: {
+      status: "CREATED",
+      errorCode: null,
+      checkoutUrl: null,
+      providerCheckoutId: null,
+      expiresAt: null,
+    },
+  });
+
+  return finalizeIntentForInAppPayment({
     intentId: intent.id,
     organizationId: intent.organizationId,
     planId,
-    companyName: intent.companyName,
-    adminName: intent.adminName || intent.companyName,
-    email: intent.email,
-    document: intent.document || "",
-    phone: intent.phone,
-    existingCustomerId: intent.providerCustomerId,
     source,
     gateway,
   });
+}
+
+export async function paySubscriptionIntentWithCard(
+  intentId: string,
+  body: SubscriptionCardPayBody,
+  remoteIp: string,
+  auth?: { organizationId: string; userId: string; role: string },
+  gateway?: PaymentGateway,
+): Promise<{ intentId: string; status: "PROCESSING" | "ACTIVE" }> {
+  const intent = await prisma.checkoutIntent.findUnique({
+    where: { id: intentId },
+  });
+  if (!intent?.organizationId) {
+    throw Object.assign(new Error("Intenção não encontrada"), {
+      code: "NOT_FOUND",
+      http: 404,
+    });
+  }
+  if (intent.status === "COMPLETED") {
+    throw Object.assign(new Error("Contratação já concluída"), {
+      code: "ALREADY_COMPLETED",
+      http: 400,
+    });
+  }
+  if (intent.status === "PAYMENT_PROCESSING") {
+    return { intentId, status: "PROCESSING" };
+  }
+  if (!["CREATED", "CHECKOUT_CREATED", "FAILED", "EXPIRED", "CANCELED"].includes(intent.status)) {
+    throw Object.assign(new Error("Intenção não elegível para pagamento"), {
+      code: "NOT_PAYABLE",
+      http: 400,
+    });
+  }
+
+  if (auth) {
+    if (auth.role !== "ADMIN" || auth.organizationId !== intent.organizationId) {
+      throw Object.assign(new Error("Sem permissão para pagar esta intenção"), {
+        code: "FORBIDDEN",
+        http: 403,
+      });
+    }
+  } else if (
+    body.creditCardHolderInfo.email.trim().toLowerCase() !==
+    intent.email.trim().toLowerCase()
+  ) {
+    throw Object.assign(
+      new Error("E-mail do titular deve coincidir com o da contratação"),
+      { code: "EMAIL_MISMATCH", http: 400 },
+    );
+  }
+
+  const planId = isPlanId(intent.planId) ? intent.planId : "starter";
+  const def = getPlanDefinition(planId);
+  const gw = requireGateway(gateway);
+  const fake = isFakePaymentGatewayEnabled();
+  const cardPayload = toGatewayCardPayload(body);
+
+  const sub = await prisma.organizationSubscription.findUnique({
+    where: { organizationId: intent.organizationId },
+  });
+
+  const billing = await loadCustomerBillingProfile(
+    intent.organizationId,
+    intent.phone,
+  );
+
+  const document = intent.document || cardPayload.creditCardHolderInfo.cpfCnpj;
+  const changeType = readCheckoutChangeType(intent.checkoutPayload);
+  const isPlanChange =
+    Boolean(sub?.providerSubscriptionId) &&
+    sub?.status === "ACTIVE" &&
+    (changeType === "plan_change" || sub.planId !== planId);
+
+  const asaasCfg = !fake ? readAsaasConfig() : null;
+  let resolvedCustomerId: string | undefined;
+
+  if (asaasCfg) {
+    try {
+      resolvedCustomerId = await resolveAsaasCustomerForOrg(asaasCfg, {
+        organizationId: intent.organizationId,
+        cpfCnpj: document,
+        email: intent.email,
+        storedCustomerId: sub?.providerCustomerId ?? intent.providerCustomerId,
+      });
+    } catch (err) {
+      if (
+        err instanceof PaymentGatewayError &&
+        err.code === "ASAAS_CUSTOMER_NOT_FOUND"
+      ) {
+        const created = await gw.createCustomer({
+          name: intent.companyName.trim(),
+          email: intent.email,
+          cpfCnpj: document,
+          mobilePhone: billing.phone,
+          externalReference: intent.organizationId,
+        });
+        resolvedCustomerId = created.id;
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  try {
+    let result: Awaited<ReturnType<PaymentGateway["createSubscriptionWithCard"]>>;
+
+    if (isPlanChange && sub?.providerSubscriptionId) {
+      const customerId = resolvedCustomerId ?? sub.providerCustomerId ?? "";
+      if (!customerId) {
+        throw new PaymentGatewayError(
+          "Cliente Asaas não encontrado para alteração de plano",
+          "ASAAS_CUSTOMER_REQUIRED",
+          400,
+        );
+      }
+      if (asaasCfg) {
+        await assertAsaasSubscriptionBelongsToCustomer(
+          asaasCfg,
+          sub.providerSubscriptionId,
+          customerId,
+        );
+      }
+      result = await gw.upgradeSubscriptionWithCard({
+        subscriptionId: sub.providerSubscriptionId,
+        customerId,
+        value: def.monthlyPriceBrl,
+        description: `Assinatura PedixPro — Plano ${def.name}`,
+        updatePendingPayments: true,
+        remoteIp,
+        ...cardPayload,
+      });
+    } else {
+      result = await gw.createSubscriptionWithCard({
+        customerId: resolvedCustomerId ?? sub?.providerCustomerId ?? intent.providerCustomerId ?? undefined,
+        customer: {
+          name: intent.companyName.trim(),
+          email: intent.email,
+          cpfCnpj: document,
+          mobilePhone: billing.phone,
+          externalReference: intent.organizationId,
+        },
+        customerBilling: billing,
+        value: def.monthlyPriceBrl,
+        cycle: "MONTHLY",
+        nextDueDate: nextDueDateIso(),
+        description: `Assinatura PedixPro — Plano ${def.name}`,
+        externalReference: intent.id,
+        remoteIp,
+        ...cardPayload,
+      });
+    }
+
+    await prisma.checkoutIntent.update({
+      where: { id: intent.id },
+      data: {
+        status: "PAYMENT_PROCESSING",
+        providerCustomerId: result.customerId,
+        providerSubscriptionId: result.subscriptionId,
+        providerCheckoutId: null,
+        checkoutUrl: null,
+        errorCode: null,
+        checkoutPayload: {
+          planId,
+          amountBrl: def.monthlyPriceBrl,
+          paymentMode: "in_app_card",
+          changeType: isPlanChange ? "plan_change" : "initial",
+          previousPlanId: readPreviousPlanId(intent.checkoutPayload),
+          creditCardBrand: result.creditCardBrand ?? null,
+          creditCardLast4: result.creditCardLast4 ?? null,
+        },
+      },
+    });
+
+    await prisma.organizationSubscription.update({
+      where: { organizationId: intent.organizationId },
+      data: {
+        provider: fake ? "fake" : "asaas",
+        providerCustomerId: result.customerId,
+        providerSubscriptionId: result.subscriptionId,
+      },
+    });
+
+    if (fake || isPlanChange) {
+      await activateOrganizationFromPayment({
+        intentId: intent.id,
+        organizationId: intent.organizationId,
+        providerCustomerId: result.customerId,
+        providerSubscriptionId: result.subscriptionId,
+      });
+      await syncPlanFromAsaasProvider(intent.organizationId, { force: true });
+      return { intentId, status: "ACTIVE" };
+    }
+
+    return { intentId, status: "PROCESSING" };
+  } catch (err) {
+    const code = err instanceof PaymentGatewayError ? err.code : "PAYMENT_FAILED";
+    const http =
+      err instanceof PaymentGatewayError && err.status ? err.status : 402;
+    const message = sanitizePaymentErrorMessage(
+      err instanceof Error ? err.message : "Pagamento recusado",
+    );
+    await prisma.checkoutIntent.update({
+      where: { id: intent.id },
+      data: { status: "FAILED", errorCode: code },
+    });
+    throw Object.assign(new Error(message), { code, http, intentId });
+  }
 }
 
 export async function getOpenCheckoutForOrg(organizationId: string) {
@@ -593,6 +755,11 @@ export async function getPublicIntentStatus(intentId: string) {
       ownerUserId: true,
       organizationId: true,
       checkoutPayload: true,
+      email: true,
+      adminName: true,
+      document: true,
+      phone: true,
+      companyName: true,
     },
   });
   if (!intent) return null;
@@ -600,14 +767,7 @@ export async function getPublicIntentStatus(intentId: string) {
   const { mapIntentToPublicStatus } = await import("@pedidos/shared");
   const publicStatus = mapIntentToPublicStatus(intent.status);
 
-  let nextAction:
-    | "WAIT"
-    | "SET_PASSWORD"
-    | "OPEN_CHECKOUT"
-    | "RETRY"
-    | "LOGIN"
-    | "ENTER_APP"
-    | "NONE" = "WAIT";
+  let nextAction: import("@pedidos/shared").PublicIntentNextAction = "WAIT";
 
   if (publicStatus === "ACTIVE" && intent.ownerUserId) {
     const user = await prisma.user.findUnique({
@@ -619,8 +779,8 @@ export async function getPublicIntentStatus(intentId: string) {
     } else {
       nextAction = "SET_PASSWORD";
     }
-  } else if (publicStatus === "PENDING" && intent.checkoutUrl) {
-    nextAction = "OPEN_CHECKOUT";
+  } else if (publicStatus === "PENDING") {
+    nextAction = "PAY_CARD";
   } else if (publicStatus === "FAILED" || publicStatus === "EXPIRED") {
     nextAction = "RETRY";
   } else if (publicStatus === "CANCELED") {
@@ -635,9 +795,15 @@ export async function getPublicIntentStatus(intentId: string) {
     intentId: intent.id,
     planId: intent.planId,
     fakeGateway: isFakePaymentGatewayEnabled(),
-    checkoutUrl:
-      nextAction === "OPEN_CHECKOUT" || nextAction === "RETRY"
-        ? intent.checkoutUrl
-        : null,
+    checkoutUrl: null,
+    changeType: readCheckoutChangeType(intent.checkoutPayload),
+    previousPlanId: readPreviousPlanId(intent.checkoutPayload),
+    billingDefaults: {
+      email: intent.email,
+      holderName: intent.adminName || intent.companyName,
+      holderFullName: intent.adminName || intent.companyName,
+      cpfCnpj: intent.document || "",
+      mobilePhone: intent.phone || "",
+    },
   };
 }

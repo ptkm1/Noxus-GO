@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type {
-  GatewayCustomer,
-  GatewayCustomerInput,
-  GatewaySubscriptionCheckout,
-  GatewaySubscriptionCheckoutInput,
-  PaymentGateway,
+    GatewayCustomer,
+    GatewayCustomerInput,
+    GatewaySubscriptionCheckout,
+    GatewaySubscriptionCheckoutInput,
+    GatewaySubscriptionUpgradeInput,
+    GatewaySubscriptionWithCardInput,
+    GatewaySubscriptionWithCardResult,
+    PaymentGateway,
 } from "./payment-gateway.js";
 
 type FakeGatewayOpts = {
@@ -18,8 +21,11 @@ type FakeGatewayOpts = {
 export class FakePaymentGateway implements PaymentGateway {
   customers: GatewayCustomerInput[] = [];
   checkouts: GatewaySubscriptionCheckoutInput[] = [];
+  cardSubscriptions: GatewaySubscriptionWithCardInput[] = [];
+  subscriptionUpgrades: GatewaySubscriptionUpgradeInput[] = [];
   canceled: string[] = [];
   failNextCheckout = false;
+  failNextCardPay = false;
 
   constructor(private readonly opts: FakeGatewayOpts = {}) {}
 
@@ -49,5 +55,41 @@ export class FakePaymentGateway implements PaymentGateway {
 
   async cancelSubscription(subscriptionId: string): Promise<void> {
     this.canceled.push(subscriptionId);
+  }
+
+  async createSubscriptionWithCard(
+    input: GatewaySubscriptionWithCardInput,
+  ): Promise<GatewaySubscriptionWithCardResult> {
+    if (this.failNextCardPay) {
+      this.failNextCardPay = false;
+      throw new Error("card_payment_failed");
+    }
+    this.cardSubscriptions.push(input);
+    const customerId =
+      input.customerId ?? `cus_fake_${randomUUID().slice(0, 8)}`;
+    return {
+      subscriptionId: `sub_fake_${randomUUID().slice(0, 8)}`,
+      customerId,
+      creditCardBrand: "VISA",
+      creditCardLast4: input.creditCard.number.slice(-4),
+      status: "ACTIVE",
+    };
+  }
+
+  async upgradeSubscriptionWithCard(
+    input: GatewaySubscriptionUpgradeInput,
+  ): Promise<GatewaySubscriptionWithCardResult> {
+    if (this.failNextCardPay) {
+      this.failNextCardPay = false;
+      throw new Error("card_payment_failed");
+    }
+    this.subscriptionUpgrades.push(input);
+    return {
+      subscriptionId: input.subscriptionId,
+      customerId: input.customerId,
+      creditCardBrand: "VISA",
+      creditCardLast4: input.creditCard.number.slice(-4),
+      status: "ACTIVE",
+    };
   }
 }

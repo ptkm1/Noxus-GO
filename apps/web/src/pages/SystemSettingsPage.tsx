@@ -34,8 +34,8 @@ import {
     History,
     Shield,
 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { Navigate, useSearchParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { apiFetch } from "../lib/api";
 import { AuditLogsPanel } from "./AuditLogsPage";
@@ -69,8 +69,22 @@ type SystemSettings = {
 
 type SettingsModal = "permissions" | "audit" | null;
 
+type BillingReconcileUiReport = {
+  dryRun: boolean;
+  issues: string[];
+  fixed: string[];
+  before: { planId: string; providerCustomerId: string | null };
+  after: { planId: string; providerCustomerId: string | null };
+  duplicateCustomers: Array<{
+    id: string;
+    name: string | null;
+    isCanonical: boolean;
+  }>;
+};
+
 export function SystemSettingsPage() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
+  const nav = useNavigate();
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [modal, setModal] = useState<SettingsModal>(null);
@@ -78,6 +92,10 @@ export function SystemSettingsPage() {
     (user?.subscription?.planId as PlanId) ?? "growth",
   );
   const [checkoutErr, setCheckoutErr] = useState<string | null>(null);
+  const userPickedPlanRef = useRef(false);
+  const [reconcileLoading, setReconcileLoading] = useState(false);
+  const [reconcileReport, setReconcileReport] =
+    useState<BillingReconcileUiReport | null>(null);
 
   const isAdmin = user?.role === "ADMIN";
   const canPermissions = Boolean(
@@ -158,8 +176,15 @@ export function SystemSettingsPage() {
   }
 
   useEffect(() => {
-    if (currentPlanId) setCheckoutPlanId(currentPlanId);
-  }, [currentPlanId]);
+    if (!currentPlanId) return;
+    if (!userPickedPlanRef.current) {
+      setCheckoutPlanId(currentPlanId);
+      return;
+    }
+    if (checkoutPlanId === currentPlanId) {
+      userPickedPlanRef.current = false;
+    }
+  }, [checkoutPlanId, currentPlanId]);
 
   useEffect(() => {
     const abrir = searchParams.get("abrir");
@@ -216,7 +241,10 @@ export function SystemSettingsPage() {
               <div className="flex flex-col gap-2 sm:items-end">
                 <AppSelect
                   value={checkoutPlanId}
-                  onValueChange={(v) => setCheckoutPlanId(v as PlanId)}
+                  onValueChange={(v) => {
+                    userPickedPlanRef.current = true;
+                    setCheckoutPlanId(v as PlanId);
+                  }}
                   options={listPlans().map((p) => ({
                     value: p.id,
                     label: `${p.name} — R$ ${p.monthlyPriceBrl}/mês`,
@@ -232,7 +260,7 @@ export function SystemSettingsPage() {
                       return;
                     }
                     setCheckoutErr(null);
-                    void apiFetch<{ checkoutUrl?: string }>(
+                    void apiFetch<{ checkoutUrl?: string | null; intentId?: string }>(
                       "/billing/checkout",
                       {
                         method: "POST",
@@ -240,8 +268,12 @@ export function SystemSettingsPage() {
                       },
                     )
                       .then((data) => {
-                        if (data.checkoutUrl) {
-                          window.location.assign(data.checkoutUrl);
+                        if (data.intentId) {
+                          nav(
+                            `/pagamento?intentId=${encodeURIComponent(data.intentId)}&change=plan`,
+                          );
+                        } else {
+                          setCheckoutErr("Não foi possível iniciar a alteração de plano.");
                         }
                       })
                       .catch((ex: unknown) => {
@@ -253,7 +285,7 @@ export function SystemSettingsPage() {
                       });
                   }}
                 >
-                  {canChangePlan ? "Mudar plano" : "Plano atual"}
+                  {canChangePlan ? "Continuar para pagamento" : "Plano atual"}
                 </Button>
                 {!canChangePlan ? (
                   <p className="text-xs text-muted-foreground">
@@ -262,6 +294,108 @@ export function SystemSettingsPage() {
                 ) : null}
                 {checkoutErr ? (
                   <p className="text-xs text-destructive">{checkoutErr}</p>
+                ) : null}
+                {sub?.provider === "asaas" ? (
+                  <div className="flex flex-col gap-1 border-t border-border/50 pt-3">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Asaas (admin)
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={reconcileLoading}
+                        onClick={() => {
+                          setReconcileLoading(true);
+                          setReconcileReport(null);
+                          void apiFetch<BillingReconcileUiReport>(
+                            "/billing/reconcile",
+                            {
+                              method: "POST",
+                              body: JSON.stringify({ dryRun: true }),
+                            },
+                          )
+                            .then(setReconcileReport)
+                            .catch((ex: unknown) => {
+                              setCheckoutErr(
+                                ex instanceof Error
+                                  ? ex.message
+                                  : "Falha ao diagnosticar billing",
+                              );
+                            })
+                            .finally(() => setReconcileLoading(false));
+                        }}
+                      >
+                        Diagnosticar
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={reconcileLoading}
+                        onClick={() => {
+                          setReconcileLoading(true);
+                          setReconcileReport(null);
+                          void apiFetch<BillingReconcileUiReport>(
+                            "/billing/reconcile",
+                            {
+                              method: "POST",
+                              body: JSON.stringify({ dryRun: false }),
+                            },
+                          )
+                            .then(async (report) => {
+                              setReconcileReport(report);
+                              await refreshUser();
+                            })
+                            .catch((ex: unknown) => {
+                              setCheckoutErr(
+                                ex instanceof Error
+                                  ? ex.message
+                                  : "Falha ao reconciliar billing",
+                              );
+                            })
+                            .finally(() => setReconcileLoading(false));
+                        }}
+                      >
+                        Reconciliar
+                      </Button>
+                    </div>
+                    {reconcileReport ? (
+                      <div className="mt-1 max-w-sm rounded-md border border-border/60 bg-muted/30 p-2 text-xs text-muted-foreground">
+                        {reconcileReport.dryRun ? (
+                          <p className="font-medium text-foreground">
+                            Diagnóstico (sem alterações)
+                          </p>
+                        ) : (
+                          <p className="font-medium text-foreground">
+                            Reconciliação aplicada
+                          </p>
+                        )}
+                        {reconcileReport.fixed.length > 0 ? (
+                          <ul className="mt-1 list-inside list-disc">
+                            {reconcileReport.fixed.map((f) => (
+                              <li key={f}>{f}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {reconcileReport.issues.length > 0 ? (
+                          <ul className="mt-1 list-inside list-disc text-amber-700 dark:text-amber-400">
+                            {reconcileReport.issues.map((i) => (
+                              <li key={i}>{i}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {reconcileReport.duplicateCustomers.length > 0 ? (
+                          <p className="mt-1">
+                            {reconcileReport.duplicateCustomers.length}{" "}
+                            clientes duplicados no Asaas (remova no sandbox os
+                            sem assinatura).
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             ) : null}

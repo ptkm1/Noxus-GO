@@ -11,6 +11,7 @@ export type PublicIntentNextAction =
   | "WAIT"
   | "SET_PASSWORD"
   | "OPEN_CHECKOUT"
+  | "PAY_CARD"
   | "RETRY"
   | "LOGIN"
   | "ENTER_APP"
