@@ -87,6 +87,8 @@ if [[ "$DO_BUILD" -eq 1 ]]; then
   pnpm --filter @pedidos/api run build
   echo "==> build web"
   pnpm --filter @pedidos/web run build
+  echo "==> build site"
+  pnpm --filter @pedidos/site run build
 else
   echo "(pula build — passe --build para compilar)"
 fi
@@ -94,6 +96,13 @@ fi
 echo ""
 echo "OK. Ordem sugerida de publicação:"
 echo "  1) migrate deploy (já feito se usou --migrate)"
-echo "  2) redeploy / restart da API (com prisma generate no build)"
-echo "  3) redeploy do web na Vercel (projeto noxus-go-web)"
-echo "  4) smoke: login, metas, editar cliente, pedidos, faturamento"
+echo "  2) redeploy da API no Render (serviço Nexus-GO — api.pedixpro.com.br)"
+echo "  3) redeploy site (Vercel apps/site) e painel (Vercel apps/web)"
+echo "  4) app mobile: eas build --profile production (Android/iOS)"
+echo "  5) smoke: login, planos/billing, pedidos, faturamento"
+echo ""
+echo "Envs produção (checklist rápido):"
+echo "  API Render: DATABASE_URL (Neon), JWT_*, WEB_PUBLIC_URL=https://app.pedixpro.com.br"
+echo "  Web Vercel: VITE_API_URL=https://api.pedixpro.com.br"
+echo "  Site Vercel: NEXT_PUBLIC_API_URL=https://api.pedixpro.com.br NEXT_PUBLIC_APP_URL=https://app.pedixpro.com.br"
+echo "  Mobile: EXPO_PUBLIC_API_URL=https://api.pedixpro.com.br"

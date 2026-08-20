@@ -2,21 +2,22 @@ import { useAuth } from "@/auth/AuthContext";
 import { CommerceProWordmark } from "@/components/brand/CommerceProBrand";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { APP_BRAND_TAGLINE } from "@pedidos/shared";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 export function LoginPage() {
   const { login } = useAuth();
   const nav = useNavigate();
+  const [params] = useSearchParams();
   const [email, setEmail] = useState("admin@demo.com");
   const [password, setPassword] = useState("admin123");
   const [err, setErr] = useState<string | null>(null);
@@ -27,7 +28,16 @@ export function LoginPage() {
     setErr(null);
     setPending(true);
     try {
-      await login(email, password);
+      const loggedIn = await login(email, password);
+      const redirect = params.get("redirect");
+      if (redirect?.startsWith("/")) {
+        nav(redirect, { replace: true });
+        return;
+      }
+      if (loggedIn.accessStatus === "PENDING_PAYMENT") {
+        nav("/pagamento", { replace: true });
+        return;
+      }
       nav("/", { replace: true });
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : "Erro ao entrar");
@@ -87,6 +97,20 @@ export function LoginPage() {
             >
               Criar conta
             </Link>
+          </p>
+          <p className="mt-4 text-center text-xs leading-5 text-muted-foreground">
+            Ao acessar, você concorda com os{" "}
+            <Link to="/legal/termos" className="font-medium text-primary">
+              Termos de Uso
+            </Link>{" "}
+            e com a{" "}
+            <Link
+              to="/legal/privacidade"
+              className="font-medium text-primary"
+            >
+              Política de Privacidade
+            </Link>
+            .
           </p>
         </CardContent>
       </Card>

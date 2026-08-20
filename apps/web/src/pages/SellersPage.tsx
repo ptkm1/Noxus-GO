@@ -40,7 +40,13 @@ type Seller = {
   commissionPercent: unknown;
   active: boolean;
   managerUserId: string | null;
-  user: { id: string; email: string; name: string; matricula?: string | null };
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    matricula?: string | null;
+    activatedAt?: string | null;
+  };
   manager: Manager | null;
   team: { id: string; name: string } | null;
 };
@@ -181,7 +187,11 @@ export function SellersPage() {
           payload.commissionPercent = Number(commission);
         }
         if (password.length > 0) payload.password = password;
-        return apiFetch(`/admin/sellers/${editingId}`, {
+        return apiFetch<{
+          invited?: boolean;
+          inviteEmailSent?: boolean;
+          inviteEmailError?: string;
+        }>(`/admin/sellers/${editingId}`, {
           method: "PATCH",
           body: JSON.stringify(payload),
         });
@@ -200,14 +210,26 @@ export function SellersPage() {
       } else {
         createBody.password = password;
       }
-      return apiFetch("/admin/sellers", {
+      return apiFetch<{
+        invited?: boolean;
+        inviteEmailSent?: boolean;
+        inviteEmailError?: string;
+      }>("/admin/sellers", {
         method: "POST",
         body: JSON.stringify(createBody),
       });
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       invalidateSellers();
       closeSheet();
+      if (data.invited && data.inviteEmailSent === false) {
+        setActionError(
+          data.inviteEmailError ??
+            "O vendedor foi criado, mas o e-mail de convite não foi enviado.",
+        );
+      } else {
+        setActionError(null);
+      }
     },
     onError: (err) => {
       setFormError(
@@ -255,6 +277,21 @@ export function SellersPage() {
     onError: (err) => {
       setActionError(
         err instanceof Error ? err.message : "Erro ao excluir vendedor",
+      );
+    },
+  });
+
+  const resendInvite = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/admin/sellers/${id}/resend-invite`, { method: "POST" }),
+    onSuccess: () => {
+      setActionError(null);
+    },
+    onError: (err) => {
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível reenviar o convite",
       );
     },
   });
@@ -807,6 +844,16 @@ export function SellersPage() {
                       />
                     </TableCell>
                     <TableCell className="px-4 py-3 text-right whitespace-nowrap">
+                      {!s.user.activatedAt ? (
+                        <button
+                          type="button"
+                          className="mr-3 text-primary hover:underline disabled:opacity-40"
+                          disabled={batchBusy || resendInvite.isPending}
+                          onClick={() => resendInvite.mutate(s.id)}
+                        >
+                          Reenviar convite
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="mr-3 text-primary hover:underline"

@@ -22,6 +22,9 @@ export function defaultApiBaseWithoutOverride(): string {
   if (fromEnv) return normalizeApiBaseInput(fromEnv);
   const extra = Constants.expoConfig?.extra as { apiUrl?: string } | undefined;
   if (extra?.apiUrl) return normalizeApiBaseInput(extra.apiUrl);
+  if (!__DEV__) {
+    throw new Error("EXPO_PUBLIC_API_URL precisa estar configurada em builds de produção.");
+  }
   if (Platform.OS === "android") return "http://10.0.2.2:4000";
   return "http://localhost:4000";
 }

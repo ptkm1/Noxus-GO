@@ -1,0 +1,5 @@
+{
+  "installCommand": "cd ../.. && pnpm install",
+  "buildCommand": "cd ../.. && pnpm build:shared && pnpm build:design-tokens && pnpm --filter @pedidos/site build",
+  "framework": "nextjs"
+}

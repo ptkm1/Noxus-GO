@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AppState, Platform } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -7,15 +7,36 @@ import {
   stopSellerBackgroundLocation,
 } from "../lib/seller-location-background";
 import { pingSellerLocationIfNeeded } from "../lib/seller-location-ping";
+import {
+  isLocationTrackingEnabled,
+  subscribePrivacyPreferences,
+} from "../lib/privacy-preferences";
 
 /**
  * Envia GPS do vendedor (foreground + background com permissão) para o painel admin.
  */
 export function SellerLocationReporter() {
   const { user, loading } = useAuth();
+  const [trackingEnabled, setTrackingEnabled] = useState(false);
 
   useEffect(() => {
-    if (Platform.OS === "web" || loading || !user) {
+    let mounted = true;
+    const refresh = () => {
+      void isLocationTrackingEnabled().then((enabled) => {
+        if (mounted) setTrackingEnabled(enabled);
+      });
+    };
+
+    refresh();
+    const unsub = subscribePrivacyPreferences(refresh);
+    return () => {
+      mounted = false;
+      unsub();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS === "web" || loading || !user || !trackingEnabled) {
       void stopSellerBackgroundLocation();
       return;
     }
@@ -45,7 +66,7 @@ export function SellerLocationReporter() {
       clearInterval(interval);
       void stopSellerBackgroundLocation();
     };
-  }, [user, loading]);
+  }, [user, loading, trackingEnabled]);
 
   return null;
 }

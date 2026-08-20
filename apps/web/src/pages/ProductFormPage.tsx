@@ -375,121 +375,123 @@ export function ProductFormPage() {
                 !isEdit && !selectedPriceTableId && "opacity-60",
               )}
             >
-            <FormGrid cols={2}>
-              <FormField
-                label="Preço custo (R$)"
-                htmlFor="prod-cost"
-                error={fieldError("costPrice")}
-              >
-                <Input
-                  id="prod-cost"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={values.costPrice}
-                  onChange={(e) => setField("costPrice", e.target.value)}
-                />
-              </FormField>
+              <FormGrid cols={2}>
+                <FormField
+                  label="Preço custo (R$)"
+                  htmlFor="prod-cost"
+                  error={fieldError("costPrice")}
+                >
+                  <Input
+                    id="prod-cost"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={values.costPrice}
+                    onChange={(e) => setField("costPrice", e.target.value)}
+                  />
+                </FormField>
 
-              <FormField
-                label="Preço venda (R$)"
-                htmlFor="prod-price"
-                required
-                error={fieldError("basePrice")}
-                hint={
-                  !isEdit && selectedPriceTableId
-                    ? `Será gravado na tabela “${priceTables.find((t) => t.id === selectedPriceTableId)?.name ?? "selecionada"}”.`
-                    : "Usado quando não há preço em tabela de preços."
-                }
-              >
-                <Input
-                  id="prod-price"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={values.basePrice}
-                  onChange={(e) => setField("basePrice", e.target.value)}
-                />
-              </FormField>
-
-              <FormField
-                label="Preço máximo (R$)"
-                htmlFor="prod-max-sale"
-                error={fieldError("maxSalePrice")}
-              >
-                <Input
-                  id="prod-max-sale"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={values.maxSalePrice}
-                  onChange={(e) => setField("maxSalePrice", e.target.value)}
-                />
-              </FormField>
-
-              <FormField
-                label="Preço mínimo de venda (R$)"
-                htmlFor="prod-min-sale"
-                error={fieldError("minSaleUnitPrice")}
-                hint="Piso por unidade após promoções e desconto do vendedor."
-              >
-                <Input
-                  id="prod-min-sale"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={values.minSaleUnitPrice}
-                  onChange={(e) => setField("minSaleUnitPrice", e.target.value)}
-                />
-              </FormField>
-
-              <FormField
-                label="Desconto máx. vendedor (%)"
-                htmlFor="prod-max-disc"
-                error={fieldError("maxSellerDiscountPercent")}
-              >
-                <Input
-                  id="prod-max-disc"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="100"
-                  value={values.maxSellerDiscountPercent}
-                  onChange={(e) =>
-                    setField("maxSellerDiscountPercent", e.target.value)
+                <FormField
+                  label="Preço venda (R$)"
+                  htmlFor="prod-price"
+                  required
+                  error={fieldError("basePrice")}
+                  hint={
+                    !isEdit && selectedPriceTableId
+                      ? `Será gravado na tabela “${priceTables.find((t) => t.id === selectedPriceTableId)?.name ?? "selecionada"}”.`
+                      : "Usado quando não há preço em tabela de preços."
                   }
-                />
-              </FormField>
+                >
+                  <Input
+                    id="prod-price"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={values.basePrice}
+                    onChange={(e) => setField("basePrice", e.target.value)}
+                  />
+                </FormField>
 
-              <FormField
-                label="Frete (R$)"
-                htmlFor="prod-freight"
-                error={fieldError("freightAmount")}
-              >
-                <Input
-                  id="prod-freight"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={values.freightAmount}
-                  onChange={(e) => setField("freightAmount", e.target.value)}
-                />
-              </FormField>
+                <FormField
+                  label="Preço máximo (R$)"
+                  htmlFor="prod-max-sale"
+                  error={fieldError("maxSalePrice")}
+                >
+                  <Input
+                    id="prod-max-sale"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={values.maxSalePrice}
+                    onChange={(e) => setField("maxSalePrice", e.target.value)}
+                  />
+                </FormField>
 
-              <FormField label="Mark-up (%)" htmlFor="prod-markup">
-                <Input
-                  id="prod-markup"
-                  value={
-                    markupPercent != null
-                      ? markupPercent.toFixed(2).replace(".", ",")
-                      : "—"
-                  }
-                  readOnly
-                  disabled
-                  className="bg-muted/50"
-                />
-              </FormField>
-            </FormGrid>
+                <FormField
+                  label="Preço mínimo de venda (R$)"
+                  htmlFor="prod-min-sale"
+                  error={fieldError("minSaleUnitPrice")}
+                  hint="Piso por unidade após promoções e desconto do vendedor."
+                >
+                  <Input
+                    id="prod-min-sale"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={values.minSaleUnitPrice}
+                    onChange={(e) =>
+                      setField("minSaleUnitPrice", e.target.value)
+                    }
+                  />
+                </FormField>
+
+                <FormField
+                  label="Desconto máx. vendedor (%)"
+                  htmlFor="prod-max-disc"
+                  error={fieldError("maxSellerDiscountPercent")}
+                >
+                  <Input
+                    id="prod-max-disc"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={values.maxSellerDiscountPercent}
+                    onChange={(e) =>
+                      setField("maxSellerDiscountPercent", e.target.value)
+                    }
+                  />
+                </FormField>
+
+                <FormField
+                  label="Frete (R$)"
+                  htmlFor="prod-freight"
+                  error={fieldError("freightAmount")}
+                >
+                  <Input
+                    id="prod-freight"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={values.freightAmount}
+                    onChange={(e) => setField("freightAmount", e.target.value)}
+                  />
+                </FormField>
+
+                <FormField label="Mark-up (%)" htmlFor="prod-markup">
+                  <Input
+                    id="prod-markup"
+                    value={
+                      markupPercent != null
+                        ? markupPercent.toFixed(2).replace(".", ",")
+                        : "—"
+                    }
+                    readOnly
+                    disabled
+                    className="bg-muted/50"
+                  />
+                </FormField>
+              </FormGrid>
             </fieldset>
 
             {isEdit ? (
@@ -509,29 +511,31 @@ export function ProductFormPage() {
                   </p>
                 ) : (
                   <FormGrid cols={2}>
-                    {Object.entries(priceTablePrices).map(([tableId, price]) => {
-                      const tableName =
-                        priceTables.find((t) => t.id === tableId)?.name ??
-                        tableId;
-                      return (
-                        <FormField
-                          key={tableId}
-                          label={tableName}
-                          htmlFor={`pt-price-${tableId}`}
-                        >
-                          <Input
-                            id={`pt-price-${tableId}`}
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={price}
-                            onChange={(e) =>
-                              setPriceForTable(tableId, e.target.value)
-                            }
-                          />
-                        </FormField>
-                      );
-                    })}
+                    {Object.entries(priceTablePrices).map(
+                      ([tableId, price]) => {
+                        const tableName =
+                          priceTables.find((t) => t.id === tableId)?.name ??
+                          tableId;
+                        return (
+                          <FormField
+                            key={tableId}
+                            label={tableName}
+                            htmlFor={`pt-price-${tableId}`}
+                          >
+                            <Input
+                              id={`pt-price-${tableId}`}
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={price}
+                              onChange={(e) =>
+                                setPriceForTable(tableId, e.target.value)
+                              }
+                            />
+                          </FormField>
+                        );
+                      },
+                    )}
                   </FormGrid>
                 )}
                 <div className="flex flex-wrap items-end gap-2">
@@ -834,7 +838,11 @@ export function ProductFormPage() {
                 />
               </FormField>
 
-              <FormField label="Exceção NCM" htmlFor="prod-ncm-exc">
+              <FormField
+                label="Exceção NCM"
+                htmlFor="prod-ncm-exc"
+                hint="EX TIPI na NF-e. Deixe vazio ou 0 se o NCM não tiver exceção — o XML omite a tag."
+              >
                 <Input
                   id="prod-ncm-exc"
                   value={values.ncmException}
@@ -906,7 +914,11 @@ export function ProductFormPage() {
                 />
               </FormField>
 
-              <FormField label="GTIN / EAN" htmlFor="prod-fiscal-gtin">
+              <FormField
+                label="GTIN / EAN"
+                htmlFor="prod-fiscal-gtin"
+                hint="cEAN na NF-e (8, 12, 13 ou 14 dígitos). Sem código válido a SEFAZ recebe SEM GTIN."
+              >
                 <Input
                   id="prod-fiscal-gtin"
                   value={values.fiscalGtin}
@@ -914,7 +926,11 @@ export function ProductFormPage() {
                 />
               </FormField>
 
-              <FormField label="CEST" htmlFor="prod-fiscal-cest">
+              <FormField
+                label="CEST"
+                htmlFor="prod-fiscal-cest"
+                hint="Convênio ICMS 92/2015. Obrigatório na NF-e quando o NCM está na tabela de substituição tributária (7 dígitos)."
+              >
                 <Input
                   id="prod-fiscal-cest"
                   value={values.fiscalCest}
@@ -1005,6 +1021,7 @@ export function ProductFormPage() {
                 label="CBS/IBS"
                 htmlFor="prod-cbs-ibs"
                 className="sm:col-span-2"
+                hint="Reforma tributária — ainda não vai no XML da NF-e 4.00. Cadastro para quando a NT da SEFAZ exigir o grupo IBSCBS."
               >
                 <Input
                   id="prod-cbs-ibs"

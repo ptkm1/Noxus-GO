@@ -1,4 +1,6 @@
 import { escapeXml, onlyDigits } from "./nfe-access-key.js";
+import { compactNfeXml } from "./nfe-signer.js";
+import { sefazOrgaoForEvent } from "./nfe-svc.js";
 import { UF_IBGE } from "./sefaz-endpoints.js";
 
 export function buildCancelamentoEvento(input: {
@@ -9,10 +11,11 @@ export function buildCancelamentoEvento(input: {
   protocol: string;
   justification: string;
   seqEvento?: number;
+  tpEmis?: string | null;
 }) {
   const chNFe = onlyDigits(input.accessKey);
   const cnpj = onlyDigits(input.cnpj).padStart(14, "0").slice(0, 14);
-  const cOrgao = UF_IBGE[input.uf.toUpperCase()] ?? "35";
+  const cOrgao = sefazOrgaoForEvent(input.uf, input.tpEmis);
   const tpAmb = input.homologation ? "2" : "1";
   const nSeq = String(input.seqEvento ?? 1).padStart(2, "0");
   const tpEvento = "110111";
@@ -20,7 +23,7 @@ export function buildCancelamentoEvento(input: {
   const dhEvento = new Date().toISOString().replace(/\.\d{3}Z$/, "-03:00");
   const xJust = escapeXml(input.justification.trim());
 
-  const infEvento = `<infEvento Id="${id}" xmlns="http://www.portalfiscal.inf.br/nfe"><cOrgao>${cOrgao}</cOrgao><tpAmb>${tpAmb}</tpAmb><CNPJ>${cnpj}</CNPJ><chNFe>${chNFe}</chNFe><dhEvento>${dhEvento}</dhEvento><tpEvento>${tpEvento}</tpEvento><nSeqEvento>${input.seqEvento ?? 1}</nSeqEvento><verEvento>1.00</verEvento><detEvento versao="1.00"><descEvento>Cancelamento</descEvento><nProt>${escapeXml(input.protocol)}</nProt><xJust>${xJust}</xJust></detEvento></infEvento>`;
+  const infEvento = `<infEvento Id="${id}"><cOrgao>${cOrgao}</cOrgao><tpAmb>${tpAmb}</tpAmb><CNPJ>${cnpj}</CNPJ><chNFe>${chNFe}</chNFe><dhEvento>${dhEvento}</dhEvento><tpEvento>${tpEvento}</tpEvento><nSeqEvento>${input.seqEvento ?? 1}</nSeqEvento><verEvento>1.00</verEvento><detEvento versao="1.00"><descEvento>Cancelamento</descEvento><nProt>${escapeXml(input.protocol)}</nProt><xJust>${xJust}</xJust></detEvento></infEvento>`;
 
   return { infEvento, idLote: "1" };
 }
@@ -33,6 +36,7 @@ export function buildCartaCorrecaoEvento(input: {
   homologation: boolean;
   correctionText: string;
   seqEvento?: number;
+  tpEmis?: string | null;
 }) {
   const text = input.correctionText.trim();
   if (text.length < 15 || text.length > 1000) {
@@ -40,7 +44,7 @@ export function buildCartaCorrecaoEvento(input: {
   }
   const chNFe = onlyDigits(input.accessKey);
   const cnpj = onlyDigits(input.cnpj).padStart(14, "0").slice(0, 14);
-  const cOrgao = UF_IBGE[input.uf.toUpperCase()] ?? "35";
+  const cOrgao = sefazOrgaoForEvent(input.uf, input.tpEmis);
   const tpAmb = input.homologation ? "2" : "1";
   const nSeq = input.seqEvento ?? 1;
   const tpEvento = "110110";
@@ -49,7 +53,7 @@ export function buildCartaCorrecaoEvento(input: {
   const xCorrecao = escapeXml(text);
 
   const infEvento =
-    `<infEvento Id="${id}" xmlns="http://www.portalfiscal.inf.br/nfe">` +
+    `<infEvento Id="${id}">` +
     `<cOrgao>${cOrgao}</cOrgao><tpAmb>${tpAmb}</tpAmb><CNPJ>${cnpj}</CNPJ>` +
     `<chNFe>${chNFe}</chNFe><dhEvento>${dhEvento}</dhEvento>` +
     `<tpEvento>${tpEvento}</tpEvento><nSeqEvento>${nSeq}</nSeqEvento>` +
@@ -87,7 +91,7 @@ export function buildInutilizacao(input: {
   const id = `ID${cUF}${ano}${cnpj}${serie.padStart(3, "0")}${nNFIni.padStart(9, "0")}${nNFFin.padStart(9, "0")}`;
 
   const infInut =
-    `<infInut Id="${id}" xmlns="http://www.portalfiscal.inf.br/nfe">` +
+    `<infInut Id="${id}">` +
     `<tpAmb>${tpAmb}</tpAmb><xServ>INUTILIZAR</xServ>` +
     `<cUF>${cUF}</cUF><ano>${ano}</ano><CNPJ>${cnpj}</CNPJ>` +
     `<mod>55</mod><serie>${serie}</serie>` +
@@ -99,7 +103,9 @@ export function buildInutilizacao(input: {
 }
 
 export function wrapInutNFe(signedInutXml: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>${signedInutXml}`;
+  return compactNfeXml(
+    `<?xml version="1.0" encoding="UTF-8"?>${signedInutXml}`,
+  );
 }
 
 const MANIFEST_EVENTS: Record<
@@ -148,7 +154,7 @@ export function buildManifestacaoEvento(input: {
       : "";
 
   const infEvento =
-    `<infEvento Id="${id}" xmlns="http://www.portalfiscal.inf.br/nfe">` +
+    `<infEvento Id="${id}">` +
     `<cOrgao>91</cOrgao><tpAmb>${tpAmb}</tpAmb><CNPJ>${cnpj}</CNPJ>` +
     `<chNFe>${chNFe}</chNFe><dhEvento>${dhEvento}</dhEvento>` +
     `<tpEvento>${meta.tpEvento}</tpEvento><nSeqEvento>${input.seqEvento ?? 1}</nSeqEvento>` +
@@ -160,5 +166,7 @@ export function buildManifestacaoEvento(input: {
 }
 
 export function wrapEnvEvento(signedEventoXml: string, idLote = "1"): string {
-  return `<?xml version="1.0" encoding="UTF-8"?><envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"><idLote>${idLote}</idLote>${signedEventoXml}</envEvento>`;
+  return compactNfeXml(
+    `<?xml version="1.0" encoding="UTF-8"?><envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"><idLote>${idLote}</idLote>${signedEventoXml}</envEvento>`,
+  );
 }

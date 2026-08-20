@@ -10,7 +10,7 @@ describe("mapAsaasPaymentEventToInternalStatus", () => {
     expect(mapAsaasPaymentEventToInternalStatus("PAYMENT_CONFIRMED")).toBe(
       "activate",
     );
-    expect(mapAsaasPaymentEventToInternalStatus("CHECKOUT_PAID")).toBe(
+    expect(mapAsaasPaymentEventToInternalStatus("PAYMENT_RECEIVED")).toBe(
       "activate",
     );
   });

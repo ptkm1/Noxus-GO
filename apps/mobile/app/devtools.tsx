@@ -5,9 +5,12 @@ import { KeyboardForm, MobileHeader, SafeScreen } from "@/components/layout";
 import { useDevToolsScreen } from "@/hooks/screens/useDevToolsScreen";
 import { useTheme } from "@/lib/theme";
 import { radiiPx } from "@pedidos/design-tokens";
+import { Redirect } from "expo-router";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 
 export default function DevToolsScreen() {
+  if (!__DEV__) return <Redirect href="/" />;
+
   const { colors } = useTheme();
   const {
     draft,

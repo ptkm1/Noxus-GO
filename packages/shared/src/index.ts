@@ -2,6 +2,26 @@
 export const API_PREFIX = "/api/v1";
 
 export {
+  barcodeCodesMatch,
+  barcodeDigitVariants,
+  EXPEDITION_SITUATION_CODES,
+  expeditionSituationLabel,
+  findProductByBarcode,
+  normalizeBarcode,
+  productMatchesBarcode,
+} from "./barcode.js";
+export type { BarcodeSearchable } from "./barcode.js";
+export {
+  formatCardExpiryInput,
+  formatCardNumberInput,
+  isValidCardExpiry,
+  isValidCvv,
+  isValidLuhn,
+  maskCardNumberLast4,
+  normalizeCardNumber,
+  parseCardExpiry,
+} from "./billing-card.js";
+export {
   CHECKOUT_INTENT_STATUSES,
   isCheckoutIntentStatus,
   mapIntentToPublicStatus,
@@ -119,6 +139,7 @@ export {
   FISCAL_MANIFESTATION_LABELS,
   FISCAL_TAX_REGIME_LABELS,
   isProductFiscalReady,
+  nfeTpEmisLabel,
   NFE_ENVIRONMENT_LABELS,
 } from "./fiscal.js";
 export type {
@@ -151,6 +172,19 @@ export type {
   HomeIndicatorKey,
   HomeIndicatorsLayout,
 } from "./home-indicators.js";
+export {
+  getLegalDocument,
+  LEGAL_COMPANY_PLACEHOLDER,
+  LEGAL_CONTACT_EMAIL,
+  LEGAL_DOCUMENTS,
+  PRIVACY_POLICY_DOCUMENT,
+  TERMS_OF_USE_DOCUMENT,
+} from "./legal-documents.js";
+export type {
+  LegalArticle,
+  LegalChapter,
+  LegalDocument,
+} from "./legal-documents.js";
 export {
   NOTIFICATION_TYPES,
   notificationBodyDisplay,
@@ -191,6 +225,7 @@ export {
   PLAN_FEATURE_LABELS,
   PLAN_IDS,
   planHasFeature,
+  planIdFromMonthlyPrice,
 } from "./plans.js";
 export type {
   PlanDefinition,
@@ -228,5 +263,18 @@ export type {
   ProductFormValues,
   ProductRecord,
 } from "./product-form.js";
+export {
+  formatRomaneioNumber,
+  groupOrdersByPaymentCondition,
+  paymentConditionLabel,
+  roundMoney,
+  sumOrderTotals,
+  uniqueIdsPreserveOrder,
+} from "./route-romaneio.js";
+export type {
+  RomaneioOrderTotal,
+  RomaneioPaymentCondition,
+  RomaneioPaymentGroup,
+} from "./route-romaneio.js";
 export { STOCK_MOVEMENT_TYPE_LABELS } from "./stock.js";
 export type { StockMovementType } from "./stock.js";

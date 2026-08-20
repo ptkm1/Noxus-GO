@@ -4,6 +4,7 @@ import {
   MAX_HOME_INDICATORS,
   normalizeHomeIndicators,
   normalizeHomeIndicatorsLayout,
+  uniqueIdsPreserveOrder,
   type HomeIndicatorKey,
   type HomeIndicatorsLayout,
 } from "@pedidos/shared";
@@ -150,6 +151,7 @@ import { readExtraParams } from "../services/reports/extra-filters.js";
 import { buildOrderItemsPdf } from "../services/reports/order-items-pdf.js";
 import { buildOrdersPdf } from "../services/reports/orders-pdf.js";
 import { orderCode } from "../services/reports/pdf-common.js";
+import { buildRouteRomaneioPdf } from "../services/reports/route-romaneio-pdf.js";
 import { buildStockPdf } from "../services/reports/stock-pdf.js";
 import {
   adminPathToResource,
@@ -194,6 +196,7 @@ import {
 } from "../services/suppliers.js";
 import { buildTeamSalesSummary } from "../services/team-sales-summary.js";
 import { decToNum } from "../util/money.js";
+import { expeditionRoutes } from "./expedition.js";
 import { fiscalRoutes } from "./fiscal.js";
 const idParam = z.object({ id: z.string().min(1) });
 
@@ -2978,6 +2981,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           select: { id: true, name: true, key: true, baseRole: true },
         },
         createdAt: true,
+        activatedAt: true,
       },
       orderBy: [{ role: "asc" }, { name: "asc" }],
     });
@@ -3077,6 +3081,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       },
     });
 
+    let inviteEmailSent: boolean | undefined;
+    let inviteEmailError: string | undefined;
     if (useInvite) {
       const { rawToken, expiresAt } = await createActivationToken(
         created.id,
@@ -3086,13 +3092,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         where: { id: auth.organizationId },
         select: { name: true, displayName: true },
       });
-      await sendUserInviteEmail({
+      const emailResult = await sendUserInviteEmail({
         to: created.email,
         name: created.name,
         companyName: org?.displayName || org?.name || "PedixPro",
         rawToken,
         expiresAt,
       });
+      inviteEmailSent = emailResult.sent;
+      inviteEmailError = emailResult.sent ? undefined : emailResult.reason;
     }
 
     const actor = await prisma.user.findUnique({
@@ -3110,10 +3118,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         email: created.email,
         role: created.role,
         organizationProfileId: created.organizationProfileId,
+        invited: useInvite,
       },
     });
 
-    return created;
+    return {
+      ...created,
+      invited: useInvite,
+      inviteEmailSent,
+      inviteEmailError,
+    };
   });
 
   async function countOrgAdmins(organizationId: string): Promise<number> {
@@ -3139,6 +3153,23 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       },
     });
   }
+
+  app.post("/users/:id/resend-invite", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { id } = idParam.parse(req.params);
+    const staff = await findStaffUser(auth.organizationId, id);
+    if (!staff) return reply.status(404).send({ error: "Não encontrado" });
+    const { sendInviteForExistingUser } =
+      await import("../services/billing/activation-email.js");
+    const result = await sendInviteForExistingUser(staff.id);
+    if (!result.sent) {
+      return reply.status(502).send({
+        error: result.reason ?? "Não foi possível enviar o convite.",
+      });
+    }
+    return { ok: true, inviteEmailSent: true };
+  });
 
   app.post("/users/batch-delete", async (req, reply) => {
     const auth = req.auth!;
@@ -3497,6 +3528,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
             name: true,
             role: true,
             matricula: true,
+            activatedAt: true,
           },
         },
         manager: { select: { id: true, name: true, email: true } },
@@ -3599,6 +3631,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         include: { seller: true },
       });
 
+      let inviteEmailSent: boolean | undefined;
+      let inviteEmailError: string | undefined;
       if (useInvite) {
         const { rawToken, expiresAt } = await createActivationToken(
           user.id,
@@ -3608,13 +3642,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           where: { id: auth.organizationId },
           select: { name: true, displayName: true },
         });
-        await sendUserInviteEmail({
+        const emailResult = await sendUserInviteEmail({
           to: user.email,
           name: user.name,
           companyName: org?.displayName || org?.name || "PedixPro",
           rawToken,
           expiresAt,
         });
+        inviteEmailSent = emailResult.sent;
+        inviteEmailError = emailResult.sent ? undefined : emailResult.reason;
       }
 
       await auditFromAuth(auth, {
@@ -3639,6 +3675,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         commissionPercent: decToNum(user.seller!.commissionPercent),
         active: user.seller!.active,
         invited: useInvite,
+        inviteEmailSent,
+        inviteEmailError,
       };
     } catch (e) {
       if (
@@ -3661,6 +3699,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         name: true,
         role: true,
         matricula: true,
+        activatedAt: true,
       },
     },
     manager: { select: { id: true, name: true, email: true } },
@@ -3676,6 +3715,22 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       },
     });
   }
+
+  app.post("/sellers/:id/resend-invite", async (req, reply) => {
+    const auth = req.auth!;
+    const { id } = idParam.parse(req.params);
+    const seller = await findOrgSeller(auth.organizationId, id);
+    if (!seller) return reply.status(404).send({ error: "Não encontrado" });
+    const { sendInviteForExistingUser } =
+      await import("../services/billing/activation-email.js");
+    const result = await sendInviteForExistingUser(seller.userId);
+    if (!result.sent) {
+      return reply.status(502).send({
+        error: result.reason ?? "Não foi possível enviar o convite.",
+      });
+    }
+    return { ok: true, inviteEmailSent: true };
+  });
 
   app.post("/sellers/batch-delete", async (req, reply) => {
     const auth = req.auth!;
@@ -4900,6 +4955,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           },
         },
         items: { include: { product: true } },
+        paymentCondition: {
+          select: { id: true, name: true, days: true, sortOrder: true },
+        },
         fiscalInvoices: {
           where: { direction: "OUTBOUND" },
           orderBy: { createdAt: "desc" },
@@ -4939,6 +4997,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           },
         },
         items: { include: { product: true } },
+        paymentCondition: {
+          select: { id: true, name: true, days: true, sortOrder: true },
+        },
       },
     });
     if (!order) return reply.status(404).send({ error: "Não encontrado" });
@@ -6280,6 +6341,88 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       .send(pdf);
   });
 
+  async function sendRouteRomaneioPdf(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    raw: {
+      orderIds: string[];
+      routeName?: string;
+      driverName?: string;
+    },
+  ) {
+    const auth = req.auth!;
+    const requested = uniqueIdsPreserveOrder(raw.orderIds);
+    if (requested.length === 0) {
+      return reply.status(400).send({ error: "Selecione ao menos um pedido" });
+    }
+    const scoped = await prisma.order.findMany({
+      where: { id: { in: requested }, ...orderScopeWhere(auth) },
+      select: { id: true },
+    });
+    const allowed = new Set(scoped.map((o) => o.id));
+    const orderIds = requested.filter((id) => allowed.has(id));
+    if (orderIds.length === 0) {
+      return reply
+        .status(400)
+        .send({ error: "Nenhum pedido encontrado para o romaneio" });
+    }
+    try {
+      const pdf = await buildRouteRomaneioPdf({
+        organizationId: auth.organizationId,
+        orderIds,
+        routeName: raw.routeName,
+        driverName: raw.driverName,
+      });
+      return reply
+        .header("Content-Type", "application/pdf")
+        .header("Content-Disposition", 'inline; filename="romaneio-rota.pdf"')
+        .send(pdf);
+    } catch (e) {
+      const err = e as { statusCode?: number; message?: string };
+      return reply
+        .status(err.statusCode ?? 500)
+        .send({ error: err.message ?? "Falha ao gerar romaneio" });
+    }
+  }
+
+  const routeRomaneioBody = z.object({
+    orderIds: z.array(z.string()).min(1),
+    routeName: z.string().max(120).optional(),
+    driverName: z.string().max(120).optional(),
+  });
+
+  app.post("/reports/route-romaneio.pdf", async (req, reply) => {
+    const body = routeRomaneioBody.safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: "Selecione ao menos um pedido" });
+    }
+    return sendRouteRomaneioPdf(req, reply, body.data);
+  });
+
+  app.get("/reports/route-romaneio.pdf", async (req, reply) => {
+    const q = z
+      .object({
+        orderIds: z.union([z.string(), z.array(z.string())]),
+        routeName: z.string().max(120).optional(),
+        driverName: z.string().max(120).optional(),
+      })
+      .safeParse(req.query);
+    if (!q.success) {
+      return reply.status(400).send({ error: "Selecione ao menos um pedido" });
+    }
+    const orderIdsRaw = q.data.orderIds;
+    const orderIds = (
+      Array.isArray(orderIdsRaw) ? orderIdsRaw : orderIdsRaw.split(",")
+    )
+      .map((id) => id.trim())
+      .filter(Boolean);
+    return sendRouteRomaneioPdf(req, reply, {
+      orderIds,
+      routeName: q.data.routeName,
+      driverName: q.data.driverName,
+    });
+  });
+
   app.get("/reports/order-items.pdf", async (req, reply) => {
     const auth = req.auth!;
     if (!requireAdmin(reply, auth)) return;
@@ -6447,4 +6590,5 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   });
 
   await app.register(fiscalRoutes, { prefix: "/fiscal" });
+  await app.register(expeditionRoutes);
 };

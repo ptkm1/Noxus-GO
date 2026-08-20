@@ -15,7 +15,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.pedixpro.app"
+      "bundleIdentifier": "com.pedixpro.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -26,7 +29,7 @@
       "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
-      "usesCleartextTraffic": true
+      "usesCleartextTraffic": false
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -39,7 +42,6 @@
         "expo-camera",
         {
           "cameraPermission": "Usamos a c\u00e2mara s\u00f3 para ler c\u00f3digos de barras ao registar vendas.",
-          "microphonePermission": "Opcional para v\u00eddeo; n\u00e3o \u00e9 necess\u00e1rio para vendas r\u00e1pidas.",
           "recordAudioAndroid": false
         }
       ],

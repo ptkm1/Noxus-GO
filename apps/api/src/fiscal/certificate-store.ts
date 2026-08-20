@@ -10,13 +10,23 @@ export type LoadedCertificate = {
   certPem: string;
 };
 
+export type ExtractedPfx = {
+  privateKeyPem: string;
+  certPem: string;
+  /** Demais certificados do PFX (cadeia do A1), usados no trust store TLS. */
+  caPems: string[];
+};
+
 export async function loadOrganizationCertificate(
   organizationId: string,
 ): Promise<LoadedCertificate | null> {
   const config = await prisma.organizationFiscalConfig.findUnique({
     where: { organizationId },
   });
-  if (!config?.certificatePfxEncrypted || !config.certificatePasswordEncrypted) {
+  if (
+    !config?.certificatePfxEncrypted ||
+    !config.certificatePasswordEncrypted
+  ) {
     return null;
   }
   const pfx = decryptBuffer(Buffer.from(config.certificatePfxEncrypted));
@@ -25,21 +35,35 @@ export async function loadOrganizationCertificate(
   return { pfx, password, privateKeyPem, certPem };
 }
 
-export function extractPemFromPfx(pfx: Buffer, password: string) {
-  const asn1 = forge.asn1.fromDer(forge.util.createBuffer(pfx.toString("binary")));
+export function extractPemFromPfx(pfx: Buffer, password: string): ExtractedPfx {
+  const asn1 = forge.asn1.fromDer(
+    forge.util.createBuffer(pfx.toString("binary")),
+  );
   const pkcs12 = forge.pkcs12.pkcs12FromAsn1(asn1, password);
   const certBags = pkcs12.getBags({ bagType: forge.pki.oids.certBag });
-  const keyBags = pkcs12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
-  const cert = certBags[forge.pki.oids.certBag]?.[0]?.cert;
-  const key = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag]?.[0]?.key;
-  if (!cert || !key) throw new Error("Certificado A1 inválido ou senha incorreta");
+  const shrouded = pkcs12.getBags({
+    bagType: forge.pki.oids.pkcs8ShroudedKeyBag,
+  });
+  const plain = pkcs12.getBags({ bagType: forge.pki.oids.keyBag });
+  const certs = (certBags[forge.pki.oids.certBag] ?? [])
+    .map((b) => b.cert)
+    .filter((c): c is forge.pki.Certificate => Boolean(c));
+  const key =
+    shrouded[forge.pki.oids.pkcs8ShroudedKeyBag]?.[0]?.key ??
+    plain[forge.pki.oids.keyBag]?.[0]?.key;
+  if (!certs[0] || !key) {
+    throw new Error("Certificado A1 inválido ou senha incorreta");
+  }
   return {
     privateKeyPem: forge.pki.privateKeyToPem(key),
-    certPem: forge.pki.certificateToPem(cert),
+    certPem: forge.pki.certificateToPem(certs[0]),
+    caPems: certs.slice(1).map((c) => forge.pki.certificateToPem(c)),
   };
 }
 
-export function taxRegimeToCrt(regime: OrganizationFiscalConfig["taxRegime"]): string {
+export function taxRegimeToCrt(
+  regime: OrganizationFiscalConfig["taxRegime"],
+): string {
   switch (regime) {
     case "SIMPLES_NACIONAL":
       return "1";

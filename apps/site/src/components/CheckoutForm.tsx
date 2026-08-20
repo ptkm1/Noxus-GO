@@ -1,6 +1,7 @@
 "use client";
 
 import { isPlanId, listPlans, type PlanId } from "@pedidos/shared";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
@@ -19,17 +20,11 @@ function apiBase(): string {
   );
 }
 
-function isAllowedCheckoutUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return (
-      u.hostname === "asaas.com" ||
-      u.hostname.endsWith(".asaas.com") ||
-      u.hostname.includes("sandbox.asaas.com")
-    );
-  } catch {
-    return false;
-  }
+function appUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+    "http://localhost:5173"
+  );
 }
 
 export function CheckoutForm({
@@ -88,14 +83,15 @@ export function CheckoutForm({
         setError(data.error || "Não foi possível preparar o pagamento.");
         return;
       }
-      if (!data.checkoutUrl || !isAllowedCheckoutUrl(data.checkoutUrl)) {
-        setLastIntentId(data.intentId ?? null);
-        setError("URL de pagamento inválida. Tente novamente.");
+      if (!data.intentId) {
+        setError("Não foi possível iniciar o pagamento. Tente novamente.");
         return;
       }
-      setLastIntentId(data.intentId ?? null);
+      setLastIntentId(data.intentId);
       setRedirecting(true);
-      window.location.assign(data.checkoutUrl);
+      window.location.assign(
+        `${appUrl()}/pagamento?intentId=${encodeURIComponent(data.intentId)}`,
+      );
     } catch {
       const base = apiBase();
       setError(
@@ -130,8 +126,8 @@ export function CheckoutForm({
   if (redirecting) {
     return (
       <div className="checkout-success" role="status">
-        <h3>Redirecionando para o pagamento seguro…</h3>
-        <p>Você será enviado ao checkout do Asaas. Não feche esta janela.</p>
+        <h3>Redirecionando para o pagamento…</h3>
+        <p>Você será enviado ao formulário seguro de cartão. Não feche esta janela.</p>
       </div>
     );
   }
@@ -209,7 +205,10 @@ export function CheckoutForm({
           onChange={(e) => setTermsAccepted(e.target.checked)}
           disabled={loading}
         />
-        Li e aceito os Termos de Uso
+        Li e aceito os{" "}
+        <Link href="/termos" target="_blank">
+          Termos de Uso
+        </Link>
       </label>
 
       <label className="checkout-check">
@@ -219,7 +218,10 @@ export function CheckoutForm({
           onChange={(e) => setPrivacyAccepted(e.target.checked)}
           disabled={loading}
         />
-        Li e aceito a Política de Privacidade
+        Li e aceito a{" "}
+        <Link href="/privacidade" target="_blank">
+          Política de Privacidade
+        </Link>
       </label>
 
       <p className="checkout-hint">
@@ -234,7 +236,7 @@ export function CheckoutForm({
       ) : null}
 
       <button type="submit" disabled={loading}>
-        {loading ? "Preparando pagamento…" : "Ir para pagamento seguro"}
+        {loading ? "Preparando pagamento…" : "Continuar para pagamento"}
       </button>
 
       {lastIntentId && error ? (

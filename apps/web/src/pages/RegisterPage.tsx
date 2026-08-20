@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import type { CnpjCompanyData } from "@pedidos/shared";
-import { suggestedTradeName } from "@pedidos/shared";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import type { CnpjCompanyData, PlanId } from "@pedidos/shared";
+import { isPlanId, isValidCnpj, listPlans, suggestedTradeName } from "@pedidos/shared";
 import { useAuth } from "../auth/AuthContext";
 import { CnpjLookupField } from "../components/CnpjLookupField";
 import { FormField, FormGrid } from "@/components/forms";
@@ -11,24 +11,50 @@ import { Input } from "@/components/ui/input";
 export function RegisterPage() {
   const { register } = useAuth();
   const nav = useNavigate();
+  const [params] = useSearchParams();
+  const initialPlan = params.get("plan");
+  const [cnpj, setCnpj] = useState("");
   const [organizationName, setOrganizationName] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [planId, setPlanId] = useState<PlanId>(
+    initialPlan && isPlanId(initialPlan) ? initialPlan : "growth",
+  );
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const plans = listPlans();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    if (!isValidCnpj(cnpj)) {
+      setErr("Informe um CNPJ válido da empresa.");
+      return;
+    }
     if (password !== confirmPassword) {
       setErr("As senhas não coincidem");
       return;
     }
     setPending(true);
     try {
-      await register({ organizationName, name, email, password });
+      const result = await register({
+        organizationName,
+        name,
+        email,
+        password,
+        cnpj,
+        planId,
+      });
+      if (result.requiresPayment) {
+        if (result.checkoutError) setErr(result.checkoutError);
+        const q = result.intentId
+          ? `?intentId=${encodeURIComponent(result.intentId)}`
+          : "";
+        nav(`/pagamento${q}`, { replace: true });
+        return;
+      }
       nav("/", { replace: true });
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : "Erro ao cadastrar");
@@ -44,12 +70,31 @@ export function RegisterPage() {
         <p className="mt-1 text-sm text-muted-foreground">Nova empresa e administrador</p>
         <form className="mt-8 space-y-4" onSubmit={onSubmit}>
           <CnpjLookupField
+            required
             disabled={pending}
+            digits={cnpj}
+            onDigitsChange={setCnpj}
             onApply={(d: CnpjCompanyData) => {
+              setCnpj(d.cnpj);
               setOrganizationName(suggestedTradeName(d));
             }}
           />
           <FormGrid cols={1} className="gap-4">
+            <FormField label="Plano" htmlFor="reg-plan" required>
+              <select
+                id="reg-plan"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={planId}
+                onChange={(e) => setPlanId(e.target.value as PlanId)}
+                disabled={pending}
+              >
+                {plans.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} — R$ {p.monthlyPriceBrl}/mês
+                  </option>
+                ))}
+              </select>
+            </FormField>
             <FormField label="Nome da empresa" htmlFor="reg-org" required>
               <Input
                 id="reg-org"
@@ -107,6 +152,20 @@ export function RegisterPage() {
           <Button type="submit" disabled={pending} className="w-full">
             {pending ? "A criar conta…" : "Criar conta"}
           </Button>
+          <p className="text-center text-xs leading-5 text-muted-foreground">
+            Ao criar a conta, você declara que leu e aceitou os{" "}
+            <Link to="/legal/termos" className="font-medium text-primary">
+              Termos de Uso
+            </Link>{" "}
+            e a{" "}
+            <Link
+              to="/legal/privacidade"
+              className="font-medium text-primary"
+            >
+              Política de Privacidade
+            </Link>
+            .
+          </p>
         </form>
         <p className="mt-6 text-center text-sm text-muted-foreground">
           Já tens conta?{" "}

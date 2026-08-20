@@ -5,6 +5,7 @@ import { ensureOrgSubscription } from "../src/services/billing/subscription.js";
 import { ensureOrgRolePermissions } from "../src/services/role-permissions.js";
 import { CATEGORY_SCHEMA_BY_CODE } from "./category-schemas.js";
 import { upsertFiscalDemoData } from "./seed-fiscal-demo.js";
+import { upsertPimentinhaSaltbits } from "./seed-pimentinha-saltbits.js";
 import { upsertRouteDemoCustomer } from "./seed-route-customer.js";
 
 /** Senhas conhecidas — sempre re-hasheadas para recuperar login após DB “estranho”. */
@@ -415,6 +416,7 @@ async function main() {
         sellerId: seller.id,
       });
     }
+    await upsertPimentinhaSaltbits(org.id);
     console.log(
       "Dados de exemplo (produtos) já existem — categorias e fornecedor demo garantidos.",
     );
@@ -550,6 +552,7 @@ async function main() {
     categoryId: catSnack.id,
     sellerId: seller.id,
   });
+  await upsertPimentinhaSaltbits(org.id);
 
   await prisma.productPromotion.createMany({
     data: [

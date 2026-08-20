@@ -2,11 +2,11 @@ import type { Prisma } from "@prisma/client";
 import { timingSafeEqual } from "node:crypto";
 import { prisma } from "../../../db.js";
 import {
-  activateOrganizationFromPayment,
-  markIntentCanceled,
-  markIntentExpired,
-  markOrganizationCanceled,
-  markOrganizationPastDue,
+    activateOrganizationFromPayment,
+    markIntentCanceled,
+    markIntentExpired,
+    markOrganizationCanceled,
+    markOrganizationPastDue,
 } from "../subscription-activation.js";
 import { readAsaasConfig } from "./asaas-config.js";
 import { mapAsaasPaymentEventToInternalStatus } from "./map-status.js";
@@ -102,13 +102,31 @@ export async function processAsaasWebhook(
     body.subscription?.externalReference ||
     body.checkout?.externalReference ||
     null;
+  const providerCustomerId =
+    body.payment?.customer || body.subscription?.customer || null;
+
+  let organizationId: string | null = null;
+  if (intentId) {
+    const intent = await prisma.checkoutIntent.findUnique({
+      where: { id: intentId },
+      select: { organizationId: true },
+    });
+    organizationId = intent?.organizationId ?? null;
+  }
+  if (!organizationId && providerCustomerId) {
+    const sub = await prisma.organizationSubscription.findFirst({
+      where: { providerCustomerId },
+      select: { organizationId: true },
+    });
+    organizationId = sub?.organizationId ?? null;
+  }
 
   try {
     if (effect === "activate") {
       await activateOrganizationFromPayment({
         intentId,
-        providerCustomerId:
-          body.payment?.customer || body.subscription?.customer,
+        organizationId,
+        providerCustomerId,
         providerSubscriptionId:
           body.payment?.subscription || body.subscription?.id,
         providerCheckoutId: body.checkout?.id,
@@ -117,13 +135,13 @@ export async function processAsaasWebhook(
       const intent = intentId
         ? await prisma.checkoutIntent.findUnique({ where: { id: intentId } })
         : null;
-      const orgId = intent?.organizationId;
+      const orgId = intent?.organizationId || organizationId;
       if (orgId) await markOrganizationPastDue(orgId);
     } else if (effect === "canceled") {
-      if (intentId) await markIntentCanceled(intentId);
       const intent = intentId
         ? await prisma.checkoutIntent.findUnique({ where: { id: intentId } })
         : null;
+      if (intentId) await markIntentCanceled(intentId);
       if (intent?.organizationId && intent.status === "COMPLETED") {
         await markOrganizationCanceled(intent.organizationId);
       }

@@ -153,7 +153,7 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         zipCode: z.string().optional(),
         nfeEnvironment: z.enum(["HOMOLOGATION", "PRODUCTION"]).optional(),
         nfeSeries: z.number().int().positive().optional(),
-        /** Hook UI — emissão SVC ainda não implementada. */
+        /** true = forçar SVC; o fallback automático ocorre mesmo com false. */
         contingencyEnabled: z.boolean().optional(),
         autoStockOnInboundInvoice: z.boolean().optional(),
       })

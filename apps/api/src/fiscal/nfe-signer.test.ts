@@ -1,0 +1,48 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildSoapEnvelope,
+  canonicalizeInNfeNamespace,
+  compactNfeXml,
+  stripNfeDefaultXmlns,
+  stripXmlDeclaration,
+} from "./nfe-signer.js";
+
+const NS = "http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4";
+
+describe("buildSoapEnvelope", () => {
+  it("coloca o enviNFe como XML filho, sem escape e sem declaração", () => {
+    const inner =
+      `<?xml version="1.0" encoding="UTF-8"?>` +
+      `<enviNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00"><idLote>1</idLote></enviNFe>`;
+    const soap = buildSoapEnvelope(inner, NS);
+    expect(soap).toContain("<nfeDadosMsg");
+    expect(soap).toContain("<enviNFe xmlns=");
+    expect(soap).not.toContain("&lt;enviNFe");
+    expect(soap).not.toMatch(/nfeDadosMsg[^>]*>\s*<\?xml/);
+    expect(stripXmlDeclaration(inner)).toMatch(/^<enviNFe/);
+  });
+});
+
+describe("canonicalizeInNfeNamespace", () => {
+  it("inclui o xmlns padrão no C14N sem gravá-lo em infNFe", () => {
+    const inf = `<infNFe Id="NFe1" versao="4.00"><ide/></infNFe>`;
+    const canonical = canonicalizeInNfeNamespace(inf);
+    expect(canonical.startsWith("<infNFe xmlns=")).toBe(true);
+    expect(canonical).toContain('xmlns="http://www.portalfiscal.inf.br/nfe"');
+    expect(stripNfeDefaultXmlns(inf)).not.toContain("xmlns=");
+  });
+});
+
+describe("compactNfeXml", () => {
+  it("remove quebras e espaços entre tags (cStat 588)", () => {
+    const pretty = `<infNFe Id="NFe1" versao="4.00">
+  <ide>
+    <cUF>35</cUF>
+  </ide>
+</infNFe>`;
+    expect(compactNfeXml(pretty)).toBe(
+      `<infNFe Id="NFe1" versao="4.00"><ide><cUF>35</cUF></ide></infNFe>`,
+    );
+    expect(compactNfeXml(pretty)).not.toMatch(/>\s+</);
+  });
+});

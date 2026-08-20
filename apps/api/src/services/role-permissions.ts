@@ -273,10 +273,7 @@ export async function buildEffectivePermissionsMatrix(organizationId: string) {
       levels: Object.fromEntries(
         roles.map((col) => {
           if (col.kind === "custom") {
-            return [
-              col.role,
-              customLevels.get(col.role)?.[resource] ?? "none",
-            ];
+            return [col.role, customLevels.get(col.role)?.[resource] ?? "none"];
           }
           return [col.role, map[col.role as Role][resource]];
         }),
@@ -453,6 +450,7 @@ export function adminPathToResource(
   if (path.startsWith("/customer-visits")) return "visits";
   if (path.startsWith("/reports") || path.startsWith("/insights"))
     return "reports";
+  if (path.startsWith("/expedition")) return "expedition";
   if (path.startsWith("/commission") || path.startsWith("/goals"))
     return "commissions";
   if (path.startsWith("/price-tables") || path.startsWith("/pricing"))

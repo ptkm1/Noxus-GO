@@ -19,6 +19,7 @@ import {
 } from "../fiscal/nfe-signer.js";
 import {
   buildSignedNfePackage,
+  normalizeNfeNature,
   wrapEnviNFe,
 } from "../fiscal/nfe-xml-builder.js";
 import {
@@ -27,6 +28,13 @@ import {
   sendNfeEvento,
   sendNfeInutilizacao,
 } from "../fiscal/sefaz-client.js";
+import { rebuildAccessKeyWithTpEmis } from "../fiscal/nfe-access-key.js";
+import {
+  isSvcTpEmis,
+  normalizeSvcJustification,
+  shouldFallbackToSvc,
+  svcForUf,
+} from "../fiscal/nfe-svc.js";
 import {
   computeItemTaxes,
   validateCustomerFiscal,
@@ -100,7 +108,8 @@ export async function buildOutboundInvoiceFromOrder(
 
   const invoiceItems = order.items.map((item, idx) => {
     const ncm = item.product.fiscalNcm;
-    const cfop = item.product.outboundOperation?.cfop ?? "5102";
+    const op = item.product.outboundOperation;
+    const cfop = op?.cfop ?? "5102";
     const orig = item.product.fiscalOrigin ?? item.product.nfeOrigin;
     if (orig == null) {
       throw new Error(
@@ -135,6 +144,11 @@ export async function buildOutboundInvoiceFromOrder(
         orig,
         csosn: ncm?.defaultCsosn ?? taxes.csosn,
         cst: ncm?.defaultCstIcms ?? taxes.cst,
+        cProd: item.product.sku ?? item.product.barcode ?? item.productId,
+        gtin: item.product.fiscalGtin ?? item.product.barcode ?? null,
+        cest: item.product.fiscalCest ?? ncm?.cest ?? null,
+        ncmException: item.product.ncmException ?? null,
+        natOp: normalizeNfeNature(op?.nature || op?.description),
       },
       _grossWeightKg: item.product.grossWeightKg
         ? Number(item.product.grossWeightKg) * item.quantity
@@ -149,6 +163,7 @@ export async function buildOutboundInvoiceFromOrder(
   const grossWeightKg = invoiceItems.reduce((s, i) => s + i._grossWeightKg, 0);
   const netWeightKg = invoiceItems.reduce((s, i) => s + i._netWeightKg, 0);
   const volumeQty = order.items.reduce((s, i) => s + i.quantity, 0);
+  const nature = resolveInvoiceNature(invoiceItems);
 
   const invoice = await prisma.$transaction(async (tx) => {
     await tx.organizationFiscalConfig.update({
@@ -172,7 +187,7 @@ export async function buildOutboundInvoiceFromOrder(
         number: nextNumber,
         series: cfg.nfeSeries,
         totalAmount,
-        issuerSnapshot: buildIssuerSnapshot(cfg),
+        issuerSnapshot: buildIssuerSnapshot(cfg, nature),
         recipientSnapshot: buildRecipientSnapshot(order.customer!),
         items: {
           create: invoiceItems.map(
@@ -236,33 +251,140 @@ export async function transmitOutboundInvoice(
   if (!recipient)
     return { ok: false as const, error: "Destinatário não encontrado na nota" };
 
-  const { accessKey, infNFeXml, issuedAt } = buildSignedNfePackage({
+  const nature = await resolveNatureForInvoice(organizationId, invoice);
+  const homolog = config!.nfeEnvironment === "HOMOLOGATION";
+  const uf = config!.uf ?? "SP";
+  const svc = svcForUf(uf);
+  const alreadySvc = isSvcTpEmis(invoice.tpEmis);
+  const forceSvc = Boolean(config!.contingencyEnabled) && !alreadySvc;
+  const startTpEmis = alreadySvc
+    ? String(invoice.tpEmis).slice(0, 1)
+    : forceSvc
+      ? svc.tpEmis
+      : "1";
+  const startJustification = isSvcTpEmis(startTpEmis)
+    ? normalizeSvcJustification(
+        invoice.contingencyJustification ??
+          (forceSvc
+            ? "Emissao forcada em contingencia SVC pelo emitente"
+            : null),
+      )
+    : null;
+
+  const workingInvoice = {
+    ...invoice,
+    tpEmis: startTpEmis,
+    contingencyJustification: startJustification,
+  };
+
+  const packageOpts = {
     config: config!,
-    invoice,
     recipient,
     emitterName: org?.displayName ?? org?.name ?? "Emitente",
     payment: {
       days: invoice.order?.paymentCondition?.days ?? 0,
     },
+    nature,
+  };
+
+  const firstPkg = buildSignedNfePackage({
+    ...packageOpts,
+    invoice: workingInvoice,
   });
+  let accessKey = firstPkg.accessKey;
+  let issuedAt = firstPkg.issuedAt;
+  let tpEmis = startTpEmis;
+  let justification = startJustification;
+  let signedNFe = signInfNFe(
+    firstPkg.infNFeXml,
+    cert.privateKeyPem,
+    cert.certPem,
+  );
+  let enviNFe = wrapEnviNFe(signedNFe);
 
-  const signedNFe = signInfNFe(infNFeXml, cert.privateKeyPem, cert.certPem);
-  const enviNFe = wrapEnviNFe(signedNFe);
-
-  const homolog = config!.nfeEnvironment === "HOMOLOGATION";
-  const sefaz = await authorizeNfe({
-    uf: config!.uf ?? "SP",
+  let sefaz = await authorizeNfe({
+    uf,
     homologation: homolog,
     enviNFeXml: enviNFe,
     pfx: cert.pfx,
     password: cert.password,
+    tpEmis,
   });
+
+  const usedSvcFallback =
+    !alreadySvc &&
+    !forceSvc &&
+    !isSvcTpEmis(tpEmis) &&
+    shouldFallbackToSvc(sefaz);
+
+  if (usedSvcFallback) {
+    await prisma.fiscalInvoiceEvent.create({
+      data: {
+        fiscalInvoiceId: invoice.id,
+        eventType: "NFeAutorizacao",
+        requestPayload: enviNFe.slice(0, 50000),
+        responsePayload: (sefaz.rawResponse || sefaz.error || "").slice(
+          0,
+          50000,
+        ),
+        success: false,
+      },
+    });
+
+    justification = normalizeSvcJustification(
+      invoice.contingencyJustification ??
+        `SEFAZ ${uf} indisponivel - emissao em ${svc.label}`,
+    );
+    tpEmis = svc.tpEmis;
+    accessKey = rebuildAccessKeyWithTpEmis(accessKey, tpEmis);
+    const svcInvoice = {
+      ...workingInvoice,
+      tpEmis,
+      contingencyJustification: justification,
+    };
+    const svcPkg = buildSignedNfePackage({
+      ...packageOpts,
+      invoice: svcInvoice,
+      accessKey,
+      issuedAt,
+    });
+    signedNFe = signInfNFe(svcPkg.infNFeXml, cert.privateKeyPem, cert.certPem);
+    enviNFe = wrapEnviNFe(signedNFe);
+    sefaz = await authorizeNfe({
+      uf,
+      homologation: homolog,
+      enviNFeXml: enviNFe,
+      pfx: cert.pfx,
+      password: cert.password,
+      tpEmis,
+    });
+  }
+
+  const issuerSnapshot = {
+    ...(typeof invoice.issuerSnapshot === "object" &&
+    invoice.issuerSnapshot != null
+      ? (invoice.issuerSnapshot as Record<string, string | null | undefined>)
+      : {}),
+    ...buildIssuerSnapshot(config!, nature),
+    ...(isSvcTpEmis(tpEmis)
+      ? {
+          tpEmis,
+          svcAuthorizer: svc.authorizer,
+          contingencyJustification: justification,
+        }
+      : {}),
+  };
+
+  const eventType =
+    usedSvcFallback || isSvcTpEmis(tpEmis)
+      ? "NFeAutorizacaoSVC"
+      : "NFeAutorizacao";
 
   const updated = await prisma.$transaction(async (tx) => {
     await tx.fiscalInvoiceEvent.create({
       data: {
         fiscalInvoiceId: invoice.id,
-        eventType: "NFeAutorizacao",
+        eventType,
         requestPayload: enviNFe.slice(0, 50000),
         responsePayload: (sefaz.rawResponse || sefaz.error || "").slice(
           0,
@@ -272,16 +394,23 @@ export async function transmitOutboundInvoice(
       },
     });
 
+    const common = {
+      tpEmis,
+      contingencyJustification: justification,
+      accessKey: sefaz.parsed.chNFe ?? accessKey,
+      xmlSigned: signedNFe,
+      issuedAt,
+      issuerSnapshot,
+    };
+
     if (sefaz.ok) {
       return tx.fiscalInvoice.update({
         where: { id: invoice.id },
         data: {
+          ...common,
           status: "AUTHORIZED",
-          accessKey: sefaz.parsed.chNFe ?? accessKey,
-          xmlSigned: signedNFe,
           xmlAuthorized: sefaz.rawResponse || signedNFe,
           protocol: sefaz.parsed.nProt ?? null,
-          issuedAt,
           rejectionReason: null,
         },
         include: { items: true, order: true },
@@ -292,10 +421,8 @@ export async function transmitOutboundInvoice(
       return tx.fiscalInvoice.update({
         where: { id: invoice.id },
         data: {
+          ...common,
           status: "TRANSMITTED",
-          accessKey,
-          xmlSigned: signedNFe,
-          issuedAt,
           rejectionReason: null,
         },
         include: { items: true, order: true },
@@ -305,10 +432,8 @@ export async function transmitOutboundInvoice(
     return tx.fiscalInvoice.update({
       where: { id: invoice.id },
       data: {
+        ...common,
         status: "REJECTED",
-        accessKey,
-        xmlSigned: signedNFe,
-        issuedAt,
         rejectionReason:
           sefaz.error ?? sefaz.parsed.xMotivo ?? "Rejeitada pela SEFAZ",
       },
@@ -426,6 +551,7 @@ export async function cancelOutboundInvoice(
     homologation: homolog,
     protocol: invoice.protocol,
     justification,
+    tpEmis: invoice.tpEmis,
   });
   const signedEvento = signInfEvento(
     infEvento,
@@ -440,6 +566,7 @@ export async function cancelOutboundInvoice(
     envEventoXml: envEvento,
     pfx: cert.pfx,
     password: cert.password,
+    tpEmis: invoice.tpEmis,
   });
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -531,6 +658,7 @@ export async function sendCartaCorrecao(
       homologation: homolog,
       correctionText,
       seqEvento,
+      tpEmis: invoice.tpEmis,
     });
   } catch (e) {
     return {
@@ -551,6 +679,7 @@ export async function sendCartaCorrecao(
     envEventoXml: envEvento,
     pfx: cert.pfx,
     password: cert.password,
+    tpEmis: invoice.tpEmis,
   });
 
   await prisma.fiscalInvoiceEvent.create({
@@ -602,6 +731,7 @@ export async function consultOutboundInvoiceSituation(
     accessKey: invoice.accessKey,
     pfx: cert.pfx,
     password: cert.password,
+    tpEmis: invoice.tpEmis,
   });
 
   await prisma.fiscalInvoiceEvent.create({
@@ -718,7 +848,10 @@ export async function inutilizarNumeracao(input: {
   };
 }
 
-function buildIssuerSnapshot(cfg: OrganizationFiscalConfig) {
+function buildIssuerSnapshot(
+  cfg: OrganizationFiscalConfig,
+  nature?: string | null,
+) {
   return {
     cnpj: cfg.cnpj,
     ie: cfg.stateRegistration,
@@ -726,7 +859,44 @@ function buildIssuerSnapshot(cfg: OrganizationFiscalConfig) {
     city: cfg.city,
     street: cfg.street,
     number: cfg.addressNumber,
+    nature: normalizeNfeNature(nature),
   };
+}
+
+function resolveInvoiceNature(items: { taxSnapshot?: unknown }[]): string {
+  for (const item of items) {
+    const snap = item.taxSnapshot as { natOp?: string } | null;
+    if (snap?.natOp?.trim()) return normalizeNfeNature(snap.natOp);
+  }
+  return normalizeNfeNature(null);
+}
+
+async function resolveNatureForInvoice(
+  organizationId: string,
+  invoice: {
+    issuerSnapshot?: unknown;
+    items: { cfop?: string | null; taxSnapshot?: unknown }[];
+  },
+): Promise<string> {
+  const snap = invoice.issuerSnapshot as { nature?: string } | null;
+  if (snap?.nature?.trim()) return normalizeNfeNature(snap.nature);
+
+  const fromItems = resolveInvoiceNature(invoice.items);
+  if (fromItems !== "VENDA DE MERCADORIA") return fromItems;
+
+  const cfop = invoice.items.find((i) => i.cfop?.trim())?.cfop?.trim();
+  if (!cfop) return normalizeNfeNature(null);
+
+  const op = await prisma.fiscalOperation.findFirst({
+    where: {
+      organizationId,
+      direction: "OUTBOUND",
+      cfop,
+      active: true,
+    },
+    select: { nature: true, description: true },
+  });
+  return normalizeNfeNature(op?.nature || op?.description);
 }
 
 function buildRecipientSnapshot(

@@ -147,3 +147,18 @@ export function cheapestPlanWithFeature(
 export function listPlans(): PlanDefinition[] {
   return PLAN_IDS.map((id) => PLAN_CATALOG[id]);
 }
+
+/** Resolve plano pelo valor mensal cobrado no Asaas (ex.: 349 → growth). */
+export function planIdFromMonthlyPrice(value: number): PlanId | null {
+  const normalized = Math.round(value * 100) / 100;
+  const match = PLAN_IDS.find(
+    (id) => PLAN_CATALOG[id].monthlyPriceBrl === normalized,
+  );
+  if (match) return match;
+  // tolerância para arredondamento do gateway (ex.: 348.99)
+  return (
+    PLAN_IDS.find(
+      (id) => Math.abs(PLAN_CATALOG[id].monthlyPriceBrl - normalized) < 0.02,
+    ) ?? null
+  );
+}

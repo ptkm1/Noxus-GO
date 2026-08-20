@@ -50,7 +50,65 @@ const SVRS_STATES = new Set([
   "TO",
 ]);
 
-export function getAutorizacaoUrl(uf: string, homologation: boolean): string {
+/** URLs da SVC-AN (SVAN unificado) e SVC-RS para autorização/eventos/consulta. */
+export function getSvcAutorizacaoUrl(
+  authorizer: "SVCAN" | "SVCRS",
+  homologation: boolean,
+): string {
+  if (authorizer === "SVCAN") {
+    return homologation
+      ? "https://hom.sefazvirtual.fazenda.gov.br/NFeAutorizacao4/NFeAutorizacao4.asmx"
+      : "https://www.sefazvirtual.fazenda.gov.br/NFeAutorizacao4/NFeAutorizacao4.asmx";
+  }
+  return homologation
+    ? "https://nfe-homologacao.svrs.rs.gov.br/ws/NfeAutorizacao/NFeAutorizacao4.asmx"
+    : "https://nfe.svrs.rs.gov.br/ws/NfeAutorizacao/NFeAutorizacao4.asmx";
+}
+
+export function getSvcRecepcaoEventoUrl(
+  authorizer: "SVCAN" | "SVCRS",
+  homologation: boolean,
+): string {
+  if (authorizer === "SVCAN") {
+    return homologation
+      ? "https://hom.sefazvirtual.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx"
+      : "https://www.sefazvirtual.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx";
+  }
+  return homologation
+    ? "https://nfe-homologacao.svrs.rs.gov.br/ws/recepcaoevento/recepcaoevento4.asmx"
+    : "https://nfe.svrs.rs.gov.br/ws/recepcaoevento/recepcaoevento4.asmx";
+}
+
+export function getSvcConsultaProtocoloUrl(
+  authorizer: "SVCAN" | "SVCRS",
+  homologation: boolean,
+): string {
+  if (authorizer === "SVCAN") {
+    return homologation
+      ? "https://hom.sefazvirtual.fazenda.gov.br/NFeConsultaProtocolo4/NFeConsultaProtocolo4.asmx"
+      : "https://www.sefazvirtual.fazenda.gov.br/NFeConsultaProtocolo4/NFeConsultaProtocolo4.asmx";
+  }
+  return homologation
+    ? "https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx"
+    : "https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx";
+}
+
+function svcAuthorizerFromTpEmis(
+  tpEmis?: string | null,
+): "SVCAN" | "SVCRS" | null {
+  const t = String(tpEmis ?? "").slice(0, 1);
+  if (t === "6") return "SVCAN";
+  if (t === "7") return "SVCRS";
+  return null;
+}
+
+export function getAutorizacaoUrl(
+  uf: string,
+  homologation: boolean,
+  tpEmis?: string | null,
+): string {
+  const svc = svcAuthorizerFromTpEmis(tpEmis);
+  if (svc) return getSvcAutorizacaoUrl(svc, homologation);
   const u = uf.toUpperCase();
   if (u === "SP") {
     return homologation
@@ -86,7 +144,10 @@ export function getDistribuicaoDfeUrl(homologation: boolean): string {
 export function getRecepcaoEventoUrl(
   uf: string,
   homologation: boolean,
+  tpEmis?: string | null,
 ): string {
+  const svc = svcAuthorizerFromTpEmis(tpEmis);
+  if (svc) return getSvcRecepcaoEventoUrl(svc, homologation);
   const u = uf.toUpperCase();
   if (u === "SP") {
     return homologation
@@ -111,7 +172,10 @@ export function getRecepcaoEventoUrl(
 export function getConsultaProtocoloUrl(
   uf: string,
   homologation: boolean,
+  tpEmis?: string | null,
 ): string {
+  const svc = svcAuthorizerFromTpEmis(tpEmis);
+  if (svc) return getSvcConsultaProtocoloUrl(svc, homologation);
   const u = uf.toUpperCase();
   if (u === "SP") {
     return homologation

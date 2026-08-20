@@ -7,6 +7,8 @@ export type CnpjCompanyData = {
   cep: string | null;
   uf: string | null;
   municipio: string | null;
+  /** Código IBGE do município (7 dígitos), quando o provedor informa. */
+  cityIbgeCode: string | null;
   logradouro: string | null;
   numero: string | null;
   complemento: string | null;

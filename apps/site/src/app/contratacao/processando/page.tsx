@@ -1,8 +1,8 @@
 "use client";
 
 import type {
-  PublicIntentNextAction,
-  PublicIntentStatus,
+    PublicIntentNextAction,
+    PublicIntentStatus,
 } from "@pedidos/shared";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -133,11 +133,16 @@ function ProcessingInner() {
         </p>
       ) : null}
 
-      {(data?.nextAction === "OPEN_CHECKOUT" || data?.nextAction === "RETRY") &&
-      data.checkoutUrl ? (
+      {(data?.nextAction === "PAY_CARD" ||
+        data?.nextAction === "RETRY" ||
+        data?.status === "PENDING") &&
+      intentId ? (
         <p>
-          <a className="btn-primary" href={data.checkoutUrl}>
-            Abrir pagamento novamente
+          <a
+            className="btn-primary"
+            href={`${appUrl()}/pagamento?intentId=${encodeURIComponent(intentId)}`}
+          >
+            Concluir pagamento com cartão
           </a>
         </p>
       ) : null}
@@ -157,13 +162,15 @@ function ProcessingInner() {
                   { method: "POST" },
                 );
                 const json = (await res.json()) as {
-                  checkoutUrl?: string;
+                  intentId?: string;
                   error?: string;
                 };
-                if (json.checkoutUrl) {
-                  window.location.assign(json.checkoutUrl);
+                if (json.intentId) {
+                  window.location.assign(
+                    `${appUrl()}/pagamento?intentId=${encodeURIComponent(json.intentId)}`,
+                  );
                 } else {
-                  setError(json.error || "Falha ao gerar novo checkout");
+                  setError(json.error || "Falha ao preparar pagamento");
                 }
               })();
             }}

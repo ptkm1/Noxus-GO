@@ -16,6 +16,7 @@ import {
   FISCAL_INVOICE_STATUS_LABELS,
   FISCAL_TAX_REGIME_LABELS,
   NFE_ENVIRONMENT_LABELS,
+  nfeTpEmisLabel,
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -114,6 +115,7 @@ type FiscalInvoice = {
   netWeightKg?: unknown;
   documentModel?: number;
   tpEmis?: string | null;
+  contingencyJustification?: string | null;
   supplier?: { tradeName?: string; legalName?: string; cnpj?: string } | null;
   order?: {
     id: string;
@@ -166,6 +168,7 @@ type FiscalSettings = {
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   NFeAutorizacao: "Autorização",
+  NFeAutorizacaoSVC: "Autorização SVC (contingência)",
   NFeCancelamento: "Cancelamento",
   NFeCartaCorrecao: "Carta de correção",
   NFeConsultaSituacao: "Consulta situação",
@@ -453,7 +456,7 @@ export function FaturamentoPage() {
       void qc.invalidateQueries({ queryKey: ["admin", "fiscal"] });
     },
     onError: (e) =>
-      notifyError(getErrorMessage(e), "SEFAZ rejeitou a transmissão"),
+      notifyError(getErrorMessage(e), "Falha na transmissão da NF-e"),
   });
 
   const sendInvoiceEmail = useMutation({
@@ -1235,6 +1238,11 @@ export function FaturamentoPage() {
                           <td className="px-4 py-3">
                             <div>
                               {FISCAL_INVOICE_STATUS_LABELS[inv.status]}
+                              {nfeTpEmisLabel(inv.tpEmis) ? (
+                                <p className="mt-0.5 text-xs font-medium text-amber-800 dark:text-amber-400">
+                                  {nfeTpEmisLabel(inv.tpEmis)}
+                                </p>
+                              ) : null}
                               {inv.transmitJobs?.[0] &&
                               (inv.transmitJobs[0].status === "PENDING" ||
                                 inv.transmitJobs[0].status === "RUNNING" ||
@@ -1526,6 +1534,14 @@ export function FaturamentoPage() {
                     <p className="font-mono text-xs text-muted-foreground">
                       Chave: {invoiceDetail.accessKey ?? "—"}
                     </p>
+                    {nfeTpEmisLabel(invoiceDetail.tpEmis) ? (
+                      <p className="rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-700/50 dark:bg-amber-950/40 dark:text-amber-100">
+                        Emitida em {nfeTpEmisLabel(invoiceDetail.tpEmis)}
+                        {invoiceDetail.contingencyJustification
+                          ? ` — ${invoiceDetail.contingencyJustification}`
+                          : ""}
+                      </p>
+                    ) : null}
                     {(invoiceDetail.status === "DRAFT" ||
                       invoiceDetail.status === "REJECTED") && (
                       <div className="rounded-lg border border-border p-3">
@@ -2050,6 +2066,34 @@ export function FaturamentoPage() {
                   onChange={(e) => setForm({ ...form, uf: e.target.value })}
                 />
               </FormField>
+              <FormField label="Cidade">
+                <Input
+                  value={form.city}
+                  onChange={(e) => setForm({ ...form, city: e.target.value })}
+                />
+              </FormField>
+              <FormField label="Logradouro">
+                <Input
+                  value={form.street}
+                  onChange={(e) => setForm({ ...form, street: e.target.value })}
+                />
+              </FormField>
+              <FormField label="Número">
+                <Input
+                  value={form.addressNumber}
+                  onChange={(e) =>
+                    setForm({ ...form, addressNumber: e.target.value })
+                  }
+                />
+              </FormField>
+              <FormField label="CEP">
+                <Input
+                  value={form.zipCode}
+                  onChange={(e) =>
+                    setForm({ ...form, zipCode: e.target.value })
+                  }
+                />
+              </FormField>
               <FormField label="Regime">
                 <AppSelect
                   value={form.taxRegime}
@@ -2284,10 +2328,9 @@ export function FaturamentoPage() {
           </FormSection>
 
           <FormSection title="Contingência (SVC)">
-            <label className="flex items-center gap-2 text-sm opacity-70">
+            <label className="flex items-center gap-2 text-sm">
               <Checkbox
                 checked={form.contingencyEnabled}
-                disabled
                 onCheckedChange={(v) =>
                   setForm({
                     ...form,
@@ -2295,11 +2338,14 @@ export function FaturamentoPage() {
                   })
                 }
               />
-              Habilitar contingência SVC (em breve)
+              Forçar emissão em contingência SVC
             </label>
             <p className="mt-2 text-sm text-muted-foreground">
-              Hook preparado (`tpEmis` / flag na config). Emissão real em
-              SVC-AN/RS ainda não está disponível nesta versão.
+              A emissão tenta primeiro a SEFAZ da UF. Se estiver indisponível
+              (timeout, HTTP 5xx, serviço paralisado / cStat 108 ou 109), a
+              nota é refeita automaticamente no SVC-AN ou SVC-RS da UF,
+              reassina e transmite. Marque esta opção só para enviar direto
+              ao SVC, mesmo com a autorizadora no ar.
             </p>
           </FormSection>
         </div>

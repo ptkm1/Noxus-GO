@@ -31,7 +31,7 @@ Arquitetura recomendada: **dois projetos Vercel** no mesmo monorepo Git.
 
 Sugestão de nome do painel: **`app.pedixpro.com.br`** (comum em SaaS). A landing já aponta “Entrar” / “Acessar o painel” para `NEXT_PUBLIC_APP_URL` + `/login`.
 
-Não é necessário `apps/site/vercel.json`: o App Router do Next é servido nativamente pela Vercel (sem rewrite SPA). O painel Vite usa `apps/web/vercel.json` (`/(.*) → /index.html`).
+Não é necessário configurar build na Vercel manualmente: `apps/site/vercel.json` define install/build do monorepo. O painel Vite usa `apps/web/vercel.json` (rewrite SPA + build).
 
 ### Projeto 1 — Site (apex)
 
@@ -53,7 +53,7 @@ Não é necessário `apps/site/vercel.json`: o App Router do Next é servido nat
 
 | Variável | Exemplo |
 | --- | --- |
-| `NEXT_PUBLIC_API_URL` | `https://api.seudominio-ou-render.com` (origem da API, sem `/api` se o client já acrescenta) |
+| `NEXT_PUBLIC_API_URL` | `https://api.pedixpro.com.br` |
 | `NEXT_PUBLIC_APP_URL` | `https://app.pedixpro.com.br` |
 
 ### Projeto 2 — Painel (subdomínio)
@@ -76,7 +76,8 @@ Não é necessário `apps/site/vercel.json`: o App Router do Next é servido nat
 
 | Variável | Exemplo |
 | --- | --- |
-| `VITE_API_URL` | mesma origem da API usada no site |
+| `VITE_API_URL` | `https://api.pedixpro.com.br` |
+| `VITE_WEB_APP_URL` | `https://app.pedixpro.com.br` |
 
 ### DNS no registrador
 

@@ -17,13 +17,23 @@ export type GatewayCheckoutItem = {
   value: number;
 };
 
+export type GatewayCustomerBilling = {
+  phone: string;
+  address: string;
+  addressNumber: string;
+  complement?: string | null;
+  province: string;
+  postalCode: string;
+  cityIbge?: string | null;
+};
+
 export type GatewaySubscriptionCheckoutInput = {
   customerId?: string;
   customerData?: {
     name: string;
     email: string;
     cpfCnpj: string;
-    phone?: string | null;
+    billing: GatewayCustomerBilling;
   };
   items: GatewayCheckoutItem[];
   cycle: "MONTHLY";
@@ -41,11 +51,70 @@ export type GatewaySubscriptionCheckout = {
   expiresAt: Date | null;
 };
 
+export type GatewayCreditCardInput = {
+  holderName: string;
+  number: string;
+  expiryMonth: string;
+  expiryYear: string;
+  ccv: string;
+};
+
+export type GatewayCreditCardHolderInput = {
+  name: string;
+  email: string;
+  cpfCnpj: string;
+  postalCode: string;
+  addressNumber: string;
+  addressComplement?: string | null;
+  phone?: string | null;
+  mobilePhone: string;
+};
+
+export type GatewaySubscriptionWithCardInput = {
+  customerId?: string;
+  customer?: GatewayCustomerInput;
+  customerBilling?: GatewayCustomerBilling;
+  value: number;
+  cycle: "MONTHLY";
+  nextDueDate: string;
+  description: string;
+  externalReference: string;
+  remoteIp: string;
+  creditCard: GatewayCreditCardInput;
+  creditCardHolderInfo: GatewayCreditCardHolderInput;
+};
+
+export type GatewaySubscriptionWithCardResult = {
+  subscriptionId: string;
+  customerId: string;
+  creditCardToken?: string | null;
+  creditCardBrand?: string | null;
+  creditCardLast4?: string | null;
+  status?: string | null;
+};
+
+export type GatewaySubscriptionUpgradeInput = {
+  subscriptionId: string;
+  customerId: string;
+  value: number;
+  description: string;
+  updatePendingPayments: boolean;
+  remoteIp: string;
+  creditCard: GatewayCreditCardInput;
+  creditCardHolderInfo: GatewayCreditCardHolderInput;
+};
+
 export type PaymentGateway = {
   createCustomer(input: GatewayCustomerInput): Promise<GatewayCustomer>;
   createSubscriptionCheckout(
     input: GatewaySubscriptionCheckoutInput,
   ): Promise<GatewaySubscriptionCheckout>;
+  createSubscriptionWithCard(
+    input: GatewaySubscriptionWithCardInput,
+  ): Promise<GatewaySubscriptionWithCardResult>;
+  upgradeSubscriptionWithCard(
+    input: GatewaySubscriptionUpgradeInput,
+  ): Promise<GatewaySubscriptionWithCardResult>;
   cancelSubscription(subscriptionId: string): Promise<void>;
 };
 

@@ -21,7 +21,8 @@ export type PermissionResource =
   | "price_tables"
   | "permissions"
   | "audit"
-  | "broadcast";
+  | "broadcast"
+  | "expedition";
 
 export const PERMISSION_RESOURCES: PermissionResource[] = [
   "dashboard",
@@ -43,6 +44,7 @@ export const PERMISSION_RESOURCES: PermissionResource[] = [
   "permissions",
   "audit",
   "broadcast",
+  "expedition",
 ];
 
 export const EDITABLE_ROLES: Role[] = ["MANAGER", "SELLER", "SUPERVISOR"];
@@ -173,6 +175,12 @@ export const ROLE_PERMISSIONS: Record<
     SELLER: "none",
     SUPERVISOR: "none",
   },
+  expedition: {
+    ADMIN: "write",
+    MANAGER: "write",
+    SELLER: "none",
+    SUPERVISOR: "none",
+  },
 };
 
 export const PERMISSION_RESOURCE_LABELS: Record<PermissionResource, string> = {
@@ -195,6 +203,7 @@ export const PERMISSION_RESOURCE_LABELS: Record<PermissionResource, string> = {
   permissions: "Permissões (matriz)",
   audit: "Auditoria",
   broadcast: "Notificar vendedores",
+  expedition: "Expedição",
 };
 
 export const ROLE_LABELS: Record<Role, string> = {

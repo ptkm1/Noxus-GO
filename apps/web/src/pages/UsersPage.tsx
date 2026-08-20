@@ -41,6 +41,10 @@ type StaffUser = {
     baseRole: string;
   } | null;
   createdAt: string;
+  activatedAt?: string | null;
+  invited?: boolean;
+  inviteEmailSent?: boolean;
+  inviteEmailError?: string;
 };
 
 type CustomProfile = {
@@ -250,9 +254,17 @@ export function UsersPage() {
         body: JSON.stringify(createBody),
       });
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       invalidateUsers();
       closeSheet();
+      if (!editingId && data.invited && data.inviteEmailSent === false) {
+        setActionError(
+          data.inviteEmailError ??
+            "O usuário foi criado, mas o e-mail de convite não foi enviado.",
+        );
+      } else if (!editingId) {
+        setActionError(null);
+      }
     },
     onError: (err) => {
       setFormError(
@@ -275,6 +287,21 @@ export function UsersPage() {
     onError: (err) => {
       setActionError(
         err instanceof Error ? err.message : "Erro ao excluir usuário",
+      );
+    },
+  });
+
+  const resendInvite = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/admin/users/${id}/resend-invite`, { method: "POST" }),
+    onSuccess: () => {
+      setActionError(null);
+    },
+    onError: (err) => {
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível reenviar o convite",
       );
     },
   });
@@ -633,6 +660,16 @@ export function UsersPage() {
                       {formatDate(u.createdAt)}
                     </TableCell>
                     <TableCell className="px-4 text-right whitespace-nowrap">
+                      {!u.activatedAt ? (
+                        <button
+                          type="button"
+                          className="mr-3 text-primary hover:underline disabled:opacity-40"
+                          disabled={batchBusy || resendInvite.isPending}
+                          onClick={() => resendInvite.mutate(u.id)}
+                        >
+                          Reenviar convite
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="mr-3 text-primary hover:underline"

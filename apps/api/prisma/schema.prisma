@@ -20,6 +20,23 @@ enum OrderStatus {
   PENDING_CREDIT_APPROVAL
 }
 
+enum OrderExpeditionStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum OrderExpeditionEventType {
+  START
+  SCAN
+  MANUAL_INC
+  MANUAL_DEC
+  COMPLETE
+  LABEL_PRINT
+  REJECT_UNKNOWN
+  REJECT_WRONG
+  REJECT_OVER
+}
+
 enum CreditPolicy {
   WARN_ONLY
   BLOCK_ORDER
@@ -287,6 +304,7 @@ model Organization {
   dailyInsights         OrganizationDailyInsight[]
   subscription          OrganizationSubscription?
   checkoutIntents       CheckoutIntent[]
+  orderExpeditions      OrderExpedition[]
 }
 
 /// Resumo matinal baseado em regras (1 por org por dia civil America/Sao_Paulo).
@@ -469,6 +487,9 @@ model User {
   auditLogs             AuditLog[]
   approvedCustomers     Customer[]           @relation("CustomerApprovedBy")
   activationTokens      AccountActivationToken[]
+  expeditionsStarted    OrderExpedition[] @relation("ExpeditionStartedBy")
+  expeditionsFinished   OrderExpedition[] @relation("ExpeditionFinishedBy")
+  expeditionEvents      OrderExpeditionEvent[]
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
 
@@ -1128,6 +1149,7 @@ model Order {
   items          OrderItem[]
   stockMovements StockMovement[]
   fiscalInvoices FiscalInvoice[]
+  expedition     OrderExpedition?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -1148,7 +1170,65 @@ model OrderItem {
   productName String
   commissionPercent Decimal? @db.Decimal(5, 2)
   commissionAmount  Decimal? @db.Decimal(14, 2)
+  expeditionItems OrderExpeditionItem[]
   createdAt   DateTime @default(now())
+}
+
+/// Conferência física de um pedido (expedição). Estoque já foi baixado na confirmação.
+model OrderExpedition {
+  id               String                 @id @default(cuid())
+  organizationId   String
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  orderId          String                 @unique
+  order            Order                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status           OrderExpeditionStatus  @default(IN_PROGRESS)
+  startedAt        DateTime               @default(now())
+  startedByUserId  String
+  startedBy        User                   @relation("ExpeditionStartedBy", fields: [startedByUserId], references: [id], onDelete: Restrict)
+  finishedAt       DateTime?
+  finishedByUserId String?
+  finishedBy       User?                  @relation("ExpeditionFinishedBy", fields: [finishedByUserId], references: [id], onDelete: SetNull)
+  volumeQty        Int                    @default(1)
+  items            OrderExpeditionItem[]
+  events           OrderExpeditionEvent[]
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([organizationId, status])
+  @@index([organizationId, startedAt])
+}
+
+model OrderExpeditionItem {
+  id            String           @id @default(cuid())
+  expeditionId  String
+  expedition    OrderExpedition  @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
+  orderItemId   String
+  orderItem     OrderItem        @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  productId     String
+  requestedQty  Int
+  checkedQty    Int              @default(0)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([expeditionId, orderItemId])
+  @@index([expeditionId])
+}
+
+model OrderExpeditionEvent {
+  id           String                    @id @default(cuid())
+  expeditionId String
+  expedition   OrderExpedition           @relation(fields: [expeditionId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User                      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  type         OrderExpeditionEventType
+  orderItemId  String?
+  productId    String?
+  barcode      String?
+  qtyDelta     Int                       @default(0)
+  reason       String?
+  createdAt    DateTime                  @default(now())
+
+  @@index([expeditionId, createdAt])
 }
 
 enum PushPlatform {
@@ -1298,7 +1378,8 @@ model OrganizationFiscalConfig {
   /// Série NFC-e (modelo 65) — arquitetura; emissão ainda não implementada.
   nfceSeries                Int?
   nfceLastNumber            Int?
-  /// Hook para contingência SVC (emissão SVC real ainda não implementada).
+  /// Contingência SVC automática (fallback se a SEFAZ da UF estiver indisponível).
+  /// true = forçar emissão já no SVC, mesmo com a autorizadora no ar.
   contingencyEnabled        Boolean         @default(false)
   certificatePfxEncrypted   Bytes?
   certificatePasswordEncrypted String?
@@ -1363,7 +1444,7 @@ model FiscalInvoice {
   status           FiscalInvoiceStatus     @default(DRAFT)
   /// 55 = NF-e; 65 = NFC-e (arquitetura — emissão 65 ainda não implementada).
   documentModel    Int                     @default(55)
-  /// Tipo de emissão SEFAZ (1=normal). Contingência SVC: hooks apenas.
+  /// Tipo de emissão SEFAZ (1=normal, 6=SVC-AN, 7=SVC-RS).
   tpEmis           String                  @default("1")
   contingencyJustification String?
   /// Modalidade frete NF-e (0–9). Default 9 = sem frete.
