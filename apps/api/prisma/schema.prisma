@@ -1378,7 +1378,8 @@ model OrganizationFiscalConfig {
   /// Série NFC-e (modelo 65) — arquitetura; emissão ainda não implementada.
   nfceSeries                Int?
   nfceLastNumber            Int?
-  /// Hook para contingência SVC (emissão SVC real ainda não implementada).
+  /// Contingência SVC automática (fallback se a SEFAZ da UF estiver indisponível).
+  /// true = forçar emissão já no SVC, mesmo com a autorizadora no ar.
   contingencyEnabled        Boolean         @default(false)
   certificatePfxEncrypted   Bytes?
   certificatePasswordEncrypted String?
@@ -1443,7 +1444,7 @@ model FiscalInvoice {
   status           FiscalInvoiceStatus     @default(DRAFT)
   /// 55 = NF-e; 65 = NFC-e (arquitetura — emissão 65 ainda não implementada).
   documentModel    Int                     @default(55)
-  /// Tipo de emissão SEFAZ (1=normal). Contingência SVC: hooks apenas.
+  /// Tipo de emissão SEFAZ (1=normal, 6=SVC-AN, 7=SVC-RS).
   tpEmis           String                  @default("1")
   contingencyJustification String?
   /// Modalidade frete NF-e (0–9). Default 9 = sem frete.

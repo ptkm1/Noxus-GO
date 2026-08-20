@@ -42,7 +42,7 @@ export async function asaasFetch<T>(
         "errors" in body &&
         Array.isArray((body as { errors: unknown }).errors)
           ? JSON.stringify((body as { errors: unknown }).errors).slice(0, 300)
-          : `Asaas HTTP ${res.status}`;
+          : `Asaas HTTP ${res.status} (${path})`;
       throw new PaymentGatewayError(msg, "ASAAS_HTTP_ERROR", res.status);
     }
 

@@ -207,4 +207,159 @@ describe("buildSignedNfePackage prod", () => {
 
     expect(infNFeXml).toContain("<natOp>Venda de mercadoria</natOp>");
   });
+
+  it("inclui dhCont e xJust quando tpEmis é SVC", () => {
+    const item = {
+      id: "i1",
+      fiscalInvoiceId: "n1",
+      productId: "p1",
+      lineNumber: 1,
+      description: "Item",
+      ncm: "19053100",
+      cfop: "5102",
+      unit: "UN",
+      quantity: 1,
+      unitPrice: 10,
+      totalPrice: 10,
+      supplierProductCode: null,
+      taxSnapshot: { orig: 0, csosn: "102" },
+      createdAt: new Date(),
+    } as unknown as FiscalInvoiceItem;
+
+    const invoice = {
+      id: "n1",
+      organizationId: "org",
+      direction: "OUTBOUND",
+      status: "DRAFT",
+      documentModel: 55,
+      tpEmis: "6",
+      contingencyJustification:
+        "SEFAZ autorizadora indisponivel - emissao em SVC",
+      modFrete: "9",
+      freightAmount: null,
+      volumeQty: null,
+      grossWeightKg: null,
+      netWeightKg: null,
+      orderId: null,
+      supplierId: null,
+      customerId: null,
+      number: 1,
+      series: 1,
+      accessKey: null,
+      totalAmount: 10,
+      issuedAt: null,
+      xmlSigned: null,
+      xmlAuthorized: null,
+      protocol: null,
+      rejectionReason: null,
+      issuerSnapshot: null,
+      recipientSnapshot: null,
+      stockApplied: false,
+      manifestationType: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [item],
+    } as unknown as FiscalInvoice & { items: FiscalInvoiceItem[] };
+
+    const issuedAt = new Date("2026-03-15T12:00:00-03:00");
+    const { infNFeXml, accessKey } = buildSignedNfePackage({
+      config: stubConfig(),
+      invoice,
+      recipient: {
+        name: "Cliente",
+        document: "11444777000161",
+        street: "Av. Paulista",
+        addressNumber: "1000",
+        district: "Bela Vista",
+        city: "São Paulo",
+        state: "SP",
+        zipCode: "01310100",
+        cityIbge: "3550308",
+      },
+      emitterName: "Empresa Demo",
+      issuedAt,
+    });
+
+    expect(infNFeXml).toContain("<tpEmis>6</tpEmis>");
+    expect(infNFeXml).toContain("<dhCont>");
+    expect(infNFeXml).toContain(
+      "<xJust>SEFAZ autorizadora indisponivel - emissao em SVC</xJust>",
+    );
+    expect(accessKey[34]).toBe("6");
+  });
+
+  it("não inclui dhCont/xJust em emissão normal", () => {
+    const item = {
+      id: "i1",
+      fiscalInvoiceId: "n1",
+      productId: "p1",
+      lineNumber: 1,
+      description: "Item",
+      ncm: "19053100",
+      cfop: "5102",
+      unit: "UN",
+      quantity: 1,
+      unitPrice: 10,
+      totalPrice: 10,
+      supplierProductCode: null,
+      taxSnapshot: { orig: 0, csosn: "102" },
+      createdAt: new Date(),
+    } as unknown as FiscalInvoiceItem;
+
+    const invoice = {
+      id: "n1",
+      organizationId: "org",
+      direction: "OUTBOUND",
+      status: "DRAFT",
+      documentModel: 55,
+      tpEmis: "1",
+      contingencyJustification: null,
+      modFrete: "9",
+      freightAmount: null,
+      volumeQty: null,
+      grossWeightKg: null,
+      netWeightKg: null,
+      orderId: null,
+      supplierId: null,
+      customerId: null,
+      number: 1,
+      series: 1,
+      accessKey: null,
+      totalAmount: 10,
+      issuedAt: null,
+      xmlSigned: null,
+      xmlAuthorized: null,
+      protocol: null,
+      rejectionReason: null,
+      issuerSnapshot: null,
+      recipientSnapshot: null,
+      stockApplied: false,
+      manifestationType: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      items: [item],
+    } as unknown as FiscalInvoice & { items: FiscalInvoiceItem[] };
+
+    const { infNFeXml } = buildSignedNfePackage({
+      config: stubConfig(),
+      invoice,
+      recipient: {
+        name: "Cliente",
+        document: "11444777000161",
+        street: "Av. Paulista",
+        addressNumber: "1000",
+        district: "Bela Vista",
+        city: "São Paulo",
+        state: "SP",
+        zipCode: "01310100",
+        cityIbge: "3550308",
+      },
+      emitterName: "Empresa Demo",
+      accessKey: "35100111222333000181550010000000011123456789",
+    });
+
+    expect(infNFeXml).toContain("<tpEmis>1</tpEmis>");
+    expect(infNFeXml).not.toContain("<dhCont>");
+    expect(infNFeXml).not.toContain("<xJust>");
+  });
 });

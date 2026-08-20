@@ -26,7 +26,9 @@ function isAllowedCheckoutUrl(url: string): boolean {
     return (
       u.hostname === "asaas.com" ||
       u.hostname.endsWith(".asaas.com") ||
-      u.hostname.includes("sandbox.asaas.com")
+      u.hostname.includes("sandbox.asaas.com") ||
+      u.hostname === "localhost" ||
+      u.hostname === "127.0.0.1"
     );
   } catch {
     return false;

@@ -41,8 +41,11 @@ export async function authorizeNfe(input: {
   enviNFeXml: string;
   pfx: Buffer;
   password: string;
+  tpEmis?: string | null;
 }): Promise<SefazAuthResult> {
-  const url = new URL(getAutorizacaoUrl(input.uf, input.homologation));
+  const url = new URL(
+    getAutorizacaoUrl(input.uf, input.homologation, input.tpEmis),
+  );
   const soap = buildSoapEnvelope(input.enviNFeXml, AUTORIZACAO_NS);
 
   try {
@@ -94,8 +97,11 @@ export async function sendNfeEvento(input: {
   envEventoXml: string;
   pfx: Buffer;
   password: string;
+  tpEmis?: string | null;
 }): Promise<SefazEventResult> {
-  const url = new URL(getRecepcaoEventoUrl(input.uf, input.homologation));
+  const url = new URL(
+    getRecepcaoEventoUrl(input.uf, input.homologation, input.tpEmis),
+  );
   const soap = buildSoapEnvelope(input.envEventoXml, EVENTO_NS);
 
   try {
@@ -132,6 +138,7 @@ export async function consultNfeProtocolo(input: {
   accessKey: string;
   pfx: Buffer;
   password: string;
+  tpEmis?: string | null;
 }): Promise<SefazEventResult> {
   const chNFe = onlyDigits(input.accessKey);
   const tpAmb = input.homologation ? "2" : "1";
@@ -139,7 +146,9 @@ export async function consultNfeProtocolo(input: {
     `<consSitNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">` +
     `<tpAmb>${tpAmb}</tpAmb><xServ>CONSULTAR</xServ><chNFe>${chNFe}</chNFe>` +
     `</consSitNFe>`;
-  const url = new URL(getConsultaProtocoloUrl(input.uf, input.homologation));
+  const url = new URL(
+    getConsultaProtocoloUrl(input.uf, input.homologation, input.tpEmis),
+  );
   const soap = buildSoapEnvelope(consSit, CONSULTA_NS);
 
   try {

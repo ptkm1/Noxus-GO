@@ -1,5 +1,6 @@
 import { escapeXml, onlyDigits } from "./nfe-access-key.js";
 import { compactNfeXml } from "./nfe-signer.js";
+import { sefazOrgaoForEvent } from "./nfe-svc.js";
 import { UF_IBGE } from "./sefaz-endpoints.js";
 
 export function buildCancelamentoEvento(input: {
@@ -10,10 +11,11 @@ export function buildCancelamentoEvento(input: {
   protocol: string;
   justification: string;
   seqEvento?: number;
+  tpEmis?: string | null;
 }) {
   const chNFe = onlyDigits(input.accessKey);
   const cnpj = onlyDigits(input.cnpj).padStart(14, "0").slice(0, 14);
-  const cOrgao = UF_IBGE[input.uf.toUpperCase()] ?? "35";
+  const cOrgao = sefazOrgaoForEvent(input.uf, input.tpEmis);
   const tpAmb = input.homologation ? "2" : "1";
   const nSeq = String(input.seqEvento ?? 1).padStart(2, "0");
   const tpEvento = "110111";
@@ -34,6 +36,7 @@ export function buildCartaCorrecaoEvento(input: {
   homologation: boolean;
   correctionText: string;
   seqEvento?: number;
+  tpEmis?: string | null;
 }) {
   const text = input.correctionText.trim();
   if (text.length < 15 || text.length > 1000) {
@@ -41,7 +44,7 @@ export function buildCartaCorrecaoEvento(input: {
   }
   const chNFe = onlyDigits(input.accessKey);
   const cnpj = onlyDigits(input.cnpj).padStart(14, "0").slice(0, 14);
-  const cOrgao = UF_IBGE[input.uf.toUpperCase()] ?? "35";
+  const cOrgao = sefazOrgaoForEvent(input.uf, input.tpEmis);
   const tpAmb = input.homologation ? "2" : "1";
   const nSeq = input.seqEvento ?? 1;
   const tpEvento = "110110";

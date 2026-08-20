@@ -28,6 +28,13 @@ import {
   sendNfeEvento,
   sendNfeInutilizacao,
 } from "../fiscal/sefaz-client.js";
+import { rebuildAccessKeyWithTpEmis } from "../fiscal/nfe-access-key.js";
+import {
+  isSvcTpEmis,
+  normalizeSvcJustification,
+  shouldFallbackToSvc,
+  svcForUf,
+} from "../fiscal/nfe-svc.js";
 import {
   computeItemTaxes,
   validateCustomerFiscal,
@@ -245,41 +252,139 @@ export async function transmitOutboundInvoice(
     return { ok: false as const, error: "Destinatário não encontrado na nota" };
 
   const nature = await resolveNatureForInvoice(organizationId, invoice);
-  const { accessKey, infNFeXml, issuedAt } = buildSignedNfePackage({
+  const homolog = config!.nfeEnvironment === "HOMOLOGATION";
+  const uf = config!.uf ?? "SP";
+  const svc = svcForUf(uf);
+  const alreadySvc = isSvcTpEmis(invoice.tpEmis);
+  const forceSvc = Boolean(config!.contingencyEnabled) && !alreadySvc;
+  const startTpEmis = alreadySvc
+    ? String(invoice.tpEmis).slice(0, 1)
+    : forceSvc
+      ? svc.tpEmis
+      : "1";
+  const startJustification = isSvcTpEmis(startTpEmis)
+    ? normalizeSvcJustification(
+        invoice.contingencyJustification ??
+          (forceSvc
+            ? "Emissao forcada em contingencia SVC pelo emitente"
+            : null),
+      )
+    : null;
+
+  const workingInvoice = {
+    ...invoice,
+    tpEmis: startTpEmis,
+    contingencyJustification: startJustification,
+  };
+
+  const packageOpts = {
     config: config!,
-    invoice,
     recipient,
     emitterName: org?.displayName ?? org?.name ?? "Emitente",
     payment: {
       days: invoice.order?.paymentCondition?.days ?? 0,
     },
     nature,
-  });
-
-  const signedNFe = signInfNFe(infNFeXml, cert.privateKeyPem, cert.certPem);
-  const enviNFe = wrapEnviNFe(signedNFe);
-  const issuerSnapshot = {
-    ...(typeof invoice.issuerSnapshot === "object" &&
-    invoice.issuerSnapshot != null
-      ? (invoice.issuerSnapshot as Record<string, unknown>)
-      : {}),
-    ...buildIssuerSnapshot(config!, nature),
   };
 
-  const homolog = config!.nfeEnvironment === "HOMOLOGATION";
-  const sefaz = await authorizeNfe({
-    uf: config!.uf ?? "SP",
+  const firstPkg = buildSignedNfePackage({
+    ...packageOpts,
+    invoice: workingInvoice,
+  });
+  let accessKey = firstPkg.accessKey;
+  let issuedAt = firstPkg.issuedAt;
+  let tpEmis = startTpEmis;
+  let justification = startJustification;
+  let signedNFe = signInfNFe(
+    firstPkg.infNFeXml,
+    cert.privateKeyPem,
+    cert.certPem,
+  );
+  let enviNFe = wrapEnviNFe(signedNFe);
+
+  let sefaz = await authorizeNfe({
+    uf,
     homologation: homolog,
     enviNFeXml: enviNFe,
     pfx: cert.pfx,
     password: cert.password,
+    tpEmis,
   });
+
+  const usedSvcFallback =
+    !alreadySvc &&
+    !forceSvc &&
+    !isSvcTpEmis(tpEmis) &&
+    shouldFallbackToSvc(sefaz);
+
+  if (usedSvcFallback) {
+    await prisma.fiscalInvoiceEvent.create({
+      data: {
+        fiscalInvoiceId: invoice.id,
+        eventType: "NFeAutorizacao",
+        requestPayload: enviNFe.slice(0, 50000),
+        responsePayload: (sefaz.rawResponse || sefaz.error || "").slice(
+          0,
+          50000,
+        ),
+        success: false,
+      },
+    });
+
+    justification = normalizeSvcJustification(
+      invoice.contingencyJustification ??
+        `SEFAZ ${uf} indisponivel - emissao em ${svc.label}`,
+    );
+    tpEmis = svc.tpEmis;
+    accessKey = rebuildAccessKeyWithTpEmis(accessKey, tpEmis);
+    const svcInvoice = {
+      ...workingInvoice,
+      tpEmis,
+      contingencyJustification: justification,
+    };
+    const svcPkg = buildSignedNfePackage({
+      ...packageOpts,
+      invoice: svcInvoice,
+      accessKey,
+      issuedAt,
+    });
+    signedNFe = signInfNFe(svcPkg.infNFeXml, cert.privateKeyPem, cert.certPem);
+    enviNFe = wrapEnviNFe(signedNFe);
+    sefaz = await authorizeNfe({
+      uf,
+      homologation: homolog,
+      enviNFeXml: enviNFe,
+      pfx: cert.pfx,
+      password: cert.password,
+      tpEmis,
+    });
+  }
+
+  const issuerSnapshot = {
+    ...(typeof invoice.issuerSnapshot === "object" &&
+    invoice.issuerSnapshot != null
+      ? (invoice.issuerSnapshot as Record<string, string | null | undefined>)
+      : {}),
+    ...buildIssuerSnapshot(config!, nature),
+    ...(isSvcTpEmis(tpEmis)
+      ? {
+          tpEmis,
+          svcAuthorizer: svc.authorizer,
+          contingencyJustification: justification,
+        }
+      : {}),
+  };
+
+  const eventType =
+    usedSvcFallback || isSvcTpEmis(tpEmis)
+      ? "NFeAutorizacaoSVC"
+      : "NFeAutorizacao";
 
   const updated = await prisma.$transaction(async (tx) => {
     await tx.fiscalInvoiceEvent.create({
       data: {
         fiscalInvoiceId: invoice.id,
-        eventType: "NFeAutorizacao",
+        eventType,
         requestPayload: enviNFe.slice(0, 50000),
         responsePayload: (sefaz.rawResponse || sefaz.error || "").slice(
           0,
@@ -289,18 +394,24 @@ export async function transmitOutboundInvoice(
       },
     });
 
+    const common = {
+      tpEmis,
+      contingencyJustification: justification,
+      accessKey: sefaz.parsed.chNFe ?? accessKey,
+      xmlSigned: signedNFe,
+      issuedAt,
+      issuerSnapshot,
+    };
+
     if (sefaz.ok) {
       return tx.fiscalInvoice.update({
         where: { id: invoice.id },
         data: {
+          ...common,
           status: "AUTHORIZED",
-          accessKey: sefaz.parsed.chNFe ?? accessKey,
-          xmlSigned: signedNFe,
           xmlAuthorized: sefaz.rawResponse || signedNFe,
           protocol: sefaz.parsed.nProt ?? null,
-          issuedAt,
           rejectionReason: null,
-          issuerSnapshot,
         },
         include: { items: true, order: true },
       });
@@ -310,12 +421,9 @@ export async function transmitOutboundInvoice(
       return tx.fiscalInvoice.update({
         where: { id: invoice.id },
         data: {
+          ...common,
           status: "TRANSMITTED",
-          accessKey,
-          xmlSigned: signedNFe,
-          issuedAt,
           rejectionReason: null,
-          issuerSnapshot,
         },
         include: { items: true, order: true },
       });
@@ -324,13 +432,10 @@ export async function transmitOutboundInvoice(
     return tx.fiscalInvoice.update({
       where: { id: invoice.id },
       data: {
+        ...common,
         status: "REJECTED",
-        accessKey,
-        xmlSigned: signedNFe,
-        issuedAt,
         rejectionReason:
           sefaz.error ?? sefaz.parsed.xMotivo ?? "Rejeitada pela SEFAZ",
-        issuerSnapshot,
       },
       include: { items: true, order: true },
     });
@@ -446,6 +551,7 @@ export async function cancelOutboundInvoice(
     homologation: homolog,
     protocol: invoice.protocol,
     justification,
+    tpEmis: invoice.tpEmis,
   });
   const signedEvento = signInfEvento(
     infEvento,
@@ -460,6 +566,7 @@ export async function cancelOutboundInvoice(
     envEventoXml: envEvento,
     pfx: cert.pfx,
     password: cert.password,
+    tpEmis: invoice.tpEmis,
   });
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -551,6 +658,7 @@ export async function sendCartaCorrecao(
       homologation: homolog,
       correctionText,
       seqEvento,
+      tpEmis: invoice.tpEmis,
     });
   } catch (e) {
     return {
@@ -571,6 +679,7 @@ export async function sendCartaCorrecao(
     envEventoXml: envEvento,
     pfx: cert.pfx,
     password: cert.password,
+    tpEmis: invoice.tpEmis,
   });
 
   await prisma.fiscalInvoiceEvent.create({
@@ -622,6 +731,7 @@ export async function consultOutboundInvoiceSituation(
     accessKey: invoice.accessKey,
     pfx: cert.pfx,
     password: cert.password,
+    tpEmis: invoice.tpEmis,
   });
 
   await prisma.fiscalInvoiceEvent.create({

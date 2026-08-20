@@ -129,6 +129,7 @@ export {
   FISCAL_MANIFESTATION_LABELS,
   FISCAL_TAX_REGIME_LABELS,
   isProductFiscalReady,
+  nfeTpEmisLabel,
   NFE_ENVIRONMENT_LABELS,
 } from "./fiscal.js";
 export type {

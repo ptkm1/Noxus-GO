@@ -1,37 +1,44 @@
 import rateLimit from "@fastify/rate-limit";
 import {
-  cnpjDigitsOnly,
-  isPlanId,
-  isValidCnpj,
-  type PlanId,
+    cnpjDigitsOnly,
+    isPlanId,
+    isValidCnpj,
+    type PlanId,
 } from "@pedidos/shared";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
-  signAccessToken,
-  signRefreshToken,
-  verifyRefreshToken,
+    signAccessToken,
+    signRefreshToken,
+    verifyRefreshToken,
 } from "../auth/jwt.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { prisma } from "../db.js";
 import {
-  consumeActivationToken,
-  consumePasswordResetToken,
-  createActivationToken,
+    consumeActivationToken,
+    consumePasswordResetToken,
+    createActivationToken,
 } from "../services/billing/account-activation.js";
 import { sendPasswordResetEmail } from "../services/billing/activation-email.js";
 import { getOrgEntitlements } from "../services/billing/entitlements.js";
+import {
+    isFakePaymentGatewayEnabled,
+    isPaymentRequiredForSignup,
+    resolvePaymentGateway,
+} from "../services/billing/resolve-payment-gateway.js";
+import { createCheckoutForRegisteredOrg } from "../services/billing/subscription-intent-service.js";
+import { resolveUserForCompletedCheckout } from "../services/billing/claim-checkout-session.js";
 import { syncOrgAccessFromSubscription } from "../services/billing/subscription-access.js";
 import { fiscalConfigCreateData } from "../services/cnpj/fiscal-emitente.js";
 import { lookupFiscalEmitente } from "../services/cnpj/lookup-fiscal-emitente.js";
 import { ensureDefaultOrderSituations } from "../services/order-situations.js";
 import {
-  ensureOrgRolePermissions,
-  getPermissionsMapForUser,
+    ensureOrgRolePermissions,
+    getPermissionsMapForUser,
 } from "../services/role-permissions.js";
 import {
-  resolveTeamLeaderContext,
-  resolveTeamLeaderTeamId,
+    resolveTeamLeaderContext,
+    resolveTeamLeaderTeamId,
 } from "../services/sales-teams.js";
 import { getAuth } from "../util/guards.js";
 
@@ -170,13 +177,21 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
     const emitente = await lookupFiscalEmitente(cnpj);
 
+    const payRequired = isPaymentRequiredForSignup();
+    if (payRequired && !resolvePaymentGateway()) {
+      return reply.status(503).send({
+        error: "Pagamentos indisponíveis no momento. Tente novamente em breve.",
+        code: "ASAAS_NOT_CONFIGURED",
+      });
+    }
+
     const passwordHash = await hashPassword(password);
     const user = await prisma.$transaction(async (tx) => {
       const org = await tx.organization.create({
         data: {
           name: organizationName,
           displayName: organizationName,
-          accessStatus: "ACTIVE",
+          accessStatus: payRequired ? "PENDING_PAYMENT" : "ACTIVE",
           document: cnpj,
           cnpj,
         },
@@ -187,14 +202,19 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       const now = new Date();
       const trialEnd = new Date(now);
       trialEnd.setDate(trialEnd.getDate() + 14);
+      const provider = !payRequired
+        ? "none"
+        : isFakePaymentGatewayEnabled()
+          ? "fake"
+          : "asaas";
       await tx.organizationSubscription.create({
         data: {
           organizationId: org.id,
           planId,
-          status: "TRIAL",
-          provider: "none",
+          status: payRequired ? "INCOMPLETE" : "TRIAL",
+          provider,
           currentPeriodStart: now,
-          currentPeriodEnd: trialEnd,
+          currentPeriodEnd: payRequired ? null : trialEnd,
         },
       });
       return tx.user.create({
@@ -213,6 +233,26 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     await ensureOrgRolePermissions(user.organizationId);
     await ensureDefaultOrderSituations(user.organizationId);
 
+    let checkout: { intentId: string; checkoutUrl: string } | null = null;
+    let checkoutError: string | null = null;
+    if (payRequired) {
+      try {
+        checkout = await createCheckoutForRegisteredOrg({
+          organizationId: user.organizationId,
+          ownerUserId: user.id,
+          planId,
+          companyName: organizationName,
+          adminName: name,
+          email,
+          document: cnpj,
+          lockAccessUntilPaid: true,
+        });
+      } catch (err) {
+        checkoutError =
+          err instanceof Error ? err.message : "Falha ao preparar pagamento";
+      }
+    }
+
     const accessToken = signAccessToken(await accessPayloadForUser(user));
     const refreshToken = signRefreshToken(user.id);
     const me = await userResponseForMe(user);
@@ -221,6 +261,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       accessToken,
       refreshToken,
       user: me,
+      requiresPayment: payRequired,
+      intentId: checkout?.intentId ?? null,
+      checkoutUrl: checkout?.checkoutUrl ?? null,
+      checkoutError,
     };
   });
 
@@ -289,7 +333,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         accessStatus: access.accessStatus,
       });
     }
-    if (access.pendingPayment) {
+    if (access.pendingPayment && user.role !== "ADMIN") {
       return reply.status(403).send({
         error: access.message || "Pagamento pendente.",
         code: "ORG_PENDING_PAYMENT",
@@ -357,6 +401,33 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(404).send({ error: "Usuário não encontrado" });
 
     return userResponseForMe(user);
+  });
+
+  app.post("/complete-payment", async (req, reply) => {
+    const body = z.object({ intentId: z.string().min(1) }).safeParse(req.body);
+    if (!body.success) {
+      return reply
+        .status(400)
+        .send({ error: "Dados inválidos", details: body.error.flatten() });
+    }
+    try {
+      const user = await resolveUserForCompletedCheckout(body.data.intentId);
+      await ensureOrgRolePermissions(user.organizationId);
+      await ensureDefaultOrderSituations(user.organizationId);
+      const accessToken = signAccessToken(await accessPayloadForUser(user));
+      const refreshToken = signRefreshToken(user.id);
+      return {
+        accessToken,
+        refreshToken,
+        user: await userResponseForMe(user),
+      };
+    } catch (err) {
+      const e = err as { message?: string; code?: string; http?: number };
+      return reply.status(e.http ?? 500).send({
+        error: e.message || "Falha ao concluir pagamento",
+        code: e.code,
+      });
+    }
   });
 
   app.post("/activate-account", async (req, reply) => {

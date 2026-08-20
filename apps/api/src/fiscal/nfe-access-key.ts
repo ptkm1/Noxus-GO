@@ -30,9 +30,23 @@ export function generateAccessKey(input: {
   const mod = input.model ?? "55";
   const serie = String(input.series).padStart(3, "0");
   const nNF = String(input.number).padStart(9, "0");
-  const tpEmis = input.tpEmis ?? "1";
+  const tpEmis = String(input.tpEmis ?? "1").replace(/\D/g, "").slice(-1) || "1";
   const cNF = String(randomInt(0, 100_000_000)).padStart(8, "0");
   const base = `${cUF}${aamm}${cnpj}${mod}${serie}${nNF}${tpEmis}${cNF}`;
+  return `${base}${mod11Digit(base)}`;
+}
+
+/** Recalcula a chave preservando cNF/AAMM e trocando só o tpEmis + DV. */
+export function rebuildAccessKeyWithTpEmis(
+  accessKey: string,
+  tpEmis: string,
+): string {
+  const digits = onlyDigits(accessKey);
+  if (digits.length !== 44) {
+    throw new Error("Chave de acesso inválida para recalcular tpEmis");
+  }
+  const tp = String(tpEmis).replace(/\D/g, "").slice(-1) || "1";
+  const base = `${digits.slice(0, 34)}${tp}${digits.slice(35, 43)}`;
   return `${base}${mod11Digit(base)}`;
 }
 

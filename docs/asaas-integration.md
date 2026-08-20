@@ -1,59 +1,70 @@
 # Integração Asaas — contratação PedixPro
 
-Checkout recorrente hospedado (Sandbox/produção) no fluxo de contratação da landing. A conta só é ativada via webhook — o retorno do browser nunca ativa.
+Checkout recorrente hospedado (Sandbox/produção). A conta **nova** no painel (`/cadastro`) e a contratação da landing só liberam o ERP após webhook (ou simulação com `PAYMENT_GATEWAY=fake`). O retorno do browser nunca ativa sozinho.
 
-## Fluxo
+## Fluxo do usuário (conta nova no app)
 
-1. Landing (`CheckoutForm`) envia `POST /api/v1/billing/subscription-intents` (sem senha).
-2. API cria organização `PENDING_PAYMENT`, usuário admin pendente (`activatedAt = null`), `CheckoutIntent` e checkout Asaas (`chargeTypes: RECURRENT`, cartão).
-3. Landing redireciona para `checkoutUrl` (host Asaas validado).
-4. Após pagamento, Asaas notifica `POST /api/v1/webhooks/asaas` com header `asaas-access-token`.
-5. Em `PAYMENT_CONFIRMED` (ou reconciliação `CHECKOUT_PAID`): org `ACTIVE`, assinatura `ACTIVE`, token de ativação + e-mail.
-6. Admin define senha em `{APP}/ativar-conta?token=…` → login no ERP.
-7. Página `{LANDING}/contratacao/processando?intentId=…` faz polling do status público.
+1. `/cadastro`: CNPJ, dados do admin, senha e **plano** (preços do `PLAN_CATALOG`).
+2. `POST /auth/register` cria org `PENDING_PAYMENT` + admin já com senha.
+3. API cria customer + checkout Asaas (cartão / Pix / boleto) e devolve `checkoutUrl`.
+4. O browser abre o checkout Asaas; ao voltar, `/pagamento` faz polling.
+5. Webhook `POST /api/v1/webhooks/asaas` (`asaas-access-token`) ativa a org.
+6. Admin entra no painel com a senha definida no cadastro.
 
-```
-Landing → API (intent) → Asaas checkout → Webhook PAYMENT_CONFIRMED → e-mail → /ativar-conta
-```
+A landing (`CheckoutForm` → `POST /billing/subscription-intents`) continua: org pendente, senha só depois do e-mail de ativação.
+
+Upgrade logado: Configurações → Assinar / mudar plano → `POST /billing/checkout` (não bloqueia trial existente até o pagamento).
 
 ## Variáveis de ambiente
 
-| Variável                                                 | Descrição                                          |
-| -------------------------------------------------------- | -------------------------------------------------- |
-| `ASAAS_API_KEY`                                          | Token API (`access_token`)                         |
-| `ASAAS_BASE_URL`                                         | Padrão sandbox: `https://api-sandbox.asaas.com/v3` |
-| `ASAAS_WEBHOOK_TOKEN`                                    | Valor esperado no header `asaas-access-token`      |
-| `ASAAS_ENVIRONMENT`                                      | `sandbox` \| `production`                          |
-| `ASAAS_CHECKOUT_URL_PREFIX`                              | Prefixo permitido para redirect do browser         |
-| `PEDIXPRO_LANDING_URL` / `SITE_PUBLIC_URL`               | Landing (callback processando)                     |
-| `PEDIXPRO_APP_URL` / `WEB_PUBLIC_URL` / `WEB_APP_ORIGIN` | Painel (link ativar conta)                         |
-| `SUBSCRIPTION_GRACE_PERIOD_DAYS`                         | Dias em `PAST_DUE` antes de `SUSPENDED` (padrão 7) |
+| Variável | Descrição |
+| --- | --- |
+| `PAYMENT_GATEWAY` | `auto` (padrão), `asaas` ou `fake` |
+| `ASAAS_API_KEY` | Token API (`access_token` header). Sem isso, `auto` mantém trial de 14 dias no cadastro |
+| `ASAAS_BASE_URL` | Padrão sandbox: `https://api-sandbox.asaas.com/v3` |
+| `ASAAS_WEBHOOK_TOKEN` | Valor esperado no header `asaas-access-token` |
+| `ASAAS_ENVIRONMENT` | `sandbox` \| `production` |
+| `ASAAS_CHECKOUT_URL_PREFIX` | Prefixo permitido para redirect do browser |
+| `PEDIXPRO_LANDING_URL` / `SITE_PUBLIC_URL` | Landing (callback contratação) |
+| `PEDIXPRO_APP_URL` / `WEB_PUBLIC_URL` / `WEB_APP_ORIGIN` | Painel (`/pagamento`, ativar conta) |
+| `SUBSCRIPTION_GRACE_PERIOD_DAYS` | Dias em `PAST_DUE` antes de `SUSPENDED` (padrão 7) |
+
+`PAYMENT_GATEWAY=fake` não chama a API Asaas; `/pagamento` oferece “Simular pagamento”. Não use fake em produção.
 
 Ver também `apps/api/.env.example`.
 
+```
+App /cadastro → POST /auth/register → Asaas checkout → Webhook → /pagamento → painel
+Landing → POST /billing/subscription-intents → Asaas → Webhook → e-mail → /ativar-conta
+```
+
 ## Endpoints
 
-| Método | Rota                                              | Auth                           |
-| ------ | ------------------------------------------------- | ------------------------------ |
-| `POST` | `/api/v1/billing/subscription-intents`            | Público + rate-limit           |
-| `POST` | `/api/v1/billing/subscription-intents/:id/retry`  | Público + rate-limit           |
-| `GET`  | `/api/v1/billing/subscription-intents/:id/status` | Público (payload seguro)       |
-| `GET`  | `/api/v1/billing/plans`                           | Público                        |
-| `POST` | `/api/v1/webhooks/asaas`                          | Token Asaas                    |
-| `POST` | `/api/v1/auth/activate-account`                   | Público (`token` + `password`) |
-| `POST` | `/api/v1/admin/billing/cancel`                    | ADMIN                          |
+| Método | Rota | Auth |
+| --- | --- | --- |
+| `POST` | `/api/v1/auth/register` | Público (plano + checkout se gateway ativo) |
+| `POST` | `/api/v1/billing/subscription-intents` | Público + rate-limit |
+| `POST` | `/api/v1/billing/subscription-intents/:id/retry` | Público + rate-limit |
+| `GET` | `/api/v1/billing/subscription-intents/:id/status` | Público (payload seguro) |
+| `POST` | `/api/v1/billing/subscription-intents/:id/simulate` | Só `PAYMENT_GATEWAY=fake` |
+| `GET` | `/api/v1/billing/plans` | Público |
+| `GET` | `/api/v1/billing/checkout/open` | ADMIN |
+| `POST` | `/api/v1/billing/checkout` | ADMIN |
+| `POST` | `/api/v1/billing/cancel` | ADMIN |
+| `POST` | `/api/v1/webhooks/asaas` | Token Asaas |
+| `POST` | `/api/v1/auth/activate-account` | Público (`token` + `password`) |
 
 `POST /billing/checkout-intent` (stub) responde `410` — use subscription-intents.
 
 ## Eventos de webhook (MVP)
 
-| Evento                                 | Efeito                                                       |
-| -------------------------------------- | ------------------------------------------------------------ |
-| `PAYMENT_CONFIRMED`, `CHECKOUT_PAID`   | Ativa org/assinatura + e-mail de senha                       |
-| `PAYMENT_OVERDUE`                      | `PAST_DUE` + grace period                                    |
-| `CHECKOUT_EXPIRED`                     | Intent `EXPIRED`                                             |
-| `SUBSCRIPTION_DELETED` / cancelamentos | `CANCELED`                                                   |
-| Demais                                 | Persistidos como ignore (idempotentes via `providerEventId`) |
+| Evento | Efeito |
+| --- | --- |
+| `PAYMENT_CONFIRMED`, `PAYMENT_RECEIVED`, `CHECKOUT_PAID` | Ativa org/assinatura (+ e-mail de senha se a conta ainda não foi ativada) |
+| `PAYMENT_OVERDUE` | `PAST_DUE` + grace period |
+| `CHECKOUT_EXPIRED` | Intent `EXPIRED` |
+| `SUBSCRIPTION_DELETED` / cancelamentos | `CANCELED` |
+| Demais | Persistidos como ignore (idempotentes via `providerEventId`) |
 
 ## Planos
 
@@ -62,8 +73,9 @@ IDs oficiais: `starter` \| `growth` \| `pro` (fonte: `packages/shared` `PLAN_CAT
 ## Gates de acesso
 
 - Login exige `User.activatedAt != null`.
-- Org `PENDING_PAYMENT` / `SUSPENDED` / `CANCELED`: staff bloqueado no web; mobile mostra mensagem neutra (sem preço/checkout).
-- Inadimplência: webhook → `PAST_DUE` → após grace → `SUSPENDED` (check em entitlements/access).
+- Org `PENDING_PAYMENT`: admin pode autenticar só para `/pagamento`; demais roles bloqueados.
+- `SUSPENDED` / `CANCELED`: staff bloqueado; mobile mostra mensagem neutra.
+- Inadimplência: webhook → `PAST_DUE` → após grace → `SUSPENDED`.
 
 ## Convites e limites
 
@@ -74,8 +86,8 @@ Criação de usuário/vendedor sem senha (ou `invite: true`) gera `AccountActiva
 1. Criar conta Asaas Sandbox e gerar API key + token de webhook.
 2. Configurar webhook apontando para a API pública (`/api/v1/webhooks/asaas`), eventos de pagamento/assinatura/checkout.
 3. Preencher envs na API e redeploy.
-4. Na landing, contratar um plano de teste com cartão sandbox.
-5. Confirmar e-mail de ativação e `/ativar-conta`.
+4. No app, criar conta em `/cadastro`, pagar no sandbox (cartão de teste Asaas) e conferir webhook + `/pagamento`.
+5. Na landing, contratar um plano de teste (fluxo com e-mail de senha).
 6. Validar cancelamento de renovação em Configurações (ADMIN).
 
 ## Checklist produção
@@ -88,7 +100,7 @@ Criação de usuário/vendedor sem senha (ou `invite: true`) gera `AccountActiva
 
 ## Fora do MVP (documentado)
 
-- Pix Automático / boleto recorrente
+- Pix Automático / boleto como recorrência nativa (o checkout já oferece Pix/boleto na 1ª cobrança + cartão recorrente)
 - Portal completo de faturas Asaas no ERP
 - Onboarding wizard rico (hoje: pós-senha → `/` ou `/primeiro-acesso`)
 - Preço anual / multi-moeda

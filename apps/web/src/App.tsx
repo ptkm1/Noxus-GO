@@ -1,20 +1,20 @@
 import { canRead, planHasFeature } from "@pedidos/shared";
 import { QueryClientProvider } from "@tanstack/react-query";
 import {
-  BrowserRouter,
-  Navigate,
-  Outlet,
-  Route,
-  Routes,
-  useLocation,
-  useParams,
+    BrowserRouter,
+    Navigate,
+    Outlet,
+    Route,
+    Routes,
+    useLocation,
+    useParams,
 } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { ConfirmProvider } from "./components/confirm";
 import { AppLogo } from "./components/layout/AppLogo";
 import {
-  planFeatureForPath,
-  resourceForPath,
+    planFeatureForPath,
+    resourceForPath,
 } from "./components/layout/navConfig";
 import { PublicAuthLayout } from "./components/layout/PublicAuthLayout";
 import { PlanFeatureGate } from "./components/PlanFeatureGate";
@@ -50,6 +50,7 @@ import { PriceTablesPage } from "./pages/PriceTablesPage";
 import { ProductCategoriesPage } from "./pages/ProductCategoriesPage";
 import { ProductFormPage } from "./pages/ProductFormPage";
 import { ProductsPage } from "./pages/ProductsPage";
+import { PaymentPendingPage } from "./pages/PaymentPendingPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ReportCustomersPage } from "./pages/ReportCustomersPage";
 import { ReportOrderItemsPage } from "./pages/ReportOrderItemsPage";
@@ -159,8 +160,7 @@ function StaffGate({ children }: { children: React.ReactNode }) {
   if (!user) return <Navigate to="/login" replace />;
   if (
     user.accessStatus === "SUSPENDED" ||
-    user.accessStatus === "CANCELED" ||
-    user.accessStatus === "PENDING_PAYMENT"
+    user.accessStatus === "CANCELED"
   ) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
@@ -179,6 +179,9 @@ function StaffGate({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
+  if (user.accessStatus === "PENDING_PAYMENT") {
+    return <Navigate to="/pagamento" replace />;
+  }
   if (!isWebStaff(user)) {
     return <SellerNotice />;
   }
@@ -192,8 +195,13 @@ function AppRoutes() {
       <Route
         path="/login"
         element={
-          !loading && isWebStaff(user) ? (
-            <Navigate to="/" replace />
+          !loading && user && isWebStaff(user) ? (
+            <Navigate
+              to={
+                user.accessStatus === "PENDING_PAYMENT" ? "/pagamento" : "/"
+              }
+              replace
+            />
           ) : (
             <PublicAuthLayout variant="login">
               <LoginPage />
@@ -210,11 +218,27 @@ function AppRoutes() {
       <Route
         path="/cadastro"
         element={
-          !loading && user?.role === "ADMIN" ? (
+          !loading &&
+          user?.role === "ADMIN" &&
+          user.accessStatus !== "PENDING_PAYMENT" ? (
             <Navigate to="/" replace />
           ) : (
             <PublicAuthLayout variant="register">
               <RegisterPage />
+            </PublicAuthLayout>
+          )
+        }
+      />
+      <Route
+        path="/pagamento"
+        element={
+          loading ? (
+            <div className="flex min-h-screen items-center justify-center text-muted-foreground">
+              Carregando…
+            </div>
+          ) : (
+            <PublicAuthLayout variant="register">
+              <PaymentPendingPage />
             </PublicAuthLayout>
           )
         }

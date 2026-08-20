@@ -43,6 +43,14 @@ export async function syncOrgAccessFromSubscription(
   const sub = org.subscription;
   const now = Date.now();
 
+  if (sub?.status === "ACTIVE" && accessStatus === "PENDING_PAYMENT") {
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: { accessStatus: "ACTIVE" },
+    });
+    accessStatus = "ACTIVE";
+  }
+
   if (
     accessStatus === "PAST_DUE" &&
     sub?.gracePeriodEndsAt &&

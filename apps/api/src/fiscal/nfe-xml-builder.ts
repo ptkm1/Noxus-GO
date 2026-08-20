@@ -12,6 +12,7 @@ import {
 } from "./nfe-access-key.js";
 import { nfeCest, nfeCProd, nfeExtIpi, nfeGtin } from "./nfe-prod-fields.js";
 import { compactNfeXml } from "./nfe-signer.js";
+import { isSvcTpEmis, normalizeSvcJustification } from "./nfe-svc.js";
 import { UF_IBGE } from "./sefaz-endpoints.js";
 
 /** Limite do schema NF-e para `ide/natOp`. */
@@ -224,13 +225,16 @@ export function buildSignedNfePackage(input: {
   payment?: NfePaymentInfo;
   /** Texto de `ide/natOp` (natureza da operação / CFOP). */
   nature?: string | null;
+  /** Reutilizar dhEmi/chave ao reenviar em SVC. */
+  issuedAt?: Date;
 }) {
   if ((input.invoice.documentModel ?? 55) !== 55) {
     throw new Error(
       "Emissão NFC-e (modelo 65) ainda não implementada — use documentModel 55.",
     );
   }
-  const issuedAt = new Date();
+  const issuedAt = input.issuedAt ?? new Date();
+  const tpEmis = String(input.invoice.tpEmis ?? "1").slice(0, 1) || "1";
   const accessKey =
     input.accessKey ??
     generateAccessKey({
@@ -239,6 +243,7 @@ export function buildSignedNfePackage(input: {
       cnpj: input.config.cnpj ?? "",
       series: input.invoice.series ?? input.config.nfeSeries,
       number: input.invoice.number ?? 1,
+      tpEmis,
     });
 
   const infNFe = buildInfNFe({
@@ -350,7 +355,13 @@ function buildInfNFe(input: {
     <indFinal>0</indFinal>
     <indPres>1</indPres>
     <procEmi>0</procEmi>
-    <verProc>PEDIDOS-1.0</verProc>
+    <verProc>PEDIDOS-1.0</verProc>${
+      isSvcTpEmis(tpEmis)
+        ? `
+    <dhCont>${dhEmi}</dhCont>
+    <xJust>${escapeXml(normalizeSvcJustification(invoice.contingencyJustification))}</xJust>`
+        : ""
+    }
   </ide>
   <emit>
     <CNPJ>${onlyDigits(config.cnpj ?? "", 14)}</CNPJ>

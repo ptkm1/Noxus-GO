@@ -14,13 +14,7 @@ import {
   type PlanFeature,
 } from "@pedidos/shared";
 import { Lock } from "lucide-react";
-
-function plansUrl(): string {
-  const base =
-    import.meta.env.VITE_SITE_URL?.trim() || "http://localhost:3001";
-  const cleaned = base.replace(/\/$/, "");
-  return `${cleaned}/#planos`;
-}
+import { Link } from "react-router-dom";
 
 export function PlanFeatureGate({ feature }: { feature: PlanFeature }) {
   const { user } = useAuth();
@@ -37,7 +31,8 @@ export function PlanFeatureGate({ feature }: { feature: PlanFeature }) {
           <CardTitle>Recurso não disponível no seu plano</CardTitle>
           <CardDescription>
             <strong className="font-medium text-foreground">{featureLabel}</strong>{" "}
-            não está incluso no plano <strong className="font-medium text-foreground">{plan.name}</strong>.
+            não está incluso no plano{" "}
+            <strong className="font-medium text-foreground">{plan.name}</strong>.
             Faça upgrade para liberar este recurso.
           </CardDescription>
         </CardHeader>
@@ -51,9 +46,7 @@ export function PlanFeatureGate({ feature }: { feature: PlanFeature }) {
         </CardContent>
         <CardFooter>
           <Button asChild>
-            <a href={plansUrl()} target="_blank" rel="noreferrer">
-              Ver planos / upgrade
-            </a>
+            <Link to="/configuracoes">Ver planos / upgrade</Link>
           </Button>
         </CardFooter>
       </Card>

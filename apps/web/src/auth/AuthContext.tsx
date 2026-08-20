@@ -54,15 +54,22 @@ export type RegisterInput = {
   email: string;
   password: string;
   cnpj: string;
+  planId?: PlanId;
 };
 
 type AuthState = {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (input: RegisterInput) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
+  register: (input: RegisterInput) => Promise<{
+    user: User;
+    requiresPayment: boolean;
+    checkoutUrl: string | null;
+    intentId: string | null;
+    checkoutError: string | null;
+  }>;
   logout: () => void;
-  refreshUser: () => Promise<void>;
+  refreshUser: () => Promise<User | null>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -102,16 +109,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const refreshUser = useCallback(async () => {
+  const refreshUser = useCallback(async (): Promise<User | null> => {
     if (!getAccessToken()) {
       setUser(null);
-      return;
+      return null;
     }
     try {
       const me = await apiFetch<User>("/auth/me");
       setUser(me);
+      return me;
     } catch {
-      /* mantém user atual se falhar refresh pontual */
+      return null;
     }
   }, []);
 
@@ -139,6 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     setTokens(res.accessToken, res.refreshToken);
     setUser(res.user);
+    return res.user;
   }, []);
 
   const register = useCallback(async (input: RegisterInput) => {
@@ -146,6 +155,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       accessToken: string;
       refreshToken: string;
       user: User;
+      requiresPayment?: boolean;
+      intentId?: string | null;
+      checkoutUrl?: string | null;
+      checkoutError?: string | null;
     }>("/auth/register", {
       method: "POST",
       body: JSON.stringify(input),
@@ -153,6 +166,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     setTokens(res.accessToken, res.refreshToken);
     setUser(res.user);
+    return {
+      user: res.user,
+      requiresPayment: Boolean(res.requiresPayment),
+      intentId: res.intentId ?? null,
+      checkoutUrl: res.checkoutUrl ?? null,
+      checkoutError: res.checkoutError ?? null,
+    };
   }, []);
 
   const logout = useCallback(() => {

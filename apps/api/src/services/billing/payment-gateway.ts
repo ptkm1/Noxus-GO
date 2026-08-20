@@ -17,13 +17,23 @@ export type GatewayCheckoutItem = {
   value: number;
 };
 
+export type GatewayCustomerBilling = {
+  phone: string;
+  address: string;
+  addressNumber: string;
+  complement?: string | null;
+  province: string;
+  postalCode: string;
+  cityIbge?: string | null;
+};
+
 export type GatewaySubscriptionCheckoutInput = {
   customerId?: string;
   customerData?: {
     name: string;
     email: string;
     cpfCnpj: string;
-    phone?: string | null;
+    billing: GatewayCustomerBilling;
   };
   items: GatewayCheckoutItem[];
   cycle: "MONTHLY";

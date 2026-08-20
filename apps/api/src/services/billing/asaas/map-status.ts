@@ -16,6 +16,7 @@ export function mapAsaasPaymentEventToInternalStatus(
 ): InternalPaymentEffect {
   switch (eventType) {
     case "PAYMENT_CONFIRMED":
+    case "PAYMENT_RECEIVED":
     case "CHECKOUT_PAID":
       return "activate";
     case "PAYMENT_OVERDUE":

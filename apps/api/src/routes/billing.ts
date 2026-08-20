@@ -1,5 +1,5 @@
 import rateLimit from "@fastify/rate-limit";
-import { listPlans } from "@pedidos/shared";
+import { isPlanId, listPlans } from "@pedidos/shared";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { requireAdmin } from "../auth/org-roles.js";
@@ -7,13 +7,16 @@ import { prisma } from "../db.js";
 import { readAsaasConfig } from "../services/billing/asaas/asaas-config.js";
 import { createAsaasPaymentGateway } from "../services/billing/asaas/asaas-payment-gateway.js";
 import {
-  processAsaasWebhook,
-  validateAsaasWebhookToken,
+    processAsaasWebhook,
+    validateAsaasWebhookToken,
 } from "../services/billing/asaas/webhook-processor.js";
 import {
-  createSubscriptionIntent,
-  getPublicIntentStatus,
-  retrySubscriptionCheckout,
+    createCheckoutForRegisteredOrg,
+    createSubscriptionIntent,
+    getOpenCheckoutForOrg,
+    getPublicIntentStatus,
+    retrySubscriptionCheckout,
+    simulateFakePayment,
 } from "../services/billing/subscription-intent-service.js";
 import { getAuth } from "../util/guards.js";
 
@@ -111,7 +114,25 @@ export const billingRoutes: FastifyPluginAsync = async (app) => {
       }
     });
 
-    publicApp.get("/subscription-intents/:id/status", async (req, reply) => {
+    publicApp.post("/subscription-intents/:id/simulate", async (req, reply) => {
+      const id = (req.params as { id: string }).id;
+      try {
+        await simulateFakePayment(id);
+        return { ok: true, intentId: id };
+      } catch (err) {
+        const { status, body } = httpErr(err);
+        return reply.status(status).send(body);
+      }
+    });
+  });
+
+  await app.register(async (pollApp) => {
+    await pollApp.register(rateLimit, {
+      max: 120,
+      timeWindow: "1 minute",
+      keyGenerator: (req) => req.ip,
+    });
+    pollApp.get("/subscription-intents/:id/status", async (req, reply) => {
       const id = (req.params as { id: string }).id;
       const status = await getPublicIntentStatus(id);
       if (!status) return reply.status(404).send({ error: "Não encontrado" });
@@ -119,7 +140,91 @@ export const billingRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
-  /** Stub legado — mantido para compatibilidade; preferir subscription-intents. */
+  app.get("/checkout/open", async (req, reply) => {
+    const auth = getAuth(req, reply);
+    if (!auth) return;
+    if (!requireAdmin(reply, auth)) return;
+    const org = await prisma.organization.findUnique({
+      where: { id: auth.organizationId },
+      select: { accessStatus: true },
+    });
+    const intent = await getOpenCheckoutForOrg(auth.organizationId);
+    return {
+      intent,
+      accessStatus: org?.accessStatus ?? null,
+    };
+  });
+
+  const checkoutBody = z.object({
+    planId: z.string().min(1),
+  });
+
+  app.post("/checkout", async (req, reply) => {
+    const auth = getAuth(req, reply);
+    if (!auth) return;
+    if (!requireAdmin(reply, auth)) return;
+    const parsed = checkoutBody.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Plano inválido" });
+    }
+    if (!isPlanId(parsed.data.planId)) {
+      return reply.status(400).send({ error: "Plano inválido" });
+    }
+    const planId = parsed.data.planId;
+
+    const org = await prisma.organization.findUnique({
+      where: { id: auth.organizationId },
+      include: { subscription: true },
+    });
+    const user = await prisma.user.findUnique({
+      where: { id: auth.sub },
+    });
+    if (!org || !user) {
+      return reply.status(404).send({ error: "Organização não encontrada" });
+    }
+
+    const currentSub = org.subscription;
+    const isPaidAndActive =
+      org.accessStatus === "ACTIVE" &&
+      currentSub &&
+      (currentSub.status === "ACTIVE" || currentSub.status === "TRIAL");
+    if (isPaidAndActive && currentSub.planId === planId) {
+      return reply.status(400).send({
+        error: "Você já está neste plano.",
+        code: "SAME_PLAN",
+      });
+    }
+
+    const document = org.document || org.cnpj;
+    if (!document) {
+      return reply
+        .status(400)
+        .send({ error: "CNPJ da empresa é obrigatório para o pagamento" });
+    }
+
+    const lockAccessUntilPaid = org.accessStatus === "PENDING_PAYMENT";
+
+    try {
+      const result = await createCheckoutForRegisteredOrg({
+        organizationId: org.id,
+        ownerUserId: user.id,
+        planId,
+        companyName: org.displayName || org.name,
+        adminName: user.name,
+        email: user.email,
+        document,
+        lockAccessUntilPaid,
+      });
+      return {
+        intentId: result.intentId,
+        checkoutUrl: result.checkoutUrl,
+        message: "Redirecionando para o pagamento seguro...",
+      };
+    } catch (err) {
+      const { status, body } = httpErr(err);
+      return reply.status(status).send(body);
+    }
+  });
   app.post("/checkout-intent", async (_req, reply) => {
     return reply.status(410).send({
       error: "Endpoint substituído. Use POST /billing/subscription-intents",
@@ -173,6 +278,8 @@ export const billingRoutes: FastifyPluginAsync = async (app) => {
 };
 
 export const asaasWebhookRoutes: FastifyPluginAsync = async (app) => {
+  app.get("/asaas", async () => ({ ok: true, webhook: "asaas" }));
+
   app.post("/asaas", async (req, reply) => {
     if (!validateAsaasWebhookToken(req.headers["asaas-access-token"])) {
       return reply.status(401).send({ error: "Unauthorized" });

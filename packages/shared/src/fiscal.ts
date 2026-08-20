@@ -43,6 +43,14 @@ export const NFE_ENVIRONMENT_LABELS: Record<NfeEnvironment, string> = {
   PRODUCTION: "Produção",
 };
 
+/** Rótulo de contingência SVC (tpEmis 6/7). Emissão normal retorna null. */
+export function nfeTpEmisLabel(tpEmis?: string | null): string | null {
+  const t = String(tpEmis ?? "").slice(0, 1);
+  if (t === "6") return "Contingência SVC-AN";
+  if (t === "7") return "Contingência SVC-RS";
+  return null;
+}
+
 export function isProductFiscalReady(product: {
   ncmId?: string | null;
   ncm?: string | null;

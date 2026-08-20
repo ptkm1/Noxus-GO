@@ -4,33 +4,35 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  canRead,
-  getPlanDefinition,
-  HOME_INDICATOR_KEYS,
-  HOME_INDICATOR_LABELS,
-  HOME_INDICATORS_LAYOUT_LABELS,
-  HOME_INDICATORS_LAYOUTS,
-  MAX_HOME_INDICATORS,
-  normalizeHomeIndicators,
-  normalizeHomeIndicatorsLayout,
-  planHasFeature,
-  type HomeIndicatorKey,
-  type HomeIndicatorsLayout,
+    canRead,
+    getPlanDefinition,
+    HOME_INDICATOR_KEYS,
+    HOME_INDICATOR_LABELS,
+    HOME_INDICATORS_LAYOUT_LABELS,
+    HOME_INDICATORS_LAYOUTS,
+    MAX_HOME_INDICATORS,
+    normalizeHomeIndicators,
+    normalizeHomeIndicatorsLayout,
+    planHasFeature,
+    listPlans,
+    type HomeIndicatorKey,
+    type HomeIndicatorsLayout,
+    type PlanId,
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
-  History,
-  Shield,
+    ChevronDown,
+    ChevronRight,
+    ChevronUp,
+    History,
+    Shield,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
@@ -39,11 +41,6 @@ import { apiFetch } from "../lib/api";
 import { AuditLogsPanel } from "./AuditLogsPage";
 import { OrderSituationsPanel } from "./OrderSituationsPanel";
 import { PermissionsPanel } from "./PermissionsPage";
-
-function plansUrl(): string {
-  const base = import.meta.env.VITE_SITE_URL?.trim() || "http://localhost:3001";
-  return `${base.replace(/\/$/, "")}/#planos`;
-}
 
 function formatLimit(n: number | null): string {
   return n == null ? "Ilimitado" : String(n);
@@ -77,6 +74,10 @@ export function SystemSettingsPage() {
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [modal, setModal] = useState<SettingsModal>(null);
+  const [checkoutPlanId, setCheckoutPlanId] = useState<PlanId>(
+    (user?.subscription?.planId as PlanId) ?? "growth",
+  );
+  const [checkoutErr, setCheckoutErr] = useState<string | null>(null);
 
   const isAdmin = user?.role === "ADMIN";
   const canPermissions = Boolean(
@@ -93,6 +94,12 @@ export function SystemSettingsPage() {
 
   const planDef = getPlanDefinition(user?.subscription?.planId);
   const sub = user?.subscription;
+  const currentPlanId = (sub?.planId as PlanId | undefined) ?? null;
+  const isActiveSubscription =
+    sub?.status === "ACTIVE" || sub?.status === "TRIAL";
+  const isSamePlanSelected =
+    currentPlanId !== null && checkoutPlanId === currentPlanId;
+  const canChangePlan = !isSamePlanSelected || !isActiveSubscription;
   const periodEnd = sub?.currentPeriodEnd
     ? new Date(sub.currentPeriodEnd).toLocaleDateString("pt-BR")
     : null;
@@ -151,6 +158,10 @@ export function SystemSettingsPage() {
   }
 
   useEffect(() => {
+    if (currentPlanId) setCheckoutPlanId(currentPlanId);
+  }, [currentPlanId]);
+
+  useEffect(() => {
     const abrir = searchParams.get("abrir");
     if (abrir === "permissoes" && canPermissions) setModal("permissions");
     else if (abrir === "auditoria" && canAudit) setModal("audit");
@@ -201,11 +212,59 @@ export function SystemSettingsPage() {
             </p>
           </div>
           <div className="flex shrink-0 flex-col gap-2 sm:items-end">
-            <Button asChild variant="outline">
-              <a href={plansUrl()} target="_blank" rel="noreferrer">
-                Ver planos / upgrade
-              </a>
-            </Button>
+            {isAdmin ? (
+              <div className="flex flex-col gap-2 sm:items-end">
+                <AppSelect
+                  value={checkoutPlanId}
+                  onValueChange={(v) => setCheckoutPlanId(v as PlanId)}
+                  options={listPlans().map((p) => ({
+                    value: p.id,
+                    label: `${p.name} — R$ ${p.monthlyPriceBrl}/mês`,
+                  }))}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!canChangePlan || patch.isPending}
+                  onClick={() => {
+                    if (!canChangePlan) {
+                      setCheckoutErr("Este já é o seu plano atual.");
+                      return;
+                    }
+                    setCheckoutErr(null);
+                    void apiFetch<{ checkoutUrl?: string }>(
+                      "/billing/checkout",
+                      {
+                        method: "POST",
+                        body: JSON.stringify({ planId: checkoutPlanId }),
+                      },
+                    )
+                      .then((data) => {
+                        if (data.checkoutUrl) {
+                          window.location.assign(data.checkoutUrl);
+                        }
+                      })
+                      .catch((ex: unknown) => {
+                        setCheckoutErr(
+                          ex instanceof Error
+                            ? ex.message
+                            : "Falha ao iniciar checkout",
+                        );
+                      });
+                  }}
+                >
+                  {canChangePlan ? "Mudar plano" : "Plano atual"}
+                </Button>
+                {!canChangePlan ? (
+                  <p className="text-xs text-muted-foreground">
+                    Selecione outro plano para alterar a assinatura.
+                  </p>
+                ) : null}
+                {checkoutErr ? (
+                  <p className="text-xs text-destructive">{checkoutErr}</p>
+                ) : null}
+              </div>
+            ) : null}
             {isAdmin && sub && !sub.cancelAtPeriodEnd ? (
               <Button
                 type="button"

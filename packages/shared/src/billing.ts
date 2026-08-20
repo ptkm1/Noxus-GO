@@ -13,6 +13,7 @@ export type PublicIntentNextAction =
   | "OPEN_CHECKOUT"
   | "RETRY"
   | "LOGIN"
+  | "ENTER_APP"
   | "NONE";
 
 /** Status internos persistidos em CheckoutIntent.status */

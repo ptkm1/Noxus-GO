@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   GatewayCustomer,
   GatewayCustomerInput,
@@ -6,16 +7,25 @@ import type {
   PaymentGateway,
 } from "./payment-gateway.js";
 
-/** Gateway em memória para testes — sem HTTP. */
+type FakeGatewayOpts = {
+  checkoutLink?: (
+    id: string,
+    input: GatewaySubscriptionCheckoutInput,
+  ) => string;
+};
+
+/** Gateway em memória para testes e `PAYMENT_GATEWAY=fake` — sem HTTP Asaas. */
 export class FakePaymentGateway implements PaymentGateway {
   customers: GatewayCustomerInput[] = [];
   checkouts: GatewaySubscriptionCheckoutInput[] = [];
   canceled: string[] = [];
   failNextCheckout = false;
 
+  constructor(private readonly opts: FakeGatewayOpts = {}) {}
+
   async createCustomer(input: GatewayCustomerInput): Promise<GatewayCustomer> {
     this.customers.push(input);
-    return { id: `cus_fake_${this.customers.length}` };
+    return { id: `cus_fake_${randomUUID()}` };
   }
 
   async createSubscriptionCheckout(
@@ -26,10 +36,13 @@ export class FakePaymentGateway implements PaymentGateway {
       throw new Error("checkout_failed");
     }
     this.checkouts.push(input);
-    const id = `chk_fake_${this.checkouts.length}`;
+    const id = `chk_fake_${randomUUID()}`;
+    const link =
+      this.opts.checkoutLink?.(id, input) ??
+      `https://sandbox.asaas.com/checkoutSession/show?id=${id}`;
     return {
       id,
-      link: `https://sandbox.asaas.com/checkoutSession/show?id=${id}`,
+      link,
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     };
   }
