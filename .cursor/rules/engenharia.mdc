@@ -1,0 +1,44 @@
+---
+description: Padrões de engenharia — arquitetura, libs, DRY, segurança; sem testes unitários
+alwaysApply: true
+---
+
+# Engenharia
+
+## Testes
+
+- Não criar testes unitários (Vitest, arquivos `*.test.ts` / `*.spec.ts`, suítes novas).
+- Não adicionar casos a testes existentes salvo o usuário pedir explicitamente.
+
+## Arquitetura
+
+- Seguir os padrões já no repo: pastas, nomes, camadas (`apps/api`, `apps/web`, `packages/shared`).
+- API: rotas finas, regras em `services/`, Prisma recortado por `organizationId` do JWT.
+- Web: páginas em `pages/`, componentes reutilizáveis em `components/`, auth via `AuthContext`.
+- Não inventar estrutura paralela, “utils god”, nem segundo modelo de empresa.
+
+```ts
+// ❌ BAD — filtro só no frontend / query sem org
+prisma.product.findMany();
+
+// ✅ GOOD — recorte no backend pelo tenant do JWT
+prisma.product.findMany({ where: { organizationId: auth.organizationId } });
+```
+
+## Libs
+
+- Preferir o que o projeto já usa (Fastify, Prisma, Zod, React Query).
+- Se precisar de lib nova: atual, leve, específica. Recusar pacote grande para um detalhe (moment, lodash inteiro, UI kit extra).
+- Não duplicar o que Zod/Prisma/shared já fazem.
+
+## DRY
+
+- Extrair helper/service/componente quando a mesma lógica aparecer de novo.
+- Não copiar rotas, schemas Zod ou FormSheets — reutilizar.
+
+## Segurança
+
+- Nunca logar ou commitar secrets. Validar input (Zod). Sem SQL concatenado.
+- Autorização no servidor; não confiar no client. Mutação: `where: { id, organizationId }`.
+- JWT sem `organizationId` não lista dados. Escape de HTML/PDF. Uploads e webhooks autenticados.
+- White-label: uma org não lê nem altera dados de outra.

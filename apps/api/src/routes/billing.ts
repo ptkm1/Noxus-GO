@@ -242,11 +242,9 @@ export const billingRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const currentSub = org.subscription;
-    const isPaidAndActive =
-      org.accessStatus === "ACTIVE" &&
-      currentSub &&
-      (currentSub.status === "ACTIVE" || currentSub.status === "TRIAL");
-    if (isPaidAndActive && currentSub.planId === planId) {
+    const isPaidActive =
+      org.accessStatus === "ACTIVE" && currentSub?.status === "ACTIVE";
+    if (isPaidActive && currentSub?.planId === planId) {
       return reply.status(400).send({
         error: "Você já está neste plano.",
         code: "SAME_PLAN",

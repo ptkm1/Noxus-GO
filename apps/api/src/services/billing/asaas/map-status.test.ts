@@ -46,6 +46,7 @@ describe("normalizeAsaasSubscriptionStatus", () => {
 describe("subscriptionStatusToAccessStatus", () => {
   it("converte status de assinatura para acesso da org", () => {
     expect(subscriptionStatusToAccessStatus("ACTIVE")).toBe("ACTIVE");
+    expect(subscriptionStatusToAccessStatus("TRIAL")).toBe("ACTIVE");
     expect(subscriptionStatusToAccessStatus("INCOMPLETE")).toBe(
       "PENDING_PAYMENT",
     );

@@ -12,7 +12,8 @@ export function isFakePaymentGatewayEnabled(): boolean {
 }
 
 /**
- * Cadastro sem paywall — só em desenvolvimento.
+ * Flag de desenvolvimento legado. Não substitui o trial de 7 dias:
+ * `POST /auth/register` sempre inicia TRIAL, em qualquer ambiente.
  * Ignorado em production/test mesmo se a env estiver definida.
  */
 export function isDevPaymentLockSkipped(): boolean {
@@ -22,7 +23,11 @@ export function isDevPaymentLockSkipped(): boolean {
   return raw === "1" || raw === "true" || raw === "yes";
 }
 
-/** Pagamento obrigatório no cadastro quando Asaas ou fake estão ativos. */
+/**
+ * Indica se o gateway de pagamento está ativo (Asaas/fake).
+ * O cadastro web (`POST /auth/register`) sempre inicia trial e não usa
+ * este helper para travar a conta. A landing continua cobrando na hora.
+ */
 export function isPaymentRequiredForSignup(): boolean {
   if (isDevPaymentLockSkipped()) return false;
   const mode = readPaymentGatewayMode();
