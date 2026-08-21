@@ -2290,8 +2290,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         ...productCadastroFieldsSchema,
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+      const issues = body.error.issues.map((i) => ({
+        code: i.path.join(".") || undefined,
+        message: i.message,
+      }));
+      return reply.status(400).send({
+        error: "Dados inválidos",
+        issues,
+      });
+    }
 
     const resolvedCatId = body.data.categoryId;
 
@@ -2505,8 +2513,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         ...productCadastroFieldsSchema,
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+      const issues = body.error.issues.map((i) => ({
+        code: i.path.join(".") || undefined,
+        message: i.message,
+      }));
+      return reply.status(400).send({
+        error: "Dados inválidos",
+        issues,
+      });
+    }
 
     const existing = await prisma.product.findFirst({
       where: { id, organizationId: auth.organizationId },
