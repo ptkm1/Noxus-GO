@@ -17,6 +17,7 @@ export type PermissionResource =
   | "tracking"
   | "visits"
   | "reports"
+  | "reports_profit_percent"
   | "commissions"
   | "price_tables"
   | "permissions"
@@ -39,6 +40,7 @@ export const PERMISSION_RESOURCES: PermissionResource[] = [
   "tracking",
   "visits",
   "reports",
+  "reports_profit_percent",
   "commissions",
   "price_tables",
   "permissions",
@@ -142,6 +144,12 @@ export const ROLE_PERMISSIONS: Record<
     SELLER: "none",
     SUPERVISOR: "none",
   },
+  reports_profit_percent: {
+    ADMIN: "read",
+    MANAGER: "none",
+    SELLER: "none",
+    SUPERVISOR: "none",
+  },
   commissions: {
     ADMIN: "write",
     MANAGER: "none",
@@ -195,6 +203,7 @@ export const PERMISSION_RESOURCE_LABELS: Record<PermissionResource, string> = {
   tracking: "Rastreio",
   visits: "Visitas",
   reports: "Relatórios",
+  reports_profit_percent: "Percentual de lucro em relatórios",
   commissions: "Comissões",
   price_tables: "Tabelas de preço",
   permissions: "Permissões (matriz)",

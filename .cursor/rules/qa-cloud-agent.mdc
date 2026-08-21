@@ -1,0 +1,61 @@
+---
+description: Roteiro para Cloud Agent / computer use testar fluxos web do Pedix Pro (pedido, estoque, romaneio, permissão de lucro).
+alwaysApply: false
+---
+
+# QA web (Cloud Agent)
+
+Quando o usuário pedir para **testar no browser / Cloud Agent**, não implemente produto. Suba o app, clique como um usuário e devolva pass/fail com evidência (screenshot ou vídeo).
+
+## Stack
+
+- Monorepo: API Fastify (`apps/api`, porta 4000) + web Vite (`apps/web`, porta 5173).
+- App de teste: `http://localhost:5173` (não a API na 4000).
+- Login demo local: `admin@demo.com` / `admin123`.
+- Gestor: use um usuário `MANAGER` da mesma org, se existir no seed; senão crie via Usuários.
+- Não use credenciais de produção.
+
+## Como subir (se o ambiente Cloud ainda não estiver rodando)
+
+Na raiz do repo:
+
+```bash
+pnpm install
+pnpm build:shared
+pnpm dev:api
+pnpm dev:web
+```
+
+Postgres precisa estar acessível (`DATABASE_URL` / secrets do Cloud Agent). Se migrate estiver pendente: `pnpm exec prisma migrate deploy --config apps/api/prisma.config.ts`.
+
+## Casos obrigatórios
+
+### 1. Tabela de preço no novo pedido
+
+1. Login admin → Pedidos → Novo pedido.
+2. Cliente + vendedor.
+3. Selecionar condição de pagamento.
+4. **Pass:** o campo **Tabela de preço** aparece depois da condição.
+5. Selecionar tabela, adicionar item, conferir preço, salvar rascunho ou confirmar.
+
+### 2. Validade em Estoque → Movimentar
+
+1. Estoque → Movimentar em um produto.
+2. Abrir o calendário de **Validade**.
+3. **Pass:** dá para clicar um dia; o campo preenche; confirmar a movimentação com lote + senha do admin.
+
+### 3. Relatório romaneio
+
+1. Relatórios → Pedidos → marcar **Romaneio** → gerar PDF.
+2. **Pass:** o PDF tem CNPJ/CPF, endereço e dados iguais à impressão do pedido na aba Pedidos.
+
+### 4. Lucro só com permissão
+
+1. Admin em Relatórios → Pedidos: opção **Incluir percentual de lucro** visível.
+2. Login gestor: opção **ausente**.
+3. Admin em Permissões libera **Percentual de lucro em relatórios** para gestor.
+4. Gestor recarrega: opção aparece. PDF com a opção marcada mostra lucro %.
+
+## Relatório final
+
+Para cada item: **Pass / Fail**, o que clicou, e o que faltou. Não abra PR a menos que o usuário peça.

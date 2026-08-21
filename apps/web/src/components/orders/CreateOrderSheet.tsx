@@ -28,12 +28,22 @@ type LookupCustomer = {
   legalName?: string | null;
   city?: string | null;
   sellerId?: string | null;
+  regionId?: string | null;
 };
 type LookupPayment = {
   id: string;
   code: string;
   name: string;
   days: number;
+};
+type LookupPriceTable = {
+  id: string;
+  name: string;
+  customerId?: string | null;
+  sellerId?: string | null;
+  regionId?: string | null;
+  validFrom?: string | null;
+  validTo?: string | null;
 };
 
 type CatalogProduct = {
@@ -114,6 +124,7 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
   const [customerId, setCustomerId] = useState("");
   const [customerQuery, setCustomerQuery] = useState("");
   const [paymentConditionId, setPaymentConditionId] = useState("");
+  const [priceTableId, setPriceTableId] = useState("");
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([newLine()]);
   const [showValidation, setShowValidation] = useState(false);
@@ -125,6 +136,7 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
         sellers: LookupSeller[];
         customers: LookupCustomer[];
         paymentConditions: LookupPayment[];
+        priceTables: LookupPriceTable[];
       }>("/admin/orders/lookups"),
     enabled: open,
   });
@@ -132,6 +144,26 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
   const sellers = lookupsQ.data?.sellers ?? [];
   const customers = lookupsQ.data?.customers ?? [];
   const paymentConditions = lookupsQ.data?.paymentConditions ?? [];
+  const priceTables = lookupsQ.data?.priceTables ?? [];
+
+  const applicablePriceTables = useMemo(() => {
+    const selectedCustomer = customers.find((c) => c.id === customerId);
+    const now = Date.now();
+    return priceTables.filter((t) => {
+      if (t.validFrom && new Date(t.validFrom).getTime() > now) return false;
+      if (t.validTo && new Date(t.validTo).getTime() < now) return false;
+      if (t.sellerId && sellerId && t.sellerId !== sellerId) return false;
+      if (t.customerId && customerId && t.customerId !== customerId) return false;
+      if (
+        t.regionId &&
+        selectedCustomer?.regionId &&
+        t.regionId !== selectedCustomer.regionId
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [priceTables, sellerId, customerId, customers]);
 
   useEffect(() => {
     if (!open) return;
@@ -148,11 +180,30 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
     });
   }, [open, sellers, paymentConditions, user?.sellerId]);
 
+  useEffect(() => {
+    if (!open) return;
+    setPriceTableId((prev) => {
+      if (!paymentConditionId) return "";
+      if (prev && applicablePriceTables.some((t) => t.id === prev)) return prev;
+      return applicablePriceTables.length === 1
+        ? applicablePriceTables[0].id
+        : "";
+    });
+  }, [open, paymentConditionId, applicablePriceTables]);
+
   const catalogQ = useQuery({
-    queryKey: ["admin", "orders", "catalog", sellerId, customerId || ""],
+    queryKey: [
+      "admin",
+      "orders",
+      "catalog",
+      sellerId,
+      customerId || "",
+      priceTableId || "",
+    ],
     queryFn: () => {
       const qs = new URLSearchParams({ sellerId });
       if (customerId) qs.set("customerId", customerId);
+      if (priceTableId) qs.set("priceTableId", priceTableId);
       return apiFetch<{ products: CatalogProduct[] }>(
         `/admin/orders/catalog?${qs.toString()}`,
       );
@@ -192,6 +243,7 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
       "preview",
       sellerId,
       customerId,
+      priceTableId,
       debouncedItems,
     ],
     queryFn: () =>
@@ -200,6 +252,7 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
         body: JSON.stringify({
           sellerId,
           customerId,
+          priceTableId: priceTableId || undefined,
           items: debouncedItems,
         }),
       }),
@@ -217,6 +270,9 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
     if (!paymentConditionId) {
       err.paymentConditionId = "Selecione a condição de pagamento.";
     }
+    if (paymentConditionId && applicablePriceTables.length > 0 && !priceTableId) {
+      err.priceTableId = "Selecione a tabela de preço.";
+    }
     if (payloadItems.length === 0) {
       err.items = "Inclua ao menos um produto com quantidade.";
     }
@@ -226,6 +282,8 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
     sellerId,
     customerId,
     paymentConditionId,
+    priceTableId,
+    applicablePriceTables.length,
     payloadItems.length,
   ]);
 
@@ -236,6 +294,7 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
     setCustomerId("");
     setCustomerQuery("");
     setPaymentConditionId("");
+    setPriceTableId("");
     setNotes("");
     setLines([newLine()]);
     setShowValidation(false);
@@ -254,6 +313,7 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
           sellerId,
           customerId,
           paymentConditionId,
+          priceTableId: priceTableId || undefined,
           status,
           notes: notes.trim() || undefined,
           items: payloadItems,
@@ -271,6 +331,7 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
       !sellerId ||
       !customerId ||
       !paymentConditionId ||
+      (applicablePriceTables.length > 0 && !priceTableId) ||
       payloadItems.length === 0
     ) {
       return;
@@ -419,7 +480,10 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
           <AppSelect
             id="new-order-pay"
             value={paymentConditionId}
-            onValueChange={setPaymentConditionId}
+            onValueChange={(id) => {
+              setPaymentConditionId(id);
+              setPriceTableId("");
+            }}
             placeholder={
               paymentConditions.length
                 ? "Selecione"
@@ -432,6 +496,35 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
             }))}
           />
         </FormField>
+        {paymentConditionId ? (
+          <FormField
+            label="Tabela de preço"
+            htmlFor="new-order-price-table"
+            required={applicablePriceTables.length > 0}
+            error={fieldErrors.priceTableId}
+            hint={
+              applicablePriceTables.length === 0
+                ? "Nenhuma tabela aplicável a este cliente/vendedor. O pedido usa o preço base."
+                : "Aparece após a condição de pagamento. Define o preço dos itens."
+            }
+          >
+            <AppSelect
+              id="new-order-price-table"
+              value={priceTableId}
+              onValueChange={setPriceTableId}
+              placeholder={
+                applicablePriceTables.length
+                  ? "Selecione a tabela"
+                  : "Nenhuma tabela aplicável"
+              }
+              invalid={Boolean(fieldErrors.priceTableId)}
+              options={applicablePriceTables.map((t) => ({
+                value: t.id,
+                label: t.name,
+              }))}
+            />
+          </FormField>
+        ) : null}
         <FormField label="Observação" htmlFor="new-order-notes">
           <Textarea
             id="new-order-notes"

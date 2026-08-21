@@ -31,6 +31,7 @@ export type ComputeSaleOrderParams = {
   organizationId: string;
   sellerId: string;
   customerId?: string | null;
+  priceTableId?: string | null;
   items: SaleLineInput[];
   allowedProductIds?: Set<string>;
   at?: Date;
@@ -88,6 +89,7 @@ export async function computeSaleOrder(params: ComputeSaleOrderParams): Promise<
       sellerId: params.sellerId,
       customerId: params.customerId ?? null,
       regionId,
+      priceTableId: params.priceTableId ?? null,
       quantity: input.quantity,
       at,
     });
