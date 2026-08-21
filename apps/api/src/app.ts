@@ -75,6 +75,7 @@ export async function buildApp() {
     { prefix: `${v1}/seller` },
   );
 
+  app.get("/", async () => ({ ok: true, service: "pedidos-api" }));
   app.get("/health", async () => ({ ok: true }));
 
   return app;

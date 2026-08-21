@@ -1,0 +1,42 @@
+{
+  "type": "ORIGEM",
+  "sourceVersion": "Manual-NF-e-v7.0-Anexo",
+  "entries": [
+    {
+      "code": "0",
+      "description": "Nacional, exceto as indicadas nos códigos 3, 4, 5 e 8"
+    },
+    {
+      "code": "1",
+      "description": "Estrangeira — Importação direta, exceto a indicada no código 6"
+    },
+    {
+      "code": "2",
+      "description": "Estrangeira — Adquirida no mercado interno, exceto a indicada no código 7"
+    },
+    {
+      "code": "3",
+      "description": "Nacional, mercadoria ou bem com Conteúdo de Importação superior a 40% e inferior ou igual a 70%"
+    },
+    {
+      "code": "4",
+      "description": "Nacional, cuja produção tenha sido feita em conformidade com os processos produtivos básicos de que tratam as legislações citadas nos Ajustes"
+    },
+    {
+      "code": "5",
+      "description": "Nacional, mercadoria ou bem com Conteúdo de Importação inferior ou igual a 40%"
+    },
+    {
+      "code": "6",
+      "description": "Estrangeira — Importação direta, sem similar nacional, constante em lista da CAMEX e gás natural"
+    },
+    {
+      "code": "7",
+      "description": "Estrangeira — Adquirida no mercado interno, sem similar nacional, constante em lista da CAMEX e gás natural"
+    },
+    {
+      "code": "8",
+      "description": "Nacional, mercadoria ou bem com Conteúdo de Importação superior a 70%"
+    }
+  ]
+}

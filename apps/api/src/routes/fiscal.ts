@@ -32,6 +32,13 @@ import {
   updateOutboundInvoiceTransport,
 } from "../services/fiscal-outbound.js";
 import {
+  importFiscalCatalogFromDir,
+  resolveFiscalCatalogCode,
+  searchFiscalCatalog,
+} from "../services/fiscal/fiscal-catalog.js";
+import { explainSefazRejection } from "../fiscal/sefaz-rejection-hints.js";
+import { isFiscalCatalogType } from "@pedidos/shared";
+import {
   enqueueFiscalTransmit,
   requeueFiscalTransmit,
 } from "../services/fiscal-transmit-queue.js";
@@ -314,6 +321,148 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
       metadata: { op: "delete" },
     });
     return { ok: true };
+  });
+
+  /** Catálogo nacional (NCM, CFOP, CEST, CST, etc.) — busca paginada. */
+  app.get("/catalog", async (req, reply) => {
+    const auth = req.auth!;
+    void auth;
+    const q = z
+      .object({
+        type: z.string().min(1),
+        q: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(100).optional(),
+        offset: z.coerce.number().int().min(0).optional(),
+        context: z.string().optional(),
+        relatedNcm: z.string().optional(),
+        direction: z.enum(["INBOUND", "OUTBOUND"]).optional(),
+        includeInactive: z
+          .enum(["true", "false", "1", "0"])
+          .optional()
+          .transform((v) => v === "true" || v === "1"),
+      })
+      .safeParse(req.query);
+    if (!q.success || !isFiscalCatalogType(q.data.type)) {
+      return reply.status(400).send({ error: "Tipo de catálogo inválido" });
+    }
+    return searchFiscalCatalog({
+      type: q.data.type,
+      q: q.data.q,
+      limit: q.data.limit,
+      offset: q.data.offset,
+      context: q.data.context,
+      relatedNcm: q.data.relatedNcm,
+      direction: q.data.direction,
+      includeInactive: q.data.includeInactive,
+    });
+  });
+
+  app.get("/catalog/resolve", async (req, reply) => {
+    const auth = req.auth!;
+    void auth;
+    const q = z
+      .object({
+        type: z.string().min(1),
+        code: z.string().min(1),
+        includeInactive: z
+          .enum(["true", "false", "1", "0"])
+          .optional()
+          .transform((v) => v === "true" || v === "1"),
+      })
+      .safeParse(req.query);
+    if (!q.success || !isFiscalCatalogType(q.data.type)) {
+      return reply.status(400).send({ error: "Parâmetros inválidos" });
+    }
+    const row = await resolveFiscalCatalogCode({
+      type: q.data.type,
+      code: q.data.code,
+      includeInactive: q.data.includeInactive ?? true,
+    });
+    if (!row) return reply.status(404).send({ error: "Código não encontrado" });
+    return row;
+  });
+
+  /** Explica rejeição SEFAZ (cStat + orientação conhecida). */
+  app.get("/sefaz-rejection", async (req) => {
+    const q = z
+      .object({
+        reason: z.string().optional(),
+        cStat: z.string().optional(),
+      })
+      .safeParse(req.query);
+    return explainSefazRejection(
+      q.success ? q.data.reason : undefined,
+      q.success ? q.data.cStat : undefined,
+    );
+  });
+
+  /** Reimporta tabelas oficiais do diretório data/fiscal-catalog (admin). */
+  app.post("/catalog/import", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const result = await importFiscalCatalogFromDir();
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.FISCAL_LOGO,
+      entityType: AUDIT_ENTITY.FiscalConfig,
+      entityId: auth.organizationId,
+      metadata: { op: "catalog-import", ...result },
+    });
+    return result;
+  });
+
+  /**
+   * Garante operação fiscal da org a partir de um CFOP do catálogo nacional.
+   * Usado pelo combobox de CFOP no cadastro de produto.
+   */
+  app.post("/operations/ensure-cfop", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const body = z
+      .object({
+        cfop: z.string().min(4).max(5),
+        direction: z.enum(["INBOUND", "OUTBOUND"]).default("OUTBOUND"),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const catalog = await resolveFiscalCatalogCode({
+      type: "CFOP",
+      code: body.data.cfop,
+    });
+    if (!catalog) {
+      return reply
+        .status(400)
+        .send({ error: "CFOP não encontrado no catálogo fiscal" });
+    }
+
+    const existing = await prisma.fiscalOperation.findFirst({
+      where: {
+        organizationId: auth.organizationId,
+        direction: body.data.direction,
+        cfop: catalog.code,
+      },
+    });
+    if (existing) {
+      if (!existing.active) {
+        return prisma.fiscalOperation.update({
+          where: { id: existing.id },
+          data: { active: true, description: catalog.description },
+        });
+      }
+      return existing;
+    }
+
+    return prisma.fiscalOperation.create({
+      data: {
+        organizationId: auth.organizationId,
+        direction: body.data.direction,
+        cfop: catalog.code,
+        description: catalog.description,
+        nature: catalog.description,
+        active: true,
+      },
+    });
   });
 
   app.get("/ncm", async (req) => {
