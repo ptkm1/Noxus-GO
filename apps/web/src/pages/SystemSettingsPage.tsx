@@ -44,7 +44,7 @@ import { OrderSituationsPanel } from "./OrderSituationsPanel";
 import { PermissionsPanel } from "./PermissionsPage";
 
 const STATUS_LABELS: Record<string, string> = {
-  TRIAL: "Trial",
+  TRIAL: "Período de teste",
   ACTIVE: "Ativo",
   PAST_DUE: "Em atraso",
   CANCELED: "Cancelado",
@@ -110,11 +110,14 @@ export function SystemSettingsPage() {
   const planDef = getPlanDefinition(user?.subscription?.planId);
   const sub = user?.subscription;
   const currentPlanId = (sub?.planId as PlanId | undefined) ?? null;
-  const isActiveSubscription =
-    sub?.status === "ACTIVE" || sub?.status === "TRIAL";
+  const isPaidActive = sub?.status === "ACTIVE";
+  const isTrial = sub?.status === "TRIAL";
   const isSamePlanSelected =
     currentPlanId !== null && checkoutPlanId === currentPlanId;
-  const canChangePlan = !isSamePlanSelected || !isActiveSubscription;
+  const canChangePlan = isTrial || !isSamePlanSelected || !isPaidActive;
+  let checkoutButtonLabel = "Plano atual";
+  if (isTrial && isSamePlanSelected) checkoutButtonLabel = "Assinar agora";
+  else if (canChangePlan) checkoutButtonLabel = "Continuar para pagamento";
   const periodEnd = sub?.currentPeriodEnd
     ? new Date(sub.currentPeriodEnd).toLocaleDateString("pt-BR")
     : null;
@@ -269,9 +272,10 @@ export function SystemSettingsPage() {
                     )
                       .then((data) => {
                         if (data.intentId) {
-                          nav(
-                            `/pagamento?intentId=${encodeURIComponent(data.intentId)}&change=plan`,
-                          );
+                          const q = isTrial
+                            ? `?intentId=${encodeURIComponent(data.intentId)}`
+                            : `?intentId=${encodeURIComponent(data.intentId)}&change=plan`;
+                          nav(`/pagamento${q}`);
                         } else {
                           setCheckoutErr("Não foi possível iniciar a alteração de plano.");
                         }
@@ -285,7 +289,7 @@ export function SystemSettingsPage() {
                       });
                   }}
                 >
-                  {canChangePlan ? "Continuar para pagamento" : "Plano atual"}
+                  {checkoutButtonLabel}
                 </Button>
                 {!canChangePlan ? (
                   <p className="text-xs text-muted-foreground">

@@ -1,13 +1,26 @@
 import {
     extraAdminCount,
+    DEFAULT_TRIAL_DAYS,
     getPlanDefinition,
     isPlanId,
     mapIntentToPublicStatus,
     planMonthlyTotal,
+    trialDaysRemaining,
 } from "@pedidos/shared";
 import { describe, expect, it } from "vitest";
 
 describe("plan catalog (backend)", () => {
+  it("trial padrão é 7 dias", () => {
+    expect(DEFAULT_TRIAL_DAYS).toBe(7);
+    const now = new Date("2026-08-21T12:00:00.000Z");
+    expect(
+      trialDaysRemaining("2026-08-28T12:00:00.000Z", now),
+    ).toBe(7);
+    expect(
+      trialDaysRemaining("2026-08-20T12:00:00.000Z", now),
+    ).toBe(0);
+  });
+
   it("reconhece plan ids oficiais sem aliases mensais", () => {
     expect(isPlanId("start")).toBe(true);
     expect(isPlanId("pro")).toBe(true);

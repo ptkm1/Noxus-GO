@@ -194,8 +194,33 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
 
 export const DEFAULT_PLAN_ID: PlanId = "start";
 
-/** Trial padrão ao cadastrar org (dias). */
-export const DEFAULT_TRIAL_DAYS = 14;
+/**
+ * Trial padrão ao cadastrar uma organização (dias).
+ * Cada empresa nova ganha este período; convites na mesma org não renovam.
+ */
+export const DEFAULT_TRIAL_DAYS = 7;
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Dias restantes de trial a partir de `currentPeriodEnd`.
+ * Usa o instante UTC (timestamptz); na UI formatar em America/Sao_Paulo.
+ * `null` se não houver data; `0` se já expirou.
+ */
+export function trialDaysRemaining(
+  currentPeriodEnd: string | Date | null | undefined,
+  now = new Date(),
+): number | null {
+  if (!currentPeriodEnd) return null;
+  const end =
+    typeof currentPeriodEnd === "string"
+      ? new Date(currentPeriodEnd)
+      : currentPeriodEnd;
+  if (Number.isNaN(end.getTime())) return null;
+  const ms = end.getTime() - now.getTime();
+  if (ms <= 0) return 0;
+  return Math.ceil(ms / MS_PER_DAY);
+}
 
 export function isPlanId(value: string): value is PlanId {
   return (PLAN_IDS as string[]).includes(value);

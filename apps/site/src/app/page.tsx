@@ -30,7 +30,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Há período de teste?",
-    a: "Novas organizações entram em trial no plano Start. Depois você escolhe Start, Pro ou Business nesta página.",
+    a: "Sim. Ao criar a conta no painel, cada empresa ganha 7 dias grátis. Depois é preciso assinar para continuar. Nesta página o checkout contrata na hora.",
   },
   {
     q: "O pagamento já está ativo?",

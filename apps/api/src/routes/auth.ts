@@ -22,13 +22,8 @@ import {
 } from "../services/billing/account-activation.js";
 import { sendPasswordResetEmail } from "../services/billing/activation-email.js";
 import { getOrgEntitlements } from "../services/billing/entitlements.js";
-import {
-    isFakePaymentGatewayEnabled,
-    isPaymentRequiredForSignup,
-    resolvePaymentGateway,
-} from "../services/billing/resolve-payment-gateway.js";
-import { createCheckoutForRegisteredOrg } from "../services/billing/subscription-intent-service.js";
 import { resolveUserForCompletedCheckout } from "../services/billing/claim-checkout-session.js";
+import { trialPeriodEnd } from "../services/billing/subscription.js";
 import { syncOrgAccessFromSubscription } from "../services/billing/subscription-access.js";
 import { fiscalConfigCreateData } from "../services/cnpj/fiscal-emitente.js";
 import { lookupFiscalEmitente } from "../services/cnpj/lookup-fiscal-emitente.js";
@@ -185,21 +180,13 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
     const emitente = await lookupFiscalEmitente(cnpj);
 
-    const payRequired = isPaymentRequiredForSignup();
-    if (payRequired && !resolvePaymentGateway()) {
-      return reply.status(503).send({
-        error: "Pagamentos indisponíveis no momento. Tente novamente em breve.",
-        code: "ASAAS_NOT_CONFIGURED",
-      });
-    }
-
     const passwordHash = await hashPassword(password);
     const user = await prisma.$transaction(async (tx) => {
       const org = await tx.organization.create({
         data: {
           name: organizationName,
           displayName: organizationName,
-          accessStatus: payRequired ? "PENDING_PAYMENT" : "ACTIVE",
+          accessStatus: "ACTIVE",
           document: cnpj,
           cnpj,
         },
@@ -208,21 +195,14 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         data: fiscalConfigCreateData(org.id, emitente),
       });
       const now = new Date();
-      const trialEnd = new Date(now);
-      trialEnd.setDate(trialEnd.getDate() + 14);
-      const provider = !payRequired
-        ? "none"
-        : isFakePaymentGatewayEnabled()
-          ? "fake"
-          : "asaas";
       await tx.organizationSubscription.create({
         data: {
           organizationId: org.id,
           planId,
-          status: payRequired ? "INCOMPLETE" : "TRIAL",
-          provider,
+          status: "TRIAL",
+          provider: "none",
           currentPeriodStart: now,
-          currentPeriodEnd: payRequired ? null : trialEnd,
+          currentPeriodEnd: trialPeriodEnd(now),
         },
       });
       return tx.user.create({
@@ -242,26 +222,6 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     await ensureDefaultOrderSituations(user.organizationId);
     await ensureDefaultPurchaseUnits(user.organizationId);
 
-    let checkout: { intentId: string; checkoutUrl: string | null } | null = null;
-    let checkoutError: string | null = null;
-    if (payRequired) {
-      try {
-        checkout = await createCheckoutForRegisteredOrg({
-          organizationId: user.organizationId,
-          ownerUserId: user.id,
-          planId,
-          companyName: organizationName,
-          adminName: name,
-          email,
-          document: cnpj,
-          lockAccessUntilPaid: true,
-        });
-      } catch (err) {
-        checkoutError =
-          err instanceof Error ? err.message : "Falha ao preparar pagamento";
-      }
-    }
-
     const accessToken = signAccessToken(await accessPayloadForUser(user));
     const refreshToken = signRefreshToken(user.id);
     const me = await userResponseForMe(user);
@@ -270,10 +230,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       accessToken,
       refreshToken,
       user: me,
-      requiresPayment: payRequired,
-      intentId: checkout?.intentId ?? null,
-      checkoutUrl: checkout?.checkoutUrl ?? null,
-      checkoutError,
+      requiresPayment: false,
+      intentId: null,
+      checkoutUrl: null,
+      checkoutError: null,
     };
   });
 

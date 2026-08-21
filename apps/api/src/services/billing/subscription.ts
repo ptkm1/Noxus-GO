@@ -8,13 +8,20 @@ import { prisma } from "../../db.js";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Fim do trial: `days` × 24h após `from`.
+ *
+ * Cálculo em UTC (timestamptz no banco), independente do fuso do processo.
+ * Na UI, exibir `currentPeriodEnd` em America/Sao_Paulo.
+ * Não usa `DEV_SKIP_PAYMENT_LOCK` — o trial existe em qualquer ambiente.
+ */
 export function trialPeriodEnd(
   from = new Date(),
   days = DEFAULT_TRIAL_DAYS,
 ): Date {
-  const end = new Date(from);
-  end.setDate(end.getDate() + days);
-  return end;
+  return new Date(from.getTime() + days * MS_PER_DAY);
 }
 
 /** Garante assinatura 1:1 (Start + TRIAL por padrão). */

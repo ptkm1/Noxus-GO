@@ -247,6 +247,7 @@ export {
   PLAN_FEATURE_LABELS,
   PLAN_IDS,
   planHasFeature,
+  trialDaysRemaining,
   planMonthlyTotal,
   planSeatPriceCaption,
   roundMoneyBrl,

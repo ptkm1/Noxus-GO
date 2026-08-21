@@ -67,7 +67,9 @@ export function RegisterPage() {
     <div className="relative z-10 flex flex-1 flex-col items-center justify-center p-4 pb-10">
       <div className="glass glow-primary w-full max-w-md rounded-2xl border border-border/50 p-8 shadow-2xl">
         <h1 className="text-2xl font-semibold text-foreground">Criar conta</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Nova empresa e administrador</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Nova empresa e administrador · 7 dias grátis, sem cartão agora
+        </p>
         <form className="mt-8 space-y-4" onSubmit={onSubmit}>
           <CnpjLookupField
             required

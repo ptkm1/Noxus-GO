@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import {
   normalizeHomeIndicators,
   normalizeHomeIndicatorsLayout,
+  trialDaysRemaining,
   type HomeIndicatorKey,
   type HomeIndicatorsLayout,
 } from "@pedidos/shared";
@@ -274,6 +275,10 @@ export function DashboardHome() {
   const indicatorsInGrid = homeLayout === "grid";
 
   const pendingCount = pendingCredit?.count ?? 0;
+  const trialDays =
+    user?.subscription?.status === "TRIAL"
+      ? trialDaysRemaining(user.subscription.currentPeriodEnd)
+      : null;
 
   return (
     <div>
@@ -298,6 +303,21 @@ export function DashboardHome() {
           </p>
         </div>
       </div>
+
+      {admin && trialDays != null && trialDays > 0 ? (
+        <div className="mt-6 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+          {trialDays === 1
+            ? "Resta 1 dia no período de teste"
+            : `Restam ${trialDays} dias no período de teste`}
+          {" · "}
+          <Link
+            to="/configuracoes"
+            className="font-medium text-primary hover:underline"
+          >
+            Assinar
+          </Link>
+        </div>
+      ) : null}
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-border bg-card p-4">

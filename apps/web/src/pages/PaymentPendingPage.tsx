@@ -224,6 +224,25 @@ export function PaymentPendingPage() {
           setPlanId(
             isPlanId(open.intent.planId) ? open.intent.planId : "start",
           );
+          return;
+        }
+
+        const planIdToCharge =
+          me?.subscription?.planId && isPlanId(me.subscription.planId)
+            ? me.subscription.planId
+            : "start";
+        const created = await apiFetch<{ intentId?: string }>(
+          "/billing/checkout",
+          {
+            method: "POST",
+            body: JSON.stringify({ planId: planIdToCharge }),
+          },
+        );
+        if (created.intentId) {
+          setIntentId(created.intentId);
+          setPlanId(planIdToCharge);
+        } else {
+          setError("Não foi possível iniciar o pagamento.");
         }
       } catch (ex) {
         setError(ex instanceof Error ? ex.message : "Falha ao carregar pagamento");
@@ -409,6 +428,8 @@ export function PaymentPendingPage() {
               {formatPlanPriceBrl(chargeBrl)}/mês). Confirme o cartão para
               concluir a alteração.
             </>
+          ) : user?.orgAccessMessage ? (
+            <>{user.orgAccessMessage}</>
           ) : (
             <>
               Plano <strong>{plan.name}</strong> · {planSeatPriceCaption(plan)}

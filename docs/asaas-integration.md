@@ -1,26 +1,26 @@
 # Integração Asaas — contratação PedixPro
 
-Checkout recorrente hospedado (Sandbox/produção). A conta **nova** no painel (`/cadastro`) e a contratação da landing só liberam o ERP após webhook (ou simulação com `PAYMENT_GATEWAY=fake`). O retorno do browser nunca ativa sozinho.
+Checkout recorrente hospedado (Sandbox/produção). O cadastro no painel (`/cadastro`) entra em **trial de 7 dias** sem pagamento. A contratação da landing e o paywall **depois** do trial só liberam (ou reabrem) o ERP após webhook (ou simulação com `PAYMENT_GATEWAY=fake`). O retorno do browser nunca ativa sozinho.
 
 ## Fluxo do usuário (conta nova no app)
 
 1. `/cadastro`: CNPJ, dados do admin, senha e **plano** (preços do `PLAN_CATALOG`).
-2. `POST /auth/register` cria org `PENDING_PAYMENT` + admin já com senha.
-3. API cria customer + checkout Asaas (cartão / Pix / boleto) e devolve `checkoutUrl`.
-4. O browser abre o checkout Asaas; ao voltar, `/pagamento` faz polling.
-5. Webhook `POST /api/v1/webhooks/asaas` (`asaas-access-token`) ativa a org.
-6. Admin entra no painel com a senha definida no cadastro.
+2. `POST /auth/register` cria org `ACTIVE` + assinatura `TRIAL` com `currentPeriodEnd` = agora + 7×24h (UTC; UI em America/Sao_Paulo). Sem checkout Asaas. `requiresPayment` é `false`.
+3. Admin entra no painel na hora. Convites na mesma empresa **não** ganham trial novo.
+4. Cada organização nova tem o próprio trial de 7 dias.
+5. Quando o trial expira, `syncOrgAccessFromSubscription` passa a org para `PENDING_PAYMENT` (dados preservados). Admin autenticado vai para `/pagamento` e pode assinar.
+6. Webhook `POST /api/v1/webhooks/asaas` (`asaas-access-token`) ativa a assinatura (`ACTIVE`) após o pagamento.
 
-A landing (`CheckoutForm` → `POST /billing/subscription-intents`) continua: org pendente, senha só depois do e-mail de ativação.
+A landing (`CheckoutForm` → `POST /billing/subscription-intents`) continua cobrando na hora: org pendente, senha só depois do e-mail de ativação. Se alguém pagar nesse caminho, a assinatura fica `ACTIVE`.
 
-Upgrade logado: Configurações → Assinar / mudar plano → `POST /billing/checkout` (não bloqueia trial existente até o pagamento).
+Upgrade logado: Configurações → Assinar / mudar plano → `POST /billing/checkout` (não bloqueia trial existente até o pagamento). `DEV_SKIP_PAYMENT_LOCK` não substitui o trial.
 
 ## Variáveis de ambiente
 
 | Variável | Descrição |
 | --- | --- |
 | `PAYMENT_GATEWAY` | `auto` (padrão), `asaas` ou `fake` |
-| `ASAAS_API_KEY` | Token API (`access_token` header). Sem isso, `auto` mantém trial de 14 dias no cadastro |
+| `ASAAS_API_KEY` | Token API (`access_token` header). Sem isso, `auto` não cria checkout; o cadastro no app continua com trial de 7 dias |
 | `ASAAS_BASE_URL` | Padrão sandbox: `https://api-sandbox.asaas.com/v3` |
 | `ASAAS_WEBHOOK_TOKEN` | Valor esperado no header `asaas-access-token` |
 | `ASAAS_ENVIRONMENT` | `sandbox` \| `production` |
@@ -34,7 +34,7 @@ Upgrade logado: Configurações → Assinar / mudar plano → `POST /billing/che
 Ver também `apps/api/.env.example`.
 
 ```
-App /cadastro → POST /auth/register → Asaas checkout → Webhook → /pagamento → painel
+App /cadastro → POST /auth/register → trial 7 dias → (depois) /pagamento → Webhook → painel
 Landing → POST /billing/subscription-intents → Asaas → Webhook → e-mail → /ativar-conta
 ```
 
@@ -42,7 +42,7 @@ Landing → POST /billing/subscription-intents → Asaas → Webhook → e-mail 
 
 | Método | Rota | Auth |
 | --- | --- | --- |
-| `POST` | `/api/v1/auth/register` | Público (plano + checkout se gateway ativo) |
+| `POST` | `/api/v1/auth/register` | Público (trial 7 dias; sem checkout) |
 | `POST` | `/api/v1/billing/subscription-intents` | Público + rate-limit |
 | `POST` | `/api/v1/billing/subscription-intents/:id/retry` | Público + rate-limit |
 | `GET` | `/api/v1/billing/subscription-intents/:id/status` | Público (payload seguro) |
@@ -73,7 +73,8 @@ IDs oficiais: `start` \| `pro` \| `business` (fonte: `packages/shared` `PLAN_CAT
 ## Gates de acesso
 
 - Login exige `User.activatedAt != null`.
-- Org `PENDING_PAYMENT`: admin pode autenticar só para `/pagamento`; demais roles bloqueados.
+- Cadastro no painel: org `ACTIVE` + assinatura `TRIAL` por 7 dias (`canUseApp`).
+- Trial expirado ou org `PENDING_PAYMENT`: admin pode autenticar só para `/pagamento`; demais roles bloqueados.
 - `SUSPENDED` / `CANCELED`: staff bloqueado; mobile mostra mensagem neutra.
 - Inadimplência: webhook → `PAST_DUE` → após grace → `SUSPENDED`.
 
@@ -86,7 +87,7 @@ Criação de usuário/vendedor sem senha (ou `invite: true`) gera `AccountActiva
 1. Criar conta Asaas Sandbox e gerar API key + token de webhook.
 2. Configurar webhook apontando para a API pública (`/api/v1/webhooks/asaas`), eventos de pagamento/assinatura/checkout.
 3. Preencher envs na API e redeploy.
-4. No app, criar conta em `/cadastro`, pagar no sandbox (cartão de teste Asaas) e conferir webhook + `/pagamento`.
+4. No app, criar conta em `/cadastro` (entra no trial) e, se quiser, assinar em Configurações ou após o 7º dia em `/pagamento`. Conferir webhook + painel.
 5. Na landing, contratar um plano de teste (fluxo com e-mail de senha).
 6. Validar cancelamento de renovação em Configurações (ADMIN).
 
