@@ -58,12 +58,12 @@ export function normalizeHomeIndicators(
   return out.length > 0 ? out : [...DEFAULT_HOME_INDICATORS];
 }
 
-/** Layout dos widgets na home: empilhado ou grade. */
-export const HOME_INDICATORS_LAYOUTS = ["stack", "grid"] as const;
+/** Layout dos widgets na home: grade (lado a lado) ou empilhado. */
+export const HOME_INDICATORS_LAYOUTS = ["grid", "stack"] as const;
 
 export type HomeIndicatorsLayout = (typeof HOME_INDICATORS_LAYOUTS)[number];
 
-export const DEFAULT_HOME_INDICATORS_LAYOUT: HomeIndicatorsLayout = "stack";
+export const DEFAULT_HOME_INDICATORS_LAYOUT: HomeIndicatorsLayout = "grid";
 
 export const HOME_INDICATORS_LAYOUT_LABELS: Record<
   HomeIndicatorsLayout,

@@ -31,6 +31,7 @@ import {
 } from "../services/order-pdf-load.js";
 import { resolveEffectiveUnitPrice } from "../services/price-resolve.js";
 import { getProductStockLevels } from "../services/product-stock.js";
+import { listSellerCatalogProductIds } from "../services/seller-product-catalog.js";
 import {
   handleRegisterPushDevice,
   handleUnregisterPushDevice,
@@ -55,7 +56,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
   app.addHook(
     "preHandler",
     async (req: FastifyRequest, reply: FastifyReply) => {
-      if (!req.auth) {
+      if (!req.auth || !req.auth.organizationId?.trim()) {
         return reply.status(401).send({ error: "Não autorizado" });
       }
       if (req.auth.role !== "SELLER" || !req.auth.sellerId) {
@@ -377,7 +378,10 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         operation: body.data.operation,
         clientMutationId,
         source: "seller",
-        allowedProductIds: await sellerAllowedProductIds(auth.sellerId!),
+        allowedProductIds: await sellerAllowedProductIds(
+          auth.sellerId!,
+          auth.organizationId,
+        ),
       });
     } catch (e) {
       if (replySaleCreateError(reply, e)) return;
@@ -392,10 +396,16 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       .safeParse(req.query);
     const customerId = q.success ? q.data.customerId : undefined;
 
-    const links = await prisma.sellerProduct.findMany({
-      where: { sellerId: auth.sellerId! },
-      include: {
-        product: {
+    const catalogIds = await listSellerCatalogProductIds(
+      auth.organizationId,
+      auth.sellerId!,
+    );
+    const products = catalogIds.length
+      ? await prisma.product.findMany({
+          where: {
+            organizationId: auth.organizationId,
+            id: { in: catalogIds },
+          },
           include: {
             category: { select: { id: true, code: true, name: true } },
             supplier: {
@@ -408,9 +418,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
               },
             },
           },
-        },
-      },
-    });
+        })
+      : [];
 
     const org = await prisma.organization.findUnique({
       where: { id: auth.organizationId },
@@ -456,8 +465,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
     const at = new Date();
     const out = [];
-    for (const l of links) {
-      const p = l.product;
+    for (const p of products) {
       const priced = await resolveEffectiveUnitPrice(
         auth.organizationId,
         p.id,

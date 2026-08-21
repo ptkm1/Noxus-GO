@@ -16,6 +16,7 @@ import {
   type ReactNode,
 } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch, clearTokens, getAccessToken, setTokens } from "../lib/api";
 
 export type UserSubscription = {
@@ -91,6 +92,7 @@ function clearBrowserStorage() {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -138,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshUser]);
 
   const login = useCallback(async (email: string, password: string) => {
+    queryClient.clear();
     const res = await apiFetch<{
       accessToken: string;
       refreshToken: string;
@@ -150,9 +153,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTokens(res.accessToken, res.refreshToken);
     setUser(res.user);
     return res.user;
-  }, []);
+  }, [queryClient]);
 
   const register = useCallback(async (input: RegisterInput) => {
+    queryClient.clear();
     const res = await apiFetch<{
       accessToken: string;
       refreshToken: string;
@@ -175,14 +179,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       checkoutUrl: res.checkoutUrl ?? null,
       checkoutError: res.checkoutError ?? null,
     };
-  }, []);
+  }, [queryClient]);
 
   const logout = useCallback(() => {
     clearTokens();
     clearBrowserStorage();
+    queryClient.clear();
     setUser(null);
     navigate("/login", { replace: true });
-  }, [navigate]);
+  }, [navigate, queryClient]);
 
   const value = useMemo(
     () => ({ user, loading, login, register, logout, refreshUser }),

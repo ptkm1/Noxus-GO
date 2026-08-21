@@ -400,14 +400,18 @@ async function seedOrg(organizationId: string, orgLabel: string) {
 }
 
 async function main() {
+  const argId = process.argv.slice(2).find((a) => !a.startsWith("-"));
   const orgs = await prisma.organization.findMany({
+    where: argId ? { id: argId } : { id: "seed-org" },
     select: { id: true, name: true, displayName: true },
     orderBy: { createdAt: "asc" },
   });
 
   if (orgs.length === 0) {
     throw new Error(
-      "Nenhuma organização no banco. Rode pnpm db:seed primeiro.",
+      argId
+        ? `Organização ${argId} não encontrada.`
+        : "Empresa Demo (seed-org) não encontrada. Rode pnpm db:seed primeiro, ou passe um organizationId.",
     );
   }
 
@@ -415,7 +419,7 @@ async function main() {
     await seedOrg(org.id, org.displayName ?? org.name);
   }
 
-  console.log("\nSeed chart demo concluído.");
+  console.log("\nSeed chart demo concluído (somente a(s) org(s) alvo).");
 }
 
 main()

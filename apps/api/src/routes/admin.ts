@@ -119,6 +119,10 @@ import {
 import { evaluateOrderCredit } from "../services/credit.js";
 import { resolveEffectiveUnitPrice } from "../services/price-resolve.js";
 import {
+    listAssignedProductsInOrg,
+    listSellerCatalogProductIds,
+} from "../services/seller-product-catalog.js";
+import {
     ensureDefaultOrderSituations,
     normalizeSituationCode,
 } from "../services/order-situations.js";
@@ -2474,7 +2478,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       });
 
       return prisma.product.findFirstOrThrow({
-        where: { id: created.id },
+        where: { id: created.id, organizationId: auth.organizationId },
         include: productRelationsInclude,
       });
     } catch (e) {
@@ -2732,7 +2736,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         metadata: { name: updated.name, fields: Object.keys(body.data) },
       });
       return prisma.product.findFirstOrThrow({
-        where: { id },
+        where: { id, organizationId: auth.organizationId },
         include: productRelationsInclude,
       });
     } catch (e) {
@@ -4097,11 +4101,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!seller)
       return reply.status(404).send({ error: "Vendedor não encontrado" });
 
-    const links = await prisma.sellerProduct.findMany({
-      where: { sellerId: id },
-      include: { product: true },
-    });
-    return links.map((l) => l.product);
+    const products = await listAssignedProductsInOrg(
+      auth.organizationId,
+      id,
+    );
+    return products;
   });
 
   app.put("/sellers/:id/products", async (req, reply) => {
@@ -5166,10 +5170,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       ? decToNum(org.defaultMaxSellerDiscountPercent)
       : 50;
 
-    const links = await prisma.sellerProduct.findMany({
-      where: { sellerId: q.data.sellerId },
-      include: {
-        product: {
+    const catalogIds = await listSellerCatalogProductIds(
+      auth.organizationId,
+      q.data.sellerId,
+    );
+    const rows = catalogIds.length
+      ? await prisma.product.findMany({
+          where: {
+            organizationId: auth.organizationId,
+            id: { in: catalogIds },
+          },
           select: {
             id: true,
             name: true,
@@ -5181,14 +5191,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
             maxSellerDiscountPercent: true,
             minSaleUnitPrice: true,
           },
-        },
-      },
-    });
+        })
+      : [];
 
     const at = new Date();
     const products = [];
-    for (const link of links) {
-      const p = link.product;
+    for (const p of rows) {
       const priced = await resolveEffectiveUnitPrice(auth.organizationId, p.id, {
         sellerId: q.data.sellerId,
         customerId: q.data.customerId ?? null,
@@ -5268,7 +5276,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!customer) return reply.status(400).send({ error: "Cliente inválido" });
 
     try {
-      const allowedProductIds = await sellerAllowedProductIds(body.data.sellerId);
+      const allowedProductIds = await sellerAllowedProductIds(
+        body.data.sellerId,
+        auth.organizationId,
+      );
       const sale = await computeSaleOrder({
         organizationId: auth.organizationId,
         sellerId: body.data.sellerId,
@@ -5606,7 +5617,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         notes: body.data.notes,
         status: body.data.status,
         source: "admin",
-        allowedProductIds: await sellerAllowedProductIds(body.data.sellerId),
+        allowedProductIds: await sellerAllowedProductIds(
+          body.data.sellerId,
+          auth.organizationId,
+        ),
       });
     } catch (e) {
       if (replySaleCreateError(reply, e)) return;

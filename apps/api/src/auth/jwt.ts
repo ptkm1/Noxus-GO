@@ -50,6 +50,15 @@ export function signRefreshToken(userId: string): string {
 export function verifyAccessToken(token: string): AccessPayload {
   const decoded = jwt.verify(token, accessSecret()) as AccessPayload;
   if (decoded.type !== "access") throw new Error("Invalid token type");
+  if (
+    typeof decoded.organizationId !== "string" ||
+    !decoded.organizationId.trim()
+  ) {
+    throw new Error("Invalid token organization");
+  }
+  if (typeof decoded.sub !== "string" || !decoded.sub.trim()) {
+    throw new Error("Invalid token subject");
+  }
   return decoded;
 }
 

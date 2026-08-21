@@ -24,6 +24,7 @@ import {
   StockError,
   stockErrorPayload,
 } from "./product-stock.js";
+import { listSellerCatalogProductIds } from "./seller-product-catalog.js";
 
 const createdOrderInclude = {
   items: true,
@@ -49,12 +50,10 @@ export class SaleCreateError extends Error {
 
 export async function sellerAllowedProductIds(
   sellerId: string,
+  organizationId: string,
 ): Promise<Set<string>> {
-  const allowed = await prisma.sellerProduct.findMany({
-    where: { sellerId },
-    select: { productId: true },
-  });
-  return new Set(allowed.map((a) => a.productId));
+  const ids = await listSellerCatalogProductIds(organizationId, sellerId);
+  return new Set(ids);
 }
 
 export type CreateSaleOrderParams = {

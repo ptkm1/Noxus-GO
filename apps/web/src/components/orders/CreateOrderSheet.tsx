@@ -119,7 +119,7 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
   const [showValidation, setShowValidation] = useState(false);
 
   const lookupsQ = useQuery({
-    queryKey: ["admin", "orders", "lookups"],
+    queryKey: ["admin", "orders", "lookups", user?.organizationId],
     queryFn: () =>
       apiFetch<{
         sellers: LookupSeller[];
@@ -149,7 +149,14 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
   }, [open, sellers, paymentConditions, user?.sellerId]);
 
   const catalogQ = useQuery({
-    queryKey: ["admin", "orders", "catalog", sellerId, customerId || ""],
+    queryKey: [
+      "admin",
+      "orders",
+      "catalog",
+      user?.organizationId,
+      sellerId,
+      customerId || "",
+    ],
     queryFn: () => {
       const qs = new URLSearchParams({ sellerId });
       if (customerId) qs.set("customerId", customerId);
@@ -190,6 +197,7 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
       "admin",
       "orders",
       "preview",
+      user?.organizationId,
       sellerId,
       customerId,
       debouncedItems,
