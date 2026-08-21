@@ -3,6 +3,7 @@ import { prisma } from "./db.js";
 import "./load-env.js";
 import { scheduleCustomerInactivationCron } from "./services/customer-inactivation-cron.js";
 import { readEmailOutboundConfig } from "./services/email-send.js";
+import { ensureFiscalCatalogImported } from "./services/fiscal/fiscal-catalog.js";
 import { scheduleFiscalTransmitCron } from "./services/fiscal-transmit-cron.js";
 import { scheduleMorningBriefCron } from "./services/morning-brief-cron.js";
 import { scheduleStockExpiryCron } from "./services/stock-expiry-cron.js";
@@ -37,6 +38,18 @@ try {
   app.log.info(
     `[db] ${userCount} utilizador(es). Se for 0, na raiz do repo: pnpm db:seed`,
   );
+  try {
+    const catalog = await ensureFiscalCatalogImported();
+    if (catalog.skipped) {
+      app.log.info(`[fiscal-catalog] ${catalog.count} NCM(s) já no banco`);
+    } else {
+      app.log.info(
+        `[fiscal-catalog] importados ${catalog.upserted} código(s) em ${catalog.files} arquivo(s)`,
+      );
+    }
+  } catch (err) {
+    app.log.error(err, "[fiscal-catalog] falha ao importar tabelas oficiais");
+  }
   app.log.info(`API http://${host}:${port}`);
   const emailCfg = readEmailOutboundConfig();
   if (emailCfg) {
