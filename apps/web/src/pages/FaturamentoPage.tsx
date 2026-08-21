@@ -1260,7 +1260,7 @@ export function FaturamentoPage() {
                               ) : null}
                               {inv.status === "REJECTED" &&
                               inv.rejectionReason ? (
-                                <p className="mt-1 max-w-xs text-xs text-destructive">
+                                <p className="mt-1 max-w-xs whitespace-pre-line text-xs text-destructive">
                                   {inv.rejectionReason}
                                 </p>
                               ) : null}
@@ -1527,7 +1527,7 @@ export function FaturamentoPage() {
                 ) : invoiceDetail ? (
                   <div className="space-y-3">
                     {invoiceDetail.rejectionReason ? (
-                      <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                      <p className="whitespace-pre-line rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                         {invoiceDetail.rejectionReason}
                       </p>
                     ) : null}

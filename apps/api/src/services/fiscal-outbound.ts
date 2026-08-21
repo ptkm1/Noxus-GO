@@ -35,6 +35,8 @@ import {
   shouldFallbackToSvc,
   svcForUf,
 } from "../fiscal/nfe-svc.js";
+import { validateProductFiscalAgainstCatalog } from "../fiscal/fiscal-catalog-validation.js";
+import { explainSefazRejection } from "../fiscal/sefaz-rejection-hints.js";
 import {
   computeItemTaxes,
   validateCustomerFiscal,
@@ -96,15 +98,28 @@ export async function buildOutboundInvoiceFromOrder(
     };
   }
 
+  const cfg = config!;
+  const regime = cfg.taxRegime;
+
+  const catalogIssues = (
+    await Promise.all(
+      order.items.map((i) =>
+        validateProductFiscalAgainstCatalog(i.product, {
+          regime,
+          operationKind: "OUTBOUND",
+        }),
+      ),
+    )
+  ).flat();
+
   const issues = [
     ...validateCustomerFiscal(order.customer),
     ...order.items.flatMap((i) => validateProductFiscal(i.product)),
+    ...catalogIssues,
   ];
   if (issues.length) return { ok: false as const, issues };
 
-  const cfg = config!;
   const nextNumber = cfg.nfeLastNumber + 1;
-  const regime = cfg.taxRegime;
 
   const invoiceItems = order.items.map((item, idx) => {
     const ncm = item.product.fiscalNcm;
@@ -142,8 +157,10 @@ export async function buildOutboundInvoiceFromOrder(
       taxSnapshot: {
         ...taxes,
         orig,
-        csosn: ncm?.defaultCsosn ?? taxes.csosn,
-        cst: ncm?.defaultCstIcms ?? taxes.cst,
+        csosn:
+          item.product.fiscalCsosn ?? ncm?.defaultCsosn ?? taxes.csosn,
+        cst:
+          item.product.fiscalCstIcms ?? ncm?.defaultCstIcms ?? taxes.cst,
         cProd: item.product.sku ?? item.product.barcode ?? item.productId,
         gtin: item.product.fiscalGtin ?? item.product.barcode ?? null,
         cest: item.product.fiscalCest ?? ncm?.cest ?? null,
@@ -429,13 +446,17 @@ export async function transmitOutboundInvoice(
       });
     }
 
+    const rejectionExplained = explainSefazRejection(
+      sefaz.error ?? sefaz.parsed.xMotivo,
+      sefaz.parsed.cStat,
+    );
+
     return tx.fiscalInvoice.update({
       where: { id: invoice.id },
       data: {
         ...common,
         status: "REJECTED",
-        rejectionReason:
-          sefaz.error ?? sefaz.parsed.xMotivo ?? "Rejeitada pela SEFAZ",
+        rejectionReason: rejectionExplained.userMessage,
       },
       include: { items: true, order: true },
     });
@@ -451,9 +472,14 @@ export async function transmitOutboundInvoice(
   }
 
   if (!sefaz.ok) {
+    const rejectionExplained = explainSefazRejection(
+      sefaz.error ?? updated.rejectionReason,
+      sefaz.parsed.cStat,
+    );
     return {
       ok: false as const,
-      error: sefaz.error ?? "Rejeitada pela SEFAZ",
+      error: rejectionExplained.userMessage,
+      rejection: rejectionExplained,
       invoice: updated,
     };
   }

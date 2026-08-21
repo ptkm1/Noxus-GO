@@ -8,6 +8,7 @@ import {
   CreatePurchaseUnitButton,
   CreatePurchaseUnitHint,
 } from "@/components/CreatePurchaseUnitSheet";
+import { FiscalCodeCombobox } from "@/components/FiscalCodeCombobox";
 import {
   FormActions,
   FormErrorBanner,
@@ -19,19 +20,21 @@ import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { useProductFormPage } from "@/hooks/useProductFormPage";
 import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import { cn } from "@/lib/utils";
 import {
+  formatCfopDisplay,
+  formatNcmDisplay,
   formatPurchaseUnitLabel,
   PRODUCT_CLASSIFICATIONS,
   PURCHASE_UNITS,
   productClassificationLabel,
+  type FiscalTaxRegime,
   type ProductClassification,
   type ProductFormTab,
 } from "@pedidos/shared";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { DynamicCategoryAttributes } from "../components/DynamicCategoryAttributes";
 import { ProductPromotionsPanel } from "../components/ProductPromotionsPanel";
@@ -128,12 +131,43 @@ export function ProductFormPage() {
   );
 
   const canCreatePriceTable = useCanCreatePriceTable();
+  const qc = useQueryClient();
 
   const { data: outboundOps = [] } = useQuery({
     queryKey: ["admin", "fiscal", "operations", "OUTBOUND"],
     queryFn: () =>
       apiFetch<FiscalOpOption[]>("/admin/fiscal/operations?direction=OUTBOUND"),
   });
+
+  const { data: fiscalSettings } = useQuery({
+    queryKey: ["admin", "fiscal", "settings"],
+    queryFn: () =>
+      apiFetch<{ taxRegime?: FiscalTaxRegime }>("/admin/fiscal/settings"),
+  });
+  const taxRegime = fiscalSettings?.taxRegime ?? "SIMPLES_NACIONAL";
+  const isSimples = taxRegime === "SIMPLES_NACIONAL";
+
+  const selectedOutboundOp = outboundOps.find(
+    (o) => o.id === values.outboundOperationId,
+  );
+
+  async function selectCfopFromCatalog(cfopCode: string) {
+    if (!cfopCode) {
+      setField("outboundOperationId", "");
+      return;
+    }
+    const op = await apiFetch<FiscalOpOption>(
+      "/admin/fiscal/operations/ensure-cfop",
+      {
+        method: "POST",
+        body: JSON.stringify({ cfop: cfopCode, direction: "OUTBOUND" }),
+      },
+    );
+    await qc.invalidateQueries({
+      queryKey: ["admin", "fiscal", "operations", "OUTBOUND"],
+    });
+    setField("outboundOperationId", op.id);
+  }
 
   if (isEdit && isLoading) {
     return (
@@ -227,14 +261,14 @@ export function ProductFormPage() {
 
             <FormGrid cols={2}>
               <FormField
-                label="Nome"
-                htmlFor="prod-name"
+                label="Descrição"
+                htmlFor="prod-desc"
                 required
                 className="sm:col-span-2"
                 error={fieldError("name")}
               >
                 <Input
-                  id="prod-name"
+                  id="prod-desc"
                   placeholder="Ex.: Pimentinha Saltbits"
                   value={values.name}
                   onChange={(e) => setField("name", e.target.value)}
@@ -327,19 +361,6 @@ export function ProductFormPage() {
                   value={values.barcode}
                   onChange={(e) => setField("barcode", e.target.value)}
                   inputMode="numeric"
-                />
-              </FormField>
-
-              <FormField
-                label="Descrição"
-                htmlFor="prod-desc"
-                className="sm:col-span-2"
-              >
-                <Textarea
-                  id="prod-desc"
-                  rows={4}
-                  value={values.description}
-                  onChange={(e) => setField("description", e.target.value)}
                 />
               </FormField>
 
@@ -868,33 +889,37 @@ export function ProductFormPage() {
 
         {activeTab === "fiscal" ? (
           <FormSection
-            title="Dados fiscais para NF-e"
-            description="Campos usados na emissão. Digite o NCM livremente (8 dígitos)."
+            title="Dados fiscais"
+            description="Selecione códigos oficiais da tabela fiscal. Digite o código ou parte da descrição para pesquisar."
           >
             <FormGrid cols={2}>
               <FormField
                 label="NCM"
                 htmlFor="prod-ncm"
                 error={fieldError("ncm")}
-                hint="8 dígitos. Digite o código livremente."
+                hint="Pesquise por código ou descrição. Só códigos da tabela oficial."
               >
-                <Input
+                <FiscalCodeCombobox
                   id="prod-ncm"
-                  placeholder="27101932"
+                  type="NCM"
                   value={values.ncm}
-                  onChange={(e) => {
-                    setField("ncm", e.target.value);
+                  formatCode={formatNcmDisplay}
+                  placeholder="Digite ou selecione o NCM"
+                  searchPlaceholder="Código ou descrição (ex.: bebida, 2206)…"
+                  onValueChange={(code) => {
+                    setField("ncm", code);
                     if (values.ncmId) setField("ncmId", "");
+                    if (code && values.fiscalCest) {
+                      /* mantém CEST; usuário confirma sugestões abaixo */
+                    }
                   }}
-                  inputMode="numeric"
-                  maxLength={10}
                 />
               </FormField>
 
               <FormField
                 label="Exceção NCM"
                 htmlFor="prod-ncm-exc"
-                hint="EX TIPI na NF-e. Deixe vazio ou 0 se o NCM não tiver exceção — o XML omite a tag."
+                hint="EX TIPI na NF-e. Deixe vazio ou 0 se o NCM não tiver exceção."
               >
                 <Input
                   id="prod-ncm-exc"
@@ -904,19 +929,54 @@ export function ProductFormPage() {
               </FormField>
 
               <FormField
+                label="CEST"
+                htmlFor="prod-fiscal-cest"
+                hint="Convênio ICMS 92/2015. Com NCM informado, a busca prioriza CESTs relacionados."
+              >
+                <FiscalCodeCombobox
+                  id="prod-fiscal-cest"
+                  type="CEST"
+                  value={values.fiscalCest}
+                  relatedNcm={values.ncm}
+                  placeholder="Pesquisar CEST…"
+                  searchPlaceholder="Código CEST, descrição ou NCM…"
+                  onValueChange={(code) => setField("fiscalCest", code)}
+                />
+              </FormField>
+
+              <FormField
+                label="CFOP padrão de saída"
+                htmlFor="prod-outbound-op"
+                hint="Filtrado para operações de saída. Pesquise por código ou descrição."
+              >
+                <FiscalCodeCombobox
+                  id="prod-outbound-op"
+                  type="CFOP"
+                  value={selectedOutboundOp?.cfop ?? ""}
+                  formatCode={formatCfopDisplay}
+                  direction="OUTBOUND"
+                  placeholder="Digite ou selecione o CFOP"
+                  searchPlaceholder="Código ou descrição (ex.: 5102, venda)…"
+                  emptyLabel="Usar padrão (5.102)"
+                  onValueChange={(code) => {
+                    void selectCfopFromCatalog(code);
+                  }}
+                />
+              </FormField>
+
+              <FormField
                 label="Origem da mercadoria"
                 htmlFor="prod-nfe-origin"
                 error={fieldError("nfeOrigin")}
-                hint="0 = Nacional. Obrigatório para NF-e."
+                hint="Obrigatório para NF-e."
               >
-                <Input
+                <FiscalCodeCombobox
                   id="prod-nfe-origin"
-                  type="number"
-                  min="0"
-                  max="8"
-                  step="1"
+                  type="ORIGEM"
                   value={values.nfeOrigin}
-                  onChange={(e) => setField("nfeOrigin", e.target.value)}
+                  placeholder="Selecionar origem…"
+                  allowClear={false}
+                  onValueChange={(code) => setField("nfeOrigin", code)}
                 />
               </FormField>
 
@@ -936,22 +996,49 @@ export function ProductFormPage() {
                 />
               </FormField>
 
-              <FormField
-                label="CFOP padrão de saída"
-                htmlFor="prod-outbound-op"
-              >
-                <AppSelect
-                  id="prod-outbound-op"
-                  value={values.outboundOperationId}
-                  onValueChange={(v) => setField("outboundOperationId", v)}
-                  emptyLabel="Usar padrão (5102)"
-                  placeholder="Usar padrão (5102)"
-                  options={outboundOps
-                    .filter((o) => o.active)
-                    .map((o) => ({
-                      value: o.id,
-                      label: `${o.cfop} — ${o.description}`,
-                    }))}
+              {isSimples ? (
+                <FormField
+                  label="CSOSN"
+                  htmlFor="prod-csosn"
+                  hint="Simples Nacional — selecione a situação da operação."
+                >
+                  <FiscalCodeCombobox
+                    id="prod-csosn"
+                    type="CSOSN"
+                    value={values.fiscalCsosn}
+                    placeholder="Selecionar CSOSN…"
+                    onValueChange={(code) => {
+                      setField("fiscalCsosn", code);
+                      if (code) setField("fiscalCstIcms", "");
+                    }}
+                  />
+                </FormField>
+              ) : (
+                <FormField
+                  label="CST ICMS"
+                  htmlFor="prod-cst-icms"
+                  hint="Regime normal — código de situação tributária do ICMS."
+                >
+                  <FiscalCodeCombobox
+                    id="prod-cst-icms"
+                    type="CST_ICMS"
+                    value={values.fiscalCstIcms}
+                    placeholder="Selecionar CST…"
+                    onValueChange={(code) => {
+                      setField("fiscalCstIcms", code);
+                      if (code) setField("fiscalCsosn", "");
+                    }}
+                  />
+                </FormField>
+              )}
+
+              <FormField label="CST PIS" htmlFor="prod-cst-pis">
+                <FiscalCodeCombobox
+                  id="prod-cst-pis"
+                  type="CST_PIS"
+                  value={values.cstPis}
+                  placeholder="Selecionar CST PIS…"
+                  onValueChange={(code) => setField("cstPis", code)}
                 />
               </FormField>
 
@@ -968,22 +1055,10 @@ export function ProductFormPage() {
               </FormField>
 
               <FormField
-                label="CEST"
-                htmlFor="prod-fiscal-cest"
-                hint="Convênio ICMS 92/2015. Obrigatório na NF-e quando o NCM está na tabela de substituição tributária (7 dígitos)."
-              >
-                <Input
-                  id="prod-fiscal-cest"
-                  value={values.fiscalCest}
-                  onChange={(e) => setField("fiscalCest", e.target.value)}
-                />
-              </FormField>
-
-              <FormField
                 label="Descrição na NF-e"
                 htmlFor="prod-fiscal-desc"
                 className="sm:col-span-2"
-                hint="Se vazio, usa o nome comercial do produto."
+                hint="Se vazio, usa a descrição do produto."
               >
                 <Input
                   id="prod-fiscal-desc"
@@ -997,6 +1072,7 @@ export function ProductFormPage() {
               <FormField
                 label="Classificação fiscal"
                 htmlFor="prod-fiscal-class"
+                hint="Texto livre quando não houver tabela oficial aplicável."
               >
                 <Input
                   id="prod-fiscal-class"
@@ -1008,6 +1084,7 @@ export function ProductFormPage() {
               <FormField
                 label="Classificação PIS/COFINS"
                 htmlFor="prod-pis-cofins"
+                hint="Texto livre (sem tabela padronizada no sistema)."
               >
                 <Input
                   id="prod-pis-cofins"
@@ -1015,14 +1092,6 @@ export function ProductFormPage() {
                   onChange={(e) =>
                     setField("pisCofinsClassification", e.target.value)
                   }
-                />
-              </FormField>
-
-              <FormField label="CST PIS" htmlFor="prod-cst-pis">
-                <Input
-                  id="prod-cst-pis"
-                  value={values.cstPis}
-                  onChange={(e) => setField("cstPis", e.target.value)}
                 />
               </FormField>
 
@@ -1059,28 +1128,52 @@ export function ProductFormPage() {
               </FormField>
 
               <FormField
-                label="CBS/IBS"
-                htmlFor="prod-cbs-ibs"
-                className="sm:col-span-2"
-                hint="Reforma tributária — ainda não vai no XML da NF-e 4.00. Cadastro para quando a NT da SEFAZ exigir o grupo IBSCBS."
+                label="CBS"
+                htmlFor="prod-cbs"
+                hint="Reforma tributária — opções aparecem quando a tabela oficial for importada."
               >
-                <Input
-                  id="prod-cbs-ibs"
+                <FiscalCodeCombobox
+                  id="prod-cbs"
+                  type="CBS"
                   value={values.cbsIbsClassification}
-                  onChange={(e) =>
-                    setField("cbsIbsClassification", e.target.value)
+                  placeholder="Selecionar classificação CBS…"
+                  onValueChange={(code) =>
+                    setField("cbsIbsClassification", code)
                   }
                 />
               </FormField>
+
+              <FormField
+                label="IBS"
+                htmlFor="prod-ibs"
+                hint="Reforma tributária — opções aparecem quando a tabela oficial for importada."
+              >
+                <FiscalCodeCombobox
+                  id="prod-ibs"
+                  type="IBS"
+                  value={values.ibsClassification}
+                  placeholder="Selecionar classificação IBS…"
+                  onValueChange={(code) => setField("ibsClassification", code)}
+                />
+              </FormField>
             </FormGrid>
+
+            {values.ncm.replace(/\D/g, "").length === 8 &&
+            values.fiscalCest === "" ? (
+              <p className="mt-3 text-sm text-muted-foreground">
+                Sugestão: com o NCM preenchido, abra o CEST e veja opções
+                relacionadas — confirme antes de gravar.
+              </p>
+            ) : null}
+
             {values.ncm.replace(/\D/g, "").length === 8 &&
             values.nfeOrigin !== "" &&
             values.fiscalUnit ? (
               <p className="mt-3 text-sm text-green-700">Pronto para NF-e</p>
             ) : (
               <p className="mt-3 text-sm text-amber-700">
-                Cadastro fiscal incompleto — informe NCM (8 dígitos), origem e
-                unidade fiscal.
+                Cadastro fiscal incompleto — informe NCM, origem e unidade
+                fiscal.
               </p>
             )}
           </FormSection>

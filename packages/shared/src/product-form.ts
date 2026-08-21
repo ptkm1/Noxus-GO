@@ -112,6 +112,9 @@ export type ProductFormValues = {
   ipiPercent: string;
   icmsCostPercent: string;
   cbsIbsClassification: string;
+  ibsClassification: string;
+  fiscalCstIcms: string;
+  fiscalCsosn: string;
   supplierId: string;
 };
 
@@ -174,6 +177,9 @@ export type ProductRecord = {
   ipiPercent?: unknown | null;
   icmsCostPercent?: unknown | null;
   cbsIbsClassification?: string | null;
+  ibsClassification?: string | null;
+  fiscalCstIcms?: string | null;
+  fiscalCsosn?: string | null;
   attributes?: Record<string, unknown>;
   createdAt?: string;
   category?: { id: string } | null;
@@ -236,6 +242,9 @@ export function emptyProductForm(): ProductFormValues {
     ipiPercent: "",
     icmsCostPercent: "",
     cbsIbsClassification: "",
+    ibsClassification: "",
+    fiscalCstIcms: "",
+    fiscalCsosn: "",
     supplierId: "",
   };
 }
@@ -292,6 +301,9 @@ export function productToForm(p: ProductRecord): ProductFormValues {
     ipiPercent: numStr(p.ipiPercent),
     icmsCostPercent: numStr(p.icmsCostPercent),
     cbsIbsClassification: p.cbsIbsClassification ?? "",
+    ibsClassification: p.ibsClassification ?? "",
+    fiscalCstIcms: p.fiscalCstIcms ?? "",
+    fiscalCsosn: p.fiscalCsosn ?? "",
     supplierId: p.supplierId ?? p.supplier?.id ?? "",
   };
 }
@@ -405,6 +417,9 @@ const TAB_FIELDS: Record<ProductFormTab, (keyof ProductFormValues)[]> = {
     "ipiPercent",
     "icmsCostPercent",
     "cbsIbsClassification",
+    "ibsClassification",
+    "fiscalCstIcms",
+    "fiscalCsosn",
   ],
   fornecedor: ["supplierId"],
   atributos: [],
@@ -428,7 +443,7 @@ export function validateProductForm(
   const errors: ProductFormErrors = {};
 
   if (!values.name.trim()) {
-    errors.name = "Informe o nome do produto.";
+    errors.name = "Informe a descrição do produto.";
   }
 
   if (!values.categoryId.trim()) {
@@ -617,6 +632,9 @@ export type ProductApiPayload = {
   ipiPercent?: number | null;
   icmsCostPercent?: number | null;
   cbsIbsClassification?: string | null;
+  ibsClassification?: string | null;
+  fiscalCstIcms?: string | null;
+  fiscalCsosn?: string | null;
   attributes?: Record<string, unknown>;
 };
 
@@ -643,7 +661,7 @@ export function formToProductPayload(
     name: values.name.trim(),
     sku: strOrNull(values.sku),
     barcode: strOrNull(values.barcode),
-    description: strOrNull(values.description),
+    description: values.name.trim(),
     imageUrl: strOrNull(values.imageUrl),
     basePrice: Number(values.basePrice),
     categoryId: values.categoryId.trim(),
@@ -709,6 +727,9 @@ export function formToProductPayload(
       ? Number(values.icmsCostPercent)
       : null,
     cbsIbsClassification: strOrNull(values.cbsIbsClassification),
+    ibsClassification: strOrNull(values.ibsClassification),
+    fiscalCstIcms: strOrNull(values.fiscalCstIcms),
+    fiscalCsosn: strOrNull(values.fiscalCsosn),
     attributes: cleanedAttrs,
   };
 }

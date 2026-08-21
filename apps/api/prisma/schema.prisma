@@ -731,6 +731,12 @@ model Product {
   ipiPercent       Decimal?             @db.Decimal(5, 2)
   icmsCostPercent  Decimal?           @db.Decimal(5, 2)
   cbsIbsClassification String?
+  /// Classificação IBS (Reforma Tributária) — código oficial quando a tabela estiver carregada.
+  ibsClassification    String?
+  /// CST ICMS do produto (regime normal). Preferência sobre default do NCM da org.
+  fiscalCstIcms        String?
+  /// CSOSN do produto (Simples Nacional). Preferência sobre default do NCM da org.
+  fiscalCsosn          String?
   organizationId   String
   organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   categoryId       String?
@@ -765,6 +771,30 @@ model Product {
   @@index([organizationId, supplierId])
   @@index([organizationId, categoryId])
   @@index([organizationId, ncm])
+}
+
+/// Catálogo nacional de códigos fiscais (NCM, CFOP, CEST, CST, etc.).
+/// Atualizado por importação de tabelas oficiais — não hardcode na UI.
+model FiscalCatalogCode {
+  id            String    @id @default(cuid())
+  /// NCM | CEST | CFOP | CST_ICMS | CSOSN | ORIGEM | CST_PIS | CBS | IBS | CLASS_TRIB | BENEFICIO
+  type          String
+  code          String
+  description   String
+  active        Boolean   @default(true)
+  validFrom     DateTime?
+  validTo       DateTime?
+  /// Relacionamentos e filtros (ex.: relatedNcms, contexts, regime).
+  metadata      Json      @default("{}")
+  /// Identificador da fonte/versão oficial (ex.: TIPI-2024-01, CFOP-AjusteSinief).
+  sourceVersion String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([type, code])
+  @@index([type, active])
+  @@index([type, code])
+  @@index([description])
 }
 
 /// Lote de produto com validade e saldo próprio.
