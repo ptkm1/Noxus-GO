@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formatZodIssues, issuesFromZod } from "../util/zod-reply.js";
 import {
   deletePushDevice,
   getWebPushPublicKey,
@@ -36,9 +37,18 @@ export const unregisterPushDeviceBody = z
 export async function handleRegisterPushDevice(
   userId: string,
   raw: unknown,
-): Promise<{ id: string } | { error: string; status: number }> {
+): Promise<
+  | { id: string }
+  | { error: string; status: number; issues?: ReturnType<typeof issuesFromZod> }
+> {
   const body = registerPushDeviceBody.safeParse(raw);
-  if (!body.success) return { error: "Dados inválidos", status: 400 };
+  if (!body.success) {
+    return {
+      error: `Dados inválidos (${formatZodIssues(body.error)})`,
+      status: 400,
+      issues: issuesFromZod(body.error),
+    };
+  }
 
   if (body.data.platform === "WEB") {
     if (!getWebPushPublicKey()) {
@@ -66,9 +76,18 @@ export async function handleRegisterPushDevice(
 export async function handleUnregisterPushDevice(
   userId: string,
   raw: unknown,
-): Promise<{ ok: true } | { error: string; status: number }> {
+): Promise<
+  | { ok: true }
+  | { error: string; status: number; issues?: ReturnType<typeof issuesFromZod> }
+> {
   const body = unregisterPushDeviceBody.safeParse(raw);
-  if (!body.success) return { error: "Dados inválidos", status: 400 };
+  if (!body.success) {
+    return {
+      error: `Dados inválidos (${formatZodIssues(body.error)})`,
+      status: 400,
+      issues: issuesFromZod(body.error),
+    };
+  }
   await deletePushDevice({ userId, ...body.data });
   return { ok: true };
 }

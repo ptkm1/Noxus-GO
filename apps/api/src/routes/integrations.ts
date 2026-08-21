@@ -12,6 +12,7 @@ import {
   fetchIbgeMunicipios,
   fetchIbgeUfs,
 } from "../services/ibge/brasilapi.js";
+import { sendZodError } from "../util/zod-reply.js";
 
 const digitsParam = z.object({
   digits: z.string().regex(/^\d{14}$/, "Informe exatamente 14 dígitos"),
@@ -36,10 +37,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app) => {
   app.get("/cnpj/:digits", async (req, reply) => {
     const parsed = digitsParam.safeParse(req.params);
     if (!parsed.success) {
-      return reply.status(400).send({
-        error: "CNPJ inválido",
-        details: parsed.error.flatten(),
-      });
+      return sendZodError(reply, parsed.error, req, "CNPJ inválido");
     }
 
     if (!isValidCnpj(parsed.data.digits)) {
@@ -80,7 +78,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app) => {
   app.get("/cep/:digits", async (req, reply) => {
     const parsed = cepParam.safeParse(req.params);
     if (!parsed.success) {
-      return reply.status(400).send({ error: "CEP inválido" });
+      return sendZodError(reply, parsed.error, req, "CEP inválido");
     }
     try {
       return await fetchCep(parsed.data.digits);
@@ -106,7 +104,7 @@ export const integrationsRoutes: FastifyPluginAsync = async (app) => {
   app.get("/ibge/municipios/:uf", async (req, reply) => {
     const parsed = ufParam.safeParse(req.params);
     if (!parsed.success) {
-      return reply.status(400).send({ error: "UF inválida" });
+      return sendZodError(reply, parsed.error, req, "UF inválida");
     }
     try {
       return await fetchIbgeMunicipios(parsed.data.uf);

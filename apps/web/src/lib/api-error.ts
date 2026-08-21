@@ -12,9 +12,31 @@ export class ApiError extends Error {
   }
 }
 
+function issuesFromDetails(details: unknown): ApiIssue[] {
+  if (!details || typeof details !== "object") return [];
+  const d = details as {
+    fieldErrors?: Record<string, string[] | undefined>;
+    formErrors?: string[];
+  };
+  const out: ApiIssue[] = [];
+  if (d.fieldErrors) {
+    for (const [field, msgs] of Object.entries(d.fieldErrors)) {
+      for (const message of msgs ?? []) {
+        out.push({ code: field, message });
+      }
+    }
+  }
+  for (const message of d.formErrors ?? []) {
+    out.push({ message });
+  }
+  return out;
+}
+
 export function formatApiIssues(issues?: ApiIssue[]): string | undefined {
   if (!issues?.length) return undefined;
-  return issues.map((i) => i.message).join("\n");
+  return issues
+    .map((i) => (i.code ? `${i.code}: ${i.message}` : i.message))
+    .join("\n");
 }
 
 export function getErrorMessage(error: unknown): string {
@@ -29,11 +51,15 @@ export async function errorFromResponse(res: Response): Promise<ApiError> {
     error?: string;
     message?: string;
     issues?: ApiIssue[];
+    details?: unknown;
   };
-  const fromIssues = formatApiIssues(body.issues);
+  const issues =
+    body.issues?.length ? body.issues : issuesFromDetails(body.details);
+  const fromIssues = formatApiIssues(issues);
+  const generic = body.error?.trim() === "Dados inválidos";
   const msg =
     fromIssues ||
-    body.error?.trim() ||
+    (!generic ? body.error?.trim() : undefined) ||
     body.message?.trim() ||
     (res.status === 401
       ? "Sessão expirada. Faça login novamente."
@@ -44,5 +70,8 @@ export async function errorFromResponse(res: Response): Promise<ApiError> {
           : res.status >= 500
             ? "Erro no servidor. Tente novamente em instantes."
             : res.statusText || "Não foi possível concluir a operação.");
-  return new ApiError(msg, res.status, body.issues);
+  if (import.meta.env.DEV) {
+    console.warn("[api]", res.status, res.url, body);
+  }
+  return new ApiError(msg, res.status, issues.length ? issues : undefined);
 }

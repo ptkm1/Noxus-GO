@@ -23,6 +23,7 @@ import { subscriptionCardPayBodySchema } from "../services/billing/card-pay-vali
 import { reconcileOrganizationBilling } from "../services/billing/reconcile-asaas-billing.js";
 import { resolveClientRemoteIp } from "../util/client-ip.js";
 import { getAuth } from "../util/guards.js";
+import { sendZodError } from "../util/zod-reply.js";
 
 const intentBody = z.object({
   planId: z.string().min(1),
@@ -86,9 +87,7 @@ export const billingRoutes: FastifyPluginAsync = async (app) => {
     publicApp.post("/subscription-intents", async (req, reply) => {
       const parsed = intentBody.safeParse(req.body);
       if (!parsed.success) {
-        return reply
-          .status(400)
-          .send({ error: "Dados inválidos", details: parsed.error.flatten() });
+        return sendZodError(reply, parsed.error, req);
       }
       try {
         const result = await createSubscriptionIntent(parsed.data);
@@ -158,10 +157,12 @@ export const billingRoutes: FastifyPluginAsync = async (app) => {
       const id = (req.params as { id: string }).id;
       const parsed = subscriptionCardPayBodySchema.safeParse(req.body);
       if (!parsed.success) {
-        return reply.status(400).send({
-          error: "Dados do cartão inválidos",
-          details: parsed.error.flatten(),
-        });
+        return sendZodError(
+          reply,
+          parsed.error,
+          req,
+          "Dados do cartão inválidos",
+        );
       }
 
       const remoteIp = resolveClientRemoteIp(req);

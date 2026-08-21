@@ -62,6 +62,7 @@ import {
 } from "../services/seller-customer-access.js";
 import { recordSellerLocation } from "../services/seller-location-write.js";
 import { decToNum } from "../util/money.js";
+import { sendZodError } from "../util/zod-reply.js";
 
 const idParam = z.object({ id: z.string().min(1) });
 
@@ -146,8 +147,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
   app.patch("/me", async (req, reply) => {
     const auth = req.auth!;
     const body = z.object({ name: z.string().min(1) }).safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     await prisma.user.update({
       where: { id: auth.sub },
       data: { name: body.data.name },
@@ -318,35 +320,11 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
           .min(1),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({
-        error: "Dados inválidos",
-        details: body.error.flatten(),
-      });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const clientMutationId = body.data.clientMutationId?.trim();
-    if (clientMutationId) {
-      const dup = await prisma.order.findUnique({
-        where: { clientMutationId },
-        include: {
-          items: true,
-          customer: true,
-          paymentCondition: true,
-          seller: { include: { user: { select: { name: true } } } },
-        },
-      });
-      if (dup) {
-        if (
-          dup.sellerId !== auth.sellerId ||
-          dup.organizationId !== auth.organizationId
-        ) {
-          return reply
-            .status(403)
-            .send({ error: "Pedido já registado por outra conta." });
-        }
-        return dup;
-      }
-    }
 
     const showUnassigned = await getSellerShowUnassignedCustomers(
       auth.organizationId,
@@ -384,172 +362,27 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(400).send({ error: "Cliente inválido" });
     }
 
-    const paymentCondition = await prisma.paymentCondition.findFirst({
-      where: {
-        id: body.data.paymentConditionId,
-        organizationId: auth.organizationId,
-        active: true,
-      },
-    });
-    if (!paymentCondition) {
-      return reply
-        .status(400)
-        .send({ error: "Condição de pagamento inválida" });
-    }
-
-    const allowed = await prisma.sellerProduct.findMany({
-      where: { sellerId: auth.sellerId! },
-      select: { productId: true },
-    });
-    const allowedSet = new Set(allowed.map((a) => a.productId));
-
     try {
-      const sale = await computeSaleOrder({
+      return await createSaleOrder({
         organizationId: auth.organizationId,
+        actorUserId: auth.sub,
         sellerId: auth.sellerId!,
         customerId: body.data.customerId,
+        paymentConditionId: body.data.paymentConditionId,
         items: body.data.items.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
           discountPercent: i.discountPercent,
         })),
-        allowedProductIds: allowedSet,
+        notes: body.data.notes,
+        status: body.data.status,
+        operation: body.data.operation,
+        clientMutationId,
+        source: "seller",
+        allowedProductIds: await sellerAllowedProductIds(auth.sellerId!),
       });
-
-      let orderStatus: OrderStatus = (body.data.status ??
-        "CONFIRMED") as OrderStatus;
-      let creditHoldPayload: Prisma.InputJsonValue | undefined;
-
-      if (orderStatus === "CONFIRMED") {
-        const ev = await evaluateOrderCredit({
-          organizationId: auth.organizationId,
-          customerId: body.data.customerId,
-          proposedOrderTotal: sale.netTotal,
-        });
-        if (ev.action === "BLOCK") {
-          return reply.status(403).send({
-            error: ev.violations.map((v) => v.message).join(" "),
-            creditDenied: true,
-            violations: ev.violations,
-          });
-        }
-        if (ev.action === "APPROVAL") {
-          orderStatus = "PENDING_CREDIT_APPROVAL";
-          creditHoldPayload = violationsToJson(ev.violations);
-        }
-      }
-
-      if (orderStatus === "CONFIRMED") {
-        await assertSufficientStock(
-          auth.organizationId,
-          sale.lines.map((l) => ({
-            productId: l.productId,
-            quantity: l.quantity,
-          })),
-        );
-      }
-
-      const order = await prisma.$transaction(async (tx) => {
-        const orderNumber = await nextOrderNumber(tx, auth.organizationId);
-        return tx.order.create({
-          data: {
-            organizationId: auth.organizationId,
-            sellerId: auth.sellerId!,
-            customerId: body.data.customerId,
-            paymentConditionId: body.data.paymentConditionId,
-            operation: body.data.operation ?? "SALE",
-            status: orderStatus,
-            totalAmount: sale.netTotal,
-            comboDiscountTotal: sale.comboDiscountTotal,
-            notes: body.data.notes,
-            orderNumber,
-            ...(creditHoldPayload !== undefined
-              ? { creditHoldReasons: creditHoldPayload }
-              : {}),
-            ...(clientMutationId ? { clientMutationId } : {}),
-            items: {
-              create: sale.lines.map((l) => ({
-                productId: l.productId,
-                quantity: l.quantity,
-                unitPrice: l.unitPrice,
-                productName: l.productName,
-                commissionPercent: l.commissionPercent,
-                commissionAmount: l.commissionAmount,
-              })),
-            },
-          },
-          include: {
-            items: true,
-            customer: true,
-            paymentCondition: true,
-            seller: {
-              include: {
-                user: { select: { name: true } },
-              },
-            },
-          },
-        });
-      });
-
-      if (order.status === "PENDING_CREDIT_APPROVAL") {
-        await notifyAdminsCreditPending({
-          organizationId: auth.organizationId,
-          order: {
-            id: order.id,
-            totalAmount: order.totalAmount,
-            sellerId: order.sellerId,
-            seller: {
-              user: order.seller.user,
-              managerUserId: order.seller.managerUserId,
-            },
-            customer: order.customer,
-          },
-        });
-      }
-
-      if (order.status === "CONFIRMED") {
-        await applyStockOnStatusChange(
-          order.id,
-          "DRAFT",
-          "CONFIRMED",
-          auth.sub,
-        );
-        void reactivateCustomerOnSale(order.customerId);
-        void notifySaleConfirmed({
-          organizationId: auth.organizationId,
-          order: {
-            id: order.id,
-            totalAmount: order.totalAmount,
-            sellerId: order.sellerId,
-            seller: {
-              user: order.seller.user,
-              managerUserId: order.seller.managerUserId,
-            },
-            customer: order.customer,
-          },
-        });
-      }
-
-      await auditFromAuth(auth, {
-        action: AUDIT_ACTION.CREATE,
-        entityType: AUDIT_ENTITY.Order,
-        entityId: order.id,
-        metadata: {
-          status: order.status,
-          sellerId: order.sellerId,
-          customerId: order.customerId,
-          itemCount: order.items.length,
-          totalAmount: Number(order.totalAmount),
-          source: "seller",
-        },
-      });
-
-      return order;
     } catch (e) {
-      if (e instanceof OrderPricingError)
-        return reply.status(400).send({ error: e.message });
-      if (e instanceof StockError)
-        return reply.status(400).send(stockErrorPayload(e));
+      if (replySaleCreateError(reply, e)) return;
       throw e;
     }
   });
@@ -674,8 +507,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         productIds: z.array(z.string().min(1)).min(1).max(500),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const products = await getProductStockLevels(
       auth.organizationId,
@@ -743,10 +577,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
   app.post("/customers", async (req, reply) => {
     const auth = req.auth!;
     const body = customerBodySchema.safeParse(req.body);
-    if (!body.success)
-      return reply
-        .status(400)
-        .send({ error: "Dados inválidos", details: body.error.flatten() });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const registrationMode = await getCustomerRegistrationMode(
       auth.organizationId,
@@ -810,10 +643,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
     const body = customerPatchSchema.safeParse(req.body);
-    if (!body.success)
-      return reply
-        .status(400)
-        .send({ error: "Dados inválidos", details: body.error.flatten() });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await prisma.customer.findFirst({
       where: {
@@ -874,10 +706,12 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
     const complete = parseCompleteCustomerBody(merged);
     if (!complete.success) {
-      return reply.status(400).send({
-        error: "Cadastro incompleto — preencha todos os campos obrigatórios.",
-        details: complete.error.flatten(),
-      });
+      return sendZodError(
+        reply,
+        complete.error,
+        req,
+        "Cadastro incompleto — preencha todos os campos obrigatórios",
+      );
     }
 
     try {
@@ -1017,8 +851,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         customerIds: z.array(z.string()).min(1).max(24),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const showUnassigned = await getSellerShowUnassignedCustomers(
       auth.organizationId,
@@ -1088,8 +923,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         customerIds: z.array(z.string()).min(1).max(24),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const showUnassigned = await getSellerShowUnassignedCustomers(
       auth.organizationId,
@@ -1174,8 +1010,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         notes: z.string().max(1000).optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existingOpen = await prisma.sellerCustomerVisit.findFirst({
       where: { sellerId: auth.sellerId!, checkedOutAt: null },
@@ -1230,8 +1067,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         notes: z.string().max(1000).optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const visit = await prisma.sellerCustomerVisit.findFirst({
       where: {
@@ -1274,8 +1112,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         accuracyMeters: z.number().positive().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const result = await recordSellerLocation({
       sellerId: auth.sellerId!,
@@ -1324,7 +1163,10 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const result = await handleRegisterPushDevice(auth.sub, req.body);
     if ("error" in result)
-      return reply.status(result.status).send({ error: result.error });
+      return reply.status(result.status).send({
+        error: result.error,
+        issues: "issues" in result ? result.issues : undefined,
+      });
     return result;
   });
 
@@ -1332,7 +1174,10 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const result = await handleUnregisterPushDevice(auth.sub, req.body);
     if ("error" in result)
-      return reply.status(result.status).send({ error: result.error });
+      return reply.status(result.status).send({
+        error: result.error,
+        issues: "issues" in result ? result.issues : undefined,
+      });
     return result;
   });
 };

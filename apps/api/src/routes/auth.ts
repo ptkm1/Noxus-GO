@@ -43,6 +43,7 @@ import {
     resolveTeamLeaderTeamId,
 } from "../services/sales-teams.js";
 import { getAuth } from "../util/guards.js";
+import { sendZodError } from "../util/zod-reply.js";
 
 async function accessPayloadForUser(user: {
   id: string;
@@ -148,9 +149,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   app.post("/register", async (req, reply) => {
     const parsed = registerBody.safeParse(req.body);
     if (!parsed.success) {
-      return reply
-        .status(400)
-        .send({ error: "Dados inválidos", details: parsed.error.flatten() });
+      return sendZodError(reply, parsed.error, req);
     }
 
     const {
@@ -293,9 +292,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         },
         "login: JSON inválido ou campos em falta (esperado email + password)",
       );
-      return reply
-        .status(400)
-        .send({ error: "Dados inválidos", details: parsed.error.flatten() });
+      return sendZodError(reply, parsed.error, req);
     }
 
     const emailNorm = parsed.data.email;
@@ -378,8 +375,9 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
   app.post("/refresh", async (req, reply) => {
     const parsed = refreshBody.safeParse(req.body);
-    if (!parsed.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!parsed.success) {
+        return sendZodError(reply, parsed.error, req);
+      }
 
     let payload;
     try {
@@ -417,9 +415,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   app.post("/complete-payment", async (req, reply) => {
     const body = z.object({ intentId: z.string().min(1) }).safeParse(req.body);
     if (!body.success) {
-      return reply
-        .status(400)
-        .send({ error: "Dados inválidos", details: body.error.flatten() });
+      return sendZodError(reply, body.error, req);
     }
     try {
       const user = await resolveUserForCompletedCheckout(body.data.intentId);
@@ -450,9 +446,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       })
       .safeParse(req.body);
     if (!body.success) {
-      return reply
-        .status(400)
-        .send({ error: "Dados inválidos", details: body.error.flatten() });
+      return sendZodError(reply, body.error, req);
     }
 
     try {
@@ -529,9 +523,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     limited.post("/forgot-password", async (req, reply) => {
       const parsed = forgotBody.safeParse(req.body);
       if (!parsed.success) {
-        return reply
-          .status(400)
-          .send({ error: "Dados inválidos", details: parsed.error.flatten() });
+        return sendZodError(reply, parsed.error, req);
       }
 
       const user = await prisma.user.findUnique({
@@ -583,9 +575,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     limited.post("/reset-password", async (req, reply) => {
       const parsed = resetBody.safeParse(req.body);
       if (!parsed.success) {
-        return reply
-          .status(400)
-          .send({ error: "Dados inválidos", details: parsed.error.flatten() });
+        return sendZodError(reply, parsed.error, req);
       }
 
       try {

@@ -198,6 +198,7 @@ import {
 } from "../services/suppliers.js";
 import { buildTeamSalesSummary } from "../services/team-sales-summary.js";
 import { decToNum } from "../util/money.js";
+import { sendZodError } from "../util/zod-reply.js";
 import { expeditionRoutes } from "./expedition.js";
 import { fiscalRoutes } from "./fiscal.js";
 const idParam = z.object({ id: z.string().min(1) });
@@ -445,8 +446,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const data: Prisma.OrganizationUpdateInput = {};
     if (body.data.defaultMaxSellerDiscountPercent !== undefined) {
@@ -528,8 +530,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         homeIndicatorsLayout: homeIndicatorsLayoutSchema.optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     if (
       body.data.orderSyncMode === undefined &&
@@ -637,8 +640,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .nullable(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const data: Prisma.OrganizationUpdateInput = {};
     if (body.data.displayName !== undefined) {
@@ -693,8 +697,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({ code: z.string().min(1), name: z.string().min(1) })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     const code = normalizeRegionCode(body.data.code);
     if (!code.length)
       return reply.status(400).send({ error: "Código de região inválido" });
@@ -722,8 +727,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         name: z.string().min(1).optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     const existing = await prisma.region.findFirst({
       where: { id, organizationId: auth.organizationId },
     });
@@ -789,8 +795,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         regionId: z.string().nullable().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const d = body.data;
     if (d.customerId) {
@@ -856,8 +863,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         regionId: z.string().nullable().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await prisma.priceTable.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -950,8 +958,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         price: z.number().positive(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const pt = await prisma.priceTable.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -1012,8 +1021,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         commissionPercent: optionalCommissionPercentSchema,
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const code = normalizeCategoryCode(body.data.code);
     if (!code.length)
@@ -1063,8 +1073,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         commissionPercent: optionalCommissionPercentSchema,
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await prisma.productCategory.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -1153,8 +1164,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         name: z.string().min(1).max(80),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const code = normalizePurchaseUnitCode(body.data.code);
     if (!code.length)
@@ -1199,8 +1211,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         sortOrder: z.number().int().min(0).max(9999).optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const code = body.data.code.trim();
     if (!code.length)
@@ -1236,8 +1249,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         sortOrder: z.number().int().min(0).max(9999).optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await prisma.paymentCondition.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -1314,8 +1328,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         mapsToCancel: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const code = normalizeSituationCode(body.data.code);
     if (!code.length)
@@ -1354,8 +1369,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         mapsToCancel: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await prisma.orderSituation.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -1483,8 +1499,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         tradeName: z.string().min(1),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     try {
       const created = await createSupplier(auth.organizationId, body.data);
@@ -1514,8 +1531,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     try {
       const supplier = await updateSupplier(auth.organizationId, id, body.data);
@@ -1564,8 +1582,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({ code: z.string().min(1), name: z.string().min(1) })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     try {
       return await createCostCenter(req.auth!.organizationId, body.data);
     } catch (e) {
@@ -1584,8 +1603,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     try {
       const row = await updateCostCenter(
         req.auth!.organizationId,
@@ -1622,8 +1642,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({ code: z.string().min(1), description: z.string().min(1) })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     try {
       return await createExpenseHistory(req.auth!.organizationId, body.data);
     } catch (e) {
@@ -1642,8 +1663,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     try {
       const row = await updateExpenseHistory(
         req.auth!.organizationId,
@@ -1686,8 +1708,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     try {
       return await createFixedExpense(req.auth!.organizationId, body.data);
     } catch (e) {
@@ -1712,8 +1735,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     try {
       const row = await updateFixedExpense(
         req.auth!.organizationId,
@@ -1775,8 +1799,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.post("/accounts-payable", async (req, reply) => {
     const body = accountsPayableBody.safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     try {
       return await createAccountsPayable(req.auth!.organizationId, body.data);
     } catch (e) {
@@ -1789,8 +1814,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.patch("/accounts-payable/:id", async (req, reply) => {
     const { id } = idParam.parse(req.params);
     const body = accountsPayableBody.partial().safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     try {
       const row = await updateAccountsPayable(
         req.auth!.organizationId,
@@ -1959,8 +1985,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         password: z.string().min(1),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const user = await prisma.user.findUnique({
       where: { id: auth.sub },
@@ -2023,9 +2050,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       })
       .safeParse(req.body);
     if (!body.success) {
-      return reply
-        .status(400)
-        .send({ error: "Dados inválidos", details: body.error.flatten() });
+      return sendZodError(reply, body.error, req);
     }
 
     if (
@@ -2091,9 +2116,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       })
       .safeParse(req.body);
     if (!body.success) {
-      return reply
-        .status(400)
-        .send({ error: "Dados inválidos", details: body.error.flatten() });
+      return sendZodError(reply, body.error, req);
     }
 
     try {
@@ -2130,9 +2153,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       })
       .safeParse(req.body);
     if (!body.success) {
-      return reply
-        .status(400)
-        .send({ error: "Dados inválidos", details: body.error.flatten() });
+      return sendZodError(reply, body.error, req);
     }
     if (
       body.data.name === undefined &&
@@ -2291,14 +2312,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       })
       .safeParse(req.body);
     if (!body.success) {
-      const issues = body.error.issues.map((i) => ({
-        code: i.path.join(".") || undefined,
-        message: i.message,
-      }));
-      return reply.status(400).send({
-        error: "Dados inválidos",
-        issues,
-      });
+      return sendZodError(reply, body.error, req);
     }
 
     const resolvedCatId = body.data.categoryId;
@@ -2514,14 +2528,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       })
       .safeParse(req.body);
     if (!body.success) {
-      const issues = body.error.issues.map((i) => ({
-        code: i.path.join(".") || undefined,
-        message: i.message,
-      }));
-      return reply.status(400).send({
-        error: "Dados inválidos",
-        issues,
-      });
+      return sendZodError(reply, body.error, req);
     }
 
     const existing = await prisma.product.findFirst({
@@ -2790,8 +2797,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         minQuantity: z.number().int().positive().nullable().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const prod = await prisma.product.findFirst({
       where: { id: productId, organizationId: auth.organizationId },
@@ -2879,8 +2887,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           minQuantity: z.number().int().positive().nullable().optional(),
         })
         .safeParse(req.body);
-      if (!body.success)
-        return reply.status(400).send({ error: "Dados inválidos" });
+      if (!body.success) {
+          return sendZodError(reply, body.error, req);
+        }
 
       const existing = await prisma.productPromotion.findFirst({
         where: {
@@ -3055,10 +3064,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         invite: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply
-        .status(400)
-        .send({ error: "Dados inválidos", details: body.error.flatten() });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     try {
       await syncSubscriptionSeats(auth.organizationId, { extraAdmins: 1 });
@@ -3236,8 +3244,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({ ids: z.array(z.string().min(1)).min(1).max(100) })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const ids = [...new Set(body.data.ids)];
     if (ids.includes(auth.sub)) {
@@ -3296,8 +3305,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         role: z.enum(["ADMIN", "MANAGER"]),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const ids = [...new Set(body.data.ids)];
     const targets = await prisma.user.findMany({
@@ -3358,10 +3368,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         organizationProfileId: z.string().min(1).nullable().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply
-        .status(400)
-        .send({ error: "Dados inválidos", details: body.error.flatten() });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await findStaffUser(auth.organizationId, id);
     if (!existing)
@@ -3531,8 +3540,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         memberSellerIds: z.array(z.string().min(1)).min(1),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     try {
       const team = await createSalesTeam(auth.organizationId, body.data);
@@ -3560,8 +3570,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         memberSellerIds: z.array(z.string().min(1)).min(1).optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     try {
       const team = await updateSalesTeam(auth.organizationId, id, body.data);
@@ -3630,10 +3641,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         teamId: z.string().min(1).nullable().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply
-        .status(400)
-        .send({ error: "Dados inválidos", details: body.error.flatten() });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     try {
       await syncSubscriptionSeats(auth.organizationId, { extraSellers: 1 });
@@ -3802,8 +3812,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({ ids: z.array(z.string().min(1)).min(1).max(100) })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const ids = [...new Set(body.data.ids)];
     const targets = await prisma.seller.findMany({
@@ -3856,8 +3867,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         commissionType: sellerCommissionTypeSchema.optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const { ids: rawIds, ...patch } = body.data;
     if (
@@ -3928,8 +3940,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         managerUserId: z.string().min(1).nullable().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const seller = await findOrgSeller(auth.organizationId, id);
     if (!seller) return reply.status(404).send({ error: "Não encontrado" });
@@ -4089,8 +4102,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({ productIds: z.array(z.string()) })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const seller = await prisma.seller.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -4165,8 +4179,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         creditBlocked: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const { ids: rawIds, ...patch } = body.data;
     if (patch.status === undefined && patch.creditBlocked === undefined) {
@@ -4237,8 +4252,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({ note: z.string().trim().max(500).optional() })
       .safeParse(req.body ?? {});
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await prisma.customer.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -4290,8 +4306,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         reason: z.string().trim().max(500).optional(),
       })
       .safeParse(req.body ?? {});
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await prisma.customer.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -4330,10 +4347,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.post("/customers", async (req, reply) => {
     const auth = req.auth!;
     const body = customerBodySchema.safeParse(req.body);
-    if (!body.success)
-      return reply
-        .status(400)
-        .send({ error: "Dados inválidos", details: body.error.flatten() });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     if (body.data.sellerId) {
       const s = await prisma.seller.findFirst({
@@ -4380,10 +4396,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
     const body = customerPatchSchema.safeParse(req.body);
-    if (!body.success)
-      return reply
-        .status(400)
-        .send({ error: "Dados inválidos", details: body.error.flatten() });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await prisma.customer.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -4479,10 +4494,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
     const complete = parseCompleteCustomerBody(merged);
     if (!complete.success) {
-      return reply.status(400).send({
-        error: "Cadastro incompleto — preencha todos os campos obrigatórios.",
-        details: complete.error.flatten(),
-      });
+      return sendZodError(
+        reply,
+        complete.error,
+        req,
+        "Cadastro incompleto — preencha todos os campos obrigatórios",
+      );
     }
 
     try {
@@ -4736,8 +4753,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         notes: z.string().nullable().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const paid = body.data.paidAmount ?? 0;
     if (paid > body.data.amount + 1e-6) {
@@ -4776,8 +4794,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         status: z.enum(["OPEN", "PAID", "CANCELLED"]).optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await prisma.customerCreditTitle.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -4884,7 +4903,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       })
       .safeParse(req.body);
     if (!body.success) {
-      return reply.status(400).send({ error: "Dados inválidos" });
+      return sendZodError(reply, body.error, req);
     }
 
     const sellers = await prisma.seller.findMany({
@@ -4932,7 +4951,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const result = await handleRegisterPushDevice(auth.sub, req.body);
     if ("error" in result)
-      return reply.status(result.status).send({ error: result.error });
+      return reply.status(result.status).send({
+        error: result.error,
+        issues: "issues" in result ? result.issues : undefined,
+      });
     return result;
   });
 
@@ -4940,7 +4962,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const auth = req.auth!;
     const result = await handleUnregisterPushDevice(auth.sub, req.body);
     if ("error" in result)
-      return reply.status(result.status).send({ error: result.error });
+      return reply.status(result.status).send({
+        error: result.error,
+        issues: "issues" in result ? result.issues : undefined,
+      });
     return result;
   });
 
@@ -5128,8 +5153,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         ]),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await prisma.order.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -5200,8 +5226,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         situationId: z.string().min(1).nullable(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await prisma.order.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -5319,8 +5346,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .min(1),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const seller = await prisma.seller.findFirst({
       where: { id: body.data.sellerId, organizationId: auth.organizationId },
@@ -5473,8 +5501,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .min(1),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const ids = [...new Set(body.data.lines.map((l) => l.productId))];
     const count = await prisma.product.count({
@@ -5539,8 +5568,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await prisma.productCombo.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -5651,8 +5681,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const d = body.data;
     const seller = await prisma.seller.findFirst({
@@ -5702,8 +5733,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await prisma.sellerCommissionRule.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -5782,8 +5814,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     const d = body.data;
     if (d.sellerId) {
       const s = await prisma.seller.findFirst({
@@ -5817,8 +5850,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await prisma.commissionProgressiveTier.findFirst({
       where: { id, organizationId: auth.organizationId },
@@ -5899,8 +5933,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         targetAmount: z.number().positive(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const d = body.data;
     let sellerId: string | null = null;
@@ -5979,8 +6014,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         targetAmount: z.number().positive().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const existing = await prisma.sellerMonthlyGoal.findFirst({
       where: { id, organizationId: auth.organizationId },

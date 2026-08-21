@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { requireAdmin } from "../auth/org-roles.js";
 import { prisma } from "../db.js";
+import { sendZodError } from "../util/zod-reply.js";
 import { applyStockMovement } from "../services/stock.js";
 
 const idParam = z.object({ id: z.string().min(1) });
@@ -25,7 +26,7 @@ export const stockRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({ autoStockOnInboundInvoice: z.boolean() })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) return sendZodError(reply, body.error, req);
     await prisma.organizationFiscalConfig.upsert({
       where: { organizationId: auth.organizationId },
       create: {
@@ -137,7 +138,7 @@ export const stockRoutes: FastifyPluginAsync = async (app) => {
         notes: z.string().max(500).optional(),
       })
       .safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) return sendZodError(reply, body.error, req);
 
     const product = await prisma.product.findFirst({
       where: { id: body.data.productId, organizationId: auth.organizationId },
