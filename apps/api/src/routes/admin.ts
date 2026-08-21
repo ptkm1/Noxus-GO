@@ -36,8 +36,8 @@ import { hashPassword, verifyPassword } from "../auth/password.js";
 import { isPermissionResource } from "../auth/permissions.js";
 import { prisma } from "../db.js";
 import {
-    notifySaleConfirmed,
-    notifySellerGoalUpdated,
+  notifySaleConfirmed,
+  notifySellerGoalUpdated,
 } from "../services/admin-notifications.js";
 import {
     AUDIT_ACTION,
@@ -113,6 +113,13 @@ import {
     OrderPricingError,
 } from "../services/order-pricing.js";
 import {
+  createSaleOrder,
+  replySaleCreateError,
+  sellerAllowedProductIds,
+} from "../services/create-sale-order.js";
+import { evaluateOrderCredit } from "../services/credit.js";
+import { resolveEffectiveUnitPrice } from "../services/price-resolve.js";
+import {
     ensureDefaultOrderSituations,
     normalizeSituationCode,
 } from "../services/order-situations.js";
@@ -160,6 +167,7 @@ import {
     buildEffectivePermissionsMatrix,
     canReadEffectiveForUser,
     canWriteEffective,
+    canWriteEffectiveForUser,
     setOrgEnabledRoles,
     updateOrgRolePermissions,
 } from "../services/role-permissions.js";
@@ -5084,6 +5092,203 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return { count };
   });
 
+  app.get("/orders/lookups", async (req) => {
+    const auth = req.auth!;
+    const [sellers, customers, paymentConditions] = await Promise.all([
+      prisma.seller.findMany({
+        where: { ...sellerScopeWhere(auth), active: true },
+        select: { id: true, user: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.customer.findMany({
+        where: {
+          organizationId: auth.organizationId,
+          approvalStatus: "APPROVED",
+          status: "ACTIVE",
+        },
+        select: {
+          id: true,
+          name: true,
+          tradeName: true,
+          legalName: true,
+          city: true,
+          sellerId: true,
+        },
+        orderBy: { name: "asc" },
+      }),
+      prisma.paymentCondition.findMany({
+        where: { organizationId: auth.organizationId, active: true },
+        select: { id: true, code: true, name: true, days: true, sortOrder: true },
+        orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+      }),
+    ]);
+    return {
+      sellers: sellers.map((s) => ({ id: s.id, name: s.user.name })),
+      customers,
+      paymentConditions,
+    };
+  });
+
+  app.get("/orders/catalog", async (req, reply) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        sellerId: z.string().min(1),
+        customerId: z.string().min(1).optional(),
+      })
+      .safeParse(req.query);
+    if (!q.success) return sendZodError(reply, q.error, req);
+
+    const seller = await prisma.seller.findFirst({
+      where: { id: q.data.sellerId, ...sellerScopeWhere(auth) },
+      select: { id: true },
+    });
+    if (!seller) return reply.status(400).send({ error: "Vendedor inválido" });
+
+    let regionId: string | null = null;
+    if (q.data.customerId) {
+      const cust = await prisma.customer.findFirst({
+        where: {
+          id: q.data.customerId,
+          organizationId: auth.organizationId,
+        },
+        select: { regionId: true },
+      });
+      if (!cust) return reply.status(400).send({ error: "Cliente inválido" });
+      regionId = cust.regionId ?? null;
+    }
+
+    const org = await prisma.organization.findUnique({
+      where: { id: auth.organizationId },
+      select: { defaultMaxSellerDiscountPercent: true },
+    });
+    const defaultMaxSellerDisc = org
+      ? decToNum(org.defaultMaxSellerDiscountPercent)
+      : 50;
+
+    const links = await prisma.sellerProduct.findMany({
+      where: { sellerId: q.data.sellerId },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            barcode: true,
+            imageUrl: true,
+            stockQty: true,
+            blockSaleWhenOutOfStock: true,
+            maxSellerDiscountPercent: true,
+            minSaleUnitPrice: true,
+          },
+        },
+      },
+    });
+
+    const at = new Date();
+    const products = [];
+    for (const link of links) {
+      const p = link.product;
+      const priced = await resolveEffectiveUnitPrice(auth.organizationId, p.id, {
+        sellerId: q.data.sellerId,
+        customerId: q.data.customerId ?? null,
+        regionId,
+        quantity: 1,
+        at,
+      });
+      products.push({
+        id: p.id,
+        name: p.name,
+        sku: p.sku,
+        barcode: p.barcode,
+        imageUrl: p.imageUrl,
+        stockQty: p.stockQty,
+        blockSaleWhenOutOfStock: p.blockSaleWhenOutOfStock,
+        catalogUnitPrice: priced.catalogUnitPrice,
+        effectiveUnitPrice: priced.effectiveUnitPrice,
+        promotionLabel: priced.promotionLabel,
+        maxSellerDiscountPercent:
+          p.maxSellerDiscountPercent != null
+            ? decToNum(p.maxSellerDiscountPercent)
+            : null,
+        minSaleUnitPrice:
+          p.minSaleUnitPrice != null ? decToNum(p.minSaleUnitPrice) : null,
+        maxSellerDiscountPercentEffective:
+          p.maxSellerDiscountPercent != null
+            ? decToNum(p.maxSellerDiscountPercent)
+            : defaultMaxSellerDisc,
+      });
+    }
+    products.sort((a, b) => a.name.localeCompare(b.name, "pt"));
+    return { products };
+  });
+
+  app.post("/orders/preview", async (req, reply) => {
+    const auth = req.auth!;
+    if (
+      !(await canWriteEffectiveForUser(
+        auth.organizationId,
+        auth.sub,
+        auth.role,
+        "orders",
+      ))
+    ) {
+      return reply.status(403).send({ error: "Sem permissão para criar pedidos" });
+    }
+    const body = z
+      .object({
+        sellerId: z.string().min(1),
+        customerId: z.string().min(1),
+        items: z
+          .array(
+            z.object({
+              productId: z.string(),
+              quantity: z.number().int().positive(),
+              discountPercent: z.number().min(0).max(100).optional(),
+            }),
+          )
+          .min(1),
+      })
+      .safeParse(req.body);
+    if (!body.success) return sendZodError(reply, body.error, req);
+
+    const seller = await prisma.seller.findFirst({
+      where: { id: body.data.sellerId, ...sellerScopeWhere(auth) },
+      select: { id: true },
+    });
+    if (!seller) return reply.status(400).send({ error: "Vendedor inválido" });
+
+    const customer = await prisma.customer.findFirst({
+      where: {
+        id: body.data.customerId,
+        organizationId: auth.organizationId,
+      },
+      select: { id: true },
+    });
+    if (!customer) return reply.status(400).send({ error: "Cliente inválido" });
+
+    try {
+      const allowedProductIds = await sellerAllowedProductIds(body.data.sellerId);
+      const sale = await computeSaleOrder({
+        organizationId: auth.organizationId,
+        sellerId: body.data.sellerId,
+        customerId: body.data.customerId,
+        items: body.data.items,
+        allowedProductIds,
+      });
+      const credit = await evaluateOrderCredit({
+        organizationId: auth.organizationId,
+        customerId: body.data.customerId,
+        proposedOrderTotal: sale.netTotal,
+      });
+      return { ...sale, credit };
+    } catch (e) {
+      if (e instanceof OrderPricingError)
+        return reply.status(400).send({ error: e.message });
+      throw e;
+    }
+  });
+
   app.get("/orders/:id", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
@@ -5328,139 +5533,83 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.post("/orders", async (req, reply) => {
     const auth = req.auth!;
+    if (
+      !(await canWriteEffectiveForUser(
+        auth.organizationId,
+        auth.sub,
+        auth.role,
+        "orders",
+      ))
+    ) {
+      return reply.status(403).send({ error: "Sem permissão para criar pedidos" });
+    }
     const body = z
       .object({
-        sellerId: z.string(),
-        customerId: z.string().optional(),
-        status: z
-          .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
-          .optional(),
+        sellerId: z.string().min(1),
+        customerId: z.string().min(1),
+        paymentConditionId: z.string().min(1),
+        status: z.enum(["DRAFT", "CONFIRMED", "CANCELLED"]).optional(),
         notes: z.string().optional(),
         items: z
           .array(
             z.object({
               productId: z.string(),
               quantity: z.number().int().positive(),
+              discountPercent: z.number().min(0).max(100).optional(),
             }),
           )
           .min(1),
       })
       .safeParse(req.body);
     if (!body.success) {
-        return sendZodError(reply, body.error, req);
-      }
+      return sendZodError(reply, body.error, req);
+    }
 
     const seller = await prisma.seller.findFirst({
-      where: { id: body.data.sellerId, organizationId: auth.organizationId },
+      where: { id: body.data.sellerId, ...sellerScopeWhere(auth) },
+      select: { id: true },
     });
     if (!seller) return reply.status(400).send({ error: "Vendedor inválido" });
 
-    if (body.data.customerId) {
-      const c = await prisma.customer.findFirst({
-        where: {
-          id: body.data.customerId,
-          organizationId: auth.organizationId,
-        },
+    const customer = await prisma.customer.findFirst({
+      where: {
+        id: body.data.customerId,
+        organizationId: auth.organizationId,
+      },
+      select: { id: true, approvalStatus: true, status: true },
+    });
+    if (!customer) return reply.status(400).send({ error: "Cliente inválido" });
+    if (customer.approvalStatus === "PENDING") {
+      return reply.status(400).send({
+        error: "Cliente aguardando validação do escritório",
       });
-      if (!c) return reply.status(400).send({ error: "Cliente inválido" });
+    }
+    if (customer.approvalStatus === "REJECTED") {
+      return reply.status(400).send({ error: "Cadastro do cliente foi rejeitado" });
+    }
+    if (customer.approvalStatus !== "APPROVED") {
+      return reply.status(400).send({ error: "Cliente inválido" });
     }
 
     try {
-      const sale = await computeSaleOrder({
+      return await createSaleOrder({
         organizationId: auth.organizationId,
+        actorUserId: auth.sub,
         sellerId: body.data.sellerId,
-        customerId: body.data.customerId ?? null,
+        customerId: body.data.customerId,
+        paymentConditionId: body.data.paymentConditionId,
         items: body.data.items.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
+          discountPercent: i.discountPercent,
         })),
+        notes: body.data.notes,
+        status: body.data.status,
+        source: "admin",
+        allowedProductIds: await sellerAllowedProductIds(body.data.sellerId),
       });
-
-      const orderStatus = body.data.status ?? "CONFIRMED";
-
-      if (orderStatus === "CONFIRMED") {
-        await assertSufficientStock(
-          auth.organizationId,
-          sale.lines.map((l) => ({
-            productId: l.productId,
-            quantity: l.quantity,
-          })),
-        );
-      }
-
-      const order = await prisma.$transaction(async (tx) => {
-        const orderNumber = await nextOrderNumber(tx, auth.organizationId);
-        return tx.order.create({
-          data: {
-            organizationId: auth.organizationId,
-            sellerId: body.data.sellerId,
-            customerId: body.data.customerId,
-            status: orderStatus,
-            totalAmount: sale.netTotal,
-            comboDiscountTotal: sale.comboDiscountTotal,
-            notes: body.data.notes,
-            orderNumber,
-            items: {
-              create: sale.lines.map((l) => ({
-                productId: l.productId,
-                quantity: l.quantity,
-                unitPrice: l.unitPrice,
-                productName: l.productName,
-                commissionPercent: l.commissionPercent,
-                commissionAmount: l.commissionAmount,
-              })),
-            },
-          },
-          include: {
-            items: true,
-            seller: { include: { user: true } },
-            customer: true,
-          },
-        });
-      });
-
-      if (order.status === "CONFIRMED") {
-        await applyStockOnStatusChange(
-          order.id,
-          "DRAFT",
-          "CONFIRMED",
-          auth.sub,
-        );
-        void reactivateCustomerOnSale(order.customerId);
-        void notifySaleConfirmed({
-          organizationId: auth.organizationId,
-          order: {
-            id: order.id,
-            totalAmount: order.totalAmount,
-            sellerId: order.sellerId,
-            seller: {
-              user: { name: order.seller.user.name },
-              managerUserId: order.seller.managerUserId,
-            },
-            customer: order.customer,
-          },
-        });
-      }
-
-      await auditFromAuth(auth, {
-        action: AUDIT_ACTION.CREATE,
-        entityType: AUDIT_ENTITY.Order,
-        entityId: order.id,
-        metadata: {
-          status: order.status,
-          sellerId: order.sellerId,
-          customerId: order.customerId,
-          itemCount: order.items.length,
-          totalAmount: Number(order.totalAmount),
-        },
-      });
-
-      return order;
     } catch (e) {
-      if (e instanceof OrderPricingError)
-        return reply.status(400).send({ error: e.message });
-      if (e instanceof StockError)
-        return reply.status(400).send(stockErrorPayload(e));
+      if (replySaleCreateError(reply, e)) return;
       throw e;
     }
   });

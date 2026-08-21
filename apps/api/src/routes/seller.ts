@@ -1,25 +1,21 @@
-import type { OrderStatus } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db.js";
-import {
-  notifyAdminsCreditPending,
-  notifyAdminsCustomerPendingApproval,
-  notifySaleConfirmed,
-} from "../services/admin-notifications.js";
+import { notifyAdminsCustomerPendingApproval } from "../services/admin-notifications.js";
 import {
   AUDIT_ACTION,
   AUDIT_ENTITY,
   auditFromAuth,
 } from "../services/audit-log.js";
 import { buildSellerCommissionDashboard } from "../services/commission-dashboard.js";
+import { buildSellerCustomerCreditSnapshot } from "../services/credit.js";
 import {
-  buildSellerCustomerCreditSnapshot,
-  evaluateOrderCredit,
-  violationsToJson,
-} from "../services/credit.js";
-import { reactivateCustomerOnSale } from "../services/customer-status.js";
+  createSaleOrder,
+  findIdempotentSale,
+  replySaleCreateError,
+  sellerAllowedProductIds,
+} from "../services/create-sale-order.js";
 import {
   customerBodySchema,
   customerPatchSchema,
@@ -33,19 +29,8 @@ import {
   sendOrderPdf80mmReply,
   sendOrderPdfReply,
 } from "../services/order-pdf-load.js";
-import { nextOrderNumber } from "../services/order-number.js";
-import {
-  computeSaleOrder,
-  OrderPricingError,
-} from "../services/order-pricing.js";
 import { resolveEffectiveUnitPrice } from "../services/price-resolve.js";
-import {
-  applyStockOnStatusChange,
-  assertSufficientStock,
-  getProductStockLevels,
-  StockError,
-  stockErrorPayload,
-} from "../services/product-stock.js";
+import { getProductStockLevels } from "../services/product-stock.js";
 import {
   handleRegisterPushDevice,
   handleUnregisterPushDevice,
@@ -325,6 +310,19 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       }
 
     const clientMutationId = body.data.clientMutationId?.trim();
+    if (clientMutationId) {
+      try {
+        const dup = await findIdempotentSale({
+          clientMutationId,
+          organizationId: auth.organizationId,
+          sellerId: auth.sellerId!,
+        });
+        if (dup) return dup;
+      } catch (e) {
+        if (replySaleCreateError(reply, e)) return;
+        throw e;
+      }
+    }
 
     const showUnassigned = await getSellerShowUnassignedCustomers(
       auth.organizationId,

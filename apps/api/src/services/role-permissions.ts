@@ -192,6 +192,21 @@ export async function canWriteEffective(
   );
 }
 
+export async function canWriteEffectiveForUser(
+  organizationId: string,
+  userId: string,
+  role: Role,
+  resource: PermissionResource,
+): Promise<boolean> {
+  const level = await getEffectivePermissionForUser(
+    organizationId,
+    userId,
+    role,
+    resource,
+  );
+  return level === "write";
+}
+
 export async function getRolePermissionsMap(
   organizationId: string,
   role: Role,
