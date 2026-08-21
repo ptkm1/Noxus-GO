@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +22,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Diretório padrão dos JSONs oficiais (versionados no repo). */
 export function defaultFiscalCatalogDataDir(): string {
-  return path.resolve(__dirname, "../../../data/fiscal-catalog");
+  const candidates = [
+    path.resolve(__dirname, "../../../data/fiscal-catalog"),
+    path.resolve(process.cwd(), "apps/api/data/fiscal-catalog"),
+    path.resolve(process.cwd(), "data/fiscal-catalog"),
+  ];
+  return candidates.find((dir) => existsSync(dir)) ?? candidates[0];
 }
 
 export type FiscalCatalogImportEntry = {
@@ -358,6 +364,26 @@ export async function importFiscalCatalogFromDir(
     files += 1;
   }
   return { files, upserted };
+}
+
+/**
+ * Produção não roda seed. Se NCM ainda não foi carregado, importa os JSONs oficiais.
+ */
+export async function ensureFiscalCatalogImported(): Promise<{
+  skipped: boolean;
+  files: number;
+  upserted: number;
+  count: number;
+}> {
+  const count = await prisma.fiscalCatalogCode.count({
+    where: { type: "NCM" },
+  });
+  if (count > 0) {
+    return { skipped: true, files: 0, upserted: 0, count };
+  }
+  const result = await importFiscalCatalogFromDir();
+  const after = await prisma.fiscalCatalogCode.count();
+  return { skipped: false, ...result, count: after };
 }
 
 /** Hash estável do conteúdo de um arquivo (para testes / auditoria). */
