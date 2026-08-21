@@ -113,8 +113,14 @@ export async function apiFetch<T>(path: string, opts: Opt = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as { error?: string }).error ?? res.statusText);
+    const err = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      issues?: Array<{ code?: string; message: string }>;
+    };
+    const fromIssues = err.issues
+      ?.map((i) => (i.code ? `${i.code}: ${i.message}` : i.message))
+      .join("\n");
+    throw new Error(fromIssues || err.error || res.statusText);
   }
 
   if (res.status === 204) return undefined as T;

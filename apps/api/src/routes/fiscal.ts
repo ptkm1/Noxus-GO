@@ -3,6 +3,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { requireAdmin } from "../auth/org-roles.js";
 import { prisma } from "../db.js";
+import { sendZodError } from "../util/zod-reply.js";
 import { certificateStatus, parsePfxMetadata } from "../fiscal/certificate.js";
 import { parseLogoUpload } from "../fiscal/danfe-logo.js";
 import { encryptBuffer, encryptSecret } from "../fiscal/encryption.js";
@@ -158,8 +159,9 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         autoStockOnInboundInvoice: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const config = await prisma.organizationFiscalConfig.upsert({
       where: { organizationId: auth.organizationId },
@@ -184,8 +186,9 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         password: z.string().min(1),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     let pfx: Buffer;
     try {
@@ -263,8 +266,9 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         mimeType: z.string().min(1),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
 
     const parsed = parseLogoUpload(body.data.imageBase64, body.data.mimeType);
     if (!parsed) {
@@ -336,8 +340,9 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         fcpRate: z.number().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     return prisma.fiscalNcm.create({
       data: { organizationId: auth.organizationId, ...body.data },
     });
@@ -360,8 +365,9 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     const row = await prisma.fiscalNcm.findFirst({
       where: { id, organizationId: auth.organizationId },
     });
@@ -397,8 +403,9 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         movesStock: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     return prisma.fiscalOperation.create({
       data: { organizationId: auth.organizationId, ...body.data },
     });
@@ -418,8 +425,9 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         active: z.boolean().optional(),
       })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     const row = await prisma.fiscalOperation.findFirst({
       where: { id, organizationId: auth.organizationId },
     });
@@ -876,8 +884,9 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({ productMappings: z.record(z.string(), z.string()).default({}) })
       .safeParse(req.body);
-    if (!body.success)
-      return reply.status(400).send({ error: "Dados inválidos" });
+    if (!body.success) {
+        return sendZodError(reply, body.error, req);
+      }
     const result = await confirmInboundImport(
       auth.organizationId,
       id,

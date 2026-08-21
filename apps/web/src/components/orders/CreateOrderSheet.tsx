@@ -1,0 +1,615 @@
+import { useAuth } from "@/auth/AuthContext";
+import {
+  FormErrorBanner,
+  FormField,
+  FormGrid,
+  FormSection,
+  FormSheet,
+} from "@/components/forms";
+import { ProductCombobox } from "@/components/ProductCombobox";
+import { AppSelect } from "@/components/ui/app-select";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
+import { apiFetch } from "@/lib/api";
+import { getErrorMessage } from "@/lib/api-error";
+import { formatOrderMoney } from "@/lib/order-kanban";
+import { cn } from "@/lib/utils";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+
+type LookupSeller = { id: string; name: string };
+type LookupCustomer = {
+  id: string;
+  name: string;
+  tradeName?: string | null;
+  legalName?: string | null;
+  city?: string | null;
+  sellerId?: string | null;
+};
+type LookupPayment = {
+  id: string;
+  code: string;
+  name: string;
+  days: number;
+};
+
+type CatalogProduct = {
+  id: string;
+  name: string;
+  sku?: string | null;
+  barcode?: string | null;
+  imageUrl?: string | null;
+  stockQty?: number;
+  blockSaleWhenOutOfStock?: boolean;
+  catalogUnitPrice: number;
+  effectiveUnitPrice: number;
+  promotionLabel?: string | null;
+  maxSellerDiscountPercentEffective?: number;
+};
+
+type PreviewLine = {
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+  productName: string;
+};
+
+type CreditPreview = {
+  action: "ALLOW" | "BLOCK" | "APPROVAL";
+  violations: Array<{ code: string; message: string }>;
+};
+
+type PreviewResponse = {
+  lines: PreviewLine[];
+  comboDiscountTotal: number;
+  grossLinesTotal: number;
+  netTotal: number;
+  credit?: CreditPreview;
+};
+
+type CreatedOrder = { id: string; status: string; orderNumber?: number | null };
+
+type DraftLine = {
+  key: string;
+  productId: string;
+  quantity: string;
+  discountPercent: string;
+};
+
+let lineSeq = 0;
+function newLine(): DraftLine {
+  lineSeq += 1;
+  return { key: `l-${lineSeq}`, productId: "", quantity: "1", discountPercent: "" };
+}
+
+function customerLabel(c: LookupCustomer): string {
+  const title = c.tradeName?.trim() || c.name;
+  const extra = [c.legalName?.trim() && c.legalName !== title ? c.legalName : null, c.city?.trim()]
+    .filter(Boolean)
+    .join(" · ");
+  return extra ? `${title} — ${extra}` : title;
+}
+
+function useDebouncedValue<T>(value: T, delayMs = 300): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
+
+type Props = Readonly<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreated: (order: CreatedOrder) => void;
+}>;
+
+export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
+  const { user } = useAuth();
+  const [sellerId, setSellerId] = useState("");
+  const [customerId, setCustomerId] = useState("");
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [paymentConditionId, setPaymentConditionId] = useState("");
+  const [notes, setNotes] = useState("");
+  const [lines, setLines] = useState<DraftLine[]>([newLine()]);
+  const [showValidation, setShowValidation] = useState(false);
+
+  const lookupsQ = useQuery({
+    queryKey: ["admin", "orders", "lookups"],
+    queryFn: () =>
+      apiFetch<{
+        sellers: LookupSeller[];
+        customers: LookupCustomer[];
+        paymentConditions: LookupPayment[];
+      }>("/admin/orders/lookups"),
+    enabled: open,
+  });
+
+  const sellers = lookupsQ.data?.sellers ?? [];
+  const customers = lookupsQ.data?.customers ?? [];
+  const paymentConditions = lookupsQ.data?.paymentConditions ?? [];
+
+  useEffect(() => {
+    if (!open) return;
+    setShowValidation(false);
+    const preferredSeller =
+      (user?.sellerId && sellers.some((s) => s.id === user.sellerId)
+        ? user.sellerId
+        : "") ||
+      (sellers.length === 1 ? sellers[0].id : "");
+    setSellerId((prev) => prev || preferredSeller);
+    setPaymentConditionId((prev) => {
+      if (prev) return prev;
+      return paymentConditions.length === 1 ? paymentConditions[0].id : "";
+    });
+  }, [open, sellers, paymentConditions, user?.sellerId]);
+
+  const catalogQ = useQuery({
+    queryKey: ["admin", "orders", "catalog", sellerId, customerId || ""],
+    queryFn: () => {
+      const qs = new URLSearchParams({ sellerId });
+      if (customerId) qs.set("customerId", customerId);
+      return apiFetch<{ products: CatalogProduct[] }>(
+        `/admin/orders/catalog?${qs.toString()}`,
+      );
+    },
+    enabled: open && Boolean(sellerId),
+  });
+  const products = catalogQ.data?.products ?? [];
+
+  const payloadItems = useMemo(
+    () =>
+      lines
+        .map((l) => ({
+          productId: l.productId,
+          quantity: Number.parseInt(l.quantity, 10),
+          discountPercent: l.discountPercent.trim()
+            ? Number(l.discountPercent)
+            : undefined,
+        }))
+        .filter(
+          (l) =>
+            l.productId &&
+            Number.isInteger(l.quantity) &&
+            l.quantity > 0 &&
+            (l.discountPercent == null ||
+              (Number.isFinite(l.discountPercent) &&
+                l.discountPercent >= 0 &&
+                l.discountPercent <= 100)),
+        ),
+    [lines],
+  );
+  const debouncedItems = useDebouncedValue(payloadItems);
+
+  const previewQ = useQuery({
+    queryKey: [
+      "admin",
+      "orders",
+      "preview",
+      sellerId,
+      customerId,
+      debouncedItems,
+    ],
+    queryFn: () =>
+      apiFetch<PreviewResponse>("/admin/orders/preview", {
+        method: "POST",
+        body: JSON.stringify({
+          sellerId,
+          customerId,
+          items: debouncedItems,
+        }),
+      }),
+    enabled:
+      open &&
+      Boolean(sellerId && customerId && debouncedItems.length > 0),
+    retry: false,
+  });
+
+  const fieldErrors = useMemo(() => {
+    if (!showValidation) return {} as Record<string, string>;
+    const err: Record<string, string> = {};
+    if (!sellerId) err.sellerId = "Selecione o vendedor responsável.";
+    if (!customerId) err.customerId = "Selecione o cliente.";
+    if (!paymentConditionId) {
+      err.paymentConditionId = "Selecione a condição de pagamento.";
+    }
+    if (payloadItems.length === 0) {
+      err.items = "Inclua ao menos um produto com quantidade.";
+    }
+    return err;
+  }, [
+    showValidation,
+    sellerId,
+    customerId,
+    paymentConditionId,
+    payloadItems.length,
+  ]);
+
+  useScrollToFirstError(fieldErrors, { enabled: showValidation && open });
+
+  function resetForm() {
+    setSellerId("");
+    setCustomerId("");
+    setCustomerQuery("");
+    setPaymentConditionId("");
+    setNotes("");
+    setLines([newLine()]);
+    setShowValidation(false);
+  }
+
+  function close() {
+    onOpenChange(false);
+    resetForm();
+  }
+
+  const createOrder = useMutation({
+    mutationFn: (status: "DRAFT" | "CONFIRMED") =>
+      apiFetch<CreatedOrder>("/admin/orders", {
+        method: "POST",
+        body: JSON.stringify({
+          sellerId,
+          customerId,
+          paymentConditionId,
+          status,
+          notes: notes.trim() || undefined,
+          items: payloadItems,
+        }),
+      }),
+    onSuccess: (order) => {
+      onCreated(order);
+      close();
+    },
+  });
+
+  function submit(status: "DRAFT" | "CONFIRMED") {
+    setShowValidation(true);
+    if (
+      !sellerId ||
+      !customerId ||
+      !paymentConditionId ||
+      payloadItems.length === 0
+    ) {
+      return;
+    }
+    createOrder.mutate(status);
+  }
+
+  const filteredCustomers = useMemo(() => {
+    const q = customerQuery.trim().toLowerCase();
+    const list = !q
+      ? customers
+      : customers.filter((c) => {
+          const hay = [c.name, c.tradeName, c.legalName, c.city]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(q);
+        });
+    const selected = customers.find((c) => c.id === customerId);
+    if (selected && !list.some((c) => c.id === selected.id)) {
+      return [selected, ...list];
+    }
+    return list;
+  }, [customers, customerQuery, customerId]);
+
+  const previewByProduct = useMemo(() => {
+    const map = new Map<string, PreviewLine>();
+    for (const line of previewQ.data?.lines ?? []) {
+      map.set(`${line.productId}:${line.quantity}`, line);
+    }
+    return map;
+  }, [previewQ.data?.lines]);
+
+  const formError =
+    createOrder.error
+      ? getErrorMessage(createOrder.error)
+      : previewQ.isError
+        ? getErrorMessage(previewQ.error)
+        : null;
+  const credit = previewQ.data?.credit;
+  const pending = createOrder.isPending;
+
+  return (
+    <FormSheet
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) close();
+        else onOpenChange(true);
+      }}
+      title="Novo pedido"
+      description="Lançamento pelo escritório. Preços seguem a tabela do cliente e do vendedor."
+      contentClassName="sm:max-h-[92vh]"
+      footer={
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={close}
+            disabled={pending}
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => submit("DRAFT")}
+            disabled={pending}
+          >
+            {pending && createOrder.variables === "DRAFT"
+              ? "Salvando…"
+              : "Salvar rascunho"}
+          </Button>
+          <Button
+            type="button"
+            onClick={() => submit("CONFIRMED")}
+            disabled={pending || credit?.action === "BLOCK"}
+          >
+            {pending && createOrder.variables === "CONFIRMED"
+              ? "Confirmando…"
+              : "Confirmar pedido"}
+          </Button>
+        </>
+      }
+    >
+      <FormErrorBanner message={formError} />
+
+      {lookupsQ.isError ? (
+        <p className="text-sm text-destructive">
+          Não foi possível carregar clientes, vendedores e condições.
+        </p>
+      ) : null}
+
+      <FormGrid cols={2}>
+        <FormField
+          label="Cliente"
+          htmlFor="new-order-customer"
+          required
+          error={fieldErrors.customerId}
+        >
+          <Input
+            id="new-order-customer-search"
+            placeholder="Buscar cliente…"
+            value={customerQuery}
+            onChange={(e) => setCustomerQuery(e.target.value)}
+            className="mb-2"
+          />
+          <AppSelect
+            id="new-order-customer"
+            value={customerId}
+            onValueChange={setCustomerId}
+            placeholder="Selecione o cliente"
+            invalid={Boolean(fieldErrors.customerId)}
+            options={filteredCustomers.map((c) => ({
+              value: c.id,
+              label: customerLabel(c),
+            }))}
+          />
+        </FormField>
+        <FormField
+          label="Vendedor"
+          htmlFor="new-order-seller"
+          required
+          error={fieldErrors.sellerId}
+          hint="Obrigatório. Se você for vendedor, já vem selecionado."
+        >
+          <AppSelect
+            id="new-order-seller"
+            value={sellerId}
+            onValueChange={(id) => {
+              setSellerId(id);
+              setLines((prev) =>
+                prev.map((l) => ({ ...l, productId: "" })),
+              );
+            }}
+            placeholder="Selecione o vendedor"
+            invalid={Boolean(fieldErrors.sellerId)}
+            options={sellers.map((s) => ({ value: s.id, label: s.name }))}
+          />
+        </FormField>
+        <FormField
+          label="Condição de pagamento"
+          htmlFor="new-order-pay"
+          required
+          error={fieldErrors.paymentConditionId}
+        >
+          <AppSelect
+            id="new-order-pay"
+            value={paymentConditionId}
+            onValueChange={setPaymentConditionId}
+            placeholder={
+              paymentConditions.length
+                ? "Selecione"
+                : "Nenhuma condição cadastrada"
+            }
+            invalid={Boolean(fieldErrors.paymentConditionId)}
+            options={paymentConditions.map((p) => ({
+              value: p.id,
+              label: `${p.code} · ${p.name}`,
+            }))}
+          />
+        </FormField>
+        <FormField label="Observação" htmlFor="new-order-notes">
+          <Textarea
+            id="new-order-notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Opcional"
+            rows={2}
+          />
+        </FormField>
+      </FormGrid>
+
+      <FormSection
+        title="Itens"
+        description={
+          sellerId && products.length === 0 && !catalogQ.isPending
+            ? "Este vendedor não tem produtos no catálogo. Associe produtos em Vendedores."
+            : "Quantidade e preço efetivo (tabela / promoção). Desconto extra é opcional."
+        }
+        className="mt-6"
+      >
+        {fieldErrors.items ? (
+          <p className="mb-2 text-xs text-destructive" data-error="true">
+            {fieldErrors.items}
+          </p>
+        ) : null}
+
+        <div className="space-y-3">
+          {lines.map((line) => {
+            const qty = Number.parseInt(line.quantity, 10) || 0;
+            const product = products.find((p) => p.id === line.productId);
+            const previewLine =
+              previewByProduct.get(`${line.productId}:${qty}`) ??
+              previewQ.data?.lines.find((l) => l.productId === line.productId);
+            const unit =
+              previewLine?.unitPrice ?? product?.effectiveUnitPrice ?? null;
+            const maxDisc = product?.maxSellerDiscountPercentEffective ?? 0;
+            return (
+              <div
+                key={line.key}
+                className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-[minmax(0,1.6fr)_5.5rem_5.5rem_minmax(0,7rem)_auto] sm:items-end"
+              >
+                <FormField label="Produto" htmlFor={`item-prod-${line.key}`}>
+                  <ProductCombobox
+                    id={`item-prod-${line.key}`}
+                    value={line.productId}
+                    onValueChange={(productId) =>
+                      setLines((prev) =>
+                        prev.map((l) =>
+                          l.key === line.key ? { ...l, productId } : l,
+                        ),
+                      )
+                    }
+                    products={products}
+                    disabled={!sellerId || products.length === 0}
+                    placeholder={
+                      sellerId
+                        ? "Buscar produto…"
+                        : "Selecione o vendedor primeiro"
+                    }
+                  />
+                </FormField>
+                <FormField label="Qtd" htmlFor={`item-qty-${line.key}`}>
+                  <Input
+                    id={`item-qty-${line.key}`}
+                    inputMode="numeric"
+                    min={1}
+                    value={line.quantity}
+                    onChange={(e) =>
+                      setLines((prev) =>
+                        prev.map((l) =>
+                          l.key === line.key
+                            ? {
+                                ...l,
+                                quantity: e.target.value.replace(/\D/g, ""),
+                              }
+                            : l,
+                        ),
+                      )
+                    }
+                  />
+                </FormField>
+                <FormField
+                  label="Desc. %"
+                  htmlFor={`item-disc-${line.key}`}
+                  hint={maxDisc > 0 ? `Máx. ${maxDisc}%` : undefined}
+                >
+                  <Input
+                    id={`item-disc-${line.key}`}
+                    inputMode="decimal"
+                    disabled={maxDisc <= 0}
+                    value={line.discountPercent}
+                    onChange={(e) =>
+                      setLines((prev) =>
+                        prev.map((l) =>
+                          l.key === line.key
+                            ? { ...l, discountPercent: e.target.value }
+                            : l,
+                        ),
+                      )
+                    }
+                  />
+                </FormField>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium text-foreground">
+                    Preço
+                  </span>
+                  <p className="flex h-9 items-center text-sm text-muted-foreground">
+                    {unit != null ? formatOrderMoney(unit) : "—"}
+                    {product?.promotionLabel ? (
+                      <span className="ml-1 truncate text-xs">
+                        {product.promotionLabel}
+                      </span>
+                    ) : null}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={cn("shrink-0", lines.length === 1 && "invisible")}
+                  disabled={lines.length === 1}
+                  onClick={() =>
+                    setLines((prev) => prev.filter((l) => l.key !== line.key))
+                  }
+                  aria-label="Remover item"
+                >
+                  <Trash2 />
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => setLines((prev) => [...prev, newLine()])}
+          disabled={!sellerId || products.length === 0}
+        >
+          <Plus />
+          Adicionar item
+        </Button>
+      </FormSection>
+
+      {previewQ.data ? (
+        <div className="mt-4 space-y-1 rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Subtotal</span>
+            <span>{formatOrderMoney(previewQ.data.grossLinesTotal)}</span>
+          </div>
+          {previewQ.data.comboDiscountTotal > 0 ? (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Desconto de combo</span>
+              <span>
+                − {formatOrderMoney(previewQ.data.comboDiscountTotal)}
+              </span>
+            </div>
+          ) : null}
+          <div className="flex justify-between font-medium">
+            <span>Total</span>
+            <span>{formatOrderMoney(previewQ.data.netTotal)}</span>
+          </div>
+        </div>
+      ) : null}
+
+      {credit?.action === "BLOCK" ? (
+        <p className="mt-3 text-sm text-destructive" role="alert">
+          {credit.violations.map((v) => v.message).join(" ")} Você ainda pode
+          salvar como rascunho.
+        </p>
+      ) : null}
+      {credit?.action === "APPROVAL" ? (
+        <p className="mt-3 text-sm text-amber-800 dark:text-amber-300">
+          Ao confirmar, o pedido ficará aguardando aprovação de crédito.
+        </p>
+      ) : null}
+    </FormSheet>
+  );
+}

@@ -52,12 +52,13 @@ export const productCadastroFieldsSchema = {
   ncm: ncmSchema,
   ncmException: z.string().max(40).nullable().optional(),
   nfeOrigin: nfeOriginSchema,
-  fiscalClass: z.string().max(80).nullable().optional(),
-  pisCofinsClassification: z.string().max(80).nullable().optional(),
-  cstPis: z.string().max(10).nullable().optional(),
+  fiscalClass: z.string().max(120).nullable().optional(),
+  pisCofinsClassification: z.string().max(120).nullable().optional(),
+  // Formulário aceita rótulo completo (ex.: "01 - Operação Tributável…"); NFe usa só os dígitos depois.
+  cstPis: z.string().max(120).nullable().optional(),
   ipiPercent: optionalPercentSchema,
   icmsCostPercent: optionalPercentSchema,
-  cbsIbsClassification: z.string().max(80).nullable().optional(),
+  cbsIbsClassification: z.string().max(200).nullable().optional(),
 };
 
 export function normalizeProductNcm(

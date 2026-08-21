@@ -28,7 +28,7 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:migrate": "dotenv -e apps/api/.env -- prisma migrate dev --config apps/api/prisma.config.ts",
-    "db:migrate:deploy": "dotenv -e apps/api/.env -- prisma migrate deploy --config apps/api/prisma.config.ts",
+    "db:migrate:deploy": "bash scripts/prisma-migrate-deploy.sh",
     "db:push": "dotenv -e apps/api/.env -- prisma db push --config apps/api/prisma.config.ts",
     "db:seed": "dotenv -e apps/api/.env -- prisma db seed --config apps/api/prisma.config.ts",
     "db:seed:route": "dotenv -e apps/api/.env -- tsx apps/api/prisma/seed-route-customer.ts",

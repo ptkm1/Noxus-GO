@@ -63,9 +63,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Prisma migrate deploy
-        run: pnpm exec prisma migrate deploy --config apps/api/prisma.config.ts
+        run: bash scripts/prisma-migrate-deploy.sh
         env:
-          DATABASE_URL: ${{ steps.create_neon_branch.outputs.db_url_with_pooler }}
+          # db_url = direto (migrate). pooled só como fallback de runtime, não para o lock.
+          DIRECT_URL: ${{ steps.create_neon_branch.outputs.db_url }}
+          DATABASE_URL_UNPOOLED: ${{ steps.create_neon_branch.outputs.db_url }}
+          DATABASE_URL: ${{ steps.create_neon_branch.outputs.db_url }}
 
   delete_neon_branch:
     name: Delete Neon Branch

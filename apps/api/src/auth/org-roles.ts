@@ -45,6 +45,8 @@ const MANAGER_WRITE_ALLOW = [
   /^\/customers\/[^/]+\/reject$/,
   /^\/reports\/route-romaneio\.pdf$/,
   /^\/expedition/,
+  /^\/orders$/,
+  /^\/orders\/preview$/,
 ] as const;
 
 export function isManagerWriteAllowed(routePath: string): boolean {

@@ -1,6 +1,7 @@
 import { useAuth } from "@/auth/AuthContext";
 import { useConfirm } from "@/components/confirm";
 import { FilterBar, FormField } from "@/components/forms";
+import { CreateOrderSheet } from "@/components/orders/CreateOrderSheet";
 import { OrdersKanbanBoard } from "@/components/orders/OrdersKanbanBoard";
 import { AppSelect } from "@/components/ui/app-select";
 import { Badge } from "@/components/ui/badge";
@@ -16,16 +17,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { notifySuccess } from "@/lib/app-notifications";
 import { apiFetch, downloadPdf, printPdf } from "@/lib/api";
 import { formatOrderCode, orderCodeFilenamePart } from "@/lib/order-code";
 import { formatOrderMoney, statusBadgeClass } from "@/lib/order-kanban";
 import { isWebAdmin } from "@/lib/staff";
 import { cn } from "@/lib/utils";
-import { ORDER_STATUSES, canRead, orderStatusLabel } from "@pedidos/shared";
+import { ORDER_STATUSES, canRead, canWrite as canWritePermission, orderStatusLabel } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Kanban, List, Printer, ShoppingCart } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 type Seller = { id: string; user: { name: string } };
 
@@ -91,7 +93,13 @@ function selectAllState(
 
 export function OrdersPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const canWrite = isWebAdmin(user?.role);
+  const canCreateOrder = Boolean(
+    user &&
+      (user.role === "ADMIN" || user.role === "MANAGER") &&
+      canWritePermission(user.role, "orders", user.permissions),
+  );
   const canPrint80mm = Boolean(
     user && canRead(user.role, "orders_print_80mm", user.permissions),
   );
@@ -101,6 +109,7 @@ export function OrdersPage() {
   const statusFilter = searchParams.get("status");
   const view = searchParams.get("view") === "kanban" ? "kanban" : "list";
   const isKanban = view === "kanban";
+  const [createOpen, setCreateOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [pdfPending, setPdfPending] = useState(false);
   const [bulkStatus, setBulkStatus] = useState("");
@@ -394,21 +403,28 @@ export function OrdersPage() {
               : "Liste, filtre, exporte e altere o status dos pedidos sem abrir cada detalhe."}
           </p>
         </div>
-        <Tabs
-          value={view}
-          onValueChange={(v) => setView(v === "kanban" ? "kanban" : "list")}
-        >
-          <TabsList aria-label="Visualização de pedidos">
-            <TabsTrigger value="list">
-              <List />
-              Lista
-            </TabsTrigger>
-            <TabsTrigger value="kanban">
-              <Kanban />
-              Kanban
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex flex-wrap items-center gap-2">
+          {canCreateOrder ? (
+            <Button type="button" onClick={() => setCreateOpen(true)}>
+              Novo pedido
+            </Button>
+          ) : null}
+          <Tabs
+            value={view}
+            onValueChange={(v) => setView(v === "kanban" ? "kanban" : "list")}
+          >
+            <TabsList aria-label="Visualização de pedidos">
+              <TabsTrigger value="list">
+                <List />
+                Lista
+              </TabsTrigger>
+              <TabsTrigger value="kanban">
+                <Kanban />
+                Kanban
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -768,6 +784,24 @@ export function OrdersPage() {
       ) : null}
         </>
       )}
+
+      {canCreateOrder ? (
+        <CreateOrderSheet
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          onCreated={async (order) => {
+            await qc.invalidateQueries({ queryKey: ["admin", "orders"] });
+            const toast =
+              order.status === "DRAFT"
+                ? "Pedido salvo como rascunho."
+                : order.status === "PENDING_CREDIT_APPROVAL"
+                  ? "Pedido enviado para aprovação de crédito."
+                  : "Pedido confirmado.";
+            notifySuccess(toast);
+            navigate(`/pedidos/${order.id}`);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

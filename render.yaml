@@ -14,8 +14,9 @@ services:
       pnpm build:shared &&
       pnpm exec prisma generate --config apps/api/prisma.config.ts &&
       pnpm --filter @pedidos/api build
-    preDeployCommand: >-
-      pnpm exec prisma migrate deploy --config apps/api/prisma.config.ts
+    # migrate deploy precisa de conexão Neon DIRETA (sem -pooler). O script
+    # força DIRECT_URL/DATABASE_URL unpooled só neste processo; o start usa o pooler.
+    preDeployCommand: bash scripts/prisma-migrate-deploy.sh
     startCommand: API_HOST=0.0.0.0 API_PORT=$PORT node apps/api/dist/index.js
     healthCheckPath: /health
     envVars:
@@ -25,7 +26,12 @@ services:
         value: production
       - key: API_HOST
         value: 0.0.0.0
+      # Neon pooled (host com -pooler) — runtime da API.
       - key: DATABASE_URL
+        sync: false
+      # Neon direto (mesmo connection string SEM -pooler no host). Obrigatório no dashboard.
+      # Ex.: ep-xxx-pooler.us-east-1.aws.neon.tech → ep-xxx.us-east-1.aws.neon.tech
+      - key: DIRECT_URL
         sync: false
       - key: JWT_SECRET
         sync: false
