@@ -1,4 +1,4 @@
-import { getPlanDefinition } from "@pedidos/shared";
+import { DEFAULT_PLAN_ID, getPlanDefinition } from "@pedidos/shared";
 import { prisma } from "../../db.js";
 import { createActivationToken } from "./account-activation.js";
 import { sendOwnerActivationEmail } from "./activation-email.js";
@@ -53,7 +53,7 @@ export async function activateOrganizationFromPayment(params: {
     return { activated: false, alreadyActive: true };
   }
 
-  const planId = intent?.planId || "starter";
+  const planId = intent?.planId || DEFAULT_PLAN_ID;
   const def = getPlanDefinition(planId);
   const now = new Date();
   const periodEnd =

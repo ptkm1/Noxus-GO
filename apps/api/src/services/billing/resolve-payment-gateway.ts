@@ -11,8 +11,20 @@ export function isFakePaymentGatewayEnabled(): boolean {
   return readPaymentGatewayMode() === "fake";
 }
 
+/**
+ * Cadastro sem paywall — só em desenvolvimento.
+ * Ignorado em production/test mesmo se a env estiver definida.
+ */
+export function isDevPaymentLockSkipped(): boolean {
+  const env = process.env.NODE_ENV;
+  if (env === "production" || env === "test") return false;
+  const raw = process.env.DEV_SKIP_PAYMENT_LOCK?.trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
 /** Pagamento obrigatório no cadastro quando Asaas ou fake estão ativos. */
 export function isPaymentRequiredForSignup(): boolean {
+  if (isDevPaymentLockSkipped()) return false;
   const mode = readPaymentGatewayMode();
   if (mode === "fake") return true;
   if (mode === "asaas") return true;

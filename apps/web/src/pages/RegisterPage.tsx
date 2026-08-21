@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { CnpjCompanyData, PlanId } from "@pedidos/shared";
-import { isPlanId, isValidCnpj, listPlans, suggestedTradeName } from "@pedidos/shared";
+import { isPlanId, isValidCnpj, listPlans, planSeatPriceCaption, suggestedTradeName } from "@pedidos/shared";
 import { useAuth } from "../auth/AuthContext";
 import { CnpjLookupField } from "../components/CnpjLookupField";
 import { FormField, FormGrid } from "@/components/forms";
@@ -20,7 +20,7 @@ export function RegisterPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [planId, setPlanId] = useState<PlanId>(
-    initialPlan && isPlanId(initialPlan) ? initialPlan : "growth",
+    initialPlan && isPlanId(initialPlan) ? initialPlan : "pro",
   );
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -90,7 +90,7 @@ export function RegisterPage() {
               >
                 {plans.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name} — R$ {p.monthlyPriceBrl}/mês
+                    {p.name} — {planSeatPriceCaption(p)}
                   </option>
                 ))}
               </select>

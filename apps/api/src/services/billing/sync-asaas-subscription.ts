@@ -1,21 +1,16 @@
-import { planIdFromMonthlyPrice, type PlanId } from "@pedidos/shared";
+import { planMonthlyTotal, type PlanId } from "@pedidos/shared";
 import { prisma } from "../../db.js";
-import { asaasFetch } from "./asaas/asaas-client.js";
 import { readAsaasConfig } from "./asaas/asaas-config.js";
 import { discoverAsaasProviderIdsForOrg } from "./asaas/asaas-customer-resolver.js";
-
-type AsaasSubscriptionResponse = {
-  id?: string;
-  customer?: string;
-  value?: number;
-  status?: string;
-  description?: string;
-};
+import { countBillableSeats } from "./seats.js";
 
 const lastSyncByOrg = new Map<string, number>();
 const SYNC_TTL_MS = 60_000;
 
-/** Alinha planId local com o valor da assinatura no Asaas (fonte da verdade de billing). */
+/**
+ * Garante IDs Asaas locais. Não altera planId: o valor remoto varia com
+ * vendedores/admins extras e não identifica o plano.
+ */
 export async function syncPlanFromAsaasProvider(
   organizationId: string,
   opts?: { force?: boolean },
@@ -43,9 +38,7 @@ export async function syncPlanFromAsaasProvider(
   if (!sub || sub.provider !== "asaas") {
     return null;
   }
-  if (
-    !["ACTIVE", "TRIAL", "PAST_DUE"].includes(sub.status)
-  ) {
+  if (!["ACTIVE", "TRIAL", "PAST_DUE"].includes(sub.status)) {
     return null;
   }
 
@@ -90,30 +83,13 @@ export async function syncPlanFromAsaasProvider(
     }
   }
 
-  if (!providerSubscriptionId) {
-    return null;
-  }
+  return sub.planId as PlanId;
+}
 
-  try {
-    const data = await asaasFetch<AsaasSubscriptionResponse>(
-      cfg,
-      `/subscriptions/${providerSubscriptionId}`,
-      { method: "GET" },
-    );
-    const remoteValue =
-      typeof data.value === "number" ? Math.round(data.value * 100) / 100 : null;
-    if (remoteValue == null) return null;
-
-    const remotePlanId = planIdFromMonthlyPrice(remoteValue);
-    if (!remotePlanId || remotePlanId === sub.planId) return remotePlanId;
-
-    await prisma.organizationSubscription.update({
-      where: { organizationId },
-      data: { planId: remotePlanId },
-    });
-
-    return remotePlanId;
-  } catch {
-    return null;
-  }
+export async function expectedSubscriptionValueBrl(
+  organizationId: string,
+  planId: string,
+): Promise<number> {
+  const { sellerCount, adminCount } = await countBillableSeats(organizationId);
+  return planMonthlyTotal(planId, sellerCount, adminCount);
 }

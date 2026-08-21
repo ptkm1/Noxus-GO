@@ -149,10 +149,18 @@ export function ProductCategoriesPage() {
     return n;
   }
 
+  function codeFieldError(raw: string): string | undefined {
+    const t = raw.trim();
+    if (!t) return "Código é obrigatório.";
+    if (!/^\d+$/.test(t)) return "Código deve conter apenas números.";
+    return undefined;
+  }
+
   function submitSave() {
     setShowValidation(true);
     const fieldErrs: Record<string, string> = {};
-    if (!code.trim()) fieldErrs.code = "Código é obrigatório.";
+    const codeErr = codeFieldError(code);
+    if (codeErr) fieldErrs.code = codeErr;
     if (!name.trim()) fieldErrs.name = "Nome é obrigatório.";
     if (Object.keys(fieldErrs).length > 0) {
       setFormHint(null);
@@ -193,7 +201,8 @@ export function ProductCategoriesPage() {
   const fieldErrors = useMemo(() => {
     if (!showValidation) return {} as Record<string, string>;
     const e: Record<string, string> = {};
-    if (!code.trim()) e.code = "Código é obrigatório.";
+    const codeErr = codeFieldError(code);
+    if (codeErr) e.code = codeErr;
     if (!name.trim()) e.name = "Nome é obrigatório.";
     return e;
   }, [showValidation, code, name]);
@@ -252,15 +261,17 @@ export function ProductCategoriesPage() {
             label="Código"
             htmlFor="cat-code"
             required
-            hint="Ex.: FOOD"
+            hint="Ex.: 001"
             error={fieldErrors.code}
           >
             <Input
               id="cat-code"
-              placeholder="FOOD"
+              placeholder="001"
+              inputMode="numeric"
+              pattern="[0-9]*"
               aria-invalid={fieldErrors.code ? true : undefined}
               value={code}
-              onChange={(e) => setCode(e.target.value)}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
             />
           </FormField>
           <FormField

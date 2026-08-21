@@ -22,6 +22,7 @@ import {
     normalizeHomeIndicatorsLayout,
     planHasFeature,
     listPlans,
+    planSeatPriceCaption,
     type HomeIndicatorKey,
     type HomeIndicatorsLayout,
     type PlanId,
@@ -41,10 +42,6 @@ import { apiFetch } from "../lib/api";
 import { AuditLogsPanel } from "./AuditLogsPage";
 import { OrderSituationsPanel } from "./OrderSituationsPanel";
 import { PermissionsPanel } from "./PermissionsPage";
-
-function formatLimit(n: number | null): string {
-  return n == null ? "Ilimitado" : String(n);
-}
 
 const STATUS_LABELS: Record<string, string> = {
   TRIAL: "Trial",
@@ -89,7 +86,7 @@ export function SystemSettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [modal, setModal] = useState<SettingsModal>(null);
   const [checkoutPlanId, setCheckoutPlanId] = useState<PlanId>(
-    (user?.subscription?.planId as PlanId) ?? "growth",
+    (user?.subscription?.planId as PlanId) ?? "pro",
   );
   const [checkoutErr, setCheckoutErr] = useState<string | null>(null);
   const userPickedPlanRef = useRef(false);
@@ -232,8 +229,11 @@ export function SystemSettingsPage() {
               </p>
             ) : null}
             <p className="text-muted-foreground">
-              Limites: até {formatLimit(limits.maxSellers)} vendedores · até{" "}
-              {formatLimit(limits.maxUsers)} usuários
+              {planSeatPriceCaption(planDef)}. Vendedores ilimitados.{" "}
+              {limits.includedAdmins} acesso
+              {limits.includedAdmins === 1 ? "" : "s"} administrativo
+              {limits.includedAdmins === 1 ? "" : "s"} incluso
+              {limits.includedAdmins === 1 ? "" : "s"}; extra R$ 29,90/mês.
             </p>
           </div>
           <div className="flex shrink-0 flex-col gap-2 sm:items-end">
@@ -247,7 +247,7 @@ export function SystemSettingsPage() {
                   }}
                   options={listPlans().map((p) => ({
                     value: p.id,
-                    label: `${p.name} — R$ ${p.monthlyPriceBrl}/mês`,
+                    label: `${p.name} — ${planSeatPriceCaption(p)}`,
                   }))}
                 />
                 <Button

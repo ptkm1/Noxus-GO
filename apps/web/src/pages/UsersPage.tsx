@@ -429,9 +429,12 @@ export function UsersPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Usuários</h1>
+          <h1 className="text-2xl font-semibold">
+            Usuários da {user?.organizationName?.trim() || "sua empresa"}
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Crie administradores e gestores da empresa. Vendedores continuam em{" "}
+            Somente administradores e gestores desta empresa. O dono da conta
+            cadastra as demais pessoas depois do plano. Vendedores continuam em{" "}
             <Link to="/vendedores" className="text-primary hover:underline">
               Vendedores
             </Link>

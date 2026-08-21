@@ -1,6 +1,6 @@
 import {
     getPlanDefinition,
-    planIdFromMonthlyPrice,
+    roundMoneyBrl,
     type PlanId,
 } from "@pedidos/shared";
 import { prisma } from "../../db.js";
@@ -13,7 +13,7 @@ import {
     resolveAsaasCustomerForOrg,
 } from "./asaas/asaas-customer-resolver.js";
 import { isFakePaymentGatewayEnabled } from "./resolve-payment-gateway.js";
-import { syncPlanFromAsaasProvider } from "./sync-asaas-subscription.js";
+import { expectedSubscriptionValueBrl } from "./sync-asaas-subscription.js";
 
 type AsaasCustomer = {
   id?: string;
@@ -300,7 +300,7 @@ export async function reconcileOrganizationBilling(
 
     let subscriptionValue: number | null = null;
     let subscriptionStatus: string | null = null;
-    let subscriptionPlanId: PlanId | null = null;
+    let subscriptionPlanId: PlanId | null = before.planId;
     if (canonicalSubscriptionId) {
       try {
         const remoteSub = await asaasFetch<{
@@ -311,34 +311,27 @@ export async function reconcileOrganizationBilling(
         });
         subscriptionValue =
           typeof remoteSub.value === "number"
-            ? Math.round(remoteSub.value * 100) / 100
+            ? roundMoneyBrl(remoteSub.value)
             : null;
         subscriptionStatus = remoteSub.status ?? null;
-        subscriptionPlanId = subscriptionValue
-          ? planIdFromMonthlyPrice(subscriptionValue)
-          : null;
+        const expected = await expectedSubscriptionValueBrl(
+          organizationId,
+          before.planId,
+        );
+        if (
+          subscriptionValue != null &&
+          Math.abs(subscriptionValue - expected) >= 0.02
+        ) {
+          issues.push(
+            `Valor no Asaas (R$ ${subscriptionValue.toFixed(2)}) difere do esperado para o plano ${getPlanDefinition(before.planId).name} (R$ ${expected.toFixed(2)}). O planId local é a fonte da verdade; o valor atualiza ao adicionar/remover assentos ou trocar de plano.`,
+          );
+        }
       } catch {
         issues.push("Não foi possível consultar assinatura no Asaas");
       }
     }
 
-    let afterPlanId = before.planId;
-    if (!dryRun) {
-      const synced = await syncPlanFromAsaasProvider(organizationId, {
-        force: true,
-      });
-      if (synced && synced !== before.planId) {
-        fixed.push(
-          `planId alinhado com Asaas (${getPlanDefinition(before.planId).name} → ${getPlanDefinition(synced).name})`,
-        );
-      }
-      afterPlanId = synced ?? before.planId;
-    } else if (subscriptionPlanId && subscriptionPlanId !== before.planId) {
-      issues.push(
-        `planId local (${getPlanDefinition(before.planId).name}) difere do valor no Asaas (${getPlanDefinition(subscriptionPlanId).name})`,
-      );
-      afterPlanId = subscriptionPlanId;
-    }
+    const afterPlanId = before.planId;
 
     const refreshed = dryRun
       ? sub

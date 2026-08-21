@@ -35,6 +35,8 @@ export type User = {
   matricula?: string | null;
   role: Role;
   organizationId: string;
+  /** Nome visível da empresa (white-label / isolamento). */
+  organizationName?: string | null;
   organizationProfileId?: string | null;
   sellerId: string | null;
   isTeamLeader?: boolean;

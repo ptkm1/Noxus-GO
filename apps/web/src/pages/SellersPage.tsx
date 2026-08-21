@@ -417,7 +417,15 @@ export function SellersPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Vendedores</h1>
+        <div>
+          <h1 className="text-2xl font-semibold">
+            Vendedores da {user?.organizationName?.trim() || "sua empresa"}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Somente a equipe de vendas desta empresa. Cadastros de outras
+            empresas não aparecem aqui.
+          </p>
+        </div>
         <Button type="button" onClick={openCreate}>
           Novo vendedor
         </Button>

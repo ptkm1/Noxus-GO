@@ -5,6 +5,7 @@ import type {
     GatewaySubscriptionCheckout,
     GatewaySubscriptionCheckoutInput,
     GatewaySubscriptionUpgradeInput,
+    GatewaySubscriptionValueUpdateInput,
     GatewaySubscriptionWithCardInput,
     GatewaySubscriptionWithCardResult,
     PaymentGateway,
@@ -23,9 +24,11 @@ export class FakePaymentGateway implements PaymentGateway {
   checkouts: GatewaySubscriptionCheckoutInput[] = [];
   cardSubscriptions: GatewaySubscriptionWithCardInput[] = [];
   subscriptionUpgrades: GatewaySubscriptionUpgradeInput[] = [];
+  subscriptionValueUpdates: GatewaySubscriptionValueUpdateInput[] = [];
   canceled: string[] = [];
   failNextCheckout = false;
   failNextCardPay = false;
+  failNextValueUpdate = false;
 
   constructor(private readonly opts: FakeGatewayOpts = {}) {}
 
@@ -91,5 +94,15 @@ export class FakePaymentGateway implements PaymentGateway {
       creditCardLast4: input.creditCard.number.slice(-4),
       status: "ACTIVE",
     };
+  }
+
+  async updateSubscriptionValue(
+    input: GatewaySubscriptionValueUpdateInput,
+  ): Promise<void> {
+    if (this.failNextValueUpdate) {
+      this.failNextValueUpdate = false;
+      throw new Error("subscription_value_update_failed");
+    }
+    this.subscriptionValueUpdates.push(input);
   }
 }

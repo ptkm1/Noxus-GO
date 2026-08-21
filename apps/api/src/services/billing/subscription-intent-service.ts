@@ -1,4 +1,4 @@
-import { getPlanDefinition, isPlanId, type PlanId } from "@pedidos/shared";
+import { DEFAULT_PLAN_ID, getPlanDefinition, isPlanId, type PlanId } from "@pedidos/shared";
 import { prisma } from "../../db.js";
 import {
     emptyFiscalEmitente,
@@ -6,6 +6,7 @@ import {
 } from "../cnpj/fiscal-emitente.js";
 import { lookupFiscalEmitente } from "../cnpj/lookup-fiscal-emitente.js";
 import { ensureDefaultOrderSituations } from "../order-situations.js";
+import { ensureDefaultPurchaseUnits } from "../purchase-units.js";
 import { ensureOrgRolePermissions } from "../role-permissions.js";
 import { unusablePasswordHash } from "./account-activation.js";
 import {
@@ -24,6 +25,7 @@ import {
     resolvePaymentGateway,
 } from "./resolve-payment-gateway.js";
 import { activateOrganizationFromPayment } from "./subscription-activation.js";
+import { resolveCheckoutAmountBrl } from "./seats.js";
 import { syncPlanFromAsaasProvider } from "./sync-asaas-subscription.js";
 import { readAsaasConfig } from "./asaas/asaas-config.js";
 import {
@@ -52,6 +54,18 @@ function readCheckoutChangeType(
     (payload as { changeType: unknown }).changeType === "initial"
   ) {
     return "initial";
+  }
+  return null;
+}
+
+function readAmountBrl(payload: unknown): number | null {
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "amountBrl" in payload &&
+    typeof (payload as { amountBrl: unknown }).amountBrl === "number"
+  ) {
+    return (payload as { amountBrl: number }).amountBrl;
   }
   return null;
 }
@@ -176,7 +190,6 @@ async function finalizeIntentForInAppPayment(params: {
   source: CheckoutReturnSource;
   gateway?: PaymentGateway;
 }): Promise<{ intentId: string; checkoutUrl: null }> {
-  const def = getPlanDefinition(params.planId);
   const fake = isFakePaymentGatewayEnabled();
 
   const existing = await prisma.checkoutIntent.findUnique({
@@ -190,6 +203,13 @@ async function finalizeIntentForInAppPayment(params: {
       ? (existing.checkoutPayload as Record<string, unknown>)
       : {};
 
+  const isPlanChange = readCheckoutChangeType(prevPayload) === "plan_change";
+  const amountBrl = await resolveCheckoutAmountBrl(
+    params.planId,
+    params.organizationId,
+    isPlanChange,
+  );
+
   await prisma.checkoutIntent.update({
     where: { id: params.intentId },
     data: {
@@ -201,7 +221,7 @@ async function finalizeIntentForInAppPayment(params: {
       checkoutPayload: {
         ...prevPayload,
         planId: params.planId,
-        amountBrl: def.monthlyPriceBrl,
+        amountBrl,
         returnSource: params.source,
         paymentMode: "in_app_card",
       },
@@ -332,6 +352,7 @@ export async function createSubscriptionIntent(
 
   await ensureOrgRolePermissions(orgId);
   await ensureDefaultOrderSituations(orgId);
+  await ensureDefaultPurchaseUnits(orgId);
 
   return finalizeIntentForInAppPayment({
     intentId: intent.id,
@@ -359,7 +380,6 @@ export async function createCheckoutForRegisteredOrg(
   gateway?: PaymentGateway,
 ): Promise<{ intentId: string; checkoutUrl: null }> {
   requireGateway(gateway);
-  const def = getPlanDefinition(input.planId);
   const now = new Date();
   const fake = isFakePaymentGatewayEnabled();
   const provider = fake ? "fake" : "asaas";
@@ -374,6 +394,11 @@ export async function createCheckoutForRegisteredOrg(
     sub?.status === "ACTIVE" &&
     Boolean(sub.providerSubscriptionId) &&
     sub.planId !== input.planId;
+  const amountBrl = await resolveCheckoutAmountBrl(
+    input.planId,
+    input.organizationId,
+    isPlanChange,
+  );
 
   const intent = await prisma.checkoutIntent.create({
     data: {
@@ -391,7 +416,7 @@ export async function createCheckoutForRegisteredOrg(
       privacyAcceptedAt: input.privacyAcceptedAt ?? now,
       checkoutPayload: {
         planId: input.planId,
-        amountBrl: def.monthlyPriceBrl,
+        amountBrl,
         returnSource: "app",
         changeType: isPlanChange ? "plan_change" : "initial",
         previousPlanId: isPlanChange ? sub?.planId ?? null : null,
@@ -465,7 +490,7 @@ export async function retrySubscriptionCheckout(
   }
 
   requireGateway(gateway);
-  const planId = isPlanId(intent.planId) ? intent.planId : "starter";
+  const planId = isPlanId(intent.planId) ? intent.planId : DEFAULT_PLAN_ID;
   const source = await resolveCheckoutReturnSource(intent);
 
   await prisma.checkoutIntent.update({
@@ -537,7 +562,7 @@ export async function paySubscriptionIntentWithCard(
     );
   }
 
-  const planId = isPlanId(intent.planId) ? intent.planId : "starter";
+  const planId = isPlanId(intent.planId) ? intent.planId : DEFAULT_PLAN_ID;
   const def = getPlanDefinition(planId);
   const gw = requireGateway(gateway);
   const fake = isFakePaymentGatewayEnabled();
@@ -558,6 +583,11 @@ export async function paySubscriptionIntentWithCard(
     Boolean(sub?.providerSubscriptionId) &&
     sub?.status === "ACTIVE" &&
     (changeType === "plan_change" || sub.planId !== planId);
+  const amountBrl = await resolveCheckoutAmountBrl(
+    planId,
+    intent.organizationId,
+    isPlanChange,
+  );
 
   const asaasCfg = !fake ? readAsaasConfig() : null;
   let resolvedCustomerId: string | undefined;
@@ -611,7 +641,7 @@ export async function paySubscriptionIntentWithCard(
       result = await gw.upgradeSubscriptionWithCard({
         subscriptionId: sub.providerSubscriptionId,
         customerId,
-        value: def.monthlyPriceBrl,
+        value: amountBrl,
         description: `Assinatura PedixPro — Plano ${def.name}`,
         updatePendingPayments: true,
         remoteIp,
@@ -628,7 +658,7 @@ export async function paySubscriptionIntentWithCard(
           externalReference: intent.organizationId,
         },
         customerBilling: billing,
-        value: def.monthlyPriceBrl,
+        value: amountBrl,
         cycle: "MONTHLY",
         nextDueDate: nextDueDateIso(),
         description: `Assinatura PedixPro — Plano ${def.name}`,
@@ -649,7 +679,7 @@ export async function paySubscriptionIntentWithCard(
         errorCode: null,
         checkoutPayload: {
           planId,
-          amountBrl: def.monthlyPriceBrl,
+          amountBrl,
           paymentMode: "in_app_card",
           changeType: isPlanChange ? "plan_change" : "initial",
           previousPlanId: readPreviousPlanId(intent.checkoutPayload),
@@ -794,6 +824,9 @@ export async function getPublicIntentStatus(intentId: string) {
     nextAction,
     intentId: intent.id,
     planId: intent.planId,
+    amountBrl:
+      readAmountBrl(intent.checkoutPayload) ??
+      getPlanDefinition(intent.planId).monthlyPriceBrl,
     fakeGateway: isFakePaymentGatewayEnabled(),
     checkoutUrl: null,
     changeType: readCheckoutChangeType(intent.checkoutPayload),

@@ -218,6 +218,9 @@ export {
   cheapestPlanWithFeature,
   DEFAULT_PLAN_ID,
   DEFAULT_TRIAL_DAYS,
+  extraAdminCount,
+  EXTRA_ADMIN_SEAT_PRICE_BRL,
+  formatPlanPriceBrl,
   getPlanDefinition,
   isPlanId,
   listPlans,
@@ -225,7 +228,10 @@ export {
   PLAN_FEATURE_LABELS,
   PLAN_IDS,
   planHasFeature,
-  planIdFromMonthlyPrice,
+  planMonthlyTotal,
+  planSeatPriceCaption,
+  roundMoneyBrl,
+  SELLER_SEAT_PRICE_BRL,
 } from "./plans.js";
 export type {
   PlanDefinition,
@@ -244,13 +250,17 @@ export {
 } from "./product-display.js";
 export {
   computeMarkupPercent,
+  DEFAULT_PURCHASE_UNITS,
   emptyProductForm,
   formToProductPayload,
+  formatPurchaseUnitLabel,
   isNcmComplete,
   normalizeNcm,
+  normalizePurchaseUnitCode,
   PRODUCT_CLASSIFICATIONS,
   productClassificationLabel,
   productToForm,
+  PURCHASE_UNIT_CODE_MAX,
   PURCHASE_UNITS,
   validateProductForm,
 } from "./product-form.js";

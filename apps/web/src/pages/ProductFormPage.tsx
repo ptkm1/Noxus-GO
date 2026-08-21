@@ -1,5 +1,14 @@
 import { AuditLogPanel } from "@/components/AuditLogPanel";
 import {
+  CreatePriceTableButton,
+  CreatePriceTableHint,
+  useCanCreatePriceTable,
+} from "@/components/CreatePriceTableSheet";
+import {
+  CreatePurchaseUnitButton,
+  CreatePurchaseUnitHint,
+} from "@/components/CreatePurchaseUnitSheet";
+import {
   FormActions,
   FormErrorBanner,
   FormField,
@@ -15,6 +24,7 @@ import { useProductFormPage } from "@/hooks/useProductFormPage";
 import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import { cn } from "@/lib/utils";
 import {
+  formatPurchaseUnitLabel,
   PRODUCT_CLASSIFICATIONS,
   PURCHASE_UNITS,
   productClassificationLabel,
@@ -58,6 +68,23 @@ function formatDateBr(iso: string | undefined): string {
   return d.toLocaleDateString("pt-BR");
 }
 
+function purchaseUnitSelectOptions(
+  units: Array<{ code: string; name: string }>,
+  current: string,
+): Array<{ value: string; label: string }> {
+  const source =
+    units.length > 0
+      ? units.map((u) => ({
+          value: u.code,
+          label: formatPurchaseUnitLabel(u.code, u.name),
+        }))
+      : PURCHASE_UNITS.map((u) => ({ value: u.value, label: u.label }));
+  if (current && !source.some((o) => o.value === current)) {
+    return [...source, { value: current, label: current }];
+  }
+  return source;
+}
+
 export function ProductFormPage() {
   const {
     productId,
@@ -91,11 +118,16 @@ export function ProductFormPage() {
     addPriceTableId,
     setAddPriceTableId,
     addProductToPriceTable,
+    applyCreatedPriceTable,
+    purchaseUnits,
+    applyCreatedPurchaseUnit,
   } = useProductFormPage();
 
   useScrollToFirstError(
     Object.keys(fieldErrors).length > 0 ? fieldErrors : formError,
   );
+
+  const canCreatePriceTable = useCanCreatePriceTable();
 
   const { data: outboundOps = [] } = useQuery({
     queryKey: ["admin", "fiscal", "operations", "OUTBOUND"],
@@ -336,32 +368,39 @@ export function ProductFormPage() {
           >
             {!isEdit ? (
               <div className="mb-4 space-y-3 rounded-xl border border-border bg-muted/30 p-4">
-                <FormField
-                  label="Tabela de preço"
-                  htmlFor="prod-price-table"
-                  required
-                  hint="O preço de venda será registrado nesta tabela ao salvar."
-                >
-                  <AppSelect
-                    id="prod-price-table"
-                    value={selectedPriceTableId}
-                    onValueChange={setSelectedPriceTableId}
-                    placeholder="Selecione…"
-                    emptyLabel="Selecione…"
-                    options={priceTables.map((t) => ({
-                      value: t.id,
-                      label: t.name,
-                    }))}
-                  />
-                </FormField>
+                <div className="flex flex-wrap items-end gap-2">
+                  <FormField
+                    label="Tabela de preço"
+                    htmlFor="prod-price-table"
+                    required
+                    className="min-w-[14rem] flex-1"
+                  >
+                    <AppSelect
+                      id="prod-price-table"
+                      value={selectedPriceTableId}
+                      onValueChange={setSelectedPriceTableId}
+                      placeholder="Selecione…"
+                      emptyLabel="Selecione…"
+                      options={priceTables.map((t) => ({
+                        value: t.id,
+                        label: t.name,
+                      }))}
+                    />
+                  </FormField>
+                  <CreatePriceTableButton onCreated={applyCreatedPriceTable} />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  O preço de venda será registrado nesta tabela ao salvar.
+                </p>
+                <CreatePriceTableHint />
                 {priceTables.length === 0 ? (
                   <p className="text-sm text-amber-700 dark:text-amber-400">
-                    Nenhuma tabela cadastrada.{" "}
-                    <Link to="/tabelas-preco" className="underline">
-                      Criar tabela de preço
-                    </Link>
+                    {canCreatePriceTable.allowed
+                      ? "Nenhuma tabela cadastrada. Use Nova tabela para criar uma agora."
+                      : "Nenhuma tabela cadastrada."}
                   </p>
-                ) : !selectedPriceTableId ? (
+                ) : null}
+                {priceTables.length > 0 && !selectedPriceTableId ? (
                   <p className="text-sm text-muted-foreground">
                     Selecione a tabela para liberar os campos de preço abaixo.
                   </p>
@@ -555,6 +594,7 @@ export function ProductFormPage() {
                         .map((t) => ({ value: t.id, label: t.name }))}
                     />
                   </FormField>
+                  <CreatePriceTableButton onCreated={applyCreatedPriceTable} />
                   <Button
                     type="button"
                     variant="outline"
@@ -564,6 +604,7 @@ export function ProductFormPage() {
                     Adicionar
                   </Button>
                 </div>
+                <CreatePriceTableHint />
               </div>
             ) : selectedPriceTableId ? (
               <p className="mt-4 text-sm text-muted-foreground">
@@ -698,19 +739,31 @@ export function ProductFormPage() {
                 />
               </FormField>
 
-              <FormField label="Und. compra" htmlFor="prod-purchase-unit">
-                <AppSelect
-                  id="prod-purchase-unit"
-                  value={values.purchaseUnit}
-                  emptyLabel="Selecione…"
-                  placeholder="Selecione…"
-                  options={PURCHASE_UNITS.map((u) => ({
-                    value: u.value,
-                    label: u.label,
-                  }))}
-                  onValueChange={(v) => setField("purchaseUnit", v)}
-                />
-              </FormField>
+              <div className="space-y-1 sm:col-span-2">
+                <div className="flex flex-wrap items-end gap-2">
+                  <FormField
+                    label="Und. compra"
+                    htmlFor="prod-purchase-unit"
+                    className="min-w-48 flex-1"
+                  >
+                    <AppSelect
+                      id="prod-purchase-unit"
+                      value={values.purchaseUnit}
+                      emptyLabel="Selecione…"
+                      placeholder="Selecione…"
+                      options={purchaseUnitSelectOptions(
+                        purchaseUnits,
+                        values.purchaseUnit,
+                      )}
+                      onValueChange={(v) => setField("purchaseUnit", v)}
+                    />
+                  </FormField>
+                  <CreatePurchaseUnitButton
+                    onCreated={applyCreatedPurchaseUnit}
+                  />
+                </div>
+                <CreatePurchaseUnitHint />
+              </div>
 
               <FormField
                 label="Caixa padrão compra"
@@ -876,22 +929,10 @@ export function ProductFormPage() {
                   id="prod-fiscal-unit"
                   value={values.fiscalUnit}
                   onValueChange={(v) => setField("fiscalUnit", v)}
-                  options={[
-                    ...PURCHASE_UNITS.map((u) => ({
-                      value: u.value,
-                      label: u.label,
-                    })),
-                    ...(!PURCHASE_UNITS.some(
-                      (u) => u.value === values.fiscalUnit,
-                    ) && values.fiscalUnit
-                      ? [
-                          {
-                            value: values.fiscalUnit,
-                            label: values.fiscalUnit,
-                          },
-                        ]
-                      : []),
-                  ]}
+                  options={purchaseUnitSelectOptions(
+                    purchaseUnits,
+                    values.fiscalUnit,
+                  )}
                 />
               </FormField>
 

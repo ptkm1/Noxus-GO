@@ -1,6 +1,7 @@
 import { useAuth } from "@/auth/AuthContext";
 import { useConfirm } from "@/components/confirm";
 import { FilterBar, FormField } from "@/components/forms";
+import { OrdersKanbanBoard } from "@/components/orders/OrdersKanbanBoard";
 import { AppSelect } from "@/components/ui/app-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,13 +15,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiFetch, downloadPdf, printPdf } from "@/lib/api";
 import { formatOrderCode, orderCodeFilenamePart } from "@/lib/order-code";
+import { formatOrderMoney, statusBadgeClass } from "@/lib/order-kanban";
 import { isWebAdmin } from "@/lib/staff";
 import { cn } from "@/lib/utils";
 import { ORDER_STATUSES, canRead, orderStatusLabel } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Printer, ShoppingCart } from "lucide-react";
+import { Download, Kanban, List, Printer, ShoppingCart } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
@@ -30,7 +33,9 @@ type OrderSituation = {
   id: string;
   code: string;
   name: string;
+  sortOrder: number;
   active: boolean;
+  mapsToCancel?: boolean;
 };
 
 type Order = {
@@ -65,26 +70,6 @@ function useDebouncedValue<T>(value: T, delayMs = 300): T {
   return debounced;
 }
 
-function statusBadgeClass(status: string): string {
-  switch (status) {
-    case "CONFIRMED":
-      return "border-transparent bg-emerald-500/15 text-emerald-800 dark:text-emerald-300";
-    case "CANCELLED":
-      return "border-transparent bg-destructive/15 text-destructive";
-    case "PENDING_CREDIT_APPROVAL":
-      return "border-transparent bg-amber-500/15 text-amber-800 dark:text-amber-300";
-    default:
-      return "border-transparent bg-muted text-muted-foreground";
-  }
-}
-
-function formatMoney(value: unknown) {
-  return Number(value).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
-
 function statusChangeHint(status: string): string {
   if (status === "CANCELLED") {
     return " Pedidos cancelados podem estornar estoque se estavam confirmados.";
@@ -114,6 +99,8 @@ export function OrdersPage() {
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = searchParams.get("status");
+  const view = searchParams.get("view") === "kanban" ? "kanban" : "list";
+  const isKanban = view === "kanban";
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [pdfPending, setPdfPending] = useState(false);
   const [bulkStatus, setBulkStatus] = useState("");
@@ -135,10 +122,9 @@ export function OrdersPage() {
     queryFn: () => apiFetch<Seller[]>("/admin/sellers"),
   });
 
-  const { data: situations = [] } = useQuery({
+  const { data: situations = [], isPending: situationsPending } = useQuery({
     queryKey: ["admin", "order-situations"],
     queryFn: () => apiFetch<OrderSituation[]>("/admin/order-situations"),
-    enabled: canWrite,
   });
 
   const listQueryKey = useMemo(
@@ -162,7 +148,7 @@ export function OrdersPage() {
     ],
   );
 
-  const { data: orders = [], isLoading } = useQuery({
+  const { data: orders = [], isLoading, isError } = useQuery({
     queryKey: listQueryKey,
     queryFn: () => {
       const params = new URLSearchParams();
@@ -208,6 +194,15 @@ export function OrdersPage() {
       const p = new URLSearchParams(prev);
       if (next) p.set("status", next);
       else p.delete("status");
+      return p;
+    });
+  }
+
+  function setView(next: "list" | "kanban") {
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev);
+      if (next === "kanban") p.set("view", "kanban");
+      else p.delete("view");
       return p;
     });
   }
@@ -384,14 +379,36 @@ export function OrdersPage() {
   const statusBusy = patchStatus.isPending;
   const situationBusy = patchSituation.isPending;
 
+  const kanbanHint = canWrite
+    ? "Acompanhe rascunho, crédito e a expedição até a entrega. Arraste o card para alterar status ou situação, ou clique para abrir o pedido."
+    : "Acompanhe rascunho, crédito e a expedição até a entrega. Clique no card para abrir o pedido.";
+
   return (
     <div className="space-y-6">
-      <div>
-            <h1 className="text-2xl font-semibold text-foreground">Pedidos</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Liste, filtre, exporte e altere o status dos pedidos sem abrir cada
-          detalhe.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Pedidos</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {isKanban
+              ? kanbanHint
+              : "Liste, filtre, exporte e altere o status dos pedidos sem abrir cada detalhe."}
+          </p>
+        </div>
+        <Tabs
+          value={view}
+          onValueChange={(v) => setView(v === "kanban" ? "kanban" : "list")}
+        >
+          <TabsList aria-label="Visualização de pedidos">
+            <TabsTrigger value="list">
+              <List />
+              Lista
+            </TabsTrigger>
+            <TabsTrigger value="kanban">
+              <Kanban />
+              Kanban
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -470,6 +487,46 @@ export function OrdersPage() {
         </FormField>
       </FilterBar>
 
+      {actionError ? (
+        <p className="text-sm text-destructive">{actionError}</p>
+      ) : null}
+
+      {isKanban ? (
+        <OrdersKanbanBoard
+          orders={orders}
+          situations={situations}
+          isLoading={isLoading || situationsPending}
+          isError={isError}
+          canDrag={canWrite && !statusBusy && !situationBusy}
+          movingId={
+            patchStatus.isPending
+              ? (patchStatus.variables?.orderId ?? null)
+              : patchSituation.isPending
+                ? (patchSituation.variables?.orderId ?? null)
+                : null
+          }
+          onMove={(orderId, move) => {
+            if (move.type === "status") {
+              void applyStatusChange([orderId], move.status);
+              return;
+            }
+            setActionError(null);
+            patchSituation.mutate(
+              { orderId, situationId: move.situationId },
+              {
+                onError: (e) => {
+                  setActionError(
+                    e instanceof Error
+                      ? e.message
+                      : "Não foi possível alterar a situação.",
+                  );
+                },
+              },
+            );
+          }}
+        />
+      ) : (
+        <>
       <div className="surface-card flex flex-col gap-3 p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
           {hasSelection
@@ -529,22 +586,24 @@ export function OrdersPage() {
         </div>
       </div>
 
-      {actionError ? (
-        <p className="text-sm text-destructive">{actionError}</p>
-      ) : null}
-
       {isLoading ? (
         <p className="text-muted-foreground">Carregando…</p>
       ) : null}
 
-      {!isLoading && orders.length === 0 ? (
+      {isError ? (
+        <p className="text-sm text-destructive">
+          Não foi possível carregar os pedidos.
+        </p>
+      ) : null}
+
+      {!isLoading && !isError && orders.length === 0 ? (
         <div className="surface-card flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
           <ShoppingCart className="h-12 w-12 text-primary/40" />
           <p className="text-muted-foreground">Nenhum pedido encontrado.</p>
         </div>
       ) : null}
 
-      {!isLoading && orders.length > 0 ? (
+      {!isLoading && !isError && orders.length > 0 ? (
         <div className="surface-card overflow-x-auto">
           <Table>
             <TableHeader>
@@ -661,7 +720,7 @@ export function OrdersPage() {
                       {o.items.length}
                     </TableCell>
                     <TableCell className="px-4 py-3 text-right font-medium tabular-nums">
-                      {formatMoney(o.totalAmount)}
+                      {formatOrderMoney(o.totalAmount)}
                     </TableCell>
                     <TableCell className="px-4 py-3 text-right">
                       <Link
@@ -707,6 +766,8 @@ export function OrdersPage() {
           </Table>
         </div>
       ) : null}
+        </>
+      )}
     </div>
   );
 }

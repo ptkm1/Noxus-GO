@@ -305,6 +305,7 @@ model Organization {
   subscription          OrganizationSubscription?
   checkoutIntents       CheckoutIntent[]
   orderExpeditions      OrderExpedition[]
+  purchaseUnits         PurchaseUnit[]
 }
 
 /// Resumo matinal baseado em regras (1 por org por dia civil America/Sao_Paulo).
@@ -329,8 +330,8 @@ model OrganizationSubscription {
   id                     String             @id @default(cuid())
   organizationId         String             @unique
   organization           Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  /// starter | growth | pro
-  planId                 String             @default("starter")
+  /// start | pro | business
+  planId                 String             @default("start")
   status                 SubscriptionStatus @default(TRIAL)
   /// none | asaas | other
   provider               String             @default("none")
@@ -610,6 +611,24 @@ model PriceTable {
   updatedAt      DateTime         @updatedAt
 }
 
+/// Unidade de compra por organização (UN, CX, FD… + códigos personalizados).
+model PurchaseUnit {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Código curto estável (ex.: UN, CX, PAL).
+  code           String
+  name           String
+  sortOrder      Int          @default(0)
+  /// Unidades padrão do sistema (UN/CX/FD/KG/L).
+  isSystem       Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, code])
+  @@index([organizationId, sortOrder])
+}
+
 /// Categoria de produto por organização (valores estáveis em `code`, como um enum persistido).
 model ProductCategory {
   id               String       @id @default(cuid())
@@ -686,7 +705,7 @@ model Product {
   /// Linha comercial (ex.: Linha 1).
   productLine      String?
   productClassification ProductClassification?
-  /// Unidade de compra (UN, CX, FD…).
+  /// Código da unidade de compra da org (UN, CX, FD… ou personalizada).
   purchaseUnit     String?
   /// Quantidade por caixa padrão na compra.
   standardPurchaseBoxQty Int?

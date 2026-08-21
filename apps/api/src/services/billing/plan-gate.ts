@@ -10,6 +10,7 @@ export function adminPathToPlanFeature(routePath: string): PlanFeature | null {
   const p = routePath.split("?")[0] ?? routePath;
 
   if (p.startsWith("/fiscal")) return "fiscal_nfe";
+  if (p.startsWith("/expedition")) return "expedition";
   if (
     p.startsWith("/seller-locations") ||
     p.includes("/location-history") ||

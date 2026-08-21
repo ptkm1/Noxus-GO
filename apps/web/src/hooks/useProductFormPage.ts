@@ -1,3 +1,4 @@
+import type { CreatedPurchaseUnit } from "@/components/CreatePurchaseUnitSheet";
 import { apiFetch } from "@/lib/api";
 import {
   computeMarkupPercent,
@@ -101,6 +102,14 @@ export function useProductFormPage() {
     queryKey: ["admin", "price-tables"],
     queryFn: () =>
       apiFetch<Array<{ id: string; name: string }>>("/admin/price-tables"),
+  });
+
+  const { data: purchaseUnits = [] } = useQuery({
+    queryKey: ["admin", "purchase-units"],
+    queryFn: () =>
+      apiFetch<Array<{ id: string; code: string; name: string }>>(
+        "/admin/purchase-units",
+      ),
   });
 
   const selectedDefs = useMemo(() => {
@@ -281,6 +290,31 @@ export function useProductFormPage() {
     setAddPriceTableId("");
   }, [addPriceTableId, values.basePrice]);
 
+  const applyCreatedPriceTable = useCallback(
+    (table: { id: string; name: string }) => {
+      if (isEdit) {
+        setPriceTablePrices((prev) => {
+          if (prev[table.id] !== undefined) return prev;
+          return {
+            ...prev,
+            [table.id]: values.basePrice || "0",
+          };
+        });
+        setAddPriceTableId("");
+        return;
+      }
+      setSelectedPriceTableId(table.id);
+    },
+    [isEdit, values.basePrice],
+  );
+
+  const applyCreatedPurchaseUnit = useCallback(
+    (unit: CreatedPurchaseUnit) => {
+      setField("purchaseUnit", unit.code);
+    },
+    [setField],
+  );
+
   return {
     productId,
     isEdit,
@@ -300,6 +334,8 @@ export function useProductFormPage() {
     categories,
     suppliers,
     priceTables,
+    purchaseUnits,
+    applyCreatedPurchaseUnit,
     selectedDefs,
     selectedSupplier,
     markupPercent,
@@ -313,5 +349,6 @@ export function useProductFormPage() {
     addPriceTableId,
     setAddPriceTableId,
     addProductToPriceTable,
+    applyCreatedPriceTable,
   };
 }

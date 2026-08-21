@@ -1,20 +1,59 @@
 import {
-  getPlanDefinition,
-  isPlanId,
-  mapIntentToPublicStatus,
+    extraAdminCount,
+    getPlanDefinition,
+    isPlanId,
+    mapIntentToPublicStatus,
+    planMonthlyTotal,
 } from "@pedidos/shared";
 import { describe, expect, it } from "vitest";
 
 describe("plan catalog (backend)", () => {
   it("reconhece plan ids oficiais sem aliases mensais", () => {
-    expect(isPlanId("starter")).toBe(true);
+    expect(isPlanId("start")).toBe(true);
     expect(isPlanId("pro")).toBe(true);
+    expect(isPlanId("business")).toBe(true);
+    expect(isPlanId("starter")).toBe(false);
+    expect(isPlanId("growth")).toBe(false);
     expect(isPlanId("starter_monthly")).toBe(false);
   });
 
   it("seleciona preço do catálogo", () => {
+    const start = getPlanDefinition("start");
+    expect(start.monthlyPriceBrl).toBe(79.9);
+    expect(start.sellerSeatPriceBrl).toBe(29.9);
+    expect(start.limits.includedAdmins).toBe(1);
     const pro = getPlanDefinition("pro");
-    expect(pro.monthlyPriceBrl).toBeGreaterThan(0);
+    expect(pro.monthlyPriceBrl).toBe(149.9);
+    expect(pro.highlighted).toBe(true);
+    const business = getPlanDefinition("business");
+    expect(business.monthlyPriceBrl).toBe(299);
+    expect(business.limits.includedAdmins).toBe(6);
+  });
+
+  it("calcula mensalidade com vendedores e admins extras", () => {
+    expect(planMonthlyTotal("start", 0, 1)).toBe(79.9);
+    expect(planMonthlyTotal("start", 2, 1)).toBe(139.7);
+    expect(extraAdminCount(3, 1)).toBe(2);
+    expect(planMonthlyTotal("start", 0, 3)).toBe(139.7);
+    expect(planMonthlyTotal("pro", 1, 2)).toBe(179.8);
+  });
+
+  it("distribui features Start / Pro / Business", () => {
+    const start = getPlanDefinition("start");
+    const pro = getPlanDefinition("pro");
+    const business = getPlanDefinition("business");
+    expect(start.features).toContain("commissions");
+    expect(start.features).toContain("whitelabel");
+    expect(start.features).toContain("accounts_payable");
+    expect(start.features).not.toContain("fiscal_nfe");
+    expect(start.features).not.toContain("expedition");
+    expect(pro.features).toContain("fiscal_nfe");
+    expect(pro.features).toContain("expedition");
+    expect(pro.features).toContain("insights");
+    expect(pro.features).not.toContain("tracking");
+    expect(business.features).toContain("tracking");
+    expect(business.features).toContain("reports_ai");
+    expect(business.features).toContain("multi_cnpj");
   });
 });
 

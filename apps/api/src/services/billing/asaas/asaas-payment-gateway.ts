@@ -385,5 +385,20 @@ export function createAsaasPaymentGateway(cfg: AsaasConfig): PaymentGateway {
         status: data.status ?? null,
       };
     },
+
+    async updateSubscriptionValue(input): Promise<void> {
+      await asaasFetch<AsaasSubscriptionResponse>(
+        cfg,
+        `/subscriptions/${input.subscriptionId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            value: input.value,
+            description: input.description.slice(0, 500),
+            updatePendingPayments: input.updatePendingPayments,
+          }),
+        },
+      );
+    },
   };
 }
