@@ -55,7 +55,7 @@ echo "==> Alvo: $HOST"
 echo "==> Status das migrations"
 # migrate status exit 1 = há pendências (esperado); não abortar o script.
 set +e
-pnpm exec dotenv -v DATABASE_URL="$DATABASE_URL" -- \
+pnpm exec dotenv -v DATABASE_URL="$DATABASE_URL" -v DIRECT_URL="${DIRECT_URL:-}" -- \
   prisma migrate status --config apps/api/prisma.config.ts
 STATUS_RC=$?
 set -e
@@ -66,11 +66,11 @@ fi
 
 if [[ "$DO_MIGRATE" -eq 1 ]]; then
   echo "==> migrate deploy"
-  pnpm exec dotenv -v DATABASE_URL="$DATABASE_URL" -- \
-    prisma migrate deploy --config apps/api/prisma.config.ts
+  pnpm exec dotenv -v DATABASE_URL="$DATABASE_URL" -v DIRECT_URL="${DIRECT_URL:-}" -- \
+    bash scripts/prisma-migrate-deploy.sh
   echo "==> Status após migrate"
   set +e
-  pnpm exec dotenv -v DATABASE_URL="$DATABASE_URL" -- \
+  pnpm exec dotenv -v DATABASE_URL="$DATABASE_URL" -v DIRECT_URL="${DIRECT_URL:-}" -- \
     prisma migrate status --config apps/api/prisma.config.ts
   set -e
 else
@@ -102,7 +102,7 @@ echo "  4) app mobile: eas build --profile production (Android/iOS)"
 echo "  5) smoke: login, planos/billing, pedidos, faturamento"
 echo ""
 echo "Envs produção (checklist rápido):"
-echo "  API Render: DATABASE_URL (Neon), JWT_*, WEB_PUBLIC_URL=https://app.pedixpro.com.br"
+echo "  API Render: DATABASE_URL (Neon pooler), DIRECT_URL (Neon direto, sem -pooler), JWT_*, WEB_PUBLIC_URL=https://app.pedixpro.com.br"
 echo "  Web Vercel: VITE_API_URL=https://api.pedixpro.com.br"
 echo "  Site Vercel: NEXT_PUBLIC_API_URL=https://api.pedixpro.com.br NEXT_PUBLIC_APP_URL=https://app.pedixpro.com.br"
 echo "  Mobile: EXPO_PUBLIC_API_URL=https://api.pedixpro.com.br"
