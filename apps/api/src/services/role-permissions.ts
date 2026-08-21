@@ -414,7 +414,11 @@ export function adminPathToResource(
 ): PermissionResource | null {
   const path = routePath.split("?")[0] ?? routePath;
   if (path === "/" || path === "") return "dashboard";
-  if (path.startsWith("/products") || path.startsWith("/product-categories"))
+  if (
+    path.startsWith("/products") ||
+    path.startsWith("/product-categories") ||
+    path.startsWith("/purchase-units")
+  )
     return "products";
   if (path.startsWith("/stock")) return "stock";
   if (path.startsWith("/suppliers")) return "suppliers";

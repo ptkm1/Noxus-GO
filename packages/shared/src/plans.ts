@@ -3,29 +3,37 @@
  * Para mudar o que entra/sai de cada plano, edite só `PLAN_CATALOG` abaixo.
  */
 
-export type PlanId = "starter" | "growth" | "pro";
+export type PlanId = "start" | "pro" | "business";
 
 export type PlanFeature =
   | "core_ops"
   | "sellers_basic"
-  | "teams"
   | "commissions"
+  | "accounts_payable"
+  | "reports_basic"
+  | "whitelabel"
   | "price_tables"
+  | "broadcast"
+  | "fiscal_nfe"
+  | "expedition"
+  | "insights"
+  | "teams"
   | "tracking"
   | "visits"
-  | "insights"
   | "reports_advanced"
-  | "fiscal_nfe"
-  | "broadcast"
   | "audit"
-  | "whitelabel";
+  | "reports_ai"
+  | "multi_cnpj";
 
 export type PlanLimits = {
-  /** null = ilimitado */
+  /** null = ilimitado (cobrado por assento) */
   maxSellers: number | null;
-  /** null = ilimitado */
-  maxUsers: number | null;
+  /** Acessos administrativos (ADMIN + MANAGER) inclusos na mensalidade base */
+  includedAdmins: number;
 };
+
+export const SELLER_SEAT_PRICE_BRL = 29.9;
+export const EXTRA_ADMIN_SEAT_PRICE_BRL = 29.9;
 
 export type PlanDefinition = {
   id: PlanId;
@@ -34,84 +42,157 @@ export type PlanDefinition = {
   /** Slug curto para badges */
   shortName: string;
   description: string;
+  /** Mensalidade base (sem vendedores nem admins extras) */
   monthlyPriceBrl: number;
+  sellerSeatPriceBrl: number;
+  extraAdminSeatPriceBrl: number;
   features: PlanFeature[];
   limits: PlanLimits;
+  /** Bullets comerciais (landing / checkout) */
+  marketingFeatures: string[];
+  marketingNote?: string;
   /** Destaque na landing */
   highlighted?: boolean;
 };
 
-export const PLAN_IDS: PlanId[] = ["starter", "growth", "pro"];
+export const PLAN_IDS: PlanId[] = ["start", "pro", "business"];
 
 export const PLAN_FEATURE_LABELS: Record<PlanFeature, string> = {
   core_ops: "Operação (produtos, clientes, pedidos, estoque)",
   sellers_basic: "Vendedores",
-  teams: "Equipes",
   commissions: "Comissões e metas",
+  accounts_payable: "Contas a pagar",
+  reports_basic: "Relatórios básicos",
+  whitelabel: "Logo personalizada",
   price_tables: "Tabelas de preço",
-  tracking: "Rastreio de vendedores",
-  visits: "Visitas / check-in",
-  insights: "Insights do dia",
-  reports_advanced: "Relatórios avançados",
-  fiscal_nfe: "Fiscal / NF-e",
   broadcast: "Notificar vendedores",
+  fiscal_nfe: "Fiscal / NF-e",
+  expedition: "Expedição, bipagem e etiquetas",
+  insights: "Insights e indicadores",
+  teams: "Equipes",
+  tracking: "Localização dos vendedores em tempo real",
+  visits: "Acompanhamento da equipe externa",
+  reports_advanced: "Relatórios avançados",
   audit: "Auditoria",
-  whitelabel: "Whitelabel (logo / marca)",
+  reports_ai: "Análise de IA nos relatórios",
+  multi_cnpj: "Múltiplos CNPJ (filiais) com o mesmo estoque",
 };
 
-const STARTER_FEATURES: PlanFeature[] = ["core_ops", "sellers_basic"];
-
-const GROWTH_FEATURES: PlanFeature[] = [
-  ...STARTER_FEATURES,
-  "teams",
+const START_FEATURES: PlanFeature[] = [
+  "core_ops",
+  "sellers_basic",
   "commissions",
-  "price_tables",
-  "tracking",
-  "visits",
-  "insights",
-  "reports_advanced",
-];
-
-const PRO_FEATURES: PlanFeature[] = [
-  ...GROWTH_FEATURES,
-  "fiscal_nfe",
-  "broadcast",
-  "audit",
+  "accounts_payable",
+  "reports_basic",
   "whitelabel",
 ];
 
+const PRO_FEATURES: PlanFeature[] = [
+  ...START_FEATURES,
+  "price_tables",
+  "broadcast",
+  "fiscal_nfe",
+  "expedition",
+  "insights",
+];
+
+const BUSINESS_FEATURES: PlanFeature[] = [
+  ...PRO_FEATURES,
+  "teams",
+  "tracking",
+  "visits",
+  "reports_advanced",
+  "audit",
+  "reports_ai",
+  "multi_cnpj",
+];
+
 export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
-  starter: {
-    id: "starter",
-    name: "Comum",
-    shortName: "Comum",
-    description: "Para começar a vender e organizar o básico.",
-    monthlyPriceBrl: 149,
-    features: STARTER_FEATURES,
-    limits: { maxSellers: 3, maxUsers: 5 },
-  },
-  growth: {
-    id: "growth",
-    name: "Intermediário",
-    shortName: "Intermediário",
-    description: "Gestão de equipe, metas, rota e relatórios.",
-    monthlyPriceBrl: 349,
-    features: GROWTH_FEATURES,
-    limits: { maxSellers: 15, maxUsers: 25 },
-    highlighted: true,
+  start: {
+    id: "start",
+    name: "Start",
+    shortName: "Start",
+    description:
+      "Ideal para pequenas distribuidoras que precisam organizar sua força de vendas e operação.",
+    monthlyPriceBrl: 79.9,
+    sellerSeatPriceBrl: SELLER_SEAT_PRICE_BRL,
+    extraAdminSeatPriceBrl: EXTRA_ADMIN_SEAT_PRICE_BRL,
+    features: START_FEATURES,
+    limits: { maxSellers: null, includedAdmins: 1 },
+    marketingFeatures: [
+      "App de força de vendas",
+      "Funcionamento offline",
+      "Emissão e compartilhamento de pedidos",
+      "Cadastro ilimitado de produtos",
+      "Cadastro ilimitado de clientes",
+      "Controle de estoque",
+      "Controle de comissão",
+      "Controle de contas a pagar",
+      "Relatórios básicos",
+      "Logo personalizada",
+      "1 acesso administrativo",
+    ],
   },
   pro: {
     id: "pro",
     name: "Pro",
     shortName: "Pro",
-    description: "Tudo liberado, incluindo fiscal NF-e e whitelabel.",
-    monthlyPriceBrl: 699,
+    description:
+      "Para empresas que precisam de uma operação comercial mais completa.",
+    monthlyPriceBrl: 149.9,
+    sellerSeatPriceBrl: SELLER_SEAT_PRICE_BRL,
+    extraAdminSeatPriceBrl: EXTRA_ADMIN_SEAT_PRICE_BRL,
     features: PRO_FEATURES,
-    limits: { maxSellers: null, maxUsers: null },
+    limits: { maxSellers: null, includedAdmins: 2 },
+    highlighted: true,
+    marketingFeatures: [
+      "Tudo do plano Start",
+      "2 acessos administrativos",
+      "Emissão de NF-e",
+      "Módulo de expedição",
+      "Suporte para bipadora de código de barras",
+      "Conferência de pedidos por bipagem",
+      "Geração de etiquetas",
+      "Impressão de etiquetas",
+      "Fluxo integrado de pedido → NF-e → expedição",
+      "Insights",
+      "Análise e acompanhamento de indicadores da operação",
+    ],
+  },
+  business: {
+    id: "business",
+    name: "Business",
+    shortName: "Business",
+    description:
+      "Para distribuidoras que precisam de controle avançado, inteligência e gestão da equipe.",
+    monthlyPriceBrl: 299,
+    sellerSeatPriceBrl: SELLER_SEAT_PRICE_BRL,
+    extraAdminSeatPriceBrl: EXTRA_ADMIN_SEAT_PRICE_BRL,
+    features: BUSINESS_FEATURES,
+    limits: { maxSellers: null, includedAdmins: 6 },
+    marketingFeatures: [
+      "Tudo do plano Pro",
+      "6 acessos administrativos",
+      "Operação completa",
+      "Gestão comercial avançada",
+      "Gestão fiscal",
+      "Gestão de estoque",
+      "Gestão financeira",
+      "Relatórios avançados",
+      "Análise de IA nos relatórios",
+      "Insights avançados",
+      "Localização dos vendedores em tempo real",
+      "Acompanhamento da equipe externa",
+      "Funções personalizadas sob demanda",
+      "Integrações e adaptações específicas",
+      "Múltiplos CNPJ (filiais) usando o mesmo estoque",
+    ],
+    marketingNote:
+      "Funções personalizadas sob demanda podem ser cobradas separadamente, de acordo com a complexidade do desenvolvimento. Acessos administrativos adicionais têm o custo de R$ 29,90/mês.",
   },
 };
 
-export const DEFAULT_PLAN_ID: PlanId = "starter";
+export const DEFAULT_PLAN_ID: PlanId = "start";
 
 /** Trial padrão ao cadastrar org (dias). */
 export const DEFAULT_TRIAL_DAYS = 14;
@@ -148,17 +229,39 @@ export function listPlans(): PlanDefinition[] {
   return PLAN_IDS.map((id) => PLAN_CATALOG[id]);
 }
 
-/** Resolve plano pelo valor mensal cobrado no Asaas (ex.: 349 → growth). */
-export function planIdFromMonthlyPrice(value: number): PlanId | null {
-  const normalized = Math.round(value * 100) / 100;
-  const match = PLAN_IDS.find(
-    (id) => PLAN_CATALOG[id].monthlyPriceBrl === normalized,
+export function roundMoneyBrl(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+export function extraAdminCount(
+  adminCount: number,
+  includedAdmins: number,
+): number {
+  return Math.max(0, adminCount - includedAdmins);
+}
+
+/** Total mensal = base + vendedores × 29,90 + admins extras × 29,90. */
+export function planMonthlyTotal(
+  planId: string | null | undefined,
+  sellerCount: number,
+  adminCount: number,
+): number {
+  const def = getPlanDefinition(planId);
+  const extra = extraAdminCount(adminCount, def.limits.includedAdmins);
+  return roundMoneyBrl(
+    def.monthlyPriceBrl +
+      Math.max(0, sellerCount) * def.sellerSeatPriceBrl +
+      extra * def.extraAdminSeatPriceBrl,
   );
-  if (match) return match;
-  // tolerância para arredondamento do gateway (ex.: 348.99)
-  return (
-    PLAN_IDS.find(
-      (id) => Math.abs(PLAN_CATALOG[id].monthlyPriceBrl - normalized) < 0.02,
-    ) ?? null
-  );
+}
+
+export function formatPlanPriceBrl(value: number): string {
+  return value.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
+export function planSeatPriceCaption(plan: PlanDefinition): string {
+  return `${formatPlanPriceBrl(plan.monthlyPriceBrl)}/mês + ${formatPlanPriceBrl(plan.sellerSeatPriceBrl)} por vendedor`;
 }

@@ -31,4 +31,16 @@ describe("FakePaymentGateway", () => {
     await gw.cancelSubscription("sub_1");
     expect(gw.canceled).toEqual(["sub_1"]);
   });
+
+  it("atualiza valor da assinatura sem cartão", async () => {
+    const gw = new FakePaymentGateway();
+    await gw.updateSubscriptionValue({
+      subscriptionId: "sub_1",
+      value: 139.7,
+      description: "Start + 2 vendedores",
+      updatePendingPayments: true,
+    });
+    expect(gw.subscriptionValueUpdates).toHaveLength(1);
+    expect(gw.subscriptionValueUpdates[0]?.value).toBe(139.7);
+  });
 });

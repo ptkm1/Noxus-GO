@@ -1,6 +1,7 @@
 import rateLimit from "@fastify/rate-limit";
 import {
     cnpjDigitsOnly,
+    DEFAULT_PLAN_ID,
     isPlanId,
     isValidCnpj,
     type PlanId,
@@ -32,6 +33,7 @@ import { syncOrgAccessFromSubscription } from "../services/billing/subscription-
 import { fiscalConfigCreateData } from "../services/cnpj/fiscal-emitente.js";
 import { lookupFiscalEmitente } from "../services/cnpj/lookup-fiscal-emitente.js";
 import { ensureDefaultOrderSituations } from "../services/order-situations.js";
+import { ensureDefaultPurchaseUnits } from "../services/purchase-units.js";
 import {
     ensureOrgRolePermissions,
     getPermissionsMapForUser,
@@ -82,6 +84,12 @@ async function userResponseForMe(user: {
   );
   const subscription = await getOrgEntitlements(user.organizationId);
   const access = await syncOrgAccessFromSubscription(user.organizationId);
+  const org = await prisma.organization.findUnique({
+    where: { id: user.organizationId },
+    select: { name: true, displayName: true },
+  });
+  const organizationName =
+    org?.displayName?.trim() || org?.name?.trim() || "";
   return {
     id: user.id,
     email: user.email,
@@ -89,6 +97,7 @@ async function userResponseForMe(user: {
     matricula: user.matricula,
     role: user.role,
     organizationId: user.organizationId,
+    organizationName,
     organizationProfileId: user.organizationProfileId ?? null,
     sellerId: user.seller?.id ?? null,
     commissionPercent: user.seller
@@ -156,7 +165,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     if (!isValidCnpj(cnpj)) {
       return reply.status(400).send({ error: "CNPJ inválido" });
     }
-    let planId: PlanId = "starter";
+    let planId: PlanId = DEFAULT_PLAN_ID;
     if (rawPlanId) {
       if (!isPlanId(rawPlanId)) {
         return reply.status(400).send({ error: "Plano inválido" });
@@ -232,6 +241,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
     await ensureOrgRolePermissions(user.organizationId);
     await ensureDefaultOrderSituations(user.organizationId);
+    await ensureDefaultPurchaseUnits(user.organizationId);
 
     let checkout: { intentId: string; checkoutUrl: string | null } | null = null;
     let checkoutError: string | null = null;
@@ -353,6 +363,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
     await ensureOrgRolePermissions(user.organizationId);
     await ensureDefaultOrderSituations(user.organizationId);
+    await ensureDefaultPurchaseUnits(user.organizationId);
 
     const accessToken = signAccessToken(await accessPayloadForUser(user));
     const refreshToken = signRefreshToken(user.id);
@@ -414,6 +425,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       const user = await resolveUserForCompletedCheckout(body.data.intentId);
       await ensureOrgRolePermissions(user.organizationId);
       await ensureDefaultOrderSituations(user.organizationId);
+      await ensureDefaultPurchaseUnits(user.organizationId);
       const accessToken = signAccessToken(await accessPayloadForUser(user));
       const refreshToken = signRefreshToken(user.id);
       return {

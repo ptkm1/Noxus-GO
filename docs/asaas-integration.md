@@ -68,7 +68,7 @@ Landing → POST /billing/subscription-intents → Asaas → Webhook → e-mail 
 
 ## Planos
 
-IDs oficiais: `starter` \| `growth` \| `pro` (fonte: `packages/shared` `PLAN_CATALOG`). Sem aliases `*_monthly`.
+IDs oficiais: `start` \| `pro` \| `business` (fonte: `packages/shared` `PLAN_CATALOG`). Sem aliases `*_monthly`. Mensalidade = base do plano + R$ 29,90 por vendedor + R$ 29,90 por acesso administrativo extra.
 
 ## Gates de acesso
 
@@ -79,7 +79,7 @@ IDs oficiais: `starter` \| `growth` \| `pro` (fonte: `packages/shared` `PLAN_CAT
 
 ## Convites e limites
 
-Criação de usuário/vendedor sem senha (ou `invite: true`) gera `AccountActivationToken` (`USER_INVITE`). O limite `maxUsers` conta usuários ativos + convites pendentes.
+Criação de usuário/vendedor sem senha (ou `invite: true`) gera `AccountActivationToken` (`USER_INVITE`). Vendedores são ilimitados e entram na cobrança (R$ 29,90/mês cada). Acessos administrativos (ADMIN/MANAGER) inclusos: Start 1, Pro 2, Business 6; extras também R$ 29,90/mês. O valor da assinatura Asaas é atualizado ao adicionar/remover assentos.
 
 ## Checklist sandbox
 

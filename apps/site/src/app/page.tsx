@@ -1,9 +1,8 @@
 import {
-  APP_BRAND_NAME,
-  APP_BRAND_TAGLINE,
-  listPlans,
-  PLAN_FEATURE_LABELS,
-  type PlanFeature,
+    APP_BRAND_NAME,
+    APP_BRAND_TAGLINE,
+    formatPlanPriceBrl,
+    listPlans,
 } from "@pedidos/shared";
 import { Suspense } from "react";
 import { BrandMark } from "../components/BrandMark";
@@ -16,11 +15,11 @@ const BENEFITS: { title: string; body: string }[] = [
   },
   {
     title: "Equipe em movimento",
-    body: "Rastreio, visitas e comissões quando o plano libera — sem trocar de ferramenta.",
+    body: "Força de vendas no app, inclusive offline, com comissão e pedidos no mesmo fluxo.",
   },
   {
     title: "Cresce com você",
-    body: "Comece no essencial e evolua para fiscal NF-e, auditoria e whitelabel no Pro.",
+    body: "Comece no Start e evolua para NF-e, expedição e, no Business, rastreio e gestão avançada.",
   },
 ];
 
@@ -31,29 +30,17 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Há período de teste?",
-    a: "Novas organizações entram em trial no plano inicial. Depois você escolhe Comum, Intermediário ou Pro nesta página.",
+    a: "Novas organizações entram em trial no plano Start. Depois você escolhe Start, Pro ou Business nesta página.",
   },
   {
     q: "O pagamento já está ativo?",
     a: "Sim. O checkout seguro é processado pelo Asaas; após a confirmação, enviamos o e-mail de ativação da conta.",
   },
+  {
+    q: "Como funciona o preço por vendedor?",
+    a: "A mensalidade do plano é a base. Cada vendedor adicional custa R$ 29,90/mês, e acessos administrativos além dos inclusos no plano também custam R$ 29,90/mês. O valor da assinatura é atualizado automaticamente ao adicionar ou remover assentos.",
+  },
 ];
-
-function formatPrice(value: number): string {
-  return value.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    maximumFractionDigits: 0,
-  });
-}
-
-function formatLimit(n: number | null): string {
-  return n == null ? "Ilimitados" : String(n);
-}
-
-function featurePreview(features: PlanFeature[]): string[] {
-  return features.slice(0, 6).map((f) => PLAN_FEATURE_LABELS[f]);
-}
 
 export default function HomePage() {
   const plans = listPlans();
@@ -267,8 +254,8 @@ export default function HomePage() {
           <p
             style={{ margin: "0 0 2rem", color: "var(--muted)", maxWidth: 480 }}
           >
-            Preços mensais em BRL. Limites de vendedores e usuários conforme o
-            plano.
+            Preços mensais em BRL. Vendedores ilimitados, cobrados à parte.
+            Acessos administrativos extras: R$ 29,90/mês.
           </p>
           <div
             style={{
@@ -332,7 +319,7 @@ export default function HomePage() {
                       letterSpacing: "-0.03em",
                     }}
                   >
-                    {formatPrice(plan.monthlyPriceBrl)}
+                    {formatPlanPriceBrl(plan.monthlyPriceBrl)}
                   </span>
                   <span style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
                     /mês
@@ -345,8 +332,11 @@ export default function HomePage() {
                     color: "var(--muted)",
                   }}
                 >
-                  Até {formatLimit(plan.limits.maxSellers)} vendedores ·{" "}
-                  {formatLimit(plan.limits.maxUsers)} usuários
+                  + {formatPlanPriceBrl(plan.sellerSeatPriceBrl)} por vendedor
+                  · {plan.limits.includedAdmins} acesso
+                  {plan.limits.includedAdmins === 1 ? "" : "s"} administrativo
+                  {plan.limits.includedAdmins === 1 ? "" : "s"} incluso
+                  {plan.limits.includedAdmins === 1 ? "" : "s"}
                 </p>
                 <ul
                   style={{
@@ -357,12 +347,23 @@ export default function HomePage() {
                     flex: 1,
                   }}
                 >
-                  {featurePreview(plan.features).map((label) => (
+                  {plan.marketingFeatures.map((label) => (
                     <li key={label} style={{ marginBottom: "0.35rem" }}>
                       {label}
                     </li>
                   ))}
                 </ul>
+                {plan.marketingNote ? (
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: "0.8rem",
+                      color: "var(--muted)",
+                    }}
+                  >
+                    {plan.marketingNote}
+                  </p>
+                ) : null}
                 <a
                   href={`?plan=${plan.id}#checkout`}
                   className={

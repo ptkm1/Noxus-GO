@@ -1,9 +1,10 @@
 import { prisma } from "../src/db.js";
 import { ensureOrgSubscription } from "../src/services/billing/subscription.js";
 import { ensureDefaultOrderSituations } from "../src/services/order-situations.js";
+import { ensureDefaultPurchaseUnits } from "../src/services/purchase-units.js";
 import {
-  ensureOrgRolePermissions,
-  setOrgEnabledRoles,
+    ensureOrgRolePermissions,
+    setOrgEnabledRoles,
 } from "../src/services/role-permissions.js";
 import { CATEGORY_SCHEMA_BY_CODE } from "./category-schemas.js";
 import { upsertPimentinhaSaltbits } from "./seed-pimentinha-saltbits.js";
@@ -136,11 +137,11 @@ export async function unlockOrgFullAccess(email: string) {
     "SUPERVISOR",
   ]);
 
-  await ensureOrgSubscription(organizationId, { planId: "pro" });
+  await ensureOrgSubscription(organizationId, { planId: "business" });
   await prisma.organizationSubscription.update({
     where: { organizationId },
     data: {
-      planId: "pro",
+      planId: "business",
       status: "ACTIVE",
       provider: "none",
       cancelAtPeriodEnd: false,
@@ -152,6 +153,7 @@ export async function unlockOrgFullAccess(email: string) {
 
   await ensureOrgRolePermissions(organizationId);
   await ensureDefaultOrderSituations(organizationId);
+  await ensureDefaultPurchaseUnits(organizationId);
   await upsertCategories(organizationId);
   await upsertPaymentConditions(organizationId);
   await upsertFiscalLookups(organizationId);

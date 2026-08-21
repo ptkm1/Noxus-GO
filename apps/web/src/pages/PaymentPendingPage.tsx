@@ -1,5 +1,5 @@
 import { SubscriptionCardForm } from "@/components/billing/SubscriptionCardForm";
-import { getPlanDefinition, isPlanId, type PlanId } from "@pedidos/shared";
+import { formatPlanPriceBrl, getPlanDefinition, isPlanId, planSeatPriceCaption, type PlanId } from "@pedidos/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth, type User } from "../auth/AuthContext";
@@ -12,6 +12,7 @@ type IntentStatus = {
   nextAction: string;
   intentId: string;
   planId: string;
+  amountBrl?: number;
   fakeGateway?: boolean;
   changeType?: "plan_change" | "initial" | null;
   previousPlanId?: string | null;
@@ -59,7 +60,7 @@ export function PaymentPendingPage() {
   const [intentId, setIntentId] = useState(params.get("intentId") || "");
   const [fakeGateway, setFakeGateway] = useState(false);
   const [planId, setPlanId] = useState<PlanId>(
-    user?.subscription?.planId ?? "starter",
+    user?.subscription?.planId ?? "start",
   );
   const [billingDefaults, setBillingDefaults] = useState<
     IntentStatus["billingDefaults"]
@@ -68,6 +69,7 @@ export function PaymentPendingPage() {
     IntentStatus["changeType"]
   >(null);
   const [previousPlanId, setPreviousPlanId] = useState<string | null>(null);
+  const [chargedAmountBrl, setChargedAmountBrl] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [processingPayment, setProcessingPayment] = useState(false);
   const [entering, setEntering] = useState(
@@ -169,8 +171,9 @@ export function PaymentPendingPage() {
   );
   applyStatusRef.current = async (data: IntentStatus) => {
     setIntentId(data.intentId);
-    setPlanId(isPlanId(data.planId) ? data.planId : "starter");
+    setPlanId(isPlanId(data.planId) ? data.planId : "start");
     setFakeGateway(Boolean(data.fakeGateway));
+    if (typeof data.amountBrl === "number") setChargedAmountBrl(data.amountBrl);
     if (data.billingDefaults) setBillingDefaults(data.billingDefaults);
     if (data.changeType) {
       setChangeType(data.changeType);
@@ -219,7 +222,7 @@ export function PaymentPendingPage() {
         if (open.intent) {
           setIntentId(open.intent.id);
           setPlanId(
-            isPlanId(open.intent.planId) ? open.intent.planId : "starter",
+            isPlanId(open.intent.planId) ? open.intent.planId : "start",
           );
         }
       } catch (ex) {
@@ -346,6 +349,7 @@ export function PaymentPendingPage() {
   const plan = getPlanDefinition(String(planId));
   const previousPlan =
     previousPlanId != null ? getPlanDefinition(String(previousPlanId)) : null;
+  const chargeBrl = chargedAmountBrl ?? plan.monthlyPriceBrl;
   const isPlanChange = isPlanChangeFlow && previousPlan != null;
   const showForm =
     Boolean(intentId) && !entering && !processingPayment && (isPlanChangeFlow || user?.accessStatus !== "ACTIVE");
@@ -394,20 +398,20 @@ export function PaymentPendingPage() {
         <p className="mt-2 text-sm text-muted-foreground">
           {isPlanChange && previousPlan ? (
             <>
-              Alterando de <strong>{previousPlan.name}</strong> (R${" "}
-              {previousPlan.monthlyPriceBrl}/mês) para{" "}
-              <strong>{plan.name}</strong> (R$ {plan.monthlyPriceBrl}/mês).
-              Confirme o cartão para concluir.
+              Alterando de <strong>{previousPlan.name}</strong> (
+              {planSeatPriceCaption(previousPlan)}) para{" "}
+              <strong>{plan.name}</strong> ({formatPlanPriceBrl(chargeBrl)}
+              /mês). Confirme o cartão para concluir.
             </>
           ) : isPlanChangeFlow ? (
             <>
-              Novo plano: <strong>{plan.name}</strong> (R${" "}
-              {plan.monthlyPriceBrl}/mês). Confirme o cartão para concluir a
-              alteração.
+              Novo plano: <strong>{plan.name}</strong> (
+              {formatPlanPriceBrl(chargeBrl)}/mês). Confirme o cartão para
+              concluir a alteração.
             </>
           ) : (
             <>
-              Plano <strong>{plan.name}</strong> · R$ {plan.monthlyPriceBrl}/mês
+              Plano <strong>{plan.name}</strong> · {planSeatPriceCaption(plan)}
             </>
           )}
         </p>
@@ -419,7 +423,7 @@ export function PaymentPendingPage() {
             <SubscriptionCardForm
               intentId={intentId}
               planName={plan.name}
-              amountBrl={plan.monthlyPriceBrl}
+              amountBrl={chargeBrl}
               skipAuth={!getAccessToken()}
               defaults={{
                 holderName: user?.name ?? billingDefaults?.holderName,

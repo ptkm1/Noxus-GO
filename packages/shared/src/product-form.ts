@@ -27,13 +27,37 @@ export function productClassificationLabel(
   return CLASSIFICATION_LABELS[value];
 }
 
-export const PURCHASE_UNITS = [
-  { value: "UN", label: "Unidade (UN)" },
-  { value: "CX", label: "Caixa (CX)" },
-  { value: "FD", label: "Fardo (FD)" },
-  { value: "KG", label: "Quilograma (KG)" },
-  { value: "L", label: "Litro (L)" },
+/** Unidades padrão criadas por organização (cadastro personalizável). */
+export const DEFAULT_PURCHASE_UNITS = [
+  { code: "UN", name: "Unidade", sortOrder: 1 },
+  { code: "CX", name: "Caixa", sortOrder: 2 },
+  { code: "FD", name: "Fardo", sortOrder: 3 },
+  { code: "KG", name: "Quilograma", sortOrder: 4 },
+  { code: "L", name: "Litro", sortOrder: 5 },
 ] as const;
+
+export const PURCHASE_UNIT_CODE_MAX = 10;
+
+export function normalizePurchaseUnitCode(raw: string): string {
+  return raw
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, PURCHASE_UNIT_CODE_MAX);
+}
+
+export function formatPurchaseUnitLabel(code: string, name: string): string {
+  const c = code.trim();
+  const n = name.trim();
+  if (!n) return c;
+  if (c && n.toUpperCase().includes(`(${c.toUpperCase()})`)) return n;
+  return c ? `${n} (${c})` : n;
+}
+
+export const PURCHASE_UNITS = DEFAULT_PURCHASE_UNITS.map((u) => ({
+  value: u.code,
+  label: formatPurchaseUnitLabel(u.code, u.name),
+}));
 
 export type ProductFormTab =
   | "principal"

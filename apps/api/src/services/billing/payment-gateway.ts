@@ -104,6 +104,13 @@ export type GatewaySubscriptionUpgradeInput = {
   creditCardHolderInfo: GatewayCreditCardHolderInput;
 };
 
+export type GatewaySubscriptionValueUpdateInput = {
+  subscriptionId: string;
+  value: number;
+  description: string;
+  updatePendingPayments: boolean;
+};
+
 export type PaymentGateway = {
   createCustomer(input: GatewayCustomerInput): Promise<GatewayCustomer>;
   createSubscriptionCheckout(
@@ -115,6 +122,9 @@ export type PaymentGateway = {
   upgradeSubscriptionWithCard(
     input: GatewaySubscriptionUpgradeInput,
   ): Promise<GatewaySubscriptionWithCardResult>;
+  updateSubscriptionValue(
+    input: GatewaySubscriptionValueUpdateInput,
+  ): Promise<void>;
   cancelSubscription(subscriptionId: string): Promise<void>;
 };
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { isPlanId, listPlans, type PlanId } from "@pedidos/shared";
+import { isPlanId, listPlans, planSeatPriceCaption, type PlanId } from "@pedidos/shared";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
@@ -28,7 +28,7 @@ function appUrl(): string {
 }
 
 export function CheckoutForm({
-  initialPlanId = "growth",
+  initialPlanId = "pro",
 }: {
   initialPlanId?: PlanId;
 }) {
@@ -143,7 +143,7 @@ export function CheckoutForm({
       >
         {plans.map((p) => (
           <option key={p.id} value={p.id}>
-            {p.name} — R$ {p.monthlyPriceBrl}/mês
+            {p.name} — {planSeatPriceCaption(p)}
           </option>
         ))}
       </select>

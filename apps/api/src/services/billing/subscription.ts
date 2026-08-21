@@ -1,7 +1,7 @@
 import {
-  DEFAULT_PLAN_ID,
-  DEFAULT_TRIAL_DAYS,
-  type PlanId,
+    DEFAULT_PLAN_ID,
+    DEFAULT_TRIAL_DAYS,
+    type PlanId,
 } from "@pedidos/shared";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "../../db.js";
@@ -17,7 +17,7 @@ export function trialPeriodEnd(
   return end;
 }
 
-/** Garante assinatura 1:1 (starter + TRIAL por padrão). */
+/** Garante assinatura 1:1 (Start + TRIAL por padrão). */
 export async function ensureOrgSubscription(
   organizationId: string,
   opts?: { planId?: PlanId; tx?: Db },

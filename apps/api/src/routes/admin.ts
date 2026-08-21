@@ -1,150 +1,152 @@
 import {
-  HOME_INDICATOR_KEYS,
-  HOME_INDICATORS_LAYOUTS,
-  MAX_HOME_INDICATORS,
-  normalizeHomeIndicators,
-  normalizeHomeIndicatorsLayout,
-  uniqueIdsPreserveOrder,
-  type HomeIndicatorKey,
-  type HomeIndicatorsLayout,
+    HOME_INDICATOR_KEYS,
+    HOME_INDICATORS_LAYOUTS,
+    MAX_HOME_INDICATORS,
+    normalizeHomeIndicators,
+    normalizeHomeIndicatorsLayout,
+    normalizePurchaseUnitCode,
+    uniqueIdsPreserveOrder,
+    type HomeIndicatorKey,
+    type HomeIndicatorsLayout,
 } from "@pedidos/shared";
 import {
-  Prisma,
-  type OrderStatus,
-  type PromotionKind,
-  type PromotionScope,
+    Prisma,
+    type OrderStatus,
+    type PromotionKind,
+    type PromotionScope,
 } from "@prisma/client";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import PDFDocument from "pdfkit";
 import { z } from "zod";
 import { verifyAccessToken } from "../auth/jwt.js";
 import {
-  isManagerGetAllowed,
-  isManagerWriteAllowed,
-  isOrgStaff,
-  isTeamLeaderAuth,
-  isTeamLeaderGetAllowed,
-  orderScopeWhere,
-  requireAdmin,
-  requireOrgStaff,
-  sellerScopeWhere,
-  teamMemberSellerIds,
-  validateManagerAssignment,
+    isManagerGetAllowed,
+    isManagerWriteAllowed,
+    isOrgStaff,
+    isTeamLeaderAuth,
+    isTeamLeaderGetAllowed,
+    orderScopeWhere,
+    requireAdmin,
+    requireOrgStaff,
+    sellerScopeWhere,
+    teamMemberSellerIds,
+    validateManagerAssignment,
 } from "../auth/org-roles.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { isPermissionResource } from "../auth/permissions.js";
 import { prisma } from "../db.js";
 import {
-  notifySaleConfirmed,
-  notifySellerGoalUpdated,
+    notifySaleConfirmed,
+    notifySellerGoalUpdated,
 } from "../services/admin-notifications.js";
 import {
-  AUDIT_ACTION,
-  AUDIT_ENTITY,
-  auditFromAuth,
-  writeAuditLog,
+    AUDIT_ACTION,
+    AUDIT_ENTITY,
+    auditFromAuth,
+    writeAuditLog,
 } from "../services/audit-log.js";
-import {
-  countOrgSellers,
-  getOrgEntitlements,
-} from "../services/billing/entitlements.js";
 import { assertAdminPathPlanFeature } from "../services/billing/plan-gate.js";
+import { syncSubscriptionSeats } from "../services/billing/seats.js";
 import {
-  maybeInactivateStaleCustomersForOrg,
-  reactivateCustomerOnSale,
+    maybeInactivateStaleCustomersForOrg,
+    reactivateCustomerOnSale,
 } from "../services/customer-status.js";
 import {
-  customerBodySchema,
-  customerPatchSchema,
-  parseCompleteCustomerBody,
-  toCustomerPrismaData,
+    customerBodySchema,
+    customerPatchSchema,
+    parseCompleteCustomerBody,
+    toCustomerPrismaData,
 } from "../services/customer-validation.js";
 import { buildDistributorInsights } from "../services/distributor-insights.js";
 import {
-  AccountsPayableError,
-  createAccountsPayable,
-  deleteAccountsPayable,
-  listAccountsPayable,
-  updateAccountsPayable,
+    AccountsPayableError,
+    createAccountsPayable,
+    deleteAccountsPayable,
+    listAccountsPayable,
+    updateAccountsPayable,
 } from "../services/fiscal/accounts-payable.js";
 import {
-  createCostCenter,
-  createExpenseHistory,
-  deleteCostCenter,
-  deleteExpenseHistory,
-  FiscalLookupError,
-  listCostCenters,
-  listExpenseHistories,
-  updateCostCenter,
-  updateExpenseHistory,
+    createCostCenter,
+    createExpenseHistory,
+    deleteCostCenter,
+    deleteExpenseHistory,
+    FiscalLookupError,
+    listCostCenters,
+    listExpenseHistories,
+    updateCostCenter,
+    updateExpenseHistory,
 } from "../services/fiscal/fiscal-lookups.js";
 import {
-  createFixedExpense,
-  deleteFixedExpense,
-  FixedExpenseError,
-  listFixedExpenses,
-  updateFixedExpense,
+    createFixedExpense,
+    deleteFixedExpense,
+    FixedExpenseError,
+    listFixedExpenses,
+    updateFixedExpense,
 } from "../services/fiscal/fixed-expenses.js";
 import {
-  buildNfeXml,
-  buildNfeXmlZip,
-  listFiscalOrders,
-  NfeXmlError,
+    buildNfeXml,
+    buildNfeXmlZip,
+    listFiscalOrders,
+    NfeXmlError,
 } from "../services/fiscal/nfe-xml.js";
 import { buildHomeIndicator } from "../services/home-dashboard-indicators.js";
 import {
-  buildCommissionStatement,
-  buildCreditAgingReport,
-  buildFiscalOutboundSummary,
-  buildFiscalReconciliation,
-  buildMarginReport,
-  buildSalesScorecard,
-  buildStockHealthReport,
-  buildVisitEffectiveness,
+    buildCommissionStatement,
+    buildCreditAgingReport,
+    buildFiscalOutboundSummary,
+    buildFiscalReconciliation,
+    buildMarginReport,
+    buildSalesScorecard,
+    buildStockHealthReport,
+    buildVisitEffectiveness,
 } from "../services/management-reports.js";
 import { getOrCreateMorningBrief } from "../services/morning-brief.js";
 import { getWebPushPublicKey, notifyUsers } from "../services/notify.js";
 import { nextOrderNumber } from "../services/order-number.js";
 import {
-  loadOrderForPdf,
-  sendOrderPdf80mmReply,
-  sendOrderPdfReply,
+    loadOrderForPdf,
+    sendOrderPdf80mmReply,
+    sendOrderPdfReply,
 } from "../services/order-pdf-load.js";
 import {
-  computeSaleOrder,
-  OrderPricingError,
+    computeSaleOrder,
+    OrderPricingError,
 } from "../services/order-pricing.js";
 import {
-  ensureDefaultOrderSituations,
-  normalizeSituationCode,
+    ensureDefaultOrderSituations,
+    normalizeSituationCode,
 } from "../services/order-situations.js";
 import {
-  createOrgProfile,
-  deleteOrgProfile,
-  listOrgProfiles,
-  OrgProfileError,
-  updateOrgProfile,
+    ensureDefaultPurchaseUnits,
+    listOrgPurchaseUnits,
+} from "../services/purchase-units.js";
+import {
+    createOrgProfile,
+    deleteOrgProfile,
+    listOrgProfiles,
+    OrgProfileError,
+    updateOrgProfile,
 } from "../services/org-profiles.js";
 import type { AttributeFieldDef } from "../services/product-attributes.js";
 import {
-  parseCategoryAttributeSchema,
-  validateProductAttributes,
+    parseCategoryAttributeSchema,
+    validateProductAttributes,
 } from "../services/product-attributes.js";
 import {
-  mapProductCadastroPrisma,
-  normalizeProductNcm,
-  productCadastroFieldsSchema,
-  syncProductAttributesNcm,
+    mapProductCadastroPrisma,
+    normalizeProductNcm,
+    productCadastroFieldsSchema,
+    syncProductAttributesNcm,
 } from "../services/product-cadastro-schema.js";
 import {
-  applyStockOnStatusChange,
-  assertSufficientStock,
-  StockError,
-  stockErrorPayload,
+    applyStockOnStatusChange,
+    assertSufficientStock,
+    StockError,
+    stockErrorPayload,
 } from "../services/product-stock.js";
 import {
-  handleRegisterPushDevice,
-  handleUnregisterPushDevice,
+    handleRegisterPushDevice,
+    handleUnregisterPushDevice,
 } from "../services/push-device-routes.js";
 import { buildCustomersPdf } from "../services/reports/customers-pdf.js";
 import { readExtraParams } from "../services/reports/extra-filters.js";
@@ -154,45 +156,45 @@ import { orderCode } from "../services/reports/pdf-common.js";
 import { buildRouteRomaneioPdf } from "../services/reports/route-romaneio-pdf.js";
 import { buildStockPdf } from "../services/reports/stock-pdf.js";
 import {
-  adminPathToResource,
-  buildEffectivePermissionsMatrix,
-  canReadEffectiveForUser,
-  canWriteEffective,
-  setOrgEnabledRoles,
-  updateOrgRolePermissions,
+    adminPathToResource,
+    buildEffectivePermissionsMatrix,
+    canReadEffectiveForUser,
+    canWriteEffective,
+    setOrgEnabledRoles,
+    updateOrgRolePermissions,
 } from "../services/role-permissions.js";
 import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
 import {
-  createSalesTeam,
-  deleteSalesTeam,
-  getSalesTeam,
-  listSalesTeams,
-  SalesTeamError,
-  serializeSalesTeam,
-  updateSalesTeam,
+    createSalesTeam,
+    deleteSalesTeam,
+    getSalesTeam,
+    listSalesTeams,
+    SalesTeamError,
+    serializeSalesTeam,
+    updateSalesTeam,
 } from "../services/sales-teams.js";
 import { getSellerLocationHistory } from "../services/seller-location-history.js";
 import { registerSellerLocationClient } from "../services/seller-location-ws.js";
 import { listAdminSellerLocations } from "../services/seller-locations-admin.js";
 import {
-  buildGoalScopeKey,
-  goalInclude,
-  notifyUserIdsForGoal,
+    buildGoalScopeKey,
+    goalInclude,
+    notifyUserIdsForGoal,
 } from "../services/seller-monthly-goals.js";
 import {
-  applyManualStockEntry,
-  listExpiringLots,
-  listStockMovements,
-  listStockProducts,
+    applyManualStockEntry,
+    listExpiringLots,
+    listStockMovements,
+    listStockProducts,
 } from "../services/stock-ledger.js";
 import {
-  assertSupplierInOrg,
-  createSupplier,
-  deleteSupplier,
-  getSupplier,
-  listSuppliers,
-  SupplierError,
-  updateSupplier,
+    assertSupplierInOrg,
+    createSupplier,
+    deleteSupplier,
+    getSupplier,
+    listSuppliers,
+    SupplierError,
+    updateSupplier,
 } from "../services/suppliers.js";
 import { buildTeamSalesSummary } from "../services/team-sales-summary.js";
 import { decToNum } from "../util/money.js";
@@ -233,13 +235,9 @@ function parseVisitPeriodDate(
   return Number.isNaN(dt.getTime()) ? null : dt;
 }
 
-/** Identificador estável por organização (equivalente a um valor de enum). */
+/** Identificador estável por organização — apenas dígitos. */
 function normalizeCategoryCode(raw: string): string {
-  return raw
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, "_")
-    .replace(/[^A-Z0-9_]/g, "");
+  return raw.trim().replace(/\D/g, "");
 }
 
 function normalizeRegionCode(raw: string): string {
@@ -1021,7 +1019,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!code.length)
       return reply
         .status(400)
-        .send({ error: "Código inválido (use letras, números e _)" });
+        .send({ error: "Código inválido (use apenas números)" });
 
     let schemaValue: Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined;
     if (body.data.attributeSchema !== undefined) {
@@ -1092,7 +1090,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (code !== undefined && !code.length) {
       return reply
         .status(400)
-        .send({ error: "Código inválido (use letras, números e _)" });
+        .send({ error: "Código inválido (use apenas números)" });
     }
 
     let schemaPatch: Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined;
@@ -1139,6 +1137,46 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
     await prisma.productCategory.delete({ where: { id } });
     return reply.status(204).send();
+  });
+
+  /* --- Unidades de compra (lookup por organização) --- */
+  app.get("/purchase-units", async (req) => {
+    const auth = req.auth!;
+    return listOrgPurchaseUnits(auth.organizationId);
+  });
+
+  app.post("/purchase-units", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        code: z.string().min(1),
+        name: z.string().min(1).max(80),
+      })
+      .safeParse(req.body);
+    if (!body.success)
+      return reply.status(400).send({ error: "Dados inválidos" });
+
+    const code = normalizePurchaseUnitCode(body.data.code);
+    if (!code.length)
+      return reply.status(400).send({ error: "Código é obrigatório" });
+
+    await ensureDefaultPurchaseUnits(auth.organizationId);
+
+    try {
+      return await prisma.purchaseUnit.create({
+        data: {
+          organizationId: auth.organizationId,
+          code,
+          name: body.data.name.trim(),
+          sortOrder: 100,
+          isSystem: false,
+        },
+      });
+    } catch {
+      return reply
+        .status(409)
+        .send({ error: "Já existe unidade com esse código" });
+    }
   });
 
   /* --- Condições de pagamento --- */
@@ -3007,14 +3045,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         .send({ error: "Dados inválidos", details: body.error.flatten() });
 
     try {
-      const { assertCanAddSeat } = await import("../services/billing/seats.js");
-      await assertCanAddSeat(auth.organizationId);
+      await syncSubscriptionSeats(auth.organizationId, { extraAdmins: 1 });
     } catch (err) {
-      const e = err as { message?: string; code?: string; limit?: number };
-      return reply.status(403).send({
-        error: e.message || "Limite de usuários atingido",
-        code: e.code || "PLAN_LIMIT_USERS",
-        limit: e.limit,
+      const e = err as { message?: string; code?: string; http?: number };
+      return reply.status(e.http ?? 502).send({
+        error: e.message || "Não foi possível atualizar a cobrança dos assentos",
+        code: e.code || "BILLING_SEAT_UPDATE_FAILED",
       });
     }
 
@@ -3058,28 +3094,34 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const passwordHash = useInvite
       ? await unusablePasswordHash()
       : await hashPassword(body.data.password!);
-    const created = await prisma.user.create({
-      data: {
-        email,
-        passwordHash,
-        name: body.data.name.trim(),
-        role,
-        organizationId: auth.organizationId,
-        organizationProfileId,
-        activatedAt: useInvite ? null : new Date(),
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        organizationProfileId: true,
-        organizationProfile: {
-          select: { id: true, name: true, key: true, baseRole: true },
+    let created;
+    try {
+      created = await prisma.user.create({
+        data: {
+          email,
+          passwordHash,
+          name: body.data.name.trim(),
+          role,
+          organizationId: auth.organizationId,
+          organizationProfileId,
+          activatedAt: useInvite ? null : new Date(),
         },
-        createdAt: true,
-      },
-    });
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          organizationProfileId: true,
+          organizationProfile: {
+            select: { id: true, name: true, key: true, baseRole: true },
+          },
+          createdAt: true,
+        },
+      });
+    } catch (err) {
+      await syncSubscriptionSeats(auth.organizationId).catch(() => undefined);
+      throw err;
+    }
 
     let inviteEmailSent: boolean | undefined;
     let inviteEmailError: string | undefined;
@@ -3357,8 +3399,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
-    const updated = await prisma.user.update({
-      where: { id },
+    const patched = await prisma.user.updateMany({
+      where: {
+        id,
+        organizationId: auth.organizationId,
+        role: { in: ["ADMIN", "MANAGER"] },
+      },
       data: {
         name: d.name?.trim(),
         email: d.email?.toLowerCase(),
@@ -3366,6 +3412,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         organizationProfileId: nextProfileId,
         ...(d.password ? { passwordHash: await hashPassword(d.password) } : {}),
       },
+    });
+    if (patched.count === 0) {
+      return reply.status(404).send({ error: "Usuário não encontrado" });
+    }
+    const updated = await prisma.user.findFirst({
+      where: { id, organizationId: auth.organizationId },
       select: {
         id: true,
         email: true,
@@ -3378,6 +3430,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         createdAt: true,
       },
     });
+    if (!updated) {
+      return reply.status(404).send({ error: "Usuário não encontrado" });
+    }
 
     await auditFromAuth(auth, {
       action: AUDIT_ACTION.UPDATE,
@@ -3418,7 +3473,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         .send({ error: "Não é possível excluir o último administrador" });
     }
 
-    await prisma.user.delete({ where: { id } });
+    await prisma.user.deleteMany({
+      where: {
+        id,
+        organizationId: auth.organizationId,
+        role: { in: ["ADMIN", "MANAGER"] },
+      },
+    });
+    await syncSubscriptionSeats(auth.organizationId).catch(() => undefined);
     await auditFromAuth(auth, {
       action: AUDIT_ACTION.DELETE,
       entityType: AUDIT_ENTITY.User,
@@ -3557,27 +3619,13 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         .status(400)
         .send({ error: "Dados inválidos", details: body.error.flatten() });
 
-    const ent = await getOrgEntitlements(auth.organizationId);
-    if (ent.limits.maxSellers != null) {
-      const n = await countOrgSellers(auth.organizationId);
-      if (n >= ent.limits.maxSellers) {
-        return reply.status(403).send({
-          error: `Seu plano permite no máximo ${ent.limits.maxSellers} vendedor(es)`,
-          code: "PLAN_LIMIT_SELLERS",
-          planId: ent.planId,
-          limit: ent.limits.maxSellers,
-        });
-      }
-    }
     try {
-      const { assertCanAddSeat } = await import("../services/billing/seats.js");
-      await assertCanAddSeat(auth.organizationId);
+      await syncSubscriptionSeats(auth.organizationId, { extraSellers: 1 });
     } catch (err) {
-      const e = err as { message?: string; code?: string; limit?: number };
-      return reply.status(403).send({
-        error: e.message || "Limite de usuários atingido",
-        code: e.code || "PLAN_LIMIT_USERS",
-        limit: e.limit,
+      const e = err as { message?: string; code?: string; http?: number };
+      return reply.status(e.http ?? 502).send({
+        error: e.message || "Não foi possível atualizar a cobrança dos assentos",
+        code: e.code || "BILLING_SEAT_UPDATE_FAILED",
       });
     }
 
@@ -3679,6 +3727,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         inviteEmailError,
       };
     } catch (e) {
+      await syncSubscriptionSeats(auth.organizationId).catch(() => undefined);
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
         e.code === "P2002"
@@ -3887,9 +3936,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     }
 
     try {
-      await prisma.$transaction([
-        prisma.seller.update({
-          where: { id },
+      await prisma.$transaction(async (tx) => {
+        const sellerPatch = await tx.seller.updateMany({
+          where: { id, organizationId: auth.organizationId },
           data: {
             commissionType: body.data.commissionType ?? undefined,
             commissionPercent: body.data.commissionPercent ?? undefined,
@@ -3898,35 +3947,44 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
               ? { managerUserId: body.data.managerUserId }
               : {}),
           },
-        }),
-        ...(body.data.name ||
-        body.data.email ||
-        body.data.password ||
-        body.data.matricula !== undefined
-          ? [
-              prisma.user.update({
-                where: { id: seller.userId },
-                data: {
-                  ...(body.data.name ? { name: body.data.name.trim() } : {}),
-                  ...(body.data.email
-                    ? { email: body.data.email.toLowerCase() }
-                    : {}),
-                  ...(body.data.password
-                    ? {
-                        passwordHash: await hashPassword(body.data.password),
-                      }
-                    : {}),
-                  ...(body.data.matricula !== undefined
-                    ? {
-                        matricula: body.data.matricula?.trim() || null,
-                      }
-                    : {}),
-                },
-              }),
-            ]
-          : []),
-      ]);
+        });
+        if (sellerPatch.count === 0) {
+          throw Object.assign(new Error("NOT_FOUND"), { code: "NOT_FOUND" });
+        }
+        if (
+          body.data.name ||
+          body.data.email ||
+          body.data.password ||
+          body.data.matricula !== undefined
+        ) {
+          await tx.user.updateMany({
+            where: {
+              id: seller.userId,
+              organizationId: auth.organizationId,
+            },
+            data: {
+              ...(body.data.name ? { name: body.data.name.trim() } : {}),
+              ...(body.data.email
+                ? { email: body.data.email.toLowerCase() }
+                : {}),
+              ...(body.data.password
+                ? {
+                    passwordHash: await hashPassword(body.data.password),
+                  }
+                : {}),
+              ...(body.data.matricula !== undefined
+                ? {
+                    matricula: body.data.matricula?.trim() || null,
+                  }
+                : {}),
+            },
+          });
+        }
+      });
     } catch (e) {
+      if ((e as { code?: string }).code === "NOT_FOUND") {
+        return reply.status(404).send({ error: "Não encontrado" });
+      }
       if (
         e instanceof Prisma.PrismaClientKnownRequestError &&
         e.code === "P2002"
@@ -3973,7 +4031,13 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         .send({ error: "Não é possível excluir a própria conta" });
     }
 
-    await prisma.user.delete({ where: { id: seller.userId } });
+    await prisma.user.deleteMany({
+      where: {
+        id: seller.userId,
+        organizationId: auth.organizationId,
+      },
+    });
+    await syncSubscriptionSeats(auth.organizationId).catch(() => undefined);
     await auditFromAuth(auth, {
       action: AUDIT_ACTION.DELETE,
       entityType: AUDIT_ENTITY.User,
