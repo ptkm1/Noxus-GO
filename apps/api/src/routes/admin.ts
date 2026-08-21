@@ -20,6 +20,7 @@ import PDFDocument from "pdfkit";
 import { z } from "zod";
 import { verifyAccessToken } from "../auth/jwt.js";
 import {
+    adminRelativePath,
     isManagerGetAllowed,
     isManagerWriteAllowed,
     isOrgStaff,
@@ -363,8 +364,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
       const auth = req.auth!;
       const method = req.method.toUpperCase();
-      const routePath =
-        req.routeOptions?.url ?? req.url.split("?")[0] ?? req.url;
+      const routePath = adminRelativePath(req.routeOptions?.url ?? req.url);
 
       if (
         !(await assertAdminPathPlanFeature(
