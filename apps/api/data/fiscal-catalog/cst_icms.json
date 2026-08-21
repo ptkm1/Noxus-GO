@@ -1,0 +1,18 @@
+{
+  "type": "CST_ICMS",
+  "sourceVersion": "Tabela-A-CST-ICMS-Manual-NF-e",
+  "entries": [
+    { "code": "00", "description": "Tributada integralmente" },
+    { "code": "10", "description": "Tributada e com cobrança do ICMS por substituição tributária" },
+    { "code": "20", "description": "Com redução de base de cálculo" },
+    { "code": "30", "description": "Isenta ou não tributada e com cobrança do ICMS por substituição tributária" },
+    { "code": "40", "description": "Isenta" },
+    { "code": "41", "description": "Não tributada" },
+    { "code": "50", "description": "Suspensão" },
+    { "code": "51", "description": "Diferimento" },
+    { "code": "60", "description": "ICMS cobrado anteriormente por substituição tributária" },
+    { "code": "61", "description": "ICMS cobrado anteriormente por substituição tributária em relação às operações com combustíveis" },
+    { "code": "70", "description": "Com redução de base de cálculo e cobrança do ICMS por substituição tributária" },
+    { "code": "90", "description": "Outras" }
+  ]
+}

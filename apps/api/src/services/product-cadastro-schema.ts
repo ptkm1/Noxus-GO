@@ -59,6 +59,9 @@ export const productCadastroFieldsSchema = {
   ipiPercent: optionalPercentSchema,
   icmsCostPercent: optionalPercentSchema,
   cbsIbsClassification: z.string().max(200).nullable().optional(),
+  ibsClassification: z.string().max(200).nullable().optional(),
+  fiscalCstIcms: z.string().max(10).nullable().optional(),
+  fiscalCsosn: z.string().max(10).nullable().optional(),
 };
 
 export function normalizeProductNcm(
@@ -117,6 +120,9 @@ type CadastroInput = {
   ipiPercent?: number | null;
   icmsCostPercent?: number | null;
   cbsIbsClassification?: string | null;
+  ibsClassification?: string | null;
+  fiscalCstIcms?: string | null;
+  fiscalCsosn?: string | null;
 };
 
 /** Mapeia campos de cadastro para create/update Prisma (undefined = não alterar). */
@@ -168,5 +174,10 @@ export function mapProductCadastroPrisma(
   if (body.cbsIbsClassification !== undefined) {
     data.cbsIbsClassification = body.cbsIbsClassification;
   }
+  if (body.ibsClassification !== undefined) {
+    data.ibsClassification = body.ibsClassification;
+  }
+  if (body.fiscalCstIcms !== undefined) data.fiscalCstIcms = body.fiscalCstIcms;
+  if (body.fiscalCsosn !== undefined) data.fiscalCsosn = body.fiscalCsosn;
   return data;
 }

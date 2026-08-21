@@ -8,6 +8,7 @@ import { CATEGORY_SCHEMA_BY_CODE } from "./category-schemas.js";
 import { upsertFiscalDemoData } from "./seed-fiscal-demo.js";
 import { upsertPimentinhaSaltbits } from "./seed-pimentinha-saltbits.js";
 import { upsertRouteDemoCustomer } from "./seed-route-customer.js";
+import { importFiscalCatalogFromDir } from "../src/services/fiscal/fiscal-catalog.js";
 
 /** Senhas conhecidas — sempre re-hasheadas para recuperar login após DB “estranho”. */
 const DEMO_ADMIN_EMAIL = "admin@demo.com";
@@ -630,6 +631,11 @@ async function main() {
   });
 
   await upsertFiscalDemoData(org.id);
+
+  const catalogImport = await importFiscalCatalogFromDir();
+  console.log(
+    `Catálogo fiscal: ${catalogImport.files} arquivo(s), ${catalogImport.upserted} código(s).`,
+  );
 
   console.log("Seed de produtos/pedidos demo concluído.");
 }

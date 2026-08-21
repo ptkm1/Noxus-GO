@@ -151,6 +151,25 @@ export type {
   NfeEnvironment,
 } from "./fiscal.js";
 export {
+  CFOP_CONTEXTS,
+  FISCAL_CATALOG_TYPES,
+  formatCfopDisplay,
+  formatFiscalCodeLabel,
+  formatNcmDisplay,
+  inferCfopContexts,
+  isCodeCurrentlyValid,
+  isFiscalCatalogType,
+  normalizeCestCode,
+  normalizeCfopCode,
+  normalizeNcmCode,
+} from "./fiscal-catalog.js";
+export type {
+  CfopContext,
+  FiscalCatalogCodeDto,
+  FiscalCatalogSearchResult,
+  FiscalCatalogType,
+} from "./fiscal-catalog.js";
+export {
   formatRelativeSaleDate,
   formatSaleItemCount,
 } from "./format-sale-date.js";

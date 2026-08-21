@@ -36,8 +36,8 @@ import { hashPassword, verifyPassword } from "../auth/password.js";
 import { isPermissionResource } from "../auth/permissions.js";
 import { prisma } from "../db.js";
 import {
-  notifySaleConfirmed,
-  notifySellerGoalUpdated,
+    notifySaleConfirmed,
+    notifySellerGoalUpdated,
 } from "../services/admin-notifications.js";
 import {
     AUDIT_ACTION,
@@ -102,7 +102,6 @@ import {
 } from "../services/management-reports.js";
 import { getOrCreateMorningBrief } from "../services/morning-brief.js";
 import { getWebPushPublicKey, notifyUsers } from "../services/notify.js";
-import { nextOrderNumber } from "../services/order-number.js";
 import {
     loadOrderForPdf,
     sendOrderPdf80mmReply,
@@ -113,9 +112,9 @@ import {
     OrderPricingError,
 } from "../services/order-pricing.js";
 import {
-  createSaleOrder,
-  replySaleCreateError,
-  sellerAllowedProductIds,
+    createSaleOrder,
+    replySaleCreateError,
+    sellerAllowedProductIds,
 } from "../services/create-sale-order.js";
 import { evaluateOrderCredit } from "../services/credit.js";
 import { resolveEffectiveUnitPrice } from "../services/price-resolve.js";
@@ -146,10 +145,8 @@ import {
     syncProductAttributesNcm,
 } from "../services/product-cadastro-schema.js";
 import {
-    applyStockOnStatusChange,
-    assertSufficientStock,
-    StockError,
-    stockErrorPayload,
+    applyStockOnStatusChange, StockError,
+    stockErrorPayload
 } from "../services/product-stock.js";
 import {
     handleRegisterPushDevice,
@@ -2290,10 +2287,13 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const body = z
       .object({
         name: z.string().min(1),
-        sku: z.string().optional(),
-        barcode: z.string().max(80).optional(),
-        description: z.string().optional(),
-        imageUrl: z.union([z.string().max(2048), z.literal("")]).optional(),
+        sku: z.string().nullable().optional(),
+        barcode: z.string().max(80).nullable().optional(),
+        description: z.string().nullable().optional(),
+        imageUrl: z
+          .union([z.string().max(2048), z.literal("")])
+          .nullable()
+          .optional(),
         basePrice: z.number().nonnegative(),
         categoryId: z.string().min(1),
         supplierId: z.string().min(1),
@@ -2368,11 +2368,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       const created = await prisma.product.create({
         data: {
           name: body.data.name,
-          sku: body.data.sku,
+          sku: body.data.sku ?? undefined,
           barcode: normalizeProductBarcode(body.data.barcode) ?? undefined,
-          description: body.data.description,
+          description: body.data.description || undefined,
           imageUrl:
-            body.data.imageUrl === undefined || body.data.imageUrl === ""
+            !body.data.imageUrl || body.data.imageUrl === ""
               ? undefined
               : body.data.imageUrl.trim() || undefined,
           basePrice: body.data.basePrice,

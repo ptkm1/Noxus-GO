@@ -56,6 +56,12 @@ function normalizeIncomingAttributes(raw: unknown): Record<string, unknown> {
   return { ...(raw as Record<string, unknown>) };
 }
 
+/**
+ * Chaves que o formulário/coluna canônica replica em `attributes`
+ * (ex.: NCM fiscal). Não fazem parte do schema extra da categoria.
+ */
+export const RESERVED_PRODUCT_ATTRIBUTE_KEYS = new Set(["ncm"]);
+
 /** Valida e normaliza valores conforme defs; só permite chaves definidas no schema. */
 export function validateProductAttributes(
   raw: unknown,
@@ -65,6 +71,7 @@ export function validateProductAttributes(
   const allowed = new Set(defs.map((d) => d.key));
 
   for (const k of Object.keys(attrs)) {
+    if (RESERVED_PRODUCT_ATTRIBUTE_KEYS.has(k)) continue;
     if (!allowed.has(k)) {
       return { ok: false, error: `Campo não permitido para esta categoria: "${k}"` };
     }
