@@ -99,7 +99,7 @@ export function calendarDayBounds(at: Date): { start: Date; end: Date } {
 
 async function candidateProductIds(organizationId: string): Promise<string[]> {
   const fromAssignments = await prisma.sellerProduct.findMany({
-    where: { seller: { organizationId } },
+    where: { seller: { organizationId }, product: { organizationId } },
     distinct: ["productId"],
     select: { productId: true },
   });

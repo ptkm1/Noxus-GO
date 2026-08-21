@@ -250,8 +250,8 @@ model Organization {
   autoInactivateCustomersAfterMonths Boolean @default(false)
   /// Indicadores do painel home (até 3 chaves ordenadas). Null = defaults do shared.
   homeIndicators   Json?
-  /// Layout dos indicadores na home: "stack" | "grid".
-  homeIndicatorsLayout String @default("stack")
+  /// Layout dos indicadores na home: "stack" | "grid". Null/ausente no código = grade.
+  homeIndicatorsLayout String @default("grid")
   /// TODO futuro: CNPJ do emitente para NF-e real / certificado.
   cnpj             String?
   /// TODO futuro: Inscrição estadual do emitente.

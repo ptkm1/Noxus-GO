@@ -8,15 +8,26 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const apiDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const rootDir = path.join(apiDir, "..", "..");
 const require = createRequire(path.join(apiDir, "package.json"));
 const tsxCli = require.resolve("tsx/cli");
 
 // prisma.config.ts exige DATABASE_URL; carrega .env da API e da raiz antes do generate.
 const dotenv = require("dotenv");
 dotenv.config({ path: path.join(apiDir, ".env") });
-dotenv.config({ path: path.join(apiDir, "..", "..", ".env") });
+dotenv.config({ path: path.join(rootDir, ".env") });
 
 const env = { ...process.env, NODE_ENV: "development" };
+
+// Node resolve @pedidos/shared via dist/; recompila para pegar exports novos.
+const shared = spawnSync(
+  process.execPath,
+  [path.join(rootDir, "scripts", "build-package.mjs"), "packages/shared"],
+  { cwd: rootDir, stdio: "inherit", env },
+);
+if (shared.status !== 0) {
+  console.warn("@pedidos/shared: build falhou; usando dist atual.");
+}
 
 // Garante client Prisma alinhado ao schema (ex.: novos campos como danfeLogoBytes).
 const gen = spawnSync("pnpm", ["exec", "prisma", "generate", "--config", "prisma.config.ts"], {

@@ -173,13 +173,14 @@ async function resolveStandaloneOrgIds(): Promise<string[]> {
   const argId = process.argv.slice(2).find((a) => !a.startsWith("-"));
   if (argId) return [argId];
 
-  const orgs = await prisma.organization.findMany({
+  const seed = await prisma.organization.findUnique({
+    where: { id: "seed-org" },
     select: { id: true },
-    orderBy: { createdAt: "asc" },
   });
-  const real = orgs.filter((o) => o.id !== "seed-org").map((o) => o.id);
-  if (real.length > 0) return real;
-  return orgs.map((o) => o.id);
+  if (seed) return [seed.id];
+  throw new Error(
+    "Empresa Demo (seed-org) não encontrada. Passe o organizationId explicitamente.",
+  );
 }
 
 async function main() {

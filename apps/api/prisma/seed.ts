@@ -1,3 +1,4 @@
+import { DEFAULT_HOME_INDICATORS_LAYOUT } from "@pedidos/shared";
 import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/db.js";
@@ -183,6 +184,7 @@ async function main() {
       displayName: "Empresa Demo",
       cnpj: "12345678000199",
       stateRegistration: "ISENTO",
+      homeIndicatorsLayout: DEFAULT_HOME_INDICATORS_LAYOUT,
     },
     create: {
       id: "seed-org",
@@ -190,6 +192,7 @@ async function main() {
       displayName: "Empresa Demo",
       cnpj: "12345678000199",
       stateRegistration: "ISENTO",
+      homeIndicatorsLayout: DEFAULT_HOME_INDICATORS_LAYOUT,
     },
   });
 

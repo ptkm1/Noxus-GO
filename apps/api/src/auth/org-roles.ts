@@ -130,6 +130,10 @@ export function requireOrgStaff(
     void reply.status(401).send({ error: "Não autorizado" });
     return false;
   }
+  if (!auth.organizationId?.trim()) {
+    void reply.status(401).send({ error: "Não autorizado" });
+    return false;
+  }
   if (!canAccessAdminPanel(auth)) {
     void reply.status(403).send({
       error: "Acesso restrito a administradores, gestores e líderes de equipe",
