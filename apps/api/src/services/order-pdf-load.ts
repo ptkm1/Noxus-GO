@@ -68,7 +68,7 @@ function toCustomer(
   };
 }
 
-async function toPdfInput(
+export async function orderToPdfInput(
   order: NonNullable<Awaited<ReturnType<typeof loadOrderForPdf>>>,
 ): Promise<OrderPdfInput> {
   const logo = await resolveOrderPdfLogo({
@@ -95,7 +95,7 @@ export async function sendOrderPdfReply(
   reply: FastifyReply,
   order: NonNullable<Awaited<ReturnType<typeof loadOrderForPdf>>>,
 ) {
-  const pdf = await buildOrderPdf(await toPdfInput(order));
+  const pdf = await buildOrderPdf(await orderToPdfInput(order));
   const filename = orderPdfFilename(order);
   return reply
     .header("Content-Type", "application/pdf")
@@ -107,7 +107,7 @@ export async function sendOrderPdf80mmReply(
   reply: FastifyReply,
   order: NonNullable<Awaited<ReturnType<typeof loadOrderForPdf>>>,
 ) {
-  const pdf = await buildOrderPdf80mm(await toPdfInput(order));
+  const pdf = await buildOrderPdf80mm(await orderToPdfInput(order));
   const filename = orderPdf80mmFilename(order);
   return reply
     .header("Content-Type", "application/pdf")

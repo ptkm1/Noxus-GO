@@ -1,15 +1,15 @@
 import type { OrderStatus, Prisma } from "@prisma/client";
 import { prisma } from "../../db.js";
 import { decToNum } from "../../util/money.js";
+import { drawOrderPdfContents, type OrderPdfInput } from "../order-pdf.js";
+import { loadOrderForPdf, orderToPdfInput } from "../order-pdf-load.js";
 import { applyOrderExtras } from "./extra-filters.js";
 import {
   drawEmptyState,
   drawHeader,
-  drawInfoBar,
   drawTableFooter,
   drawTableHeader,
   drawTableRow,
-  lineDiscount,
   money,
   orderCode,
   shortDateTime,
@@ -31,6 +31,8 @@ export type OrdersPdfFilters = {
   /** Include profit margin % columns (same formula as /reports/margin). */
   includeProfitPercent?: boolean;
   extras?: Record<string, string>;
+  /** Recorte do papel: o gestor só enxerga pedidos dos vendedores dele. */
+  scope?: Prisma.OrderWhereInput;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -68,36 +70,6 @@ const ORDERS_TABLE_WITH_PROFIT: PdfTable = {
   rowHeight: 22,
 };
 
-const ITEMS_TABLE: PdfTable = {
-  columns: [
-    { key: "code", label: "Código", width: 72 },
-    { key: "name", label: "Produto", width: 180 },
-    { key: "qtyUnit", label: "Qtd/un", width: 55, align: "right" },
-    { key: "unit", label: "Vlr unit.", width: 75, align: "right" },
-    { key: "discount", label: "Desc.", width: 70, align: "right" },
-    { key: "total", label: "Val total", width: 95, align: "right" },
-  ],
-  rowHeight: 20,
-};
-
-const ITEMS_TABLE_WITH_PROFIT: PdfTable = {
-  columns: [
-    { key: "code", label: "Código", width: 62 },
-    { key: "name", label: "Produto", width: 150 },
-    { key: "qtyUnit", label: "Qtd/un", width: 50, align: "right" },
-    { key: "unit", label: "Vlr unit.", width: 68, align: "right" },
-    { key: "discount", label: "Desc.", width: 58, align: "right" },
-    { key: "total", label: "Val total", width: 82, align: "right" },
-    { key: "profitPct", label: "Lucro %", width: 77, align: "right" },
-  ],
-  rowHeight: 20,
-};
-
-/**
- * Margem % sobre a receita (igual ao relatório de margem):
- * ((receita − custo) / receita) × 100, com custo = costPrice × qtd.
- * Retorna null se não houver costPrice em nenhum item ou receita ≤ 0.
- */
 function profitPercent(
   revenue: number,
   cost: number,
@@ -148,6 +120,7 @@ function orderProfitPercent(items: OrderItemForProfit[]): number | null {
 
 function orderWhere(filters: OrdersPdfFilters): Prisma.OrderWhereInput {
   const where: Prisma.OrderWhereInput = {
+    ...filters.scope,
     organizationId: filters.organizationId,
   };
   if (filters.orderIds?.length) {
@@ -198,86 +171,48 @@ export async function buildOrdersPdf(
   ]);
 
   const orgName = org?.displayName || org?.name || "";
-  const itemsTable = withProfit ? ITEMS_TABLE_WITH_PROFIT : ITEMS_TABLE;
   const ordersTable = withProfit ? ORDERS_TABLE_WITH_PROFIT : ORDERS_TABLE;
 
   if (filters.romaneio) {
+    const pages: Array<{
+      input: OrderPdfInput;
+      profitPct: number | null;
+    }> = [];
+    for (const o of orders) {
+      const full = await loadOrderForPdf({
+        id: o.id,
+        organizationId: filters.organizationId,
+      });
+      if (!full) continue;
+      pages.push({
+        input: await orderToPdfInput(full),
+        profitPct: withProfit ? orderProfitPercent(o.items) : null,
+      });
+    }
+
     return withPdfDoc((doc) => {
-      if (orders.length === 0) {
+      if (pages.length === 0) {
         drawHeader(doc, "Romaneio de Pedidos", orgName);
         drawEmptyState(doc, "Nenhum pedido encontrado para os filtros.");
         return;
       }
 
-      orders.forEach((o, idx) => {
+      pages.forEach((page, idx) => {
         if (idx > 0) doc.addPage();
-        const code = orderCode(o);
-        drawHeader(
-          doc,
-          `Romaneio — Pedido ${code}`,
-          orgName,
-          `${idx + 1} de ${orders.length}`,
-        );
-        const infoItems: { label: string; value: string }[] = [
-          { label: "Cliente:", value: o.customer?.name ?? "—" },
-          { label: "Vendedor:", value: o.seller.user.name },
-          {
-            label: "Emissão:",
-            value: `${o.createdAt.toLocaleString("pt-BR")} · ${STATUS_LABEL[o.status] ?? o.status}`,
-          },
-        ];
+        drawOrderPdfContents(doc, page.input);
         if (withProfit) {
-          infoItems.push({
-            label: "Lucro %:",
-            value: formatProfitPct(orderProfitPercent(o.items)),
-          });
-        }
-        drawInfoBar(doc, infoItems);
-
-        drawTableHeader(doc, itemsTable);
-
-        let pageItemsTotal = 0;
-        o.items.forEach((it, i) => {
-          const unit = decToNum(it.unitPrice);
-          const disc = lineDiscount({
-            unitPrice: it.unitPrice,
-            basePrice: it.product?.basePrice,
-          });
-          const lineTotal = unit * it.quantity;
-          pageItemsTotal += lineTotal;
-          const unitLabel = it.product?.purchaseUnit?.trim() || "UN";
-          const row: Record<string, string> = {
-            code:
-              it.product?.sku ||
-              it.product?.barcode ||
-              it.productId.slice(0, 8),
-            name: it.productName,
-            qtyUnit: `${it.quantity} ${unitLabel}`,
-            unit: money(unit),
-            discount: money(disc * it.quantity),
-            total: money(lineTotal),
-          };
-          if (withProfit) {
-            const parts = lineProfitParts(it);
-            row.profitPct = formatProfitPct(
-              profitPercent(parts.revenue, parts.cost, parts.hasCost),
+          const footerY = doc.page.height - 50;
+          doc
+            .fillColor("#0f172a")
+            .fontSize(9)
+            .font("Helvetica-Bold")
+            .text(
+              `Lucro %: ${formatProfitPct(page.profitPct)}`,
+              48,
+              footerY - 6,
+              { lineBreak: false },
             );
-          }
-          drawTableRow(doc, itemsTable, row, {
-            index: i,
-            onNewPage: () =>
-              drawHeader(doc, `Romaneio — Pedido ${code} (cont.)`, orgName),
-          });
-        });
-
-        const footerLeft = withProfit
-          ? `Itens: ${o.items.length} · Subtotal: ${money(pageItemsTotal)} · Lucro %: ${formatProfitPct(orderProfitPercent(o.items))}`
-          : `Itens: ${o.items.length} · Subtotal: ${money(pageItemsTotal)}`;
-        drawTableFooter(
-          doc,
-          footerLeft,
-          `Total pedido: ${money(decToNum(o.totalAmount))}`,
-        );
+        }
       });
     });
   }

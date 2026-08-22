@@ -391,6 +391,14 @@ function drawHeaderLogo(
 
 export async function buildOrderPdf(order: OrderPdfInput): Promise<Buffer> {
   return withPdfDoc((doc) => {
+    drawOrderPdfContents(doc, order);
+  });
+}
+
+export function drawOrderPdfContents(
+  doc: PDFKit.PDFDocument,
+  order: OrderPdfInput,
+) {
     const code = orderCode(order);
     const total = decToNum(order.totalAmount);
     const comboDiscount = decToNum(order.comboDiscountTotal ?? 0);
@@ -614,5 +622,4 @@ export async function buildOrderPdf(order: OrderPdfInput): Promise<Buffer> {
       lineBreak: false,
       ellipsis: true,
     });
-  });
 }

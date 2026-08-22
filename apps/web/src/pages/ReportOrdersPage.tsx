@@ -1,3 +1,4 @@
+import { useAuth } from "@/auth/AuthContext";
 import {
   AdditionalFiltersSection,
   appendExtraFilters,
@@ -24,7 +25,7 @@ import {
 import { apiFetch, downloadPdf } from "@/lib/api";
 import { formatOrderCode } from "@/lib/order-code";
 import { cn } from "@/lib/utils";
-import { orderStatusLabel } from "@pedidos/shared";
+import { orderStatusLabel, canRead } from "@pedidos/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
@@ -68,6 +69,10 @@ function formatMoney(value: unknown) {
 }
 
 export function ReportOrdersPage() {
+  const { user } = useAuth();
+  const canIncludeProfit = Boolean(
+    user && canRead(user.role, "reports_profit_percent", user.permissions),
+  );
   const [sellerId, setSellerId] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [from, setFrom] = useState("");
@@ -178,7 +183,9 @@ export function ReportOrdersPage() {
     try {
       const q = new URLSearchParams();
       if (romaneio) q.set("romaneio", "1");
-      if (includeProfitPercent) q.set("includeProfitPercent", "true");
+      if (canIncludeProfit && includeProfitPercent) {
+        q.set("includeProfitPercent", "true");
+      }
 
       if (inclusionMode === "manual") {
         q.set("orderIds", [...selectedIds].join(","));
@@ -283,15 +290,17 @@ export function ReportOrdersPage() {
           Relatório detalhado (um pedido por página, com itens)
         </label>
       </ReportField>
-      <ReportField label="Lucro">
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox
-            checked={includeProfitPercent}
-            onCheckedChange={(v) => setIncludeProfitPercent(v === true)}
-          />
-          Incluir percentual de lucro
-        </label>
-      </ReportField>
+      {canIncludeProfit ? (
+        <ReportField label="Lucro">
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={includeProfitPercent}
+              onCheckedChange={(v) => setIncludeProfitPercent(v === true)}
+            />
+            Incluir percentual de lucro
+          </label>
+        </ReportField>
+      ) : null}
 
       {!manualMode ? (
         <AdditionalFiltersSection

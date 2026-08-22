@@ -11,7 +11,7 @@ import {
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { DatePicker } from "@/components/ui/date-picker";
+import { DatePicker, parseIsoDate, toIsoDate } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -252,7 +252,7 @@ export function StockPage() {
           type: entryType,
           qty: qtyNum,
           lotCode,
-          expiresAt: new Date(expiresAt).toISOString(),
+          expiresAt: (parseIsoDate(expiresAt) ?? new Date(expiresAt)).toISOString(),
           reason: reason.trim() || undefined,
           password,
         }),
@@ -585,7 +585,20 @@ export function StockPage() {
             <Input
               id="stock-lot"
               value={lotCode}
-              onChange={(e) => setLotCode(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setLotCode(next);
+                const match = selectedProduct?.lots.find(
+                  (l) =>
+                    l.lotCode.toLowerCase() === next.trim().toLowerCase(),
+                );
+                if (match?.expiresAt) {
+                  const parsed =
+                    parseIsoDate(match.expiresAt.slice(0, 10)) ??
+                    new Date(match.expiresAt);
+                  setExpiresAt(toIsoDate(parsed));
+                }
+              }}
               placeholder="Ex.: L2026-01"
             />
           </FormField>
