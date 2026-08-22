@@ -31,6 +31,8 @@ export type OrdersPdfFilters = {
   /** Include profit margin % columns (same formula as /reports/margin). */
   includeProfitPercent?: boolean;
   extras?: Record<string, string>;
+  /** Recorte do papel: o gestor só enxerga pedidos dos vendedores dele. */
+  scope?: Prisma.OrderWhereInput;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -118,6 +120,7 @@ function orderProfitPercent(items: OrderItemForProfit[]): number | null {
 
 function orderWhere(filters: OrdersPdfFilters): Prisma.OrderWhereInput {
   const where: Prisma.OrderWhereInput = {
+    ...filters.scope,
     organizationId: filters.organizationId,
   };
   if (filters.orderIds?.length) {

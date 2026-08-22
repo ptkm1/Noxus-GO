@@ -6573,7 +6573,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/reports/orders.pdf", async (req, reply) => {
     const auth = req.auth!;
-    if (!requireAdmin(reply, auth)) return;
     const q = z
       .object({
         sellerId: z.string().optional(),
@@ -6632,6 +6631,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       includeProfitPercent,
       orderIds: orderIds?.length ? orderIds : undefined,
       extras,
+      scope: orderScopeWhere(auth),
     });
     const filename =
       filters.romaneio === "1" || filters.romaneio === "true"
