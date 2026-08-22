@@ -7,6 +7,8 @@ export type PriceResolutionContext = {
   sellerId?: string | null;
   customerId?: string | null;
   regionId?: string | null;
+  /** Quando informado, usa esta tabela em vez do ranking automático. */
+  priceTableId?: string | null;
   /** Quantidade da linha — promoções com `minQuantity` só entram se couber. */
   quantity?: number;
   at?: Date;
@@ -71,6 +73,19 @@ export async function resolveCatalogUnitPrice(
   if (!product) throw new Error("Produto não encontrado");
 
   const at = ctx.at ?? new Date();
+
+  if (ctx.priceTableId) {
+    const table = await prisma.priceTable.findFirst({
+      where: { id: ctx.priceTableId, organizationId },
+      select: { id: true },
+    });
+    if (table) {
+      const forced = await prisma.priceTableItem.findFirst({
+        where: { priceTableId: table.id, productId },
+      });
+      if (forced) return decToNum(forced.price);
+    }
+  }
 
   const customerOk =
     ctx.customerId != null

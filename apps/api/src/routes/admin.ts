@@ -20,6 +20,7 @@ import PDFDocument from "pdfkit";
 import { z } from "zod";
 import { verifyAccessToken } from "../auth/jwt.js";
 import {
+    adminRelativePath,
     isManagerGetAllowed,
     isManagerWriteAllowed,
     isOrgStaff,
@@ -367,8 +368,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
       const auth = req.auth!;
       const method = req.method.toUpperCase();
-      const routePath =
-        req.routeOptions?.url ?? req.url.split("?")[0] ?? req.url;
+      const routePath = adminRelativePath(req.routeOptions?.url ?? req.url);
 
       if (
         !(await assertAdminPathPlanFeature(
@@ -5098,7 +5098,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/orders/lookups", async (req) => {
     const auth = req.auth!;
-    const [sellers, customers, paymentConditions] = await Promise.all([
+    const [sellers, customers, paymentConditions, priceTables] = await Promise.all([
       prisma.seller.findMany({
         where: { ...sellerScopeWhere(auth), active: true },
         select: { id: true, user: { select: { name: true } } },
@@ -5117,6 +5117,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           legalName: true,
           city: true,
           sellerId: true,
+          regionId: true,
         },
         orderBy: { name: "asc" },
       }),
@@ -5125,11 +5126,26 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         select: { id: true, code: true, name: true, days: true, sortOrder: true },
         orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
       }),
+      prisma.priceTable.findMany({
+        where: { organizationId: auth.organizationId },
+        select: {
+          id: true,
+          name: true,
+          customerId: true,
+          sellerId: true,
+          regionId: true,
+          priority: true,
+          validFrom: true,
+          validTo: true,
+        },
+        orderBy: [{ priority: "desc" }, { name: "asc" }],
+      }),
     ]);
     return {
       sellers: sellers.map((s) => ({ id: s.id, name: s.user.name })),
       customers,
       paymentConditions,
+      priceTables,
     };
   });
 
@@ -5139,6 +5155,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       .object({
         sellerId: z.string().min(1),
         customerId: z.string().min(1).optional(),
+        priceTableId: z.string().min(1).optional(),
       })
       .safeParse(req.query);
     if (!q.success) return sendZodError(reply, q.error, req);
@@ -5201,6 +5218,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         sellerId: q.data.sellerId,
         customerId: q.data.customerId ?? null,
         regionId,
+        priceTableId: q.data.priceTableId ?? null,
         quantity: 1,
         at,
       });
@@ -5247,6 +5265,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       .object({
         sellerId: z.string().min(1),
         customerId: z.string().min(1),
+        priceTableId: z.string().min(1).optional(),
         items: z
           .array(
             z.object({
@@ -5284,6 +5303,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         organizationId: auth.organizationId,
         sellerId: body.data.sellerId,
         customerId: body.data.customerId,
+        priceTableId: body.data.priceTableId ?? null,
         items: body.data.items,
         allowedProductIds,
       });
@@ -5559,6 +5579,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         sellerId: z.string().min(1),
         customerId: z.string().min(1),
         paymentConditionId: z.string().min(1),
+        priceTableId: z.string().min(1).optional(),
         status: z.enum(["DRAFT", "CONFIRMED", "CANCELLED"]).optional(),
         notes: z.string().optional(),
         items: z
@@ -5609,6 +5630,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         sellerId: body.data.sellerId,
         customerId: body.data.customerId,
         paymentConditionId: body.data.paymentConditionId,
+        priceTableId: body.data.priceTableId ?? null,
         items: body.data.items.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
@@ -6565,7 +6587,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/reports/orders.pdf", async (req, reply) => {
     const auth = req.auth!;
-    if (!requireAdmin(reply, auth)) return;
     const q = z
       .object({
         sellerId: z.string().optional(),
@@ -6596,6 +6617,23 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .map((id) => id.trim())
           .filter(Boolean)
       : undefined;
+    const wantProfit =
+      filters.includeProfitPercent === "1" ||
+      filters.includeProfitPercent === "true";
+    let includeProfitPercent = wantProfit;
+    if (wantProfit) {
+      const allowedProfit = await canReadEffectiveForUser(
+        auth.organizationId,
+        auth.sub,
+        auth.role,
+        "reports_profit_percent",
+      );
+      if (!allowedProfit) {
+        return reply
+          .status(403)
+          .send({ error: "Sem permissão para incluir percentual de lucro" });
+      }
+    }
     const pdf = await buildOrdersPdf({
       organizationId: auth.organizationId,
       sellerId: filters.sellerId,
@@ -6604,11 +6642,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       to: filters.to,
       status: filters.status,
       romaneio: filters.romaneio === "1" || filters.romaneio === "true",
-      includeProfitPercent:
-        filters.includeProfitPercent === "1" ||
-        filters.includeProfitPercent === "true",
+      includeProfitPercent,
       orderIds: orderIds?.length ? orderIds : undefined,
       extras,
+      scope: orderScopeWhere(auth),
     });
     const filename =
       filters.romaneio === "1" || filters.romaneio === "true"

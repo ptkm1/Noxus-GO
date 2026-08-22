@@ -62,6 +62,7 @@ export type CreateSaleOrderParams = {
   sellerId: string;
   customerId: string;
   paymentConditionId: string;
+  priceTableId?: string | null;
   items: SaleLineInput[];
   notes?: string;
   status?: "DRAFT" | "CONFIRMED" | "CANCELLED";
@@ -145,10 +146,22 @@ export async function createSaleOrder(params: CreateSaleOrderParams) {
     throw new SaleCreateError("Condição de pagamento inválida", 400);
   }
 
+  if (params.priceTableId) {
+    const table = await prisma.priceTable.findFirst({
+      where: {
+        id: params.priceTableId,
+        organizationId: params.organizationId,
+      },
+      select: { id: true },
+    });
+    if (!table) throw new SaleCreateError("Tabela de preço inválida", 400);
+  }
+
   const sale = await computeSaleOrder({
     organizationId: params.organizationId,
     sellerId: params.sellerId,
     customerId: params.customerId,
+    priceTableId: params.priceTableId ?? null,
     items: params.items,
     allowedProductIds: params.allowedProductIds,
   });

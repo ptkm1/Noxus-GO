@@ -50,6 +50,9 @@ type DatePickerProps = {
  * `value` / `onChange` no formato ISO `YYYY-MM-DD` (compatível com a API).
  * @see https://ui.shadcn.com/docs/components/date-picker
  */
+const MODAL_HOST_SELECTOR =
+  '[data-slot="sheet-content"], [data-slot="dialog-content"]';
+
 export function DatePicker({
   id,
   value,
@@ -61,14 +64,30 @@ export function DatePicker({
   min,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const [portalContainer, setPortalContainer] =
+    React.useState<HTMLElement | null>(null);
   const selected = parseIsoDate(value);
   const maxDate = parseIsoDate(max);
   const minDate = parseIsoDate(min);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      modal
+      open={open}
+      onOpenChange={(next) => {
+        if (next) {
+          const host = triggerRef.current?.closest(MODAL_HOST_SELECTOR);
+          setPortalContainer(host instanceof HTMLElement ? host : null);
+        } else {
+          setPortalContainer(null);
+        }
+        setOpen(next);
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
+          ref={triggerRef}
           id={id}
           type="button"
           variant="outline"
@@ -87,7 +106,13 @@ export function DatePicker({
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
+      <PopoverContent
+        container={portalContainer}
+        className="pointer-events-auto z-[100] w-auto p-0"
+        align="start"
+        onWheel={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+      >
         <Calendar
           mode="single"
           locale={ptBR}

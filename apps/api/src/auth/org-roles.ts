@@ -6,6 +6,16 @@ import { canWrite } from "./permissions.js";
 
 const STAFF_ROLES: Role[] = ["ADMIN", "MANAGER"];
 
+/**
+ * `routeOptions.url` chega com o prefixo do plugin (`/api/v1/admin/...`), mas as
+ * allow-lists e os mapas de recurso/plano usam o caminho relativo ao plugin.
+ */
+export function adminRelativePath(routeUrl: string): string {
+  const path = routeUrl.split("?")[0] ?? routeUrl;
+  const relative = path.replace(/^\/api\/v\d+\/admin/, "");
+  return relative === "" ? "/" : relative;
+}
+
 /** GET paths (relative to /admin plugin) allowed for MANAGER. */
 const MANAGER_GET_ALLOW = [
   /^\/$/,
