@@ -80,7 +80,12 @@ type PreviewResponse = {
   credit?: CreditPreview;
 };
 
-type CreatedOrder = { id: string; status: string; orderNumber?: number | null };
+type CreatedOrder = {
+  id: string;
+  status: string;
+  orderNumber?: number | null;
+  situation?: { id: string; code: string; name: string } | null;
+};
 
 type DraftLine = {
   key: string;

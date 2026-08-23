@@ -58,6 +58,87 @@ export function orderStatusLabel(status: string): string {
   return ORDER_STATUS_LABELS[status as OrderStatus] ?? status;
 }
 
+/** Códigos de etapa do sistema (por org). O campo visível do pedido é a situação. */
+export const SYSTEM_SITUATION_CODES = {
+  DRAFT: "DRAFT",
+  CREDIT: "CREDIT",
+  OPEN: "OPEN",
+  PICKING: "PICKING",
+  PACKED: "PACKED",
+  SENT: "SENT",
+  DELIVERED: "DELIVERED",
+  CANCELLED: "CANCELLED",
+} as const;
+
+export type SystemSituationCode =
+  (typeof SYSTEM_SITUATION_CODES)[keyof typeof SYSTEM_SITUATION_CODES];
+
+export const SYSTEM_SITUATION_CODE_LIST: string[] = Object.values(
+  SYSTEM_SITUATION_CODES,
+);
+
+/** Etapas fixas nas pontas do fluxo (Kanban). */
+export const LIFECYCLE_SITUATION_CODES = {
+  DRAFT: SYSTEM_SITUATION_CODES.DRAFT,
+  CREDIT: SYSTEM_SITUATION_CODES.CREDIT,
+  DELIVERED: SYSTEM_SITUATION_CODES.DELIVERED,
+  CANCELLED: SYSTEM_SITUATION_CODES.CANCELLED,
+} as const;
+
+export function isReservedSituationCode(code: string): boolean {
+  return SYSTEM_SITUATION_CODE_LIST.includes(code);
+}
+
+export function isLifecycleSituationCode(code: string): boolean {
+  return (
+    code === LIFECYCLE_SITUATION_CODES.DRAFT ||
+    code === LIFECYCLE_SITUATION_CODES.CREDIT ||
+    code === LIFECYCLE_SITUATION_CODES.DELIVERED ||
+    code === LIFECYCLE_SITUATION_CODES.CANCELLED
+  );
+}
+
+/** Deriva o status interno (estoque/crédito/NF) a partir da etapa visível. */
+export function orderStatusFromSituation(
+  code: string,
+  mapsToCancel?: boolean,
+): OrderStatus {
+  if (code === SYSTEM_SITUATION_CODES.DRAFT) return "DRAFT";
+  if (code === SYSTEM_SITUATION_CODES.CREDIT) return "PENDING_CREDIT_APPROVAL";
+  if (code === SYSTEM_SITUATION_CODES.CANCELLED || mapsToCancel) {
+    return "CANCELLED";
+  }
+  return "CONFIRMED";
+}
+
+/** Etapa padrão ao criar/alterar pelo status interno (rascunho, crédito, confirmar, cancelar). */
+export function situationCodeFromOrderStatus(status: OrderStatus): string {
+  switch (status) {
+    case "DRAFT":
+      return SYSTEM_SITUATION_CODES.DRAFT;
+    case "PENDING_CREDIT_APPROVAL":
+      return SYSTEM_SITUATION_CODES.CREDIT;
+    case "CANCELLED":
+      return SYSTEM_SITUATION_CODES.CANCELLED;
+    default:
+      return SYSTEM_SITUATION_CODES.OPEN;
+  }
+}
+
+export function situationImpliesConfirm(
+  code: string,
+  mapsToCancel?: boolean,
+): boolean {
+  return orderStatusFromSituation(code, mapsToCancel) === "CONFIRMED";
+}
+
+export function situationImpliesCancel(
+  code: string,
+  mapsToCancel?: boolean,
+): boolean {
+  return orderStatusFromSituation(code, mapsToCancel) === "CANCELLED";
+}
+
 export {
   cepDigitsOnly,
   formatCepMask,

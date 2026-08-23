@@ -352,7 +352,10 @@ export function DashboardHome() {
           <strong className="text-primary">{pendingCount}</strong>{" "}
           <span className="text-foreground">
             venda(s) aguardando análise de crédito.{" "}
-            <Link to="/pedidos" className="font-medium text-primary underline">
+            <Link
+              to="/pedidos?situation=CREDIT"
+              className="font-medium text-primary underline"
+            >
               Ver pedidos
             </Link>
           </span>

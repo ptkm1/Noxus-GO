@@ -20,10 +20,7 @@ import {
     type SubscriptionCardPayBody,
 } from "./card-pay-validation.js";
 import { PaymentGatewayError, type PaymentGateway } from "./payment-gateway.js";
-import {
-    isFakePaymentGatewayEnabled,
-    resolvePaymentGateway,
-} from "./resolve-payment-gateway.js";
+import { resolvePaymentGateway } from "./resolve-payment-gateway.js";
 import { activateOrganizationFromPayment } from "./subscription-activation.js";
 import { resolveCheckoutAmountBrl } from "./seats.js";
 import { syncPlanFromAsaasProvider } from "./sync-asaas-subscription.js";
@@ -107,11 +104,7 @@ async function resolveCheckoutReturnSource(intent: {
   const stored = readStoredReturnSource(intent.checkoutPayload);
   if (stored) return stored;
 
-  if (
-    intent.provider === "fake" ||
-    isFakePaymentGatewayEnabled() ||
-    intent.checkoutUrl?.includes("/pagamento")
-  ) {
+  if (intent.checkoutUrl?.includes("/pagamento")) {
     return "app";
   }
 
@@ -190,8 +183,6 @@ async function finalizeIntentForInAppPayment(params: {
   source: CheckoutReturnSource;
   gateway?: PaymentGateway;
 }): Promise<{ intentId: string; checkoutUrl: null }> {
-  const fake = isFakePaymentGatewayEnabled();
-
   const existing = await prisma.checkoutIntent.findUnique({
     where: { id: params.intentId },
     select: { checkoutPayload: true },
@@ -231,7 +222,7 @@ async function finalizeIntentForInAppPayment(params: {
   await prisma.organizationSubscription.update({
     where: { organizationId: params.organizationId },
     data: {
-      provider: fake ? "fake" : "asaas",
+      provider: "asaas",
     },
   });
 
@@ -313,7 +304,7 @@ export async function createSubscriptionIntent(
         organizationId: org.id,
         planId,
         status: "INCOMPLETE",
-        provider: isFakePaymentGatewayEnabled() ? "fake" : "asaas",
+        provider: "asaas",
         currentPeriodStart: now,
       },
     });
@@ -340,7 +331,7 @@ export async function createSubscriptionIntent(
         phone: input.phone?.trim() || null,
         document,
         status: "CREATED",
-        provider: isFakePaymentGatewayEnabled() ? "fake" : "asaas",
+        provider: "asaas",
         termsAcceptedAt: now,
         privacyAcceptedAt: now,
         checkoutPayload: { planId, amountBrl: def.monthlyPriceBrl, returnSource: "landing" },
@@ -381,8 +372,7 @@ export async function createCheckoutForRegisteredOrg(
 ): Promise<{ intentId: string; checkoutUrl: null }> {
   requireGateway(gateway);
   const now = new Date();
-  const fake = isFakePaymentGatewayEnabled();
-  const provider = fake ? "fake" : "asaas";
+  const provider = "asaas";
 
   await syncPlanFromAsaasProvider(input.organizationId, { force: true });
 
@@ -565,7 +555,6 @@ export async function paySubscriptionIntentWithCard(
   const planId = isPlanId(intent.planId) ? intent.planId : DEFAULT_PLAN_ID;
   const def = getPlanDefinition(planId);
   const gw = requireGateway(gateway);
-  const fake = isFakePaymentGatewayEnabled();
   const cardPayload = toGatewayCardPayload(body);
 
   const sub = await prisma.organizationSubscription.findUnique({
@@ -589,7 +578,7 @@ export async function paySubscriptionIntentWithCard(
     isPlanChange,
   );
 
-  const asaasCfg = !fake ? readAsaasConfig() : null;
+  const asaasCfg = readAsaasConfig();
   let resolvedCustomerId: string | undefined;
 
   if (asaasCfg) {
@@ -692,13 +681,13 @@ export async function paySubscriptionIntentWithCard(
     await prisma.organizationSubscription.update({
       where: { organizationId: intent.organizationId },
       data: {
-        provider: fake ? "fake" : "asaas",
+        provider: "asaas",
         providerCustomerId: result.customerId,
         providerSubscriptionId: result.subscriptionId,
       },
     });
 
-    if (fake || isPlanChange) {
+    if (isPlanChange) {
       await activateOrganizationFromPayment({
         intentId: intent.id,
         organizationId: intent.organizationId,
@@ -748,30 +737,6 @@ export async function getOpenCheckoutForOrg(organizationId: string) {
     },
   });
   return intent;
-}
-
-export async function simulateFakePayment(intentId: string): Promise<void> {
-  if (!isFakePaymentGatewayEnabled()) {
-    throw Object.assign(new Error("Simulação disponível só com PAYMENT_GATEWAY=fake"), {
-      code: "FAKE_GATEWAY_REQUIRED",
-      http: 403,
-    });
-  }
-  const intent = await prisma.checkoutIntent.findUnique({
-    where: { id: intentId },
-  });
-  if (!intent?.organizationId) {
-    throw Object.assign(new Error("Intenção não encontrada"), {
-      code: "NOT_FOUND",
-      http: 404,
-    });
-  }
-  await activateOrganizationFromPayment({
-    intentId: intent.id,
-    organizationId: intent.organizationId,
-    providerCustomerId: intent.providerCustomerId,
-    providerCheckoutId: intent.providerCheckoutId,
-  });
 }
 
 export async function getPublicIntentStatus(intentId: string) {
@@ -827,7 +792,6 @@ export async function getPublicIntentStatus(intentId: string) {
     amountBrl:
       readAmountBrl(intent.checkoutPayload) ??
       getPlanDefinition(intent.planId).monthlyPriceBrl,
-    fakeGateway: isFakePaymentGatewayEnabled(),
     checkoutUrl: null,
     changeType: readCheckoutChangeType(intent.checkoutPayload),
     previousPlanId: readPreviousPlanId(intent.checkoutPayload),

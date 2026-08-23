@@ -708,8 +708,8 @@ export function SystemSettingsPage() {
           </FormSection>
 
           <FormSection
-            title="Situações do pedido"
-            description="Cadastre as situações operacionais usadas na lista e no detalhe do pedido."
+            title="Fluxo do pedido"
+            description="Único cadastro de etapas do pedido: rascunho, crédito, operação, entrega e cancelamento."
           >
             <OrderSituationsPanel />
           </FormSection>

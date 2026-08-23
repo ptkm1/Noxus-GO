@@ -1,6 +1,8 @@
 import {
     HOME_INDICATOR_KEYS,
     HOME_INDICATORS_LAYOUTS,
+    isLifecycleSituationCode,
+    isReservedSituationCode,
     MAX_HOME_INDICATORS,
     normalizeHomeIndicators,
     normalizeHomeIndicatorsLayout,
@@ -37,7 +39,6 @@ import { hashPassword, verifyPassword } from "../auth/password.js";
 import { isPermissionResource } from "../auth/permissions.js";
 import { prisma } from "../db.js";
 import {
-    notifySaleConfirmed,
     notifySellerGoalUpdated,
 } from "../services/admin-notifications.js";
 import {
@@ -50,7 +51,6 @@ import { assertAdminPathPlanFeature } from "../services/billing/plan-gate.js";
 import { syncSubscriptionSeats } from "../services/billing/seats.js";
 import {
     maybeInactivateStaleCustomersForOrg,
-    reactivateCustomerOnSale,
 } from "../services/customer-status.js";
 import {
     customerBodySchema,
@@ -124,8 +124,14 @@ import {
     listSellerCatalogProductIds,
 } from "../services/seller-product-catalog.js";
 import {
+    applyOrderStageChange,
+    OrderStageError,
+} from "../services/order-stage.js";
+import {
     ensureDefaultOrderSituations,
+    findOrgSituationId,
     normalizeSituationCode,
+    situationIdForOrderStatus,
 } from "../services/order-situations.js";
 import {
     ensureDefaultPurchaseUnits,
@@ -1316,7 +1322,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return reply.status(204).send();
   });
 
-  /* --- Situações do pedido (operacional/logística) --- */
+  /* --- Fluxo do pedido (etapas: sistema + org) --- */
   app.get("/order-situations", async (req) => {
     const auth = req.auth!;
     await ensureDefaultOrderSituations(auth.organizationId);
@@ -1344,6 +1350,11 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const code = normalizeSituationCode(body.data.code);
     if (!code.length)
       return reply.status(400).send({ error: "Código é obrigatório" });
+    if (isReservedSituationCode(code)) {
+      return reply.status(400).send({
+        error: "Código reservado do sistema. Escolha outro nome.",
+      });
+    }
 
     await ensureDefaultOrderSituations(auth.organizationId);
 
@@ -1362,7 +1373,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     } catch {
       return reply
         .status(409)
-        .send({ error: "Já existe situação com esse código" });
+        .send({ error: "Já existe etapa com esse código" });
     }
   });
 
@@ -1412,7 +1423,26 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       nextCode !== existing.code
     ) {
       return reply.status(400).send({
-        error: "Código de situação padrão do sistema não pode ser alterado",
+        error: "Código de etapa do sistema não pode ser alterado",
+      });
+    }
+    if (
+      existing.isSystem &&
+      isLifecycleSituationCode(existing.code) &&
+      body.data.active === false
+    ) {
+      return reply.status(400).send({
+        error:
+          "Etapas de sistema (rascunho, crédito, entregue e cancelado) não podem ser desativadas",
+      });
+    }
+    if (
+      existing.isSystem &&
+      body.data.mapsToCancel !== undefined &&
+      body.data.mapsToCancel !== existing.mapsToCancel
+    ) {
+      return reply.status(400).send({
+        error: "Cancelamento de etapa do sistema não pode ser alterado",
       });
     }
 
@@ -1438,7 +1468,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     } catch {
       return reply
         .status(409)
-        .send({ error: "Já existe situação com esse código" });
+        .send({ error: "Já existe etapa com esse código" });
     }
   });
 
@@ -1451,8 +1481,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
     if (existing.isSystem) {
       return reply.status(400).send({
-        error:
-          "Situação padrão do sistema não pode ser excluída. Desative-a em vez disso.",
+        error: "Etapa do sistema não pode ser excluída.",
+      });
+    }
+    const inUse = await prisma.order.count({
+      where: { organizationId: auth.organizationId, situationId: id },
+    });
+    if (inUse > 0) {
+      return reply.status(400).send({
+        error: "Há pedidos nesta etapa. Mova-os antes de excluir.",
       });
     }
     await prisma.orderSituation.delete({ where: { id } });
@@ -4991,6 +5028,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
           .optional(),
         situationId: z.string().optional(),
+        situationCode: z.string().optional(),
         /** Número do pedido (apenas dígitos; inteiro positivo). */
         orderNumber: z.string().optional(),
         /** Alias de orderNumber. */
@@ -5010,6 +5048,13 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       if (q.data.sellerId) where.sellerId = q.data.sellerId;
       if (q.data.status) where.status = q.data.status as OrderStatus;
       if (q.data.situationId) where.situationId = q.data.situationId;
+      if (q.data.situationCode) {
+        const sid = await findOrgSituationId(
+          auth.organizationId,
+          q.data.situationCode.trim().toUpperCase(),
+        );
+        if (sid) where.situationId = sid;
+      }
 
       const codeRaw = (q.data.orderNumber ?? q.data.q)?.trim();
       if (codeRaw) {
@@ -5067,7 +5112,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
             id: true,
             code: true,
             name: true,
+            sortOrder: true,
             active: true,
+            isSystem: true,
             mapsToCancel: true,
           },
         },
@@ -5333,7 +5380,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
             id: true,
             code: true,
             name: true,
+            sortOrder: true,
             active: true,
+            isSystem: true,
             mapsToCancel: true,
           },
         },
@@ -5393,65 +5442,26 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         return sendZodError(reply, body.error, req);
       }
 
-    const existing = await prisma.order.findFirst({
-      where: { id, organizationId: auth.organizationId },
-    });
-    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
-
     try {
-      await applyStockOnStatusChange(
-        id,
-        existing.status,
+      const situationId = await situationIdForOrderStatus(
+        auth.organizationId,
         body.data.status,
-        auth.sub,
       );
+      return await applyOrderStageChange({
+        organizationId: auth.organizationId,
+        orderId: id,
+        situationId,
+        actorUserId: auth.sub,
+        auth,
+      });
     } catch (e) {
+      if (e instanceof OrderStageError) {
+        return reply.status(e.httpStatus).send({ error: e.message });
+      }
       if (e instanceof StockError)
         return reply.status(400).send(stockErrorPayload(e));
       throw e;
     }
-
-    const updated = await prisma.order.update({
-      where: { id },
-      data: { status: body.data.status },
-      include: {
-        customer: true,
-        seller: {
-          include: {
-            user: { select: { name: true } },
-          },
-        },
-      },
-    });
-
-    await auditFromAuth(auth, {
-      action: AUDIT_ACTION.STATUS_CHANGE,
-      entityType: AUDIT_ENTITY.Order,
-      entityId: id,
-      metadata: {
-        fromStatus: existing.status,
-        toStatus: body.data.status,
-      },
-    });
-
-    if (body.data.status === "CONFIRMED" && existing.status !== "CONFIRMED") {
-      void reactivateCustomerOnSale(updated.customerId);
-      void notifySaleConfirmed({
-        organizationId: auth.organizationId,
-        order: {
-          id: updated.id,
-          totalAmount: updated.totalAmount,
-          sellerId: updated.sellerId,
-          seller: {
-            user: updated.seller.user,
-            managerUserId: updated.seller.managerUserId,
-          },
-          customer: updated.customer,
-        },
-      });
-    }
-
-    return updated;
   });
 
   app.patch("/orders/:id/situation", async (req, reply) => {
@@ -5459,71 +5469,29 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(req.params);
     const body = z
       .object({
-        situationId: z.string().min(1).nullable(),
+        situationId: z.string().min(1),
       })
       .safeParse(req.body);
     if (!body.success) {
         return sendZodError(reply, body.error, req);
       }
 
-    const existing = await prisma.order.findFirst({
-      where: { id, organizationId: auth.organizationId },
-      select: { id: true, situationId: true },
-    });
-    if (!existing) return reply.status(404).send({ error: "Não encontrado" });
-
-    const situationId = body.data.situationId;
-    if (situationId) {
-      const situation = await prisma.orderSituation.findFirst({
-        where: {
-          id: situationId,
-          organizationId: auth.organizationId,
-        },
+    try {
+      return await applyOrderStageChange({
+        organizationId: auth.organizationId,
+        orderId: id,
+        situationId: body.data.situationId,
+        actorUserId: auth.sub,
+        auth,
       });
-      if (!situation) {
-        return reply.status(400).send({ error: "Situação inválida" });
+    } catch (e) {
+      if (e instanceof OrderStageError) {
+        return reply.status(e.httpStatus).send({ error: e.message });
       }
-      if (!situation.active && situation.id !== existing.situationId) {
-        return reply
-          .status(400)
-          .send({ error: "Situação inválida ou inativa" });
-      }
+      if (e instanceof StockError)
+        return reply.status(400).send(stockErrorPayload(e));
+      throw e;
     }
-
-    const updated = await prisma.order.update({
-      where: { id },
-      data: { situationId },
-      include: {
-        situation: {
-          select: {
-            id: true,
-            code: true,
-            name: true,
-            active: true,
-            mapsToCancel: true,
-          },
-        },
-        customer: true,
-        seller: {
-          include: {
-            user: { select: { name: true } },
-          },
-        },
-      },
-    });
-
-    await auditFromAuth(auth, {
-      action: AUDIT_ACTION.UPDATE,
-      entityType: AUDIT_ENTITY.Order,
-      entityId: id,
-      metadata: {
-        field: "situationId",
-        fromSituationId: existing.situationId,
-        toSituationId: situationId,
-      },
-    });
-
-    return updated;
   });
 
   app.delete("/orders/:id", async (req, reply) => {
@@ -6596,6 +6564,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         status: z
           .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
           .optional(),
+        situationId: z.string().optional(),
         romaneio: z
           .union([z.literal("1"), z.literal("true"), z.literal("0")])
           .optional(),
@@ -6641,6 +6610,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       from: filters.from,
       to: filters.to,
       status: filters.status,
+      situationId: filters.situationId,
       romaneio: filters.romaneio === "1" || filters.romaneio === "true",
       includeProfitPercent,
       orderIds: orderIds?.length ? orderIds : undefined,
@@ -6751,6 +6721,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         status: z
           .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
           .optional(),
+        situationId: z.string().optional(),
         groupByOrder: z
           .union([z.literal("1"), z.literal("true"), z.literal("0")])
           .optional(),
@@ -6776,6 +6747,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       from: filters.from,
       to: filters.to,
       status: filters.status,
+      situationId: filters.situationId,
       groupByOrder:
         filters.groupByOrder === "1" || filters.groupByOrder === "true",
       orderIds: orderIds?.length ? orderIds : undefined,

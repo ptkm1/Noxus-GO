@@ -21,9 +21,7 @@ import {
   type KanbanOrder,
 } from "./OrderKanbanCard";
 
-export type KanbanBoardMove =
-  | Extract<KanbanMove, { type: "status" }>
-  | Extract<KanbanMove, { type: "situation" }>;
+export type KanbanBoardMove = Extract<KanbanMove, { type: "situation" }>;
 
 type OrdersKanbanBoardProps = Readonly<{
   orders: KanbanOrder[];
@@ -74,7 +72,7 @@ export function OrdersKanbanBoard({
     orderId: string,
   ): KanbanBoardMove | null {
     const move = moveFor(column, orderId);
-    if (move?.type === "status" || move?.type === "situation") return move;
+    if (move?.type === "situation") return move;
     return null;
   }
 
@@ -126,7 +124,7 @@ export function OrdersKanbanBoard({
         O quadro funciona melhor no computador. No celular, deslize as colunas
         para o lado
         {canDrag
-          ? " — arrastar para mudar status ou situação fica limitado."
+          ? " — arrastar para mudar a etapa fica limitado."
           : "."}
       </p>
 
@@ -141,7 +139,7 @@ export function OrdersKanbanBoard({
             : null;
           const canDropHere =
             canDrag &&
-            (hoverMove?.type === "status" || hoverMove?.type === "situation");
+            hoverMove?.type === "situation";
           const isOver = overColumnId === column.id && canDropHere;
 
           return (
@@ -152,7 +150,7 @@ export function OrdersKanbanBoard({
                 const id = draggingIdRef.current;
                 if (!id) return;
                 const move = moveFor(column, id);
-                if (move?.type !== "status" && move?.type !== "situation") {
+                if (move?.type !== "situation") {
                   e.dataTransfer.dropEffect = "none";
                   setOverColumnId(null);
                   return;
@@ -209,7 +207,6 @@ export function OrdersKanbanBoard({
                       order={order}
                       canDrag={canDrag}
                       isMoving={movingId === order.id}
-                      showSituation={column.kind === "status"}
                       onDragBegin={() => {
                         draggingIdRef.current = order.id;
                         setDraggingId(order.id);

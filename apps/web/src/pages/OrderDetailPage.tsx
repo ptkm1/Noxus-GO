@@ -15,9 +15,14 @@ import {
 } from "@/components/ui/table";
 import { apiFetch, downloadPdf, printPdf } from "@/lib/api";
 import { formatOrderCode, orderCodeFilenamePart } from "@/lib/order-code";
+import {
+  needsStageConfirmDialog,
+  stageBadgeClass,
+  stageChangeHint,
+} from "@/lib/order-kanban";
 import { isWebAdmin } from "@/lib/staff";
 import { cn } from "@/lib/utils";
-import { ORDER_STATUSES, canRead, orderStatusLabel } from "@pedidos/shared";
+import { SYSTEM_SITUATION_CODES, canRead } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Download, Printer } from "lucide-react";
 import { useState } from "react";
@@ -28,12 +33,13 @@ type OrderSituation = {
   code: string;
   name: string;
   active: boolean;
+  mapsToCancel?: boolean;
 };
 
 type Order = {
   id: string;
   orderNumber?: number | null;
-  status: string;
+  status?: string;
   situationId?: string | null;
   situation?: OrderSituation | null;
   totalAmount: unknown;
@@ -57,19 +63,6 @@ type Order = {
   }[];
 };
 
-function statusBadgeClass(status: string): string {
-  switch (status) {
-    case "CONFIRMED":
-      return "border-transparent bg-emerald-500/15 text-emerald-800 dark:text-emerald-300";
-    case "CANCELLED":
-      return "border-transparent bg-destructive/15 text-destructive";
-    case "PENDING_CREDIT_APPROVAL":
-      return "border-transparent bg-amber-500/15 text-amber-800 dark:text-amber-300";
-    default:
-      return "border-transparent bg-muted text-muted-foreground";
-  }
-}
-
 function formatMoney(value: unknown) {
   return Number(value).toLocaleString("pt-BR", {
     style: "currency",
@@ -77,15 +70,6 @@ function formatMoney(value: unknown) {
   });
 }
 
-function statusChangeHint(status: string): string {
-  if (status === "CANCELLED") {
-    return " Pedidos cancelados podem estornar estoque se estavam confirmados.";
-  }
-  if (status === "CONFIRMED") {
-    return " Confirmar o pedido pode baixar estoque.";
-  }
-  return "";
-}
 
 export function OrderDetailPage() {
   const { orderId } = useParams<{ orderId: string }>();
@@ -111,11 +95,11 @@ export function OrderDetailPage() {
     enabled: canWrite,
   });
 
-  const patchStatus = useMutation({
-    mutationFn: (status: string) =>
-      apiFetch(`/admin/orders/${orderId}/status`, {
+  const patchSituation = useMutation({
+    mutationFn: (situationId: string) =>
+      apiFetch(`/admin/orders/${orderId}/situation`, {
         method: "PATCH",
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ situationId }),
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin", "order", orderId] });
@@ -126,18 +110,6 @@ export function OrderDetailPage() {
       void qc.invalidateQueries({
         queryKey: ["admin", "notifications-unread"],
       });
-    },
-  });
-
-  const patchSituation = useMutation({
-    mutationFn: (situationId: string | null) =>
-      apiFetch(`/admin/orders/${orderId}/situation`, {
-        method: "PATCH",
-        body: JSON.stringify({ situationId }),
-      }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["admin", "order", orderId] });
-      void qc.invalidateQueries({ queryKey: ["admin", "orders"] });
     },
   });
 
@@ -183,23 +155,28 @@ export function OrderDetailPage() {
     }
   }
 
-  async function handleStatusChange(status: string) {
-    if (!order || status === order.status) return;
-    const ok = await confirm({
-      title: "Alterar status do pedido?",
-      description: `O status será alterado de “${orderStatusLabel(order.status)}” para “${orderStatusLabel(status)}”.${statusChangeHint(status)}`,
-      confirmLabel: "Alterar status",
-      tone: status === "CANCELLED" ? "destructive" : "default",
-    });
-    if (!ok) return;
-    patchStatus.mutate(status);
-  }
-
-  function handleSituationChange(situationId: string) {
-    if (!order) return;
-    const next = situationId || null;
-    if (next === (order.situationId ?? null)) return;
-    patchSituation.mutate(next);
+  async function handleStageChange(situationId: string) {
+    if (!order || !situationId || situationId === order.situationId) return;
+    const target = situations.find((s) => s.id === situationId);
+    if (!target) return;
+    if (
+      needsStageConfirmDialog(order.status, {
+        code: target.code,
+        mapsToCancel: target.mapsToCancel,
+      })
+    ) {
+      const ok = await confirm({
+        title: "Alterar etapa do pedido?",
+        description: `A etapa será alterada para “${target.name}”.${stageChangeHint(target.code, target.mapsToCancel)}`,
+        confirmLabel: "Alterar etapa",
+        tone:
+          target.mapsToCancel || target.code === SYSTEM_SITUATION_CODES.CANCELLED
+            ? "destructive"
+            : "default",
+      });
+      if (!ok) return;
+    }
+    patchSituation.mutate(situationId);
   }
 
   function situationSelectOptions() {
@@ -240,7 +217,8 @@ export function OrderDetailPage() {
 
   const code = formatOrderCode(order);
   const showCreditHold =
-    order.status === "PENDING_CREDIT_APPROVAL" &&
+    (order.situation?.code === SYSTEM_SITUATION_CODES.CREDIT ||
+      order.status === "PENDING_CREDIT_APPROVAL") &&
     order.creditHoldReasons != null;
 
   return (
@@ -256,9 +234,12 @@ export function OrderDetailPage() {
               </h1>
               <Badge
                 variant="outline"
-                className={statusBadgeClass(order.status)}
+                className={stageBadgeClass(
+                  order.situation?.code ?? "",
+                  order.situation?.mapsToCancel,
+                )}
               >
-                {orderStatusLabel(order.status)}
+                {order.situation?.name ?? "—"}
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
@@ -305,34 +286,16 @@ export function OrderDetailPage() {
               </Button>
             </div>
             {canWrite ? (
-              <div className="flex flex-col gap-2 sm:items-end">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Status</span>
-                  <AppSelect
-                    value={order.status}
-                    disabled={patchStatus.isPending}
-                    triggerClassName="w-auto min-w-[11rem]"
-                    options={ORDER_STATUSES.map((s) => ({
-                      value: s,
-                      label: orderStatusLabel(s),
-                    }))}
-                    onValueChange={(v) => void handleStatusChange(v)}
-                  />
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Situação</span>
-                  <AppSelect
-                    value={order.situationId ?? ""}
-                    disabled={patchSituation.isPending}
-                    triggerClassName="w-auto min-w-[11rem]"
-                    emptyLabel="Sem situação"
-                    options={situationSelectOptions()}
-                    onValueChange={handleSituationChange}
-                  />
-                </div>
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                <span className="text-sm text-muted-foreground">Etapa</span>
+                <AppSelect
+                  value={order.situationId ?? ""}
+                  disabled={patchSituation.isPending}
+                  triggerClassName="w-auto min-w-[11rem]"
+                  options={situationSelectOptions()}
+                  onValueChange={(v) => void handleStageChange(v)}
+                />
               </div>
-            ) : order.situation ? (
-              <Badge variant="outline">{order.situation.name}</Badge>
             ) : null}
           </div>
         </div>
@@ -342,16 +305,10 @@ export function OrderDetailPage() {
             {pdfErr}
           </p>
         ) : null}
-        {patchStatus.isError ? (
-          <p className="border-b border-border px-6 py-3 text-sm text-destructive">
-            {(patchStatus.error as Error).message ||
-              "Não foi possível alterar o status."}
-          </p>
-        ) : null}
         {patchSituation.isError ? (
           <p className="border-b border-border px-6 py-3 text-sm text-destructive">
             {(patchSituation.error as Error).message ||
-              "Não foi possível alterar a situação."}
+              "Não foi possível alterar a etapa."}
           </p>
         ) : null}
 

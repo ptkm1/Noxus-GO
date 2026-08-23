@@ -1,10 +1,10 @@
-import { ORDER_STATUSES, orderStatusLabel, type OrderStatus } from "@pedidos/shared";
-
-/** Colunas de status antes da confirmação (a expedição entra pelas situações). */
-export const KANBAN_PRECONFIRM_STATUSES: OrderStatus[] = [
-  "DRAFT",
-  "PENDING_CREDIT_APPROVAL",
-];
+import {
+  isLifecycleSituationCode,
+  LIFECYCLE_SITUATION_CODES,
+  orderStatusFromSituation,
+  SYSTEM_SITUATION_CODES,
+  type OrderStatus,
+} from "@pedidos/shared";
 
 export const KANBAN_COLUMN_PAGE_SIZE = 8;
 
@@ -14,12 +14,13 @@ export type KanbanSituation = {
   name: string;
   sortOrder: number;
   active: boolean;
+  isSystem?: boolean;
   mapsToCancel?: boolean;
 };
 
 export type KanbanOrderLike = {
   id: string;
-  status: string;
+  status?: string;
   situationId?: string | null;
   situation?: {
     id?: string;
@@ -33,30 +34,39 @@ export type KanbanOrderLike = {
 
 export type KanbanColumn = {
   id: string;
-  kind: "status" | "situation";
   label: string;
-  status?: OrderStatus;
-  situationId?: string;
-  situationCode?: string;
+  situationId: string;
+  situationCode: string;
   mapsToCancel?: boolean;
-  /** Primeira situação operacional (ex.: Aberto): destino de confirmação no quadro. */
-  isFulfillmentEntry?: boolean;
 };
 
 export type KanbanMove =
-  | { type: "status"; status: OrderStatus }
   | { type: "situation"; situationId: string }
   | { type: "invalid" }
   | { type: "noop" };
 
-export function statusColumnId(status: OrderStatus): string {
-  return `status:${status}`;
-}
-
 export function situationColumnId(situationId: string): string {
-  return `situation:${situationId}`;
+  return `stage:${situationId}`;
 }
 
+export function stageBadgeClass(code: string, mapsToCancel?: boolean): string {
+  const status = orderStatusFromSituation(code, mapsToCancel);
+  switch (status) {
+    case "CONFIRMED":
+      if (code === SYSTEM_SITUATION_CODES.DELIVERED) {
+        return "border-transparent bg-emerald-500/15 text-emerald-800 dark:text-emerald-300";
+      }
+      return "border-transparent bg-blue-500/15 text-blue-800 dark:text-blue-300";
+    case "CANCELLED":
+      return "border-transparent bg-destructive/15 text-destructive";
+    case "PENDING_CREDIT_APPROVAL":
+      return "border-transparent bg-amber-500/15 text-amber-800 dark:text-amber-300";
+    default:
+      return "border-transparent bg-muted text-muted-foreground";
+  }
+}
+
+/** @deprecated use stageBadgeClass — mantido para callers internos */
 export function statusBadgeClass(status: string): string {
   switch (status) {
     case "CONFIRMED":
@@ -71,29 +81,23 @@ export function statusBadgeClass(status: string): string {
 }
 
 export function columnAccentClass(column: KanbanColumn): string {
-  if (column.kind === "status") {
-    switch (column.status) {
-      case "CONFIRMED":
-        return "bg-emerald-500";
-      case "CANCELLED":
-        return "bg-destructive";
-      case "PENDING_CREDIT_APPROVAL":
-        return "bg-amber-500";
-      default:
-        return "bg-muted-foreground/50";
-    }
-  }
   switch (column.situationCode) {
-    case "DELIVERED":
+    case SYSTEM_SITUATION_CODES.DELIVERED:
       return "bg-emerald-500";
-    case "SENT":
+    case SYSTEM_SITUATION_CODES.SENT:
       return "bg-sky-500";
-    case "PACKED":
+    case SYSTEM_SITUATION_CODES.PACKED:
       return "bg-violet-500";
-    case "PICKING":
+    case SYSTEM_SITUATION_CODES.PICKING:
       return "bg-amber-500";
-    case "OPEN":
+    case SYSTEM_SITUATION_CODES.OPEN:
       return "bg-blue-500";
+    case SYSTEM_SITUATION_CODES.CREDIT:
+      return "bg-amber-500";
+    case SYSTEM_SITUATION_CODES.DRAFT:
+      return "bg-muted-foreground/50";
+    case SYSTEM_SITUATION_CODES.CANCELLED:
+      return "bg-destructive";
     default:
       return column.mapsToCancel
         ? "bg-destructive"
@@ -111,115 +115,128 @@ function catalogById(
   return new Map(situations.map((s) => [s.id, s]));
 }
 
-/** Situações visíveis no board: ativas de fulfillment na ordem do cadastro + as ainda usadas. */
+function bySort(a: KanbanSituation, b: KanbanSituation): number {
+  return a.sortOrder - b.sortOrder || a.code.localeCompare(b.code);
+}
+
+function isLeadCode(code: string): boolean {
+  return (
+    code === LIFECYCLE_SITUATION_CODES.DRAFT ||
+    code === LIFECYCLE_SITUATION_CODES.CREDIT
+  );
+}
+
+function isTailCode(code: string): boolean {
+  return (
+    code === LIFECYCLE_SITUATION_CODES.DELIVERED ||
+    code === LIFECYCLE_SITUATION_CODES.CANCELLED
+  );
+}
+
+/** Colunas: Rascunho → crédito → etapas da org → Entregue → Cancelado. */
 export function situationsForKanban(
   situations: KanbanSituation[],
   orders: KanbanOrderLike[],
 ): KanbanSituation[] {
   const byId = catalogById(situations);
-  const selected = new Map<string, KanbanSituation>();
-
-  const sorted = [...situations].sort(
-    (a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code),
-  );
-  for (const s of sorted) {
-    if (s.active && !s.mapsToCancel) selected.set(s.id, s);
+  const usedIds = new Set<string>();
+  for (const order of orders) {
+    const id = situationIdOf(order);
+    if (id) usedIds.add(id);
   }
 
-  for (const order of orders) {
-    if (order.status !== "CONFIRMED") continue;
-    const id = situationIdOf(order);
-    if (!id || selected.has(id)) continue;
-    const fromCatalog = byId.get(id);
-    if (fromCatalog) {
-      selected.set(id, fromCatalog);
+  function pickByCode(code: string): KanbanSituation | undefined {
+    return situations.find((s) => s.code === code);
+  }
+
+  const draft = pickByCode(LIFECYCLE_SITUATION_CODES.DRAFT);
+  const credit = pickByCode(LIFECYCLE_SITUATION_CODES.CREDIT);
+  const delivered = pickByCode(LIFECYCLE_SITUATION_CODES.DELIVERED);
+  const cancelled = pickByCode(LIFECYCLE_SITUATION_CODES.CANCELLED);
+
+  const middle: KanbanSituation[] = [];
+  const seen = new Set<string>();
+
+  const sorted = [...situations].sort(bySort);
+  for (const s of sorted) {
+    if (isLeadCode(s.code) || isTailCode(s.code) || s.mapsToCancel) continue;
+    if (!s.active && !usedIds.has(s.id)) continue;
+    middle.push(s);
+    seen.add(s.id);
+  }
+
+  for (const id of usedIds) {
+    if (seen.has(id)) continue;
+    const s = byId.get(id);
+    if (!s || isLeadCode(s.code) || isTailCode(s.code) || s.mapsToCancel) {
       continue;
     }
-    const fromOrder = order.situation;
-    selected.set(id, {
-      id,
-      code: fromOrder?.code ?? "",
-      name: fromOrder?.name ?? "Situação",
-      sortOrder: fromOrder?.sortOrder ?? 9999,
-      active: fromOrder?.active ?? false,
-      mapsToCancel: fromOrder?.mapsToCancel ?? false,
-    });
+    middle.push(s);
+    seen.add(id);
   }
 
-  return [...selected.values()].sort(
-    (a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code),
-  );
+  middle.sort(bySort);
+
+  const out: KanbanSituation[] = [];
+  if (draft) out.push(draft);
+  if (credit && (credit.active || usedIds.has(credit.id))) out.push(credit);
+  out.push(...middle);
+  if (delivered) out.push(delivered);
+  if (cancelled) out.push(cancelled);
+  return out;
 }
 
 export function buildKanbanColumns(
   situations: KanbanSituation[],
   orders: KanbanOrderLike[] = [],
 ): KanbanColumn[] {
-  const fulfillment = situationsForKanban(situations, orders);
-  const entry = fulfillment.find((s) => !s.mapsToCancel) ?? fulfillment[0];
-
-  const columns: KanbanColumn[] = KANBAN_PRECONFIRM_STATUSES.map((status) => ({
-    id: statusColumnId(status),
-    kind: "status",
-    label: orderStatusLabel(status),
-    status,
+  return situationsForKanban(situations, orders).map((s) => ({
+    id: situationColumnId(s.id),
+    label: s.name,
+    situationId: s.id,
+    situationCode: s.code,
+    mapsToCancel: s.mapsToCancel,
   }));
-
-  for (const s of fulfillment) {
-    columns.push({
-      id: situationColumnId(s.id),
-      kind: "situation",
-      label: s.name,
-      situationId: s.id,
-      situationCode: s.code,
-      mapsToCancel: s.mapsToCancel,
-      isFulfillmentEntry: entry?.id === s.id,
-    });
-  }
-
-  if (fulfillment.length === 0) {
-    columns.push({
-      id: statusColumnId("CONFIRMED"),
-      kind: "status",
-      label: orderStatusLabel("CONFIRMED"),
-      status: "CONFIRMED",
-    });
-  }
-
-  columns.push({
-    id: statusColumnId("CANCELLED"),
-    kind: "status",
-    label: orderStatusLabel("CANCELLED"),
-    status: "CANCELLED",
-  });
-
-  return columns;
 }
 
 export function columnIdForOrder(
   order: KanbanOrderLike,
   columns: KanbanColumn[],
 ): string {
-  if (order.status === "CANCELLED") return statusColumnId("CANCELLED");
-  if (order.status === "DRAFT") return statusColumnId("DRAFT");
-  if (order.status === "PENDING_CREDIT_APPROVAL") {
-    return statusColumnId("PENDING_CREDIT_APPROVAL");
+  const sitId = situationIdOf(order);
+  if (sitId) {
+    const match = columns.find((c) => c.situationId === sitId);
+    if (match) return match.id;
   }
-  if (order.status === "CONFIRMED") {
-    const sitId = situationIdOf(order);
-    if (sitId) {
-      const match = columns.find(
-        (c) => c.kind === "situation" && c.situationId === sitId,
-      );
-      if (match) return match.id;
-    }
-    const entry = columns.find((c) => c.isFulfillmentEntry);
-    if (entry) return entry.id;
-    return statusColumnId("CONFIRMED");
+
+  const code = order.situation?.code;
+  if (code === LIFECYCLE_SITUATION_CODES.CANCELLED || order.status === "CANCELLED") {
+    const col = columns.find(
+      (c) => c.situationCode === LIFECYCLE_SITUATION_CODES.CANCELLED,
+    );
+    if (col) return col.id;
   }
-  return ORDER_STATUSES.includes(order.status as OrderStatus)
-    ? statusColumnId(order.status as OrderStatus)
-    : statusColumnId("DRAFT");
+  if (code === LIFECYCLE_SITUATION_CODES.DRAFT || order.status === "DRAFT") {
+    const col = columns.find(
+      (c) => c.situationCode === LIFECYCLE_SITUATION_CODES.DRAFT,
+    );
+    if (col) return col.id;
+  }
+  if (
+    code === LIFECYCLE_SITUATION_CODES.CREDIT ||
+    order.status === "PENDING_CREDIT_APPROVAL"
+  ) {
+    const col = columns.find(
+      (c) => c.situationCode === LIFECYCLE_SITUATION_CODES.CREDIT,
+    );
+    if (col) return col.id;
+  }
+
+  const open = columns.find(
+    (c) => c.situationCode === SYSTEM_SITUATION_CODES.OPEN,
+  );
+  if (open) return open.id;
+  return columns[0]?.id ?? situationColumnId("unknown");
 }
 
 export function groupOrdersByKanbanColumn<T extends KanbanOrderLike>(
@@ -243,25 +260,9 @@ export function resolveKanbanMove(
 ): KanbanMove {
   const currentId = columnIdForOrder(order, columns);
   if (currentId === target.id) return { type: "noop" };
-
-  if (target.kind === "status") {
-    if (!target.status) return { type: "invalid" };
-    if (order.status === target.status) return { type: "noop" };
-    return { type: "status", status: target.status };
-  }
-
   if (!target.situationId) return { type: "invalid" };
-
-  if (order.status === "CONFIRMED") {
-    if (situationIdOf(order) === target.situationId) return { type: "noop" };
-    return { type: "situation", situationId: target.situationId };
-  }
-
-  // Rascunho / crédito / cancelado: só a primeira situação confirma (não “pula” para Entregue).
-  if (target.isFulfillmentEntry) {
-    return { type: "status", status: "CONFIRMED" };
-  }
-  return { type: "invalid" };
+  if (situationIdOf(order) === target.situationId) return { type: "noop" };
+  return { type: "situation", situationId: target.situationId };
 }
 
 export function parseDraggedOrderId(raw: string): string | null {
@@ -284,4 +285,32 @@ export function formatOrderMoney(value: unknown): string {
     style: "currency",
     currency: "BRL",
   });
+}
+
+export function stageChangeHint(
+  code: string,
+  mapsToCancel?: boolean,
+): string {
+  const next = orderStatusFromSituation(code, mapsToCancel);
+  if (next === "CANCELLED") {
+    return " Pedidos cancelados podem estornar estoque se estavam confirmados.";
+  }
+  if (next === "CONFIRMED") {
+    return " Confirmar o pedido pode baixar estoque.";
+  }
+  return "";
+}
+
+export function needsStageConfirmDialog(
+  fromStatus: string | undefined,
+  target: { code: string; mapsToCancel?: boolean },
+): boolean {
+  const to = orderStatusFromSituation(target.code, target.mapsToCancel);
+  const from = (fromStatus ?? "DRAFT") as OrderStatus;
+  if (to === from) return false;
+  return to === "CONFIRMED" || to === "CANCELLED";
+}
+
+export function isLifecycleStageCode(code: string): boolean {
+  return isLifecycleSituationCode(code);
 }

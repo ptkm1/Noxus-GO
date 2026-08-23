@@ -13,7 +13,6 @@ type IntentStatus = {
   intentId: string;
   planId: string;
   amountBrl?: number;
-  fakeGateway?: boolean;
   changeType?: "plan_change" | "initial" | null;
   previousPlanId?: string | null;
   billingDefaults?: {
@@ -58,7 +57,6 @@ export function PaymentPendingPage() {
   }, [params]);
 
   const [intentId, setIntentId] = useState(params.get("intentId") || "");
-  const [fakeGateway, setFakeGateway] = useState(false);
   const [planId, setPlanId] = useState<PlanId>(
     user?.subscription?.planId ?? "start",
   );
@@ -172,7 +170,6 @@ export function PaymentPendingPage() {
   applyStatusRef.current = async (data: IntentStatus) => {
     setIntentId(data.intentId);
     setPlanId(isPlanId(data.planId) ? data.planId : "start");
-    setFakeGateway(Boolean(data.fakeGateway));
     if (typeof data.amountBrl === "number") setChargedAmountBrl(data.amountBrl);
     if (data.billingDefaults) setBillingDefaults(data.billingDefaults);
     if (data.changeType) {
@@ -307,20 +304,6 @@ export function PaymentPendingPage() {
       if (timer) window.clearInterval(timer);
     };
   }, [intentId, processingPayment]);
-
-  async function simulate() {
-    if (!intentId) return;
-    setError(null);
-    try {
-      await apiFetch(`/billing/subscription-intents/${intentId}/simulate`, {
-        method: "POST",
-        skipAuth: true,
-      });
-      await enterAppAfterPayment(intentId);
-    } catch (ex) {
-      setError(ex instanceof Error ? ex.message : "Falha ao simular pagamento");
-    }
-  }
 
   async function handleAlreadyPaid() {
     setError(null);
@@ -463,11 +446,6 @@ export function PaymentPendingPage() {
           {isPlanChangeFlow ? (
             <Button type="button" variant="ghost" onClick={() => nav("/configuracoes")}>
               Voltar às configurações
-            </Button>
-          ) : null}
-          {fakeGateway && intentId && !isPlanChangeFlow ? (
-            <Button type="button" variant="outline" onClick={() => void simulate()}>
-              Simular pagamento (dev)
             </Button>
           ) : null}
           {user ? (

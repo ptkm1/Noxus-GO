@@ -12,7 +12,6 @@ import {
     listAsaasCustomersByCpfCnpj,
     resolveAsaasCustomerForOrg,
 } from "./asaas/asaas-customer-resolver.js";
-import { isFakePaymentGatewayEnabled } from "./resolve-payment-gateway.js";
 import { expectedSubscriptionValueBrl } from "./sync-asaas-subscription.js";
 
 type AsaasCustomer = {
@@ -102,13 +101,6 @@ export async function reconcileOrganizationBilling(
   const dryRun = opts?.dryRun ?? false;
   const issues: string[] = [];
   const fixed: string[] = [];
-
-  if (isFakePaymentGatewayEnabled()) {
-    throw Object.assign(
-      new Error("Reconciliação disponível apenas com gateway Asaas"),
-      { code: "FAKE_GATEWAY", http: 400 },
-    );
-  }
 
   const cfg = readAsaasConfig();
   if (!cfg) {

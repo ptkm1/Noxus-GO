@@ -25,6 +25,7 @@ export type OrdersPdfFilters = {
   from?: string;
   to?: string;
   status?: OrderStatus;
+  situationId?: string;
   romaneio?: boolean;
   /** When set, report includes only these order IDs (still scoped to org). */
   orderIds?: string[];
@@ -130,6 +131,7 @@ function orderWhere(filters: OrdersPdfFilters): Prisma.OrderWhereInput {
   if (filters.sellerId) where.sellerId = filters.sellerId;
   if (filters.customerId) where.customerId = filters.customerId;
   if (filters.status) where.status = filters.status;
+  if (filters.situationId) where.situationId = filters.situationId;
   const createdAt: Prisma.DateTimeFilter = {};
   if (filters.from) createdAt.gte = new Date(filters.from);
   if (filters.to) createdAt.lte = new Date(filters.to);
@@ -153,6 +155,7 @@ export async function buildOrdersPdf(
       include: {
         seller: { include: { user: { select: { name: true } } } },
         customer: { select: { name: true } },
+        situation: { select: { name: true, code: true } },
         items: {
           include: {
             product: {
@@ -244,7 +247,7 @@ export async function buildOrdersPdf(
         date: shortDateTime(o.createdAt),
         customer: shortName(o.customer?.name ?? "—", withProfit ? 14 : 16),
         seller: shortName(o.seller.user.name, withProfit ? 12 : 14),
-        status: STATUS_LABEL[o.status] ?? o.status,
+        status: o.situation?.name ?? STATUS_LABEL[o.status] ?? o.status,
         items: String(o.items.length),
         total: money(amount),
       };

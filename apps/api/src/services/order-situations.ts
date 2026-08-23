@@ -1,19 +1,65 @@
+import type { OrderStatus } from "@prisma/client";
+import {
+  isReservedSituationCode,
+  orderStatusFromSituation,
+  situationCodeFromOrderStatus,
+  SYSTEM_SITUATION_CODES,
+} from "@pedidos/shared";
 import { prisma } from "../db.js";
 
-/** Situações padrão (sistema). PICKING/PACKED entram na expedição. */
+/** Etapas padrão do fluxo do pedido (sistema + fulfillment). Por organização. */
 export const DEFAULT_ORDER_SITUATIONS = [
-  { code: "OPEN", name: "Aberto", sortOrder: 1, mapsToCancel: false },
-  { code: "PICKING", name: "Em separação", sortOrder: 2, mapsToCancel: false },
-  { code: "PACKED", name: "Separado", sortOrder: 3, mapsToCancel: false },
-  { code: "SENT", name: "Enviado", sortOrder: 4, mapsToCancel: false },
-  { code: "DELIVERED", name: "Entregue", sortOrder: 5, mapsToCancel: false },
   {
-    code: "CANCELLED",
-    name: "Cancelado",
+    code: SYSTEM_SITUATION_CODES.DRAFT,
+    name: "Rascunho",
+    sortOrder: 0,
+    mapsToCancel: false,
+  },
+  {
+    code: SYSTEM_SITUATION_CODES.CREDIT,
+    name: "Aguardando crédito",
+    sortOrder: 1,
+    mapsToCancel: false,
+  },
+  {
+    code: SYSTEM_SITUATION_CODES.OPEN,
+    name: "Aberto",
+    sortOrder: 2,
+    mapsToCancel: false,
+  },
+  {
+    code: SYSTEM_SITUATION_CODES.PICKING,
+    name: "Em separação",
+    sortOrder: 3,
+    mapsToCancel: false,
+  },
+  {
+    code: SYSTEM_SITUATION_CODES.PACKED,
+    name: "Separado",
+    sortOrder: 4,
+    mapsToCancel: false,
+  },
+  {
+    code: SYSTEM_SITUATION_CODES.SENT,
+    name: "Enviado",
+    sortOrder: 5,
+    mapsToCancel: false,
+  },
+  {
+    code: SYSTEM_SITUATION_CODES.DELIVERED,
+    name: "Entregue",
     sortOrder: 6,
+    mapsToCancel: false,
+  },
+  {
+    code: SYSTEM_SITUATION_CODES.CANCELLED,
+    name: "Cancelado",
+    sortOrder: 7,
     mapsToCancel: true,
   },
 ] as const;
+
+export { isReservedSituationCode, SYSTEM_SITUATION_CODES };
 
 export async function ensureDefaultOrderSituations(
   organizationId: string,
@@ -32,7 +78,10 @@ export async function ensureDefaultOrderSituations(
         isSystem: true,
         active: true,
       },
-      update: {},
+      update: {
+        isSystem: true,
+        mapsToCancel: d.mapsToCancel,
+      },
     });
   }
 }
@@ -51,4 +100,32 @@ export async function findOrgSituationId(
     select: { id: true },
   });
   return row?.id ?? null;
+}
+
+export async function requireOrgSituationId(
+  organizationId: string,
+  code: string,
+): Promise<string> {
+  const id = await findOrgSituationId(organizationId, code);
+  if (!id) {
+    throw new Error(`Etapa ${code} não encontrada para a organização`);
+  }
+  return id;
+}
+
+export function statusFromSituationRow(sit: {
+  code: string;
+  mapsToCancel: boolean;
+}): OrderStatus {
+  return orderStatusFromSituation(sit.code, sit.mapsToCancel);
+}
+
+export async function situationIdForOrderStatus(
+  organizationId: string,
+  status: OrderStatus,
+): Promise<string> {
+  return requireOrgSituationId(
+    organizationId,
+    situationCodeFromOrderStatus(status),
+  );
 }

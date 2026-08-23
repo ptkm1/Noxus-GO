@@ -57,31 +57,26 @@ export default function SaleDetailScreen() {
               ]}
             >
               <ThemedText variant="caption" style={{ fontWeight: "700" }}>
-                {orderStatusBadgeLabel(order.status)}
+                {orderStatusBadgeLabel(order.status, order.situation)}
               </ThemedText>
             </View>
           </View>
           <ThemedText variant="bodySm" muted>
             {new Date(order.createdAt).toLocaleString("pt-BR")} ·{" "}
-            {orderStatusDetailLabel(order.status)}
-            {order.situation?.name ? ` · ${order.situation.name}` : ""}
+            {orderStatusDetailLabel(order.status, order.situation)}
           </ThemedText>
 
           <ThemedCard style={styles.card}>
-            {order.situation?.name ? (
-              <>
-                <ThemedText variant="caption" muted>
-                  Situação
-                </ThemedText>
-                <ThemedText variant="titleSm" style={{ marginTop: 4 }}>
-                  {order.situation.name}
-                </ThemedText>
-              </>
-            ) : null}
+            <ThemedText variant="caption" muted>
+              Etapa
+            </ThemedText>
+            <ThemedText variant="titleSm" style={{ marginTop: 4 }}>
+              {orderStatusDetailLabel(order.status, order.situation)}
+            </ThemedText>
             <ThemedText
               variant="caption"
               muted
-              style={order.situation?.name ? { marginTop: 12 } : undefined}
+              style={{ marginTop: 12 }}
             >
               Cliente
             </ThemedText>

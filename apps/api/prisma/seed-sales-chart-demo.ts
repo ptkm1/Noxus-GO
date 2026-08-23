@@ -7,6 +7,7 @@
 import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/db.js";
+import { requireOrgSituationId } from "../src/services/order-situations.js";
 
 const MARKER = "seed-chart-demo";
 const PASSWORD = "vendedor123";
@@ -297,6 +298,8 @@ async function seedOrg(organizationId: string, orgLabel: string) {
     where: { organizationId, notes: MARKER },
   });
 
+  const openSituationId = await requireOrgSituationId(organizationId, "OPEN");
+
   // Mix: este mês (julho) + dias recentes + algum histórico — >= 12 vendas
   const plans: Array<{
     daysAgo: number;
@@ -337,6 +340,7 @@ async function seedOrg(organizationId: string, orgLabel: string) {
         sellerId: seller.id,
         customerId: customer.id,
         status: "CONFIRMED",
+        situationId: openSituationId,
         totalAmount: total,
         notes: MARKER,
         createdAt,
@@ -365,6 +369,7 @@ async function seedOrg(organizationId: string, orgLabel: string) {
       sellerId: sellerMix.id,
       customerId: customers[0]!.id,
       status: "CONFIRMED",
+      situationId: openSituationId,
       totalAmount: Number(pA.basePrice) * 4 + Number(pB.basePrice) * 6,
       notes: MARKER,
       createdAt: daysAgo(2, 16),

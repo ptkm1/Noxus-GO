@@ -77,9 +77,7 @@ export async function listExpeditionQueue(params: {
       params.auth.organizationId,
       params.situationCode,
     );
-    if (sid && params.situationCode === EXPEDITION_SITUATION_CODES.WAITING) {
-      where.OR = [{ situationId: sid }, { situationId: null }];
-    } else if (sid) {
+    if (sid) {
       where.situationId = sid;
     }
   }

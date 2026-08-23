@@ -242,30 +242,58 @@ async function main() {
 
   const orderSituationsSeed = [
     {
+      code: "DRAFT",
+      name: "Rascunho",
+      sortOrder: 0,
+      mapsToCancel: false,
+      isSystem: true,
+    },
+    {
+      code: "CREDIT",
+      name: "Aguardando crédito",
+      sortOrder: 1,
+      mapsToCancel: false,
+      isSystem: true,
+    },
+    {
       code: "OPEN",
       name: "Aberto",
-      sortOrder: 1,
+      sortOrder: 2,
+      mapsToCancel: false,
+      isSystem: true,
+    },
+    {
+      code: "PICKING",
+      name: "Em separação",
+      sortOrder: 3,
+      mapsToCancel: false,
+      isSystem: true,
+    },
+    {
+      code: "PACKED",
+      name: "Separado",
+      sortOrder: 4,
       mapsToCancel: false,
       isSystem: true,
     },
     {
       code: "SENT",
       name: "Enviado",
-      sortOrder: 2,
+      sortOrder: 5,
       mapsToCancel: false,
       isSystem: true,
     },
     {
       code: "DELIVERED",
       name: "Entregue",
-      sortOrder: 3,
+      sortOrder: 6,
       mapsToCancel: false,
       isSystem: true,
     },
     {
       code: "CANCELLED",
       name: "Cancelado",
-      sortOrder: 4,
+      sortOrder: 7,
       mapsToCancel: true,
       isSystem: true,
     },
@@ -605,12 +633,21 @@ async function main() {
     },
   });
 
+  const openSituation = await prisma.orderSituation.findUnique({
+    where: { organizationId_code: { organizationId: org.id, code: "OPEN" } },
+    select: { id: true },
+  });
+  if (!openSituation) {
+    throw new Error("Etapa OPEN não encontrada após o seed de situações");
+  }
+
   await prisma.order.create({
     data: {
       organizationId: org.id,
       sellerId: seller.id,
       customerId: customer.id,
       status: "CONFIRMED",
+      situationId: openSituation.id,
       totalAmount: 180.5,
       items: {
         create: [

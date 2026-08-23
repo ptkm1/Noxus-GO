@@ -1,6 +1,7 @@
 import type { OrderStatus } from "@prisma/client";
 import type { FastifyReply } from "fastify";
 import { prisma } from "../db.js";
+import { situationIdForOrderStatus } from "./order-situations.js";
 import {
   notifyAdminsCreditPending,
   notifySaleConfirmed,
@@ -30,6 +31,17 @@ const createdOrderInclude = {
   items: true,
   customer: true,
   paymentCondition: true,
+  situation: {
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      sortOrder: true,
+      active: true,
+      isSystem: true,
+      mapsToCancel: true,
+    },
+  },
   seller: {
     include: {
       user: { select: { name: true, email: true } },
@@ -198,6 +210,11 @@ export async function createSaleOrder(params: CreateSaleOrderParams) {
     );
   }
 
+  const situationId = await situationIdForOrderStatus(
+    params.organizationId,
+    orderStatus,
+  );
+
   const order = await prisma.$transaction(async (tx) => {
     const orderNumber = await nextOrderNumber(tx, params.organizationId);
     return tx.order.create({
@@ -208,6 +225,7 @@ export async function createSaleOrder(params: CreateSaleOrderParams) {
         paymentConditionId: params.paymentConditionId,
         operation: params.operation ?? "SALE",
         status: orderStatus,
+        situationId,
         totalAmount: sale.netTotal,
         comboDiscountTotal: sale.comboDiscountTotal,
         notes: params.notes,

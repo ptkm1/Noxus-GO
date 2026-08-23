@@ -20,10 +20,19 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { notifySuccess } from "@/lib/app-notifications";
 import { apiFetch, downloadPdf, printPdf } from "@/lib/api";
 import { formatOrderCode, orderCodeFilenamePart } from "@/lib/order-code";
-import { formatOrderMoney, statusBadgeClass } from "@/lib/order-kanban";
+import {
+  formatOrderMoney,
+  needsStageConfirmDialog,
+  stageBadgeClass,
+  stageChangeHint,
+} from "@/lib/order-kanban";
 import { isWebAdmin } from "@/lib/staff";
 import { cn } from "@/lib/utils";
-import { ORDER_STATUSES, canRead, canWrite as canWritePermission, orderStatusLabel } from "@pedidos/shared";
+import {
+  SYSTEM_SITUATION_CODES,
+  canRead,
+  canWrite as canWritePermission,
+} from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Kanban, List, Printer, ShoppingCart } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -37,13 +46,14 @@ type OrderSituation = {
   name: string;
   sortOrder: number;
   active: boolean;
+  isSystem?: boolean;
   mapsToCancel?: boolean;
 };
 
 type Order = {
   id: string;
   orderNumber?: number | null;
-  status: string;
+  status?: string;
   situationId?: string | null;
   situation?: OrderSituation | null;
   totalAmount: unknown;
@@ -72,14 +82,10 @@ function useDebouncedValue<T>(value: T, delayMs = 300): T {
   return debounced;
 }
 
-function statusChangeHint(status: string): string {
-  if (status === "CANCELLED") {
-    return " Pedidos cancelados podem estornar estoque se estavam confirmados.";
-  }
-  if (status === "CONFIRMED") {
-    return " Confirmar o pedido pode baixar estoque.";
-  }
-  return "";
+function orderStageLabel(order: {
+  situation?: { name?: string } | null;
+}): string {
+  return order.situation?.name ?? "—";
 }
 
 function selectAllState(
@@ -106,13 +112,14 @@ export function OrdersPage() {
   const { confirm, alert } = useConfirm();
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const statusFilter = searchParams.get("status");
+  const situationFilter =
+    searchParams.get("situation") ?? searchParams.get("situationCode");
   const view = searchParams.get("view") === "kanban" ? "kanban" : "list";
   const isKanban = view === "kanban";
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [pdfPending, setPdfPending] = useState(false);
-  const [bulkStatus, setBulkStatus] = useState("");
+  const [bulkStage, setBulkStage] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
 
   const [orderNumber, setOrderNumber] = useState("");
@@ -140,7 +147,7 @@ export function OrdersPage() {
     () => [
       "admin",
       "orders",
-      statusFilter ?? "all",
+      situationFilter ?? "all",
       debouncedOrderNumber.trim(),
       debouncedCity.trim(),
       debouncedTradeName.trim(),
@@ -148,7 +155,7 @@ export function OrdersPage() {
       sellerId,
     ],
     [
-      statusFilter,
+      situationFilter,
       debouncedOrderNumber,
       debouncedCity,
       debouncedTradeName,
@@ -161,7 +168,13 @@ export function OrdersPage() {
     queryKey: listQueryKey,
     queryFn: () => {
       const params = new URLSearchParams();
-      if (statusFilter) params.set("status", statusFilter);
+      if (situationFilter) {
+        if (situationFilter === SYSTEM_SITUATION_CODES.CREDIT) {
+          params.set("situationCode", SYSTEM_SITUATION_CODES.CREDIT);
+        } else {
+          params.set("situationId", situationFilter);
+        }
+      }
       const code = debouncedOrderNumber.trim();
       if (code) params.set("orderNumber", code);
       const cityVal = debouncedCity.trim();
@@ -179,7 +192,7 @@ export function OrdersPage() {
   useEffect(() => {
     setSelectedIds(new Set());
   }, [
-    statusFilter,
+    situationFilter,
     debouncedOrderNumber,
     debouncedCity,
     debouncedTradeName,
@@ -201,8 +214,10 @@ export function OrdersPage() {
   function setFilter(next: string | null) {
     setSearchParams((prev) => {
       const p = new URLSearchParams(prev);
-      if (next) p.set("status", next);
-      else p.delete("status");
+      p.delete("status");
+      if (next) p.set("situation", next);
+      else p.delete("situation");
+      p.delete("situationCode");
       return p;
     });
   }
@@ -235,28 +250,13 @@ export function OrdersPage() {
     void qc.invalidateQueries({ queryKey: ["admin", "notifications-unread"] });
   };
 
-  const patchStatus = useMutation({
-    mutationFn: async ({
-      orderId,
-      status,
-    }: {
-      orderId: string;
-      status: string;
-    }) =>
-      apiFetch(`/admin/orders/${orderId}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status }),
-      }),
-    onSuccess: () => invalidateOrders(),
-  });
-
   const patchSituation = useMutation({
     mutationFn: async ({
       orderId,
       situationId,
     }: {
       orderId: string;
-      situationId: string | null;
+      situationId: string;
     }) =>
       apiFetch(`/admin/orders/${orderId}/situation`, {
         method: "PATCH",
@@ -265,10 +265,10 @@ export function OrdersPage() {
     onSuccess: () => invalidateOrders(),
   });
 
-  function situationOptionsFor(order: Order) {
+  function situationOptionsFor(order?: Order) {
     const active = situations.filter((s) => s.active);
-    const current = order.situation;
     const opts = active.map((s) => ({ value: s.id, label: s.name }));
+    const current = order?.situation;
     if (current && !active.some((s) => s.id === current.id)) {
       opts.push({
         value: current.id,
@@ -284,24 +284,36 @@ export function OrdersPage() {
     onSuccess: () => invalidateOrders(),
   });
 
-  async function applyStatusChange(orderIds: string[], status: string) {
+  async function applyStageChange(
+    orderIds: string[],
+    situationId: string,
+    fromStatus?: string,
+  ) {
     if (!canWrite || orderIds.length === 0) return;
+    const target = situations.find((s) => s.id === situationId);
+    if (!target) return;
 
     const needsConfirm =
-      status === "CANCELLED" || orderIds.length > 1 || status === "CONFIRMED";
+      orderIds.length > 1 ||
+      needsStageConfirmDialog(fromStatus, {
+        code: target.code,
+        mapsToCancel: target.mapsToCancel,
+      });
     if (needsConfirm) {
       const title =
         orderIds.length > 1
-          ? `Alterar status de ${orderIds.length} pedidos?`
-          : "Alterar status do pedido?";
+          ? `Alterar etapa de ${orderIds.length} pedidos?`
+          : "Alterar etapa do pedido?";
       const ok = await confirm({
         title,
-        description: `O status será alterado para “${orderStatusLabel(status)}”.${statusChangeHint(status)}`,
-        confirmLabel: "Alterar status",
-        tone: status === "CANCELLED" ? "destructive" : "default",
+        description: `A etapa será alterada para “${target.name}”.${stageChangeHint(target.code, target.mapsToCancel)}`,
+        confirmLabel: "Alterar etapa",
+        tone: target.mapsToCancel || target.code === "CANCELLED"
+          ? "destructive"
+          : "default",
       });
       if (!ok) {
-        setBulkStatus("");
+        setBulkStage("");
         return;
       }
     }
@@ -309,13 +321,13 @@ export function OrdersPage() {
     setActionError(null);
     try {
       for (const orderId of orderIds) {
-        await patchStatus.mutateAsync({ orderId, status });
+        await patchSituation.mutateAsync({ orderId, situationId });
       }
-      setBulkStatus("");
+      setBulkStage("");
       setSelectedIds(new Set());
     } catch (e) {
       setActionError(
-        e instanceof Error ? e.message : "Não foi possível alterar o status.",
+        e instanceof Error ? e.message : "Não foi possível alterar a etapa.",
       );
     }
   }
@@ -384,13 +396,13 @@ export function OrdersPage() {
     }
   }
 
-  const pendingCreditSelected = statusFilter === "PENDING_CREDIT_APPROVAL";
-  const statusBusy = patchStatus.isPending;
+  const pendingCreditSelected =
+    situationFilter === SYSTEM_SITUATION_CODES.CREDIT;
   const situationBusy = patchSituation.isPending;
 
   const kanbanHint = canWrite
-    ? "Acompanhe rascunho, crédito e a expedição até a entrega. Arraste o card para alterar status ou situação, ou clique para abrir o pedido."
-    : "Acompanhe rascunho, crédito e a expedição até a entrega. Clique no card para abrir o pedido.";
+    ? "Acompanhe o fluxo do pedido numa única etapa. Arraste o card para mudar a etapa, ou clique para abrir o pedido."
+    : "Acompanhe o fluxo do pedido numa única etapa. Clique no card para abrir o pedido.";
 
   return (
     <div className="space-y-6">
@@ -400,7 +412,7 @@ export function OrdersPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             {isKanban
               ? kanbanHint
-              : "Liste, filtre, exporte e altere o status dos pedidos sem abrir cada detalhe."}
+              : "Liste, filtre, exporte e altere a etapa dos pedidos sem abrir cada detalhe."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -445,7 +457,7 @@ export function OrdersPage() {
               ? "bg-amber-600 text-white hover:bg-amber-600/90"
               : undefined
           }
-          onClick={() => setFilter("PENDING_CREDIT_APPROVAL")}
+          onClick={() => setFilter(SYSTEM_SITUATION_CODES.CREDIT)}
         >
           Aguardando crédito
         </Button>
@@ -513,31 +525,18 @@ export function OrdersPage() {
           situations={situations}
           isLoading={isLoading || situationsPending}
           isError={isError}
-          canDrag={canWrite && !statusBusy && !situationBusy}
+          canDrag={canWrite && !situationBusy}
           movingId={
-            patchStatus.isPending
-              ? (patchStatus.variables?.orderId ?? null)
-              : patchSituation.isPending
-                ? (patchSituation.variables?.orderId ?? null)
-                : null
+            patchSituation.isPending
+              ? (patchSituation.variables?.orderId ?? null)
+              : null
           }
           onMove={(orderId, move) => {
-            if (move.type === "status") {
-              void applyStatusChange([orderId], move.status);
-              return;
-            }
-            setActionError(null);
-            patchSituation.mutate(
-              { orderId, situationId: move.situationId },
-              {
-                onError: (e) => {
-                  setActionError(
-                    e instanceof Error
-                      ? e.message
-                      : "Não foi possível alterar a situação.",
-                  );
-                },
-              },
+            const order = orders.find((o) => o.id === orderId);
+            void applyStageChange(
+              [orderId],
+              move.situationId,
+              order?.status,
             );
           }}
         />
@@ -547,7 +546,7 @@ export function OrdersPage() {
         <p className="text-sm text-muted-foreground">
           {hasSelection
             ? `${selectedOrders.length} pedido(s) selecionado(s)`
-            : "Selecione pedidos para exportar, imprimir ou mudar o status"}
+            : "Selecione pedidos para exportar, imprimir ou mudar a etapa"}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -584,18 +583,20 @@ export function OrdersPage() {
           ) : null}
           {canWrite ? (
             <AppSelect
-              value={bulkStatus}
-              disabled={!hasSelection || statusBusy}
-              placeholder="Alterar status…"
-              emptyLabel="Alterar status…"
+              value={bulkStage}
+              disabled={!hasSelection || situationBusy}
+              placeholder="Alterar etapa…"
+              emptyLabel="Alterar etapa…"
               triggerClassName="w-[11.5rem]"
-              options={ORDER_STATUSES.map((s) => ({
-                value: s,
-                label: orderStatusLabel(s),
-              }))}
+              options={situations
+                .filter((s) => s.active)
+                .map((s) => ({
+                  value: s.id,
+                  label: s.name,
+                }))}
               onValueChange={(v) => {
-                setBulkStatus(v);
-                if (v) void applyStatusChange([...selectedIds], v);
+                setBulkStage(v);
+                if (v) void applyStageChange([...selectedIds], v);
               }}
             />
           ) : null}
@@ -633,8 +634,7 @@ export function OrdersPage() {
                 </TableHead>
                 <TableHead className="px-4">Número do pedido</TableHead>
                 <TableHead className="px-4">Data</TableHead>
-                <TableHead className="px-4">Status</TableHead>
-                <TableHead className="px-4">Situação</TableHead>
+                <TableHead className="px-4">Etapa</TableHead>
                 <TableHead className="px-4">Vendedor</TableHead>
                 <TableHead className="px-4">Cliente</TableHead>
                 <TableHead className="px-4">Cidade</TableHead>
@@ -668,57 +668,25 @@ export function OrdersPage() {
                     <TableCell className="px-4 py-3">
                       {canWrite ? (
                         <AppSelect
-                          value={o.status}
-                          disabled={statusBusy}
+                          value={o.situationId ?? ""}
+                          disabled={situationBusy}
                           triggerClassName="w-auto min-w-[10.5rem]"
-                          options={ORDER_STATUSES.map((s) => ({
-                            value: s,
-                            label: orderStatusLabel(s),
-                          }))}
+                          options={situationOptionsFor(o)}
                           onValueChange={(v) => {
-                            if (v !== o.status)
-                              void applyStatusChange([o.id], v);
+                            if (!v || v === o.situationId) return;
+                            void applyStageChange([o.id], v, o.status);
                           }}
                         />
                       ) : (
                         <Badge
                           variant="outline"
-                          className={statusBadgeClass(o.status)}
+                          className={stageBadgeClass(
+                            o.situation?.code ?? "",
+                            o.situation?.mapsToCancel,
+                          )}
                         >
-                          {orderStatusLabel(o.status)}
+                          {orderStageLabel(o)}
                         </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="px-4 py-3">
-                      {canWrite ? (
-                        <AppSelect
-                          value={o.situationId ?? ""}
-                          disabled={situationBusy}
-                          triggerClassName="w-auto min-w-[9rem]"
-                          emptyLabel="Sem situação"
-                          options={situationOptionsFor(o)}
-                          onValueChange={(v) => {
-                            const next = v || null;
-                            if (next === (o.situationId ?? null)) return;
-                            setActionError(null);
-                            patchSituation.mutate(
-                              { orderId: o.id, situationId: next },
-                              {
-                                onError: (e) => {
-                                  setActionError(
-                                    e instanceof Error
-                                      ? e.message
-                                      : "Não foi possível alterar a situação.",
-                                  );
-                                },
-                              },
-                            );
-                          }}
-                        />
-                      ) : (
-                        <span className="text-sm text-muted-foreground">
-                          {o.situation?.name ?? "—"}
-                        </span>
                       )}
                     </TableCell>
                     <TableCell className="px-4 py-3">
@@ -791,12 +759,15 @@ export function OrdersPage() {
           onOpenChange={setCreateOpen}
           onCreated={async (order) => {
             await qc.invalidateQueries({ queryKey: ["admin", "orders"] });
-            const toast =
-              order.status === "DRAFT"
-                ? "Pedido salvo como rascunho."
-                : order.status === "PENDING_CREDIT_APPROVAL"
-                  ? "Pedido enviado para aprovação de crédito."
-                  : "Pedido confirmado.";
+            const stageCode = order.situation?.code ?? order.status;
+            let toast = "Pedido confirmado.";
+            if (stageCode === "DRAFT") toast = "Pedido salvo como rascunho.";
+            if (
+              stageCode === "CREDIT" ||
+              stageCode === "PENDING_CREDIT_APPROVAL"
+            ) {
+              toast = "Pedido enviado para aprovação de crédito.";
+            }
             notifySuccess(toast);
             navigate(`/pedidos/${order.id}`);
           }}
