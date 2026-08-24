@@ -54,6 +54,7 @@ export function OrderSituationsPanel() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingIsSystem, setEditingIsSystem] = useState(false);
   const [name, setName] = useState("");
   const [sortOrder, setSortOrder] = useState("0");
   const [active, setActive] = useState(true);
@@ -63,6 +64,7 @@ export function OrderSituationsPanel() {
 
   function resetForm() {
     setEditingId(null);
+    setEditingIsSystem(false);
     setName("");
     setSortOrder("0");
     setActive(true);
@@ -78,6 +80,7 @@ export function OrderSituationsPanel() {
 
   function openEdit(row: OrderSituation) {
     setEditingId(row.id);
+    setEditingIsSystem(row.isSystem);
     setName(row.name);
     setSortOrder(String(row.sortOrder));
     setActive(row.active);
@@ -184,11 +187,12 @@ export function OrderSituationsPanel() {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <p className="text-sm text-muted-foreground">
-          Situações operacionais (enviado, entregue, etc.). São independentes do
-          status financeiro do pedido (rascunho, confirmado, crédito).
+          Este é o único fluxo do pedido: etapas de sistema (rascunho, crédito,
+          entregue, cancelado) e as etapas da sua operação (aberto, em
+          separação…). Não existe um campo de status separado.
         </p>
         <Button type="button" className="shrink-0" onClick={openCreate}>
-          Nova situação
+          Nova etapa
         </Button>
       </div>
 
@@ -198,8 +202,8 @@ export function OrderSituationsPanel() {
           if (!open) closeSheet();
           else setSheetOpen(true);
         }}
-        title={editingId ? "Editar situação" : "Nova situação"}
-        description="Nome, ordem de exibição e opções da situação."
+        title={editingId ? "Editar etapa" : "Nova etapa"}
+        description="Nome e ordem da etapa no fluxo do pedido."
         footer={
           <FormSheetActions
             onCancel={closeSheet}
@@ -255,14 +259,15 @@ export function OrderSituationsPanel() {
                 checked={active}
                 onCheckedChange={(v) => setActive(v === true)}
               />
-              Disponível para seleção nos pedidos
+              Disponível para seleção no fluxo do pedido
             </label>
           </FormField>
+          {editingIsSystem ? null : (
           <FormField
             label="Cancelamento operacional"
             htmlFor="os-cancel"
             className="sm:col-span-2"
-            hint="Marca a situação como cancelada na operação (não altera o status financeiro)."
+            hint="Esta etapa cancela o pedido e pode estornar estoque se ele já estava confirmado."
           >
             <label className="flex items-center gap-2 text-sm text-foreground">
               <Checkbox
@@ -273,6 +278,7 @@ export function OrderSituationsPanel() {
               Representa cancelamento
             </label>
           </FormField>
+          )}
         </FormGrid>
         {formError ? (
           <FormErrorBanner message={formError} className="mt-3" />
@@ -283,7 +289,7 @@ export function OrderSituationsPanel() {
         <p className="text-muted-foreground">Carregando…</p>
       ) : situations.length === 0 ? (
         <p className="text-muted-foreground">
-          Nenhuma situação cadastrada ainda.
+          Nenhuma etapa cadastrada ainda.
         </p>
       ) : (
         <div className="rounded-xl border border-border bg-card">
@@ -329,7 +335,7 @@ export function OrderSituationsPanel() {
                         })
                       }
                       aria-label={
-                        row.active ? "Desativar situação" : "Ativar situação"
+                        row.active ? "Desativar etapa" : "Ativar etapa"
                       }
                     />
                   </TableCell>
@@ -347,8 +353,8 @@ export function OrderSituationsPanel() {
                         className="ml-3 text-destructive"
                         onClick={() => {
                           void confirm({
-                            title: "Excluir situação?",
-                            description: `A situação “${row.name}” será removida. Pedidos existentes ficam sem situação.`,
+                            title: "Excluir etapa?",
+                            description: `A etapa “${row.name}” será removida. Mova os pedidos desta etapa antes de excluir.`,
                             confirmLabel: "Excluir",
                             tone: "destructive",
                           }).then((ok) => {

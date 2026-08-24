@@ -25,7 +25,7 @@ import {
 import { apiFetch, downloadPdf } from "@/lib/api";
 import { formatOrderCode } from "@/lib/order-code";
 import { cn } from "@/lib/utils";
-import { orderStatusLabel, canRead } from "@pedidos/shared";
+import { canRead } from "@pedidos/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
@@ -36,19 +36,16 @@ type OrderRow = {
   id: string;
   orderNumber?: number | null;
   customerId?: string | null;
-  status: string;
+  status?: string;
+  situation?: { id: string; name: string } | null;
+  situationId?: string | null;
   totalAmount: unknown;
   createdAt: string;
   seller: { user: { name: string } };
   customer: { id?: string; name: string } | null;
 };
 
-const STATUS_OPTIONS = [
-  { value: "DRAFT", label: "Rascunho" },
-  { value: "CONFIRMED", label: "Confirmado" },
-  { value: "CANCELLED", label: "Cancelado" },
-  { value: "PENDING_CREDIT_APPROVAL", label: "Aguardando crédito" },
-];
+type StageOption = { id: string; name: string; active: boolean };
 
 type InclusionMode = "filters" | "manual";
 
@@ -77,7 +74,7 @@ export function ReportOrdersPage() {
   const [customerId, setCustomerId] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [status, setStatus] = useState("");
+  const [situationId, setSituationId] = useState("");
   const [romaneio, setRomaneio] = useState(false);
   const [includeProfitPercent, setIncludeProfitPercent] = useState(false);
   const [extras, setExtras] = useState<ExtraFilterRow[]>([]);
@@ -94,10 +91,14 @@ export function ReportOrdersPage() {
     queryKey: ["admin", "customers"],
     queryFn: () => apiFetch<Customer[]>("/admin/customers"),
   });
+  const { data: stages = [] } = useQuery({
+    queryKey: ["admin", "order-situations"],
+    queryFn: () => apiFetch<StageOption[]>("/admin/order-situations"),
+  });
 
   const listQueryKey = useMemo(
-    () => ["admin", "orders", "report-pick", sellerId, status],
-    [sellerId, status],
+    () => ["admin", "orders", "report-pick", sellerId, situationId],
+    [sellerId, situationId],
   );
 
   const {
@@ -109,7 +110,7 @@ export function ReportOrdersPage() {
     queryFn: () => {
       const params = new URLSearchParams();
       if (sellerId) params.set("sellerId", sellerId);
-      if (status) params.set("status", status);
+      if (situationId) params.set("situationId", situationId);
       const qs = params.toString();
       return apiFetch<OrderRow[]>(`/admin/orders${qs ? `?${qs}` : ""}`);
     },
@@ -135,7 +136,7 @@ export function ReportOrdersPage() {
 
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [sellerId, customerId, from, to, status, inclusionMode]);
+  }, [sellerId, customerId, from, to, situationId, inclusionMode]);
 
   const visibleIds = useMemo(
     () => filteredOrders.map((o) => o.id),
@@ -164,7 +165,7 @@ export function ReportOrdersPage() {
     setCustomerId("");
     setFrom("");
     setTo("");
-    setStatus("");
+    setSituationId("");
     setRomaneio(false);
     setIncludeProfitPercent(false);
     setExtras([]);
@@ -192,7 +193,7 @@ export function ReportOrdersPage() {
       } else {
         if (sellerId) q.set("sellerId", sellerId);
         if (customerId) q.set("customerId", customerId);
-        if (status) q.set("status", status);
+        if (situationId) q.set("situationId", situationId);
         const iso = toIsoRange(from, to);
         if (iso.from) q.set("from", iso.from);
         if (iso.to) q.set("to", iso.to);
@@ -265,12 +266,15 @@ export function ReportOrdersPage() {
           }}
         />
       </ReportField>
-      <ReportField label="Situação">
+      <ReportField label="Etapa">
         <AppSelect
-          value={status}
-          onValueChange={setStatus}
-          emptyLabel="Todos"
-          options={STATUS_OPTIONS}
+          value={situationId}
+          onValueChange={setSituationId}
+          emptyLabel="Todas"
+          options={stages.map((s) => ({
+            value: s.id,
+            label: s.name,
+          }))}
         />
       </ReportField>
       <ReportField label="Formato">
@@ -397,7 +401,7 @@ export function ReportOrdersPage() {
                             {new Date(o.createdAt).toLocaleString("pt-BR")}
                           </TableCell>
                           <TableCell className="px-3 py-2 text-sm">
-                            {orderStatusLabel(o.status)}
+                            {o.situation?.name ?? "—"}
                           </TableCell>
                           <TableCell className="px-3 py-2 text-right tabular-nums">
                             {formatMoney(o.totalAmount)}

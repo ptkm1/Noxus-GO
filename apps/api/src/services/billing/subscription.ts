@@ -15,7 +15,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  *
  * Cálculo em UTC (timestamptz no banco), independente do fuso do processo.
  * Na UI, exibir `currentPeriodEnd` em America/Sao_Paulo.
- * Não usa `DEV_SKIP_PAYMENT_LOCK` — o trial existe em qualquer ambiente.
+ * O trial existe em qualquer ambiente.
  */
 export function trialPeriodEnd(
   from = new Date(),

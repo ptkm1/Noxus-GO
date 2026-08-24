@@ -18,7 +18,7 @@ type FakeGatewayOpts = {
   ) => string;
 };
 
-/** Gateway em memória para testes e `PAYMENT_GATEWAY=fake` — sem HTTP Asaas. */
+/** Gateway em memória só para testes unitários — sem HTTP Asaas. */
 export class FakePaymentGateway implements PaymentGateway {
   customers: GatewayCustomerInput[] = [];
   checkouts: GatewaySubscriptionCheckoutInput[] = [];

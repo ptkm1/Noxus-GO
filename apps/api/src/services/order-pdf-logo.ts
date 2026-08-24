@@ -67,7 +67,7 @@ async function loadFromLogoUrl(logoUrl: string): Promise<OrderPdfLogo | null> {
 
 /**
  * Prioridade: logo da organização (`logoUrl`) → logo DANFE da org → null
- * (o PDF desenha o wordmark PedixPro como fallback).
+ * (sem logo, o PDF usa só o nome da Organization / emitente).
  */
 export async function resolveOrderPdfLogo(params: {
   organizationId: string;

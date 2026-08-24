@@ -1144,19 +1144,21 @@ model PaymentCondition {
   @@index([organizationId, active, sortOrder])
 }
 
-/// Situação operacional/logística do pedido (ex.: Enviado, Entregue) — distinta de OrderStatus (crédito/confirmação).
+/// Etapa do fluxo do pedido (único campo visível). Inclui etapas de sistema
+/// (Rascunho, Crédito, Entregue, Cancelado) e etapas da org (Aberto, Enviado…).
+/// Order.status é derivado desta etapa (estoque/crédito/NF) e não aparece na UI.
 model OrderSituation {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  /// Código estável por org (ex.: SENT, DELIVERED).
+  /// Código estável por org (ex.: DRAFT, SENT, DELIVERED).
   code           String
   name           String
   sortOrder      Int          @default(0)
   active         Boolean      @default(true)
-  /// Situações padrão criadas pelo sistema (não excluir; só desativar).
+  /// Etapas padrão do sistema (não excluir; nome pode ser editado).
   isSystem       Boolean      @default(false)
-  /// Indica que a situação representa cancelamento operacional (metadado; não altera OrderStatus).
+  /// Etapa de cancelamento: sincroniza Order.status = CANCELLED e estorna estoque.
   mapsToCancel   Boolean      @default(false)
   orders         Order[]
   createdAt      DateTime     @default(now())
@@ -1168,6 +1170,7 @@ model OrderSituation {
 
 model Order {
   id             String       @id @default(cuid())
+  /// Derivado da etapa (`situation`). Não exibir na UI — use `situation`.
   status         OrderStatus  @default(DRAFT)
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -1177,9 +1180,9 @@ model Order {
   customer       Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
   paymentConditionId String?
   paymentCondition   PaymentCondition? @relation(fields: [paymentConditionId], references: [id], onDelete: SetNull)
-  /// Situação operacional (enviado/entregue/etc.) — independente de `status` financeiro.
-  situationId    String?
-  situation      OrderSituation? @relation(fields: [situationId], references: [id], onDelete: SetNull)
+  /// Etapa única do pedido (sistema + org). Obrigatória.
+  situationId    String
+  situation      OrderSituation @relation(fields: [situationId], references: [id], onDelete: Restrict)
   operation      OrderOperation @default(SALE)
   totalAmount    Decimal      @db.Decimal(14, 2)
   /// Total descontado por combos aplicados sobre as linhas (já refletido em `totalAmount`).

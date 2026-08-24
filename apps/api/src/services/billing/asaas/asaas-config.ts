@@ -9,7 +9,7 @@ export type AsaasConfig = {
   gracePeriodDays: number;
 };
 
-export type PaymentGatewayMode = "auto" | "asaas" | "fake";
+export type PaymentGatewayMode = "auto" | "asaas";
 
 export type PublicSiteUrls = {
   landingUrl: string;
@@ -18,7 +18,6 @@ export type PublicSiteUrls = {
 
 export function readPaymentGatewayMode(): PaymentGatewayMode {
   const raw = process.env.PAYMENT_GATEWAY?.trim().toLowerCase();
-  if (raw === "fake") return "fake";
   if (raw === "asaas") return "asaas";
   return "auto";
 }

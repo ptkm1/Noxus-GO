@@ -152,7 +152,7 @@ export function SellerTrackingPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-foreground">
-          Rastreio em tempo real
+          Localização em tempo real
         </h1>
         <p className="mt-2 max-w-3xl text-muted-foreground">
           Posição enviada pelo app do vendedor (primeiro plano e, com permissão,

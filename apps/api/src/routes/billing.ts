@@ -17,7 +17,6 @@ import {
     getPublicIntentStatus,
     paySubscriptionIntentWithCard,
     retrySubscriptionCheckout,
-    simulateFakePayment,
 } from "../services/billing/subscription-intent-service.js";
 import { subscriptionCardPayBodySchema } from "../services/billing/card-pay-validation.js";
 import { reconcileOrganizationBilling } from "../services/billing/reconcile-asaas-billing.js";
@@ -115,17 +114,6 @@ export const billingRoutes: FastifyPluginAsync = async (app) => {
           checkoutUrl: result.checkoutUrl,
           message: "Prossiga com o pagamento no formulário seguro.",
         };
-      } catch (err) {
-        const { status, body } = httpErr(err);
-        return reply.status(status).send(body);
-      }
-    });
-
-    publicApp.post("/subscription-intents/:id/simulate", async (req, reply) => {
-      const id = (req.params as { id: string }).id;
-      try {
-        await simulateFakePayment(id);
-        return { ok: true, intentId: id };
       } catch (err) {
         const { status, body } = httpErr(err);
         return reply.status(status).send(body);

@@ -22,7 +22,6 @@ import { formatOrderCode } from "@/lib/order-code";
 import { cn } from "@/lib/utils";
 import {
   groupOrdersByPaymentCondition,
-  orderStatusLabel,
   paymentConditionLabel,
   sumOrderTotals,
   uniqueIdsPreserveOrder,
@@ -122,7 +121,6 @@ function romaneioPdfRequest(
 }
 
 export function RouteRomaneioPage() {
-  const [statusFilter, setStatusFilter] = useState("CONFIRMED");
   const [orderNumber, setOrderNumber] = useState("");
   const [city, setCity] = useState("");
   const [tradeName, setTradeName] = useState("");
@@ -154,7 +152,6 @@ export function RouteRomaneioPage() {
       "admin",
       "orders",
       "romaneio",
-      statusFilter,
       debouncedOrderNumber.trim(),
       debouncedCity.trim(),
       debouncedTradeName.trim(),
@@ -162,7 +159,6 @@ export function RouteRomaneioPage() {
       situationId,
     ],
     [
-      statusFilter,
       debouncedOrderNumber,
       debouncedCity,
       debouncedTradeName,
@@ -175,7 +171,6 @@ export function RouteRomaneioPage() {
     queryKey: listQueryKey,
     queryFn: () => {
       const params = new URLSearchParams();
-      if (statusFilter) params.set("status", statusFilter);
       const code = debouncedOrderNumber.trim();
       if (code) params.set("orderNumber", code);
       const cityVal = debouncedCity.trim();
@@ -281,20 +276,6 @@ export function RouteRomaneioPage() {
       </div>
 
       <FilterBar className="p-4 lg:grid-cols-5">
-        <FormField label="Status" htmlFor="romaneio-status">
-          <AppSelect
-            id="romaneio-status"
-            value={statusFilter}
-            onValueChange={setStatusFilter}
-            emptyLabel="Todos"
-            options={[
-              { value: "CONFIRMED", label: "Confirmado" },
-              { value: "DRAFT", label: "Rascunho" },
-              { value: "PENDING_CREDIT_APPROVAL", label: "Aguardando crédito" },
-              { value: "CANCELLED", label: "Cancelado" },
-            ]}
-          />
-        </FormField>
         <FormField label="Nº do pedido" htmlFor="romaneio-number">
           <Input
             id="romaneio-number"
@@ -333,7 +314,7 @@ export function RouteRomaneioPage() {
           />
         </FormField>
         {situations.length > 0 ? (
-          <FormField label="Situação" htmlFor="romaneio-situation">
+          <FormField label="Etapa" htmlFor="romaneio-situation">
             <AppSelect
               id="romaneio-situation"
               value={situationId}
@@ -379,7 +360,7 @@ export function RouteRomaneioPage() {
                     <TableHead className="px-4">Data</TableHead>
                     <TableHead className="px-4">Condição</TableHead>
                     <TableHead className="px-4 text-right">Itens</TableHead>
-                    <TableHead className="px-4">Status</TableHead>
+                    <TableHead className="px-4">Etapa</TableHead>
                     <TableHead className="px-4 text-right">Valor</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -424,7 +405,7 @@ export function RouteRomaneioPage() {
                         </TableCell>
                         <TableCell className="px-4 py-3">
                           <Badge variant="outline">
-                            {o.situation?.name ?? orderStatusLabel(o.status)}
+                            {o.situation?.name ?? "—"}
                           </Badge>
                         </TableCell>
                         <TableCell className="px-4 py-3 text-right font-medium tabular-nums">

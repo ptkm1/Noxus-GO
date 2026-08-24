@@ -1,6 +1,6 @@
 # Integração Asaas — contratação PedixPro
 
-Checkout recorrente hospedado (Sandbox/produção). O cadastro no painel (`/cadastro`) entra em **trial de 7 dias** sem pagamento. A contratação da landing e o paywall **depois** do trial só liberam (ou reabrem) o ERP após webhook (ou simulação com `PAYMENT_GATEWAY=fake`). O retorno do browser nunca ativa sozinho.
+Checkout recorrente hospedado (Sandbox/produção). O cadastro no painel (`/cadastro`) entra em **trial de 7 dias** sem pagamento. A contratação da landing e o paywall **depois** do trial só liberam (ou reabrem) o ERP após webhook Asaas. O retorno do browser nunca ativa sozinho.
 
 ## Fluxo do usuário (conta nova no app)
 
@@ -13,13 +13,13 @@ Checkout recorrente hospedado (Sandbox/produção). O cadastro no painel (`/cada
 
 A landing (`CheckoutForm` → `POST /billing/subscription-intents`) continua cobrando na hora: org pendente, senha só depois do e-mail de ativação. Se alguém pagar nesse caminho, a assinatura fica `ACTIVE`.
 
-Upgrade logado: Configurações → Assinar / mudar plano → `POST /billing/checkout` (não bloqueia trial existente até o pagamento). `DEV_SKIP_PAYMENT_LOCK` não substitui o trial.
+Upgrade logado: Configurações → Assinar / mudar plano → `POST /billing/checkout` (não bloqueia trial existente até o pagamento).
 
 ## Variáveis de ambiente
 
 | Variável | Descrição |
 | --- | --- |
-| `PAYMENT_GATEWAY` | `auto` (padrão), `asaas` ou `fake` |
+| `PAYMENT_GATEWAY` | `auto` (padrão) ou `asaas` |
 | `ASAAS_API_KEY` | Token API (`access_token` header). Sem isso, `auto` não cria checkout; o cadastro no app continua com trial de 7 dias |
 | `ASAAS_BASE_URL` | Padrão sandbox: `https://api-sandbox.asaas.com/v3` |
 | `ASAAS_WEBHOOK_TOKEN` | Valor esperado no header `asaas-access-token` |
@@ -29,7 +29,7 @@ Upgrade logado: Configurações → Assinar / mudar plano → `POST /billing/che
 | `PEDIXPRO_APP_URL` / `WEB_PUBLIC_URL` / `WEB_APP_ORIGIN` | Painel (`/pagamento`, ativar conta) |
 | `SUBSCRIPTION_GRACE_PERIOD_DAYS` | Dias em `PAST_DUE` antes de `SUSPENDED` (padrão 7) |
 
-`PAYMENT_GATEWAY=fake` não chama a API Asaas; `/pagamento` oferece “Simular pagamento”. Não use fake em produção.
+Pagamento local usa Asaas sandbox (cartão/webhook reais do sandbox). Não há simulação que marque como pago sem cobrar.
 
 Ver também `apps/api/.env.example`.
 
@@ -46,7 +46,6 @@ Landing → POST /billing/subscription-intents → Asaas → Webhook → e-mail 
 | `POST` | `/api/v1/billing/subscription-intents` | Público + rate-limit |
 | `POST` | `/api/v1/billing/subscription-intents/:id/retry` | Público + rate-limit |
 | `GET` | `/api/v1/billing/subscription-intents/:id/status` | Público (payload seguro) |
-| `POST` | `/api/v1/billing/subscription-intents/:id/simulate` | Só `PAYMENT_GATEWAY=fake` |
 | `GET` | `/api/v1/billing/plans` | Público |
 | `GET` | `/api/v1/billing/checkout/open` | ADMIN |
 | `POST` | `/api/v1/billing/checkout` | ADMIN |

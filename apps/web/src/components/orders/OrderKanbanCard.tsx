@@ -1,17 +1,21 @@
 import { Badge } from "@/components/ui/badge";
 import { formatOrderCode } from "@/lib/order-code";
-import { formatOrderMoney, statusBadgeClass } from "@/lib/order-kanban";
+import { formatOrderMoney, stageBadgeClass } from "@/lib/order-kanban";
 import { cn } from "@/lib/utils";
-import { orderStatusLabel } from "@pedidos/shared";
 import { useRef } from "react";
 import { Link } from "react-router-dom";
 
 export type KanbanOrder = {
   id: string;
   orderNumber?: number | null;
-  status: string;
+  status?: string;
   situationId?: string | null;
-  situation?: { id?: string; name: string; code?: string } | null;
+  situation?: {
+    id?: string;
+    name: string;
+    code?: string;
+    mapsToCancel?: boolean;
+  } | null;
   totalAmount: unknown;
   createdAt: string;
   seller: { user: { name: string } };
@@ -27,8 +31,6 @@ type OrderKanbanCardProps = Readonly<{
   order: KanbanOrder;
   canDrag: boolean;
   isMoving: boolean;
-  /** Na coluna de status, mostra a situação; na de situação, mostra o status. */
-  showSituation: boolean;
   onDragBegin?: () => void;
   onDragFinish?: () => void;
 }>;
@@ -37,7 +39,6 @@ export function OrderKanbanCard({
   order,
   canDrag,
   isMoving,
-  showSituation,
   onDragBegin,
   onDragFinish,
 }: OrderKanbanCardProps) {
@@ -46,6 +47,7 @@ export function OrderKanbanCard({
   const customerName =
     order.customer?.tradeName?.trim() || order.customer?.name || "—";
   const city = order.customer?.city?.trim();
+  const stageName = order.situation?.name;
 
   return (
     <Link
@@ -104,17 +106,18 @@ export function OrderKanbanCard({
           {order.items.length} {order.items.length === 1 ? "item" : "itens"}
         </span>
       </div>
-      {showSituation && order.situation?.name ? (
-        <Badge variant="secondary" className="mt-2 font-normal">
-          {order.situation.name}
-        </Badge>
-      ) : null}
-      {!showSituation ? (
+      {stageName ? (
         <Badge
           variant="outline"
-          className={cn("mt-2 font-normal", statusBadgeClass(order.status))}
+          className={cn(
+            "mt-2 font-normal",
+            stageBadgeClass(
+              order.situation?.code ?? "",
+              order.situation?.mapsToCancel,
+            ),
+          )}
         >
-          {orderStatusLabel(order.status)}
+          {stageName}
         </Badge>
       ) : null}
     </Link>
