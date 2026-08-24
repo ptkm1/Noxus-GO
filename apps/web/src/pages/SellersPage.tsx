@@ -21,6 +21,8 @@ import {
 import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import { cn } from "@/lib/utils";
 import {
+  canRead,
+  planHasFeature,
   SELLER_COMMISSION_TYPES,
   sellerCommissionTypeLabel,
   type SellerCommissionType,
@@ -60,11 +62,32 @@ function selectAllState(
   return false;
 }
 
+function userHasPlanFeature(
+  user: ReturnType<typeof useAuth>["user"],
+  feature: "teams" | "tracking",
+): boolean {
+  if (user?.subscription?.features?.length) {
+    return user.subscription.features.includes(feature);
+  }
+  return planHasFeature(user?.subscription?.planId, feature);
+}
+
 export function SellersPage() {
   const { user } = useAuth();
   const admin = isWebAdmin(user?.role);
   const qc = useQueryClient();
   const { confirm } = useConfirm();
+
+  const canOpenTeams = Boolean(
+    user &&
+      canRead(user.role, "teams", user.permissions) &&
+      userHasPlanFeature(user, "teams"),
+  );
+  const canOpenTracking = Boolean(
+    user &&
+      canRead(user.role, "tracking", user.permissions) &&
+      userHasPlanFeature(user, "tracking"),
+  );
 
   const { data: sellers = [], isLoading } = useQuery({
     queryKey: ["admin", "sellers"],
@@ -416,7 +439,7 @@ export function SellersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">
             Vendedores da {user?.organizationName?.trim() || "sua empresa"}
@@ -426,9 +449,21 @@ export function SellersPage() {
             empresas não aparecem aqui.
           </p>
         </div>
-        <Button type="button" onClick={openCreate}>
-          Novo vendedor
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {canOpenTeams ? (
+            <Button variant="outline" asChild>
+              <Link to="/equipes">Equipes</Link>
+            </Button>
+          ) : null}
+          {canOpenTracking ? (
+            <Button variant="outline" asChild>
+              <Link to="/rastreio">Localização em tempo real</Link>
+            </Button>
+          ) : null}
+          <Button type="button" onClick={openCreate}>
+            Novo vendedor
+          </Button>
+        </div>
       </div>
 
       <FormSheet

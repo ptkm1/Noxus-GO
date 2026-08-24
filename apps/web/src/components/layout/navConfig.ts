@@ -26,9 +26,7 @@ import {
     UserCircle,
     UserCog,
     Users,
-    UsersRound,
     Wallet,
-    Warehouse,
 } from "lucide-react";
 
 export type NavItem = {
@@ -72,7 +70,6 @@ export const DASHBOARD_NAV: NavItem[] = [
     icon: Wallet,
     resource: "orders",
   },
-  { to: "/estoque", label: "Estoque", icon: Warehouse, resource: "stock" },
   { to: "/vendedores", label: "Vendedores", icon: Users, resource: "sellers" },
   {
     to: "/notificar-vendedores",
@@ -82,13 +79,6 @@ export const DASHBOARD_NAV: NavItem[] = [
     planFeature: "broadcast",
   },
   { to: "/usuarios", label: "Usuários", icon: UserCog, resource: "users" },
-  {
-    to: "/equipes",
-    label: "Equipes",
-    icon: UsersRound,
-    resource: "teams",
-    planFeature: "teams",
-  },
   {
     to: "/comissao",
     label: "Comissões e metas",
@@ -108,13 +98,6 @@ export const DASHBOARD_NAV: NavItem[] = [
     icon: MapPin,
     resource: "visits",
     planFeature: "visits",
-  },
-  {
-    to: "/rastreio",
-    label: "Rastreio ao vivo",
-    icon: Navigation,
-    resource: "tracking",
-    planFeature: "tracking",
   },
   { to: "/pedidos", label: "Pedidos", icon: ShoppingCart, resource: "orders" },
   {
@@ -168,7 +151,7 @@ export const TEAM_LEADER_NAV: NavItem[] = [
   home,
   {
     to: "/rastreio",
-    label: "Rastreio ao vivo",
+    label: "Localização em tempo real",
     icon: Navigation,
     resource: "tracking",
     planFeature: "tracking",
@@ -273,10 +256,20 @@ export function navForRole(
   });
 }
 
+/** Features de plano para rotas fora do sidebar (acesso via outras páginas). */
+const OFF_NAV_PLAN_FEATURES: { prefix: string; feature: PlanFeature }[] = [
+  { prefix: "/equipes", feature: "teams" },
+  { prefix: "/rastreio", feature: "tracking" },
+];
+
 export function planFeatureForPath(pathname: string): PlanFeature | null {
   const item = [...DASHBOARD_NAV, ...TEAM_LEADER_NAV].find((nav) => {
     if (nav.end) return pathname === nav.to;
     return pathname === nav.to || pathname.startsWith(`${nav.to}/`);
   });
-  return item?.planFeature ?? null;
+  if (item?.planFeature) return item.planFeature;
+  const offNav = OFF_NAV_PLAN_FEATURES.find(
+    (r) => pathname === r.prefix || pathname.startsWith(`${r.prefix}/`),
+  );
+  return offNav?.feature ?? null;
 }
