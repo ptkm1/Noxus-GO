@@ -1,5 +1,4 @@
 import {
-  APP_BRAND_NAME,
   APP_BRAND_PRIMARY,
   formatCnpjMask,
   formatCpfMask,
@@ -35,6 +34,21 @@ export type OrderPdfCustomer = {
   addressNote?: string | null;
 };
 
+/** Dados do emitente (Organization / white-label). */
+export type OrderPdfOrganization = {
+  name: string;
+  cnpj?: string | null;
+  stateRegistration?: string | null;
+  address?: string | null;
+  complement?: string | null;
+};
+
+export type OrderPdfPaymentCondition = {
+  name: string;
+  days: number;
+  label: string;
+};
+
 export type OrderPdfInput = {
   id: string;
   orderNumber?: number | null;
@@ -42,7 +56,10 @@ export type OrderPdfInput = {
   comboDiscountTotal?: unknown;
   notes: string | null;
   createdAt: Date;
+  /** @deprecated prefer `organization.name` */
   organizationName: string;
+  organization: OrderPdfOrganization;
+  paymentCondition?: OrderPdfPaymentCondition | null;
   logo?: OrderPdfLogo | null;
   seller: { user: { name: string; email?: string | null } };
   customer: OrderPdfCustomer | null;
@@ -76,7 +93,11 @@ function pageBottom(doc: PDFKit.PDFDocument) {
   return doc.page.height - CONTENT_BOTTOM;
 }
 
-function ensureSpace(doc: PDFKit.PDFDocument, needed: number, redrawHeader?: () => void) {
+function ensureSpace(
+  doc: PDFKit.PDFDocument,
+  needed: number,
+  redrawHeader?: () => void,
+) {
   if (doc.y + needed <= pageBottom(doc)) return;
   doc.addPage();
   redrawHeader?.();
@@ -91,12 +112,20 @@ function drawBand(
   doc.rect(PAGE.left, y, PAGE.width, h).fill(fill);
 }
 
-function drawSectionLabel(doc: PDFKit.PDFDocument, label: string, x: number, y: number) {
+function drawSectionLabel(
+  doc: PDFKit.PDFDocument,
+  label: string,
+  x: number,
+  y: number,
+) {
   doc
     .fillColor(COLORS.muted)
     .fontSize(8)
     .font("Helvetica-Bold")
-    .text(label.toUpperCase(), x, y, { lineBreak: false, characterSpacing: 0.5 });
+    .text(label.toUpperCase(), x, y, {
+      lineBreak: false,
+      characterSpacing: 0.5,
+    });
 }
 
 function drawMetaPair(
@@ -212,13 +241,11 @@ function drawItemRow(
     align: "right",
     lineBreak: false,
   });
-  doc
-    .font("Helvetica-Bold")
-    .text(money(sub), COLS.sub.x + pad, textY, {
-      width: COLS.sub.w - pad * 2,
-      align: "right",
-      lineBreak: false,
-    });
+  doc.font("Helvetica-Bold").text(money(sub), COLS.sub.x + pad, textY, {
+    width: COLS.sub.w - pad * 2,
+    align: "right",
+    lineBreak: false,
+  });
 
   doc.y = y + rowH;
   doc.font("Helvetica").fillColor(COLORS.text);
@@ -240,12 +267,7 @@ function customerDocumentLine(c: OrderPdfCustomer): string | null {
 }
 
 function customerPrimaryName(c: OrderPdfCustomer): string {
-  return (
-    c.legalName?.trim() ||
-    c.tradeName?.trim() ||
-    c.name.trim() ||
-    "—"
-  );
+  return c.legalName?.trim() || c.tradeName?.trim() || c.name.trim() || "—";
 }
 
 function buildCustomerDetailLines(c: OrderPdfCustomer): Array<{
@@ -267,7 +289,6 @@ function buildCustomerDetailLines(c: OrderPdfCustomer): Array<{
     lines.push({ label: "Razão social", text: legal });
   }
 
-  // Se o nome cadastral (`name`) for distinto da razão/fantasia, mostra.
   const cadastro = c.name.trim();
   if (
     cadastro &&
@@ -299,20 +320,17 @@ function buildCustomerDetailLines(c: OrderPdfCustomer): Array<{
   return lines;
 }
 
-function drawCustomerBlock(
+function drawInfoCard(
   doc: PDFKit.PDFDocument,
-  customer: OrderPdfCustomer | null,
+  label: string,
+  lines: Array<{ label?: string; text: string; primary?: boolean }>,
 ) {
   const padX = 12;
   const padY = 10;
   const innerW = PAGE.width - padX * 2;
 
-  const lines = customer
-    ? buildCustomerDetailLines(customer)
-    : [{ text: "Sem cliente vinculado", primary: true as const }];
-
   doc.fontSize(11).font("Helvetica-Bold");
-  let contentH = 18; // section label area
+  let contentH = 18;
   for (const line of lines) {
     const size = line.primary ? 11 : 9;
     const font = line.primary ? "Helvetica-Bold" : "Helvetica";
@@ -328,11 +346,9 @@ function drawCustomerBlock(
   doc
     .roundedRect(PAGE.left, top, PAGE.width, contentH, 5)
     .fillAndStroke("#f8fafc", COLORS.border);
-  doc
-    .rect(PAGE.left, top, 3, contentH)
-    .fill(BRAND);
+  doc.rect(PAGE.left, top, 3, contentH).fill(BRAND);
 
-  drawSectionLabel(doc, "Cliente", PAGE.left + padX, top + padY);
+  drawSectionLabel(doc, label, PAGE.left + padX, top + padY);
   let ty = top + padY + 16;
 
   for (const line of lines) {
@@ -356,6 +372,16 @@ function drawCustomerBlock(
   doc.font("Helvetica").fillColor(COLORS.text);
 }
 
+function drawCustomerBlock(
+  doc: PDFKit.PDFDocument,
+  customer: OrderPdfCustomer | null,
+) {
+  const lines = customer
+    ? buildCustomerDetailLines(customer)
+    : [{ text: "Sem cliente vinculado", primary: true as const }];
+  drawInfoCard(doc, "Cliente", lines);
+}
+
 function drawHeaderLogo(
   doc: PDFKit.PDFDocument,
   logo: OrderPdfLogo | null | undefined,
@@ -364,29 +390,21 @@ function drawHeaderLogo(
   boxW: number,
   boxH: number,
 ): number {
-  if (logo) {
-    try {
-      doc.image(logo.buffer, x, y, {
-        fit: [boxW, boxH],
-        align: "center",
-        valign: "center",
-      });
-      return boxW + 10;
-    } catch {
-      // fallback abaixo
-    }
-  }
-
-  // Wordmark PedixPro (texto) quando não há imagem.
-  doc
-    .fillColor(BRAND)
-    .fontSize(11)
-    .font("Helvetica-Bold")
-    .text(APP_BRAND_NAME, x, y + boxH / 2 - 7, {
-      width: 72,
-      lineBreak: false,
+  if (!logo) return 0;
+  try {
+    doc.image(logo.buffer, x, y, {
+      fit: [boxW, boxH],
+      align: "center",
+      valign: "center",
     });
-  return 78;
+    return boxW + 10;
+  } catch {
+    return 0;
+  }
+}
+
+function orgDisplayName(order: OrderPdfInput): string {
+  return order.organization?.name?.trim() || order.organizationName || "—";
 }
 
 export async function buildOrderPdf(order: OrderPdfInput): Promise<Buffer> {
@@ -399,227 +417,303 @@ export function drawOrderPdfContents(
   doc: PDFKit.PDFDocument,
   order: OrderPdfInput,
 ) {
-    const code = orderCode(order);
-    const total = decToNum(order.totalAmount);
-    const comboDiscount = decToNum(order.comboDiscountTotal ?? 0);
-    const itemsSubtotal = order.items.reduce(
-      (sum, it) => sum + decToNum(it.unitPrice) * it.quantity,
-      0,
-    );
-    const generatedAt = new Date().toLocaleString("pt-BR");
-    const codeLabel = code.startsWith("#") ? code : `#${code}`;
+  const code = orderCode(order);
+  const total = decToNum(order.totalAmount);
+  const comboDiscount = decToNum(order.comboDiscountTotal ?? 0);
+  const itemsSubtotal = order.items.reduce(
+    (sum, it) => sum + decToNum(it.unitPrice) * it.quantity,
+    0,
+  );
+  const generatedAt = new Date().toLocaleString("pt-BR");
+  const codeLabel = code.startsWith("#") ? code : `#${code}`;
+  const orgName = orgDisplayName(order);
+  const org = order.organization ?? { name: orgName };
+  const payLabel = order.paymentCondition?.label?.trim() || null;
+  const showDiscount = comboDiscount > 0;
+  const showSubtotal = showDiscount || Math.abs(itemsSubtotal - total) > 0.009;
 
-    // ——— Cabeçalho (fundo claro para logo legível) ———
-    const headerH = 62;
-    const headerY = 24;
-    doc
-      .roundedRect(PAGE.left, headerY, PAGE.width, headerH, 5)
-      .fillAndStroke("#f8fafc", COLORS.border);
-    doc.rect(PAGE.left, headerY, 4, headerH).fill(BRAND);
+  const hasExtraOrg =
+    Boolean(org.cnpj) ||
+    Boolean(org.stateRegistration) ||
+    Boolean(org.address) ||
+    Boolean(org.complement);
 
-    const logoBox = { w: 48, h: 40 };
-    const logoX = PAGE.left + 14;
-    const logoY = headerY + (headerH - logoBox.h) / 2;
-    const textOffset = drawHeaderLogo(
+  const headerH = hasExtraOrg ? 78 : 62;
+  const headerY = 24;
+  doc
+    .roundedRect(PAGE.left, headerY, PAGE.width, headerH, 5)
+    .fillAndStroke("#f8fafc", COLORS.border);
+  doc.rect(PAGE.left, headerY, 4, headerH).fill(BRAND);
+
+  const logoBox = { w: 48, h: 40 };
+  const logoX = PAGE.left + 14;
+  const logoY = headerY + 11;
+  const textOffset = drawHeaderLogo(
+    doc,
+    order.logo,
+    logoX,
+    logoY,
+    logoBox.w,
+    logoBox.h,
+  );
+  const textX = logoX + (textOffset || 0);
+  const textW = PAGE.width - (textX - PAGE.left) - 130;
+
+  doc
+    .fillColor(COLORS.muted)
+    .fontSize(8)
+    .font("Helvetica-Bold")
+    .text("EMITENTE", textX, headerY + 8, {
+      width: Math.max(80, textW),
+      lineBreak: false,
+      characterSpacing: 0.4,
+    });
+  doc
+    .fillColor(COLORS.text)
+    .fontSize(13)
+    .font("Helvetica-Bold")
+    .text(orgName, textX, headerY + 20, {
+      width: Math.max(80, textW),
+      lineBreak: false,
+      ellipsis: true,
+    });
+
+  let detailY = headerY + 38;
+  doc.fillColor(COLORS.muted).fontSize(8).font("Helvetica");
+  const detailParts: string[] = [];
+  if (org.cnpj) detailParts.push(`CNPJ ${org.cnpj}`);
+  if (org.stateRegistration) detailParts.push(`I.E. ${org.stateRegistration}`);
+  if (detailParts.length) {
+    doc.text(detailParts.join("  ·  "), textX, detailY, {
+      width: Math.max(80, textW),
+      lineBreak: false,
+      ellipsis: true,
+    });
+    detailY += 12;
+  }
+  if (org.address) {
+    const addr =
+      org.complement && !org.address.includes(org.complement)
+        ? `${org.address} · ${org.complement}`
+        : org.address;
+    doc.text(addr, textX, detailY, {
+      width: Math.max(80, textW),
+      lineBreak: false,
+      ellipsis: true,
+    });
+  }
+
+  doc
+    .fillColor(COLORS.muted)
+    .fontSize(8)
+    .font("Helvetica")
+    .text("Pedido Nº", PAGE.right - 120, headerY + 12, {
+      width: 106,
+      align: "right",
+      lineBreak: false,
+    });
+  doc
+    .fillColor(COLORS.text)
+    .fontSize(18)
+    .font("Helvetica-Bold")
+    .text(codeLabel, PAGE.right - 120, headerY + 26, {
+      width: 106,
+      align: "right",
+      lineBreak: false,
+    });
+  doc
+    .fillColor(COLORS.muted)
+    .fontSize(8)
+    .font("Helvetica")
+    .text(shortDateTime(order.createdAt), PAGE.right - 120, headerY + 48, {
+      width: 106,
+      align: "right",
+      lineBreak: false,
+    });
+
+  doc.y = headerY + headerH + 14;
+
+  const metaY = doc.y;
+  const colGap = 12;
+  const colCount = payLabel ? 2 : 1;
+  const colW = (PAGE.width - colGap * (colCount - 1)) / colCount;
+
+  const sellerValue = order.seller.user.email?.trim()
+    ? `${order.seller.user.name}  ·  ${order.seller.user.email.trim()}`
+    : order.seller.user.name;
+  drawMetaPair(doc, "Vendedor", sellerValue, PAGE.left, metaY, colW);
+
+  if (payLabel) {
+    drawMetaPair(
       doc,
-      order.logo,
-      logoX,
-      logoY,
-      logoBox.w,
-      logoBox.h,
+      "Condição de pagamento",
+      payLabel,
+      PAGE.left + colW + colGap,
+      metaY,
+      colW,
     );
-    const textX = logoX + textOffset;
-    const textW = PAGE.width - (textX - PAGE.left) - 140;
+  }
+  doc.y = metaY + 34;
 
+  doc
+    .strokeColor(COLORS.border)
+    .lineWidth(0.6)
+    .moveTo(PAGE.left, doc.y)
+    .lineTo(PAGE.right, doc.y)
+    .stroke();
+  doc.moveDown(0.7);
+
+  drawCustomerBlock(doc, order.customer);
+
+  drawSectionLabel(doc, "Itens do pedido", PAGE.left, doc.y);
+  doc.y += 14;
+  drawItemsTableHeader(doc);
+
+  if (order.items.length === 0) {
+    ensureSpace(doc, 36);
+    const emptyY = doc.y;
+    drawBand(doc, emptyY, 32, "#f8fafc");
     doc
       .fillColor(COLORS.muted)
       .fontSize(9)
       .font("Helvetica")
-      .text(order.organizationName, textX, headerY + 12, {
-        width: Math.max(80, textW),
-        lineBreak: false,
-        ellipsis: true,
+      .text("Nenhum item neste pedido.", PAGE.left + 8, emptyY + 10, {
+        width: PAGE.width - 16,
+        align: "center",
       });
-    doc
-      .fillColor(COLORS.text)
-      .fontSize(16)
-      .font("Helvetica-Bold")
-      .text("Pedido", textX, headerY + 30, {
-        width: Math.max(80, textW),
-        lineBreak: false,
-      });
+    doc.y = emptyY + 36;
+    doc.fillColor(COLORS.text);
+  } else {
+    order.items.forEach((item, i) => drawItemRow(doc, item, i));
+  }
 
+  const totalsBlockH =
+    28 + (showSubtotal ? 14 : 0) + (showDiscount ? 14 : 0) + 8;
+  ensureSpace(doc, Math.max(88, totalsBlockH + 24));
+  doc.moveDown(0.6);
+  const totalsW = 240;
+  const totalsX = PAGE.right - totalsW;
+  let ty = doc.y;
+
+  const summaryX = PAGE.left;
+  const summaryW = Math.max(120, totalsX - PAGE.left - 16);
+  doc
+    .fillColor(COLORS.muted)
+    .fontSize(8)
+    .font("Helvetica-Bold")
+    .text("RESUMO", summaryX, ty, { width: summaryW, lineBreak: false });
+  let sy = ty + 14;
+  doc
+    .fillColor(COLORS.text)
+    .fontSize(9)
+    .font("Helvetica")
+    .text(`Itens: ${order.items.length}`, summaryX, sy, {
+      width: summaryW,
+      lineBreak: false,
+    });
+  sy += 13;
+  if (payLabel) {
+    doc.text(`Pagamento: ${payLabel}`, summaryX, sy, {
+      width: summaryW,
+      lineBreak: false,
+    });
+    sy += 13;
+  }
+  if (order.paymentCondition && order.paymentCondition.days > 0) {
     doc
       .fillColor(COLORS.muted)
       .fontSize(8)
-      .font("Helvetica")
-      .text("Nº", PAGE.right - 120, headerY + 14, {
-        width: 106,
-        align: "right",
+      .text(`Prazo: ${order.paymentCondition.days} dias`, summaryX, sy, {
+        width: summaryW,
         lineBreak: false,
       });
+    sy += 13;
+  }
+
+  const drawTotalLine = (
+    label: string,
+    value: string,
+    opts?: { bold?: boolean; muted?: boolean; large?: boolean },
+  ) => {
     doc
-      .fillColor(COLORS.text)
-      .fontSize(18)
-      .font("Helvetica-Bold")
-      .text(codeLabel, PAGE.right - 120, headerY + 28, {
-        width: 106,
-        align: "right",
-        lineBreak: false,
-      });
+      .fillColor(opts?.muted ? COLORS.muted : COLORS.text)
+      .fontSize(opts?.large ? 12 : 9)
+      .font(opts?.bold || opts?.large ? "Helvetica-Bold" : "Helvetica")
+      .text(label, totalsX, ty, { width: 120, lineBreak: false });
+    doc.text(value, totalsX + 120, ty, {
+      width: 120,
+      align: "right",
+      lineBreak: false,
+    });
+    ty += opts?.large ? 18 : 14;
+  };
 
-    doc.y = headerY + headerH + 14;
+  if (showSubtotal) {
+    drawTotalLine("Subtotal itens", money(itemsSubtotal));
+  }
+  if (showDiscount) {
+    drawTotalLine("Descontos", `− ${money(comboDiscount)}`, { muted: true });
+    ty += 2;
+  }
 
-    // ——— Meta: data / vendedor ———
-    const metaY = doc.y;
-    const half = (PAGE.width - 12) / 2;
-    drawMetaPair(
-      doc,
-      "Data",
-      shortDateTime(order.createdAt),
-      PAGE.left,
-      metaY,
-      half,
+  doc.roundedRect(totalsX - 8, ty - 4, totalsW + 8, 28, 4).fill("#e2e8f0");
+  doc
+    .fillColor(COLORS.text)
+    .fontSize(12)
+    .font("Helvetica-Bold")
+    .text("Total", totalsX, ty + 5, { width: 120, lineBreak: false });
+  doc.text(money(total), totalsX + 120, ty + 5, {
+    width: 120,
+    align: "right",
+    lineBreak: false,
+  });
+  doc.y = Math.max(sy + 8, ty + 36);
+  doc.font("Helvetica").fillColor(COLORS.text);
+
+  if (order.notes?.trim()) {
+    const notesText = order.notes.trim();
+    doc.fontSize(9).font("Helvetica");
+    const notesH = Math.max(
+      36,
+      doc.heightOfString(notesText, { width: PAGE.width - 20 }) + 16,
     );
-    drawMetaPair(
-      doc,
-      "Vendedor",
-      order.seller.user.name,
-      PAGE.left + half + 12,
-      metaY,
-      half,
-    );
-    doc.y = metaY + 34;
-
-    doc
-      .strokeColor(COLORS.border)
-      .lineWidth(0.6)
-      .moveTo(PAGE.left, doc.y)
-      .lineTo(PAGE.right, doc.y)
-      .stroke();
-    doc.moveDown(0.7);
-
-    // ——— Cliente (área ampliada) ———
-    drawCustomerBlock(doc, order.customer);
-
-    // ——— Itens ———
-    drawSectionLabel(doc, "Itens do pedido", PAGE.left, doc.y);
+    ensureSpace(doc, 14 + notesH + 10);
+    doc.moveDown(0.4);
+    drawSectionLabel(doc, "Observações", PAGE.left, doc.y);
     doc.y += 14;
-    drawItemsTableHeader(doc);
-
-    if (order.items.length === 0) {
-      ensureSpace(doc, 36);
-      const emptyY = doc.y;
-      drawBand(doc, emptyY, 32, "#f8fafc");
-      doc
-        .fillColor(COLORS.muted)
-        .fontSize(9)
-        .font("Helvetica")
-        .text("Nenhum item neste pedido.", PAGE.left + 8, emptyY + 10, {
-          width: PAGE.width - 16,
-          align: "center",
-        });
-      doc.y = emptyY + 36;
-      doc.fillColor(COLORS.text);
-    } else {
-      order.items.forEach((item, i) => drawItemRow(doc, item, i));
-    }
-
-    // ——— Totais ———
-    ensureSpace(doc, 88);
-    doc.moveDown(0.6);
-    const totalsW = 220;
-    const totalsX = PAGE.right - totalsW;
-    let ty = doc.y;
-
-    const drawTotalLine = (
-      label: string,
-      value: string,
-      opts?: { bold?: boolean; muted?: boolean; large?: boolean },
-    ) => {
-      doc
-        .fillColor(opts?.muted ? COLORS.muted : COLORS.text)
-        .fontSize(opts?.large ? 12 : 9)
-        .font(opts?.bold || opts?.large ? "Helvetica-Bold" : "Helvetica")
-        .text(label, totalsX, ty, { width: 110, lineBreak: false });
-      doc.text(value, totalsX + 110, ty, {
-        width: 110,
-        align: "right",
-        lineBreak: false,
-      });
-      ty += opts?.large ? 18 : 14;
-    };
-
-    if (comboDiscount > 0) {
-      drawTotalLine("Subtotal itens", money(itemsSubtotal));
-      drawTotalLine("Desconto combos", `− ${money(comboDiscount)}`, {
-        muted: true,
-      });
-      ty += 2;
-    }
-
+    const notesTop = doc.y;
     doc
-      .roundedRect(totalsX - 8, ty - 4, totalsW + 8, 28, 4)
-      .fill("#e2e8f0");
+      .roundedRect(PAGE.left, notesTop, PAGE.width, notesH, 4)
+      .fillAndStroke("#f8fafc", COLORS.border);
     doc
       .fillColor(COLORS.text)
-      .fontSize(12)
-      .font("Helvetica-Bold")
-      .text("Total", totalsX, ty + 5, { width: 110, lineBreak: false });
-    doc.text(money(total), totalsX + 110, ty + 5, {
-      width: 110,
-      align: "right",
-      lineBreak: false,
-    });
-    doc.y = ty + 36;
-    doc.font("Helvetica").fillColor(COLORS.text);
-
-    // ——— Observações ———
-    if (order.notes?.trim()) {
-      const notesText = order.notes.trim();
-      doc.fontSize(9).font("Helvetica");
-      const notesH = Math.max(
-        36,
-        doc.heightOfString(notesText, { width: PAGE.width - 20 }) + 16,
-      );
-      ensureSpace(doc, 14 + notesH + 10);
-      doc.moveDown(0.4);
-      drawSectionLabel(doc, "Observações", PAGE.left, doc.y);
-      doc.y += 14;
-      const notesTop = doc.y;
-      doc
-        .roundedRect(PAGE.left, notesTop, PAGE.width, notesH, 4)
-        .fillAndStroke("#f8fafc", COLORS.border);
-      doc
-        .fillColor(COLORS.text)
-        .fontSize(9)
-        .font("Helvetica")
-        .text(notesText, PAGE.left + 10, notesTop + 8, {
-          width: PAGE.width - 20,
-        });
-      doc.y = notesTop + notesH + 10;
-    }
-
-    // ——— Rodapé ———
-    const footerY = doc.page.height - 36;
-    doc
-      .strokeColor(COLORS.border)
-      .lineWidth(0.5)
-      .moveTo(PAGE.left, footerY)
-      .lineTo(PAGE.right, footerY)
-      .stroke();
-    doc
-      .fillColor(COLORS.muted)
-      .fontSize(8)
+      .fontSize(9)
       .font("Helvetica")
-      .text(`Gerado em ${generatedAt}`, PAGE.left, footerY + 8, {
-        width: PAGE.width / 2,
-        lineBreak: false,
+      .text(notesText, PAGE.left + 10, notesTop + 8, {
+        width: PAGE.width - 20,
       });
-    doc.text(`${APP_BRAND_NAME} · ${order.organizationName}`, PAGE.left, footerY + 8, {
-      width: PAGE.width,
-      align: "right",
+    doc.y = notesTop + notesH + 10;
+  }
+
+  const footerY = doc.page.height - 36;
+  doc
+    .strokeColor(COLORS.border)
+    .lineWidth(0.5)
+    .moveTo(PAGE.left, footerY)
+    .lineTo(PAGE.right, footerY)
+    .stroke();
+  doc
+    .fillColor(COLORS.muted)
+    .fontSize(8)
+    .font("Helvetica")
+    .text(`Gerado em ${generatedAt}`, PAGE.left, footerY + 8, {
+      width: PAGE.width / 2,
       lineBreak: false,
-      ellipsis: true,
     });
+  doc.text(orgName, PAGE.left, footerY + 8, {
+    width: PAGE.width,
+    align: "right",
+    lineBreak: false,
+    ellipsis: true,
+  });
 }

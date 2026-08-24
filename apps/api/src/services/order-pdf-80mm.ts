@@ -1,5 +1,4 @@
 import {
-  APP_BRAND_NAME,
   formatCnpjMask,
   formatCpfMask,
   formatStructuredAddress,
@@ -67,6 +66,27 @@ function line(
 
 function customerPrimaryName(c: OrderPdfCustomer): string {
   return c.legalName?.trim() || c.tradeName?.trim() || c.name.trim() || "—";
+}
+
+function orgDisplayName(order: OrderPdfInput): string {
+  return order.organization?.name?.trim() || order.organizationName || "—";
+}
+
+function writeOrgBlock(doc: PDFKit.PDFDocument, order: OrderPdfInput) {
+  const org = order.organization ?? { name: orgDisplayName(order) };
+  center(doc, org.name, { size: 10, bold: true });
+  if (org.cnpj) {
+    center(doc, `CNPJ ${org.cnpj}`, { size: 8 });
+  }
+  if (org.stateRegistration) {
+    center(doc, `I.E. ${org.stateRegistration}`, { size: 7 });
+  }
+  if (org.address) {
+    center(doc, org.address, { size: 7 });
+  }
+  if (org.complement) {
+    center(doc, org.complement, { size: 7 });
+  }
 }
 
 function writeCustomerBlock(
@@ -167,11 +187,17 @@ export async function buildOrderPdf80mm(order: OrderPdfInput): Promise<Buffer> {
     0,
   );
   const generatedAt = new Date().toLocaleString("pt-BR");
+  const payLabel = order.paymentCondition?.label?.trim() || null;
+  const showDiscount = comboDiscount > 0;
 
-  // Folga generosa: cupom térmico costuma ser uma página contínua.
   const estimatedH = Math.max(
-    480,
-    260 + order.items.length * 44 + (order.notes?.trim() ? 80 : 0) + 80,
+    520,
+    300 +
+      order.items.length * 44 +
+      (order.notes?.trim() ? 80 : 0) +
+      (payLabel ? 24 : 0) +
+      (showDiscount ? 24 : 0) +
+      80,
   );
 
   const doc = new PDFDocument({
@@ -199,13 +225,11 @@ export async function buildOrderPdf80mm(order: OrderPdfInput): Promise<Buffer> {
       });
       doc.y = imgY + maxH + 4;
     } catch {
-      center(doc, APP_BRAND_NAME, { size: 9, bold: true });
+      // sem logo — segue com nome da org
     }
-  } else {
-    center(doc, APP_BRAND_NAME, { size: 9, bold: true });
   }
 
-  center(doc, order.organizationName, { size: 10, bold: true });
+  writeOrgBlock(doc, order);
   center(doc, "PEDIDO", { size: 10, bold: true });
   center(doc, code.startsWith("#") ? code : `#${code}`, {
     size: 12,
@@ -221,6 +245,11 @@ export async function buildOrderPdf80mm(order: OrderPdfInput): Promise<Buffer> {
   doc.text(`Vendedor: ${order.seller.user.name}`, MARGIN, doc.y, {
     width: CONTENT_W,
   });
+  if (payLabel) {
+    doc.text(`Pagamento: ${payLabel}`, MARGIN, doc.y, {
+      width: CONTENT_W,
+    });
+  }
   doc.moveDown(0.2);
   hr(doc);
 
@@ -254,9 +283,9 @@ export async function buildOrderPdf80mm(order: OrderPdfInput): Promise<Buffer> {
   doc.moveDown(0.15);
   hr(doc);
 
-  if (comboDiscount > 0) {
+  if (showDiscount) {
     line(doc, "Subtotal", money(itemsSubtotal));
-    line(doc, "Desconto combos", `− ${money(comboDiscount)}`);
+    line(doc, "Descontos", `− ${money(comboDiscount)}`);
   }
   line(doc, "TOTAL", money(total), { bold: true, size: 11 });
 

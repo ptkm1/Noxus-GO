@@ -1,11 +1,18 @@
 import type { FastifyReply } from "fastify";
 import type { Prisma } from "@prisma/client";
+import {
+  formatCnpjMask,
+  formatStructuredAddress,
+  paymentConditionLabel,
+} from "@pedidos/shared";
 import { prisma } from "../db.js";
 import {
   buildOrderPdf,
   orderPdfFilename,
   type OrderPdfCustomer,
   type OrderPdfInput,
+  type OrderPdfOrganization,
+  type OrderPdfPaymentCondition,
 } from "./order-pdf.js";
 import {
   buildOrderPdf80mm,
@@ -34,8 +41,33 @@ const orderPdfInclude = {
       addressNote: true,
     },
   },
+  paymentCondition: {
+    select: { id: true, name: true, days: true, sortOrder: true },
+  },
   items: { include: { product: { select: { sku: true } } } },
-  organization: { select: { name: true, displayName: true, logoUrl: true } },
+  organization: {
+    select: {
+      name: true,
+      displayName: true,
+      logoUrl: true,
+      cnpj: true,
+      document: true,
+      stateRegistration: true,
+      fiscalConfig: {
+        select: {
+          cnpj: true,
+          stateRegistration: true,
+          street: true,
+          addressNumber: true,
+          complement: true,
+          district: true,
+          city: true,
+          zipCode: true,
+          uf: true,
+        },
+      },
+    },
+  },
 } as const;
 
 export async function loadOrderForPdf(where: Prisma.OrderWhereInput) {
@@ -68,6 +100,65 @@ function toCustomer(
   };
 }
 
+function digitsOnly(value: string | null | undefined): string {
+  return (value ?? "").replace(/\D/g, "");
+}
+
+function formatOrgCnpj(raw: string | null | undefined): string | null {
+  const d = digitsOnly(raw);
+  if (d.length === 14) return formatCnpjMask(d);
+  const trimmed = raw?.trim();
+  return trimmed || null;
+}
+
+function toOrganization(
+  org: NonNullable<Awaited<ReturnType<typeof loadOrderForPdf>>>["organization"],
+): OrderPdfOrganization {
+  const fiscal = org.fiscalConfig;
+  const name = (org.displayName?.trim() || org.name).trim() || "—";
+  const cnpj =
+    formatOrgCnpj(fiscal?.cnpj) ??
+    formatOrgCnpj(org.cnpj) ??
+    formatOrgCnpj(org.document);
+  const stateRegistration =
+    fiscal?.stateRegistration?.trim() ||
+    org.stateRegistration?.trim() ||
+    null;
+
+  const address =
+    formatStructuredAddress({
+      street: fiscal?.street,
+      number: fiscal?.addressNumber,
+      neighborhood: fiscal?.district,
+      city: fiscal?.city,
+      state: fiscal?.uf,
+      cep: fiscal?.zipCode,
+    }) ?? null;
+
+  const complement = fiscal?.complement?.trim() || null;
+
+  return {
+    name,
+    cnpj,
+    stateRegistration,
+    address,
+    complement,
+  };
+}
+
+function toPaymentCondition(
+  pc: NonNullable<
+    Awaited<ReturnType<typeof loadOrderForPdf>>
+  >["paymentCondition"],
+): OrderPdfPaymentCondition | null {
+  if (!pc) return null;
+  return {
+    name: pc.name,
+    days: pc.days,
+    label: paymentConditionLabel(pc),
+  };
+}
+
 export async function orderToPdfInput(
   order: NonNullable<Awaited<ReturnType<typeof loadOrderForPdf>>>,
 ): Promise<OrderPdfInput> {
@@ -76,6 +167,8 @@ export async function orderToPdfInput(
     logoUrl: order.organization.logoUrl,
   });
 
+  const organization = toOrganization(order.organization);
+
   return {
     id: order.id,
     orderNumber: order.orderNumber,
@@ -83,7 +176,9 @@ export async function orderToPdfInput(
     comboDiscountTotal: order.comboDiscountTotal,
     notes: order.notes,
     createdAt: order.createdAt,
-    organizationName: order.organization.displayName ?? order.organization.name,
+    organizationName: organization.name,
+    organization,
+    paymentCondition: toPaymentCondition(order.paymentCondition),
     logo,
     seller: order.seller,
     customer: toCustomer(order.customer),
