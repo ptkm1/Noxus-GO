@@ -1,15 +1,14 @@
 import {
+    HOME_CHART_INDICATOR_KEYS,
     HOME_INDICATOR_KEYS,
-    HOME_INDICATORS_LAYOUTS,
     isLifecycleSituationCode,
     isReservedSituationCode,
     MAX_HOME_INDICATORS,
     normalizeHomeIndicators,
-    normalizeHomeIndicatorsLayout,
     normalizePurchaseUnitCode,
     uniqueIdsPreserveOrder,
+    type HomeChartIndicatorKey,
     type HomeIndicatorKey,
-    type HomeIndicatorsLayout,
 } from "@pedidos/shared";
 import {
     Prisma,
@@ -506,7 +505,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         sellerCanEditQueuedSales: true,
         autoInactivateCustomersAfterMonths: true,
         homeIndicators: true,
-        homeIndicatorsLayout: true,
       },
     });
     return {
@@ -518,9 +516,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       autoInactivateCustomersAfterMonths:
         org?.autoInactivateCustomersAfterMonths ?? false,
       homeIndicators: normalizeHomeIndicators(org?.homeIndicators),
-      homeIndicatorsLayout: normalizeHomeIndicatorsLayout(
-        org?.homeIndicatorsLayout,
-      ),
     };
   });
 
@@ -530,12 +525,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       HOME_INDICATOR_KEYS as unknown as [
         HomeIndicatorKey,
         ...HomeIndicatorKey[],
-      ],
-    );
-    const homeIndicatorsLayoutSchema = z.enum(
-      HOME_INDICATORS_LAYOUTS as unknown as [
-        HomeIndicatorsLayout,
-        ...HomeIndicatorsLayout[],
       ],
     );
     const body = z
@@ -552,7 +541,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .min(1)
           .max(MAX_HOME_INDICATORS)
           .optional(),
-        homeIndicatorsLayout: homeIndicatorsLayoutSchema.optional(),
       })
       .safeParse(req.body);
     if (!body.success) {
@@ -565,8 +553,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       body.data.customerRegistrationMode === undefined &&
       body.data.sellerCanEditQueuedSales === undefined &&
       body.data.autoInactivateCustomersAfterMonths === undefined &&
-      body.data.homeIndicators === undefined &&
-      body.data.homeIndicatorsLayout === undefined
+      body.data.homeIndicators === undefined
     ) {
       return reply.status(400).send({ error: "Nada para atualizar" });
     }
@@ -574,10 +561,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const homeIndicators =
       body.data.homeIndicators !== undefined
         ? normalizeHomeIndicators(body.data.homeIndicators)
-        : undefined;
-    const homeIndicatorsLayout =
-      body.data.homeIndicatorsLayout !== undefined
-        ? normalizeHomeIndicatorsLayout(body.data.homeIndicatorsLayout)
         : undefined;
 
     const updated = await prisma.organization.update({
@@ -609,7 +592,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
             }
           : {}),
         ...(homeIndicators !== undefined ? { homeIndicators } : {}),
-        ...(homeIndicatorsLayout !== undefined ? { homeIndicatorsLayout } : {}),
       },
       select: {
         orderSyncMode: true,
@@ -618,7 +600,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         sellerCanEditQueuedSales: true,
         autoInactivateCustomersAfterMonths: true,
         homeIndicators: true,
-        homeIndicatorsLayout: true,
       },
     });
     return {
@@ -630,9 +611,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       autoInactivateCustomersAfterMonths:
         updated.autoInactivateCustomersAfterMonths,
       homeIndicators: normalizeHomeIndicators(updated.homeIndicators),
-      homeIndicatorsLayout: normalizeHomeIndicatorsLayout(
-        updated.homeIndicatorsLayout,
-      ),
     };
   });
 
@@ -2556,6 +2534,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .nullable()
           .optional(),
         basePrice: z.number().nonnegative().optional(),
+        featured: z.boolean().optional(),
         categoryId: z.string().nullable().optional(),
         supplierId: z.string().nullable().optional(),
         attributes: z.record(z.string(), z.unknown()).optional(),
@@ -2681,6 +2660,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
               ? undefined
               : body.data.description,
           basePrice: body.data.basePrice,
+          featured:
+            body.data.featured === undefined ? undefined : body.data.featured,
           ...(body.data.imageUrl !== undefined
             ? {
                 imageUrl:
@@ -2817,7 +2798,146 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return reply.status(204).send();
   });
 
-  /* --- Promoções por produto --- */
+  /* --- Promoções (lista org + por produto) --- */
+  app.get("/promotions", async (req) => {
+    const auth = req.auth!;
+    const rows = await prisma.productPromotion.findMany({
+      where: { organizationId: auth.organizationId },
+      include: {
+        ...promotionRelationInclude,
+        product: {
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            imageUrl: true,
+            basePrice: true,
+          },
+        },
+      },
+      orderBy: [{ active: "desc" }, { priority: "desc" }, { createdAt: "desc" }],
+    });
+    return rows.map((row) => ({
+      ...serializeProductPromotion(row),
+      product: {
+        id: row.product.id,
+        name: row.product.name,
+        sku: row.product.sku,
+        imageUrl: row.product.imageUrl,
+        basePrice: decToNum(row.product.basePrice),
+      },
+    }));
+  });
+
+  app.post("/promotions", async (req, reply) => {
+    const auth = req.auth!;
+    const body = z
+      .object({
+        productId: z.string().min(1),
+        scope: z
+          .enum(["PRODUCT_GLOBAL", "SELLER", "CUSTOMER"])
+          .optional()
+          .default("PRODUCT_GLOBAL"),
+        sellerId: z.string().optional(),
+        customerId: z.string().optional(),
+        kind: z
+          .enum(["PERCENT_OFF", "FIXED_AMOUNT_OFF", "SALE_PRICE"])
+          .optional()
+          .default("SALE_PRICE"),
+        value: z.number(),
+        label: z.string().optional(),
+        active: z.boolean().optional(),
+        validFrom: z.string().datetime().nullable().optional(),
+        validTo: z.string().datetime().nullable().optional(),
+        priority: z.number().int().optional(),
+        minQuantity: z.number().int().positive().nullable().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return sendZodError(reply, body.error, req);
+    }
+
+    const d = body.data;
+    const prod = await prisma.product.findFirst({
+      where: { id: d.productId, organizationId: auth.organizationId },
+    });
+    if (!prod)
+      return reply.status(404).send({ error: "Produto não encontrado" });
+
+    const sellerId = d.scope === "SELLER" ? (d.sellerId ?? null) : null;
+    const customerId = d.scope === "CUSTOMER" ? (d.customerId ?? null) : null;
+
+    const errMsg = assertPromotionCoherence({
+      scope: d.scope,
+      sellerId,
+      customerId,
+      kind: d.kind,
+      value: d.value,
+    });
+    if (errMsg) return reply.status(400).send({ error: errMsg });
+
+    if (d.scope === "SELLER") {
+      const s = await prisma.seller.findFirst({
+        where: { id: sellerId!, organizationId: auth.organizationId },
+      });
+      if (!s) return reply.status(400).send({ error: "Vendedor inválido" });
+    }
+    if (d.scope === "CUSTOMER") {
+      const c = await prisma.customer.findFirst({
+        where: { id: customerId!, organizationId: auth.organizationId },
+      });
+      if (!c) return reply.status(400).send({ error: "Cliente inválido" });
+    }
+
+    const row = await prisma.productPromotion.create({
+      data: {
+        organizationId: auth.organizationId,
+        productId: d.productId,
+        scope: d.scope,
+        sellerId,
+        customerId,
+        kind: d.kind,
+        value: d.value,
+        label: d.label?.trim() || null,
+        active: d.active ?? true,
+        validFrom: d.validFrom ? new Date(d.validFrom) : null,
+        validTo: d.validTo ? new Date(d.validTo) : null,
+        priority: d.priority ?? 0,
+        minQuantity: d.minQuantity === undefined ? undefined : d.minQuantity,
+      },
+      include: {
+        ...promotionRelationInclude,
+        product: {
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            imageUrl: true,
+            basePrice: true,
+          },
+        },
+      },
+    });
+
+    await auditFromAuth(auth, {
+      action: AUDIT_ACTION.CREATE,
+      entityType: AUDIT_ENTITY.ProductPromotion,
+      entityId: row.id,
+      metadata: { productId: d.productId, kind: d.kind, scope: d.scope },
+    });
+
+    return {
+      ...serializeProductPromotion(row),
+      product: {
+        id: row.product.id,
+        name: row.product.name,
+        sku: row.product.sku,
+        imageUrl: row.product.imageUrl,
+        basePrice: decToNum(row.product.basePrice),
+      },
+    };
+  });
+
   app.get("/products/:productId/promotions", async (req, reply) => {
     const auth = req.auth!;
     const { productId } = z
@@ -6737,18 +6857,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
-  /** Preferências de widgets do painel (leitura para admin/gestor). */
+  /** Preferências de widgets do painel (leitura para admin/gestor/líder). */
   app.get("/reports/home-dashboard-config", async (req) => {
     const auth = req.auth!;
     const org = await prisma.organization.findUnique({
       where: { id: auth.organizationId },
-      select: { homeIndicators: true, homeIndicatorsLayout: true },
+      select: { homeIndicators: true },
     });
     return {
       homeIndicators: normalizeHomeIndicators(org?.homeIndicators),
-      homeIndicatorsLayout: normalizeHomeIndicatorsLayout(
-        org?.homeIndicatorsLayout,
-      ),
     };
   });
 
@@ -6758,9 +6875,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const q = z
       .object({
         key: z.enum(
-          HOME_INDICATOR_KEYS as unknown as [
-            HomeIndicatorKey,
-            ...HomeIndicatorKey[],
+          HOME_CHART_INDICATOR_KEYS as unknown as [
+            HomeChartIndicatorKey,
+            ...HomeChartIndicatorKey[],
           ],
         ),
         from: z.string().optional(),

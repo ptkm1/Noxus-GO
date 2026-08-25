@@ -1,7 +1,9 @@
 import { cn } from "@/lib/utils";
+import { formatOrderCode } from "@/lib/order-code";
 import {
   formatRelativeSaleDate,
   formatSaleItemCount,
+  paymentConditionLabel,
 } from "@pedidos/shared";
 import { Loader2, MoreHorizontal, ShoppingCart } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -9,10 +11,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export type RecentSaleOrder = {
   id: string;
+  orderNumber?: number | null;
   status: string;
   totalAmount: unknown;
   createdAt: string;
-  customer: { name: string } | null;
+  paymentCondition?: {
+    id: string;
+    name: string;
+    days: number;
+    sortOrder: number;
+  } | null;
+  customer: {
+    name: string;
+    city?: string | null;
+    tradeName?: string | null;
+  } | null;
   items: { id?: string; quantity?: number }[];
   seller?: { user: { name: string } };
 };
@@ -34,12 +47,24 @@ function fmtMoney(value: unknown): string {
   });
 }
 
-function secondaryLine(order: RecentSaleOrder, showSeller: boolean): string {
-  const items = formatSaleItemCount(order.items.length);
+function customerLabel(order: RecentSaleOrder): string {
+  return (
+    order.customer?.tradeName?.trim() ||
+    order.customer?.name ||
+    "Sem cliente"
+  );
+}
+
+function metaParts(order: RecentSaleOrder, showSeller: boolean): string[] {
+  const parts: string[] = [];
+  const city = order.customer?.city?.trim();
+  if (city) parts.push(city);
+  parts.push(paymentConditionLabel(order.paymentCondition));
   if (showSeller && order.seller?.user.name) {
-    return `${order.seller.user.name} · ${items}`;
+    parts.push(order.seller.user.name);
   }
-  return items;
+  parts.push(formatSaleItemCount(order.items.length));
+  return parts;
 }
 
 export function RecentSalesList({
@@ -74,14 +99,20 @@ export function RecentSalesList({
       {isLoading ? (
         <ul className="divide-y divide-border">
           {Array.from({ length: 4 }).map((_, i) => (
-            <li key={i} className="flex items-center gap-3 px-4 py-3.5 sm:gap-4 sm:px-6">
+            <li
+              key={i}
+              className="flex items-center gap-3 px-4 py-3.5 sm:gap-4 sm:px-6"
+            >
               <Skeleton className="h-10 w-10 shrink-0 rounded-xl" />
               <div className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="h-3.5 w-16" />
                 <Skeleton className="h-4 w-40" />
-                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-3 w-48" />
               </div>
-              <Skeleton className="hidden h-4 w-16 sm:block" />
-              <Skeleton className="h-4 w-20" />
+              <div className="space-y-2 text-right">
+                <Skeleton className="ml-auto h-4 w-20" />
+                <Skeleton className="ml-auto h-3 w-14" />
+              </div>
             </li>
           ))}
         </ul>
@@ -93,10 +124,13 @@ export function RecentSalesList({
         <ul className="divide-y divide-border">
           {visible.map((order) => {
             const confirmed = order.status === "CONFIRMED";
+            const code = formatOrderCode(order);
+            const meta = metaParts(order, showSeller);
             return (
               <li key={order.id}>
                 <Link
                   to={`/pedidos/${order.id}`}
+                  aria-label={`Pedido ${code}, ${customerLabel(order)}`}
                   className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40 sm:gap-4 sm:px-6"
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 ring-1 ring-primary/20">
@@ -104,26 +138,30 @@ export function RecentSalesList({
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-foreground">
-                      {order.customer?.name ?? "Sem cliente"}
+                    <p className="text-xs font-medium tabular-nums text-muted-foreground">
+                      Pedido {code}
                     </p>
-                    <p className="truncate text-sm text-muted-foreground">
-                      {secondaryLine(order, showSeller)}
+                    <p className="mt-0.5 truncate text-sm font-medium text-foreground">
+                      {customerLabel(order)}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {meta.join(" · ")}
                     </p>
                   </div>
 
-                  <p className="shrink-0 text-xs text-muted-foreground sm:text-sm">
-                    {formatRelativeSaleDate(order.createdAt)}
-                  </p>
-
-                  <p
-                    className={cn(
-                      "shrink-0 text-sm font-semibold tabular-nums",
-                      confirmed ? "text-success" : "text-foreground",
-                    )}
-                  >
-                    {fmtMoney(order.totalAmount)}
-                  </p>
+                  <div className="shrink-0 text-right">
+                    <p
+                      className={cn(
+                        "text-sm font-semibold tabular-nums",
+                        confirmed ? "text-success" : "text-foreground",
+                      )}
+                    >
+                      {fmtMoney(order.totalAmount)}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {formatRelativeSaleDate(order.createdAt)}
+                    </p>
+                  </div>
 
                   <span
                     className="shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"

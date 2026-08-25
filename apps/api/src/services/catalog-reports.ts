@@ -129,6 +129,34 @@ export async function buildCustomerAbcReport(params: {
   };
 }
 
+/** Dias desde a última compra para classificar inativo recente vs antigo. */
+const POSITIVACAO_RECENT_INACTIVE_DAYS = 90;
+const DAY_MS = 86_400_000;
+
+function classifyPositivacaoCategory(params: {
+  createdAt: Date;
+  lastPurchase: Date | null;
+  boughtInPeriod: boolean;
+  periodStart: Date;
+  periodEnd: Date;
+  recentCutoff: Date;
+}): keyof {
+  novos: number;
+  ativos: number;
+  inativosRecentes: number;
+  inativosAntigos: number;
+} {
+  const createdInPeriod =
+    params.createdAt >= params.periodStart &&
+    params.createdAt <= params.periodEnd;
+  if (createdInPeriod) return "novos";
+  if (params.boughtInPeriod) return "ativos";
+  if (params.lastPurchase && params.lastPurchase >= params.recentCutoff) {
+    return "inativosRecentes";
+  }
+  return "inativosAntigos";
+}
+
 /** Positivação de clientes: quem comprou (e quem não) no período. */
 export async function buildCustomerPositivacaoReport(params: {
   organizationId: string;
@@ -148,26 +176,72 @@ export async function buildCustomerPositivacaoReport(params: {
     customerWhere.sellerId = { in: params.sellerIds };
   }
 
-  const customers = await prisma.customer.findMany({
-    where: customerWhere,
-    select: {
-      id: true,
-      name: true,
-      seller: { select: { user: { select: { name: true } } } },
-      orders: {
-        where: {
-          status: "CONFIRMED",
-          createdAt: { gte: start, lte: end },
+  const baseWhere: Prisma.CustomerWhereInput = {
+    organizationId: params.organizationId,
+    approvalStatus: "APPROVED",
+  };
+  if (params.sellerId) baseWhere.sellerId = params.sellerId;
+  else if (params.sellerIds?.length) {
+    baseWhere.sellerId = { in: params.sellerIds };
+  }
+
+  const orderSellerFilter: Prisma.OrderWhereInput = {};
+  if (params.sellerId) orderSellerFilter.sellerId = params.sellerId;
+  else if (params.sellerIds?.length) {
+    orderSellerFilter.sellerId = { in: params.sellerIds };
+  }
+
+  const [customers, portfolio, periodBuys] = await Promise.all([
+    prisma.customer.findMany({
+      where: customerWhere,
+      select: {
+        id: true,
+        name: true,
+        seller: { select: { user: { select: { name: true } } } },
+        orders: {
+          where: {
+            status: "CONFIRMED",
+            createdAt: { gte: start, lte: end },
+          },
+          select: { id: true, totalAmount: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
         },
-        select: { id: true, totalAmount: true, createdAt: true },
-        orderBy: { createdAt: "desc" },
       },
-    },
-    orderBy: { name: "asc" },
-  });
+      orderBy: { name: "asc" },
+    }),
+    prisma.customer.findMany({
+      where: baseWhere,
+      select: {
+        id: true,
+        createdAt: true,
+        orders: {
+          where: { status: "CONFIRMED" },
+          select: { createdAt: true },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
+      },
+    }),
+    prisma.order.findMany({
+      where: {
+        organizationId: params.organizationId,
+        status: "CONFIRMED",
+        createdAt: { gte: start, lte: end },
+        customerId: { not: null },
+        ...orderSellerFilter,
+      },
+      select: { customerId: true },
+      distinct: ["customerId"],
+    }),
+  ]);
 
   const positivados = [];
   const semPositivacao = [];
+  const boughtInPeriod = new Set(
+    periodBuys
+      .map((o) => o.customerId)
+      .filter((id): id is string => typeof id === "string"),
+  );
 
   for (const c of customers) {
     const orderCount = c.orders.length;
@@ -187,6 +261,28 @@ export async function buildCustomerPositivacaoReport(params: {
     else semPositivacao.push(row);
   }
 
+  const recentCutoff = new Date(
+    end.getTime() - POSITIVACAO_RECENT_INACTIVE_DAYS * DAY_MS,
+  );
+  const categories = {
+    novos: 0,
+    ativos: 0,
+    inativosRecentes: 0,
+    inativosAntigos: 0,
+  };
+
+  for (const c of portfolio) {
+    const key = classifyPositivacaoCategory({
+      createdAt: c.createdAt,
+      lastPurchase: c.orders[0]?.createdAt ?? null,
+      boughtInPeriod: boughtInPeriod.has(c.id),
+      periodStart: start,
+      periodEnd: end,
+      recentCutoff,
+    });
+    categories[key] += 1;
+  }
+
   return {
     generatedAt: new Date().toISOString(),
     period: { from: start.toISOString(), to: end.toISOString() },
@@ -202,6 +298,7 @@ export async function buildCustomerPositivacaoReport(params: {
         positivados.reduce((s, r) => s + r.totalAmount, 0),
       ),
     },
+    categories,
     positivados: positivados.sort((a, b) => b.totalAmount - a.totalAmount),
     semPositivacao,
   };

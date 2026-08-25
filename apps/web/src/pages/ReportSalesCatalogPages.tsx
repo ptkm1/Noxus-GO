@@ -21,15 +21,31 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiFetch, downloadPdf } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+
+type SalesSummaryGroup = "seller" | "supplier" | "product";
 
 type Scorecard = {
   totals: { orderCount: number; totalAmount: number; avgTicket: number };
   bySeller: Array<{
     sellerId: string;
     name: string;
+    orderCount: number;
+    totalAmount: number;
+  }>;
+  bySupplier: Array<{
+    supplierId: string | null;
+    name: string;
+    orderCount: number;
+    totalAmount: number;
+  }>;
+  byProduct: Array<{
+    productId: string;
+    name: string;
+    quantity: number;
     orderCount: number;
     totalAmount: number;
   }>;
@@ -57,6 +73,7 @@ type CommissionStatement = {
 /** Resumo de vendas — scorecard do período. */
 export function ReportSalesSummaryPage() {
   const { preset, setPreset, range } = usePeriodState();
+  const [group, setGroup] = useState<SalesSummaryGroup>("seller");
   const q = useQuery({
     queryKey: ["admin", "reports", "scorecard", range.from, range.to],
     queryFn: () =>
@@ -68,7 +85,7 @@ export function ReportSalesSummaryPage() {
   return (
     <ReportDataLayout
       title="Resumo de vendas"
-      description="Totais, ticket médio, ranking por vendedor e evolução diária no período."
+      description="Totais, ticket médio e ranking por vendedor, fornecedor ou produto no período."
       filters={<PeriodPresetBar preset={preset} onPreset={setPreset} />}
     >
       {q.isLoading ? (
@@ -99,27 +116,132 @@ export function ReportSalesSummaryPage() {
               },
             ]}
           />
-          <div className="rounded-xl border border-border bg-card">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="px-4">Vendedor</TableHead>
-                  <TableHead className="px-4">Pedidos</TableHead>
-                  <TableHead className="px-4">Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {q.data.bySeller.map((r) => (
-                  <TableRow key={r.sellerId}>
-                    <TableCell className="px-4 py-2">{r.name}</TableCell>
-                    <TableCell className="px-4 py-2">{r.orderCount}</TableCell>
-                    <TableCell className="px-4 py-2 tabular-nums">
-                      R$ {fmtMoney(r.totalAmount)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <div className="space-y-3">
+            <Tabs
+              value={group}
+              onValueChange={(v) =>
+                setGroup(
+                  v === "supplier" || v === "product" ? v : "seller",
+                )
+              }
+            >
+              <TabsList aria-label="Agrupamento do resumo">
+                <TabsTrigger value="seller">Vendedor</TabsTrigger>
+                <TabsTrigger value="supplier">Fornecedor</TabsTrigger>
+                <TabsTrigger value="product">Produto</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <div className="rounded-xl border border-border bg-card">
+              {group === "seller" ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="px-4">Vendedor</TableHead>
+                      <TableHead className="px-4">Pedidos</TableHead>
+                      <TableHead className="px-4">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {q.data.bySeller.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={3}
+                          className="px-4 py-6 text-center text-muted-foreground"
+                        >
+                          Nenhuma venda no período.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      q.data.bySeller.map((r) => (
+                        <TableRow key={r.sellerId}>
+                          <TableCell className="px-4 py-2">{r.name}</TableCell>
+                          <TableCell className="px-4 py-2">
+                            {r.orderCount}
+                          </TableCell>
+                          <TableCell className="px-4 py-2 tabular-nums">
+                            R$ {fmtMoney(r.totalAmount)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              ) : group === "supplier" ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="px-4">Fornecedor</TableHead>
+                      <TableHead className="px-4">Pedidos</TableHead>
+                      <TableHead className="px-4">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {q.data.bySupplier.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={3}
+                          className="px-4 py-6 text-center text-muted-foreground"
+                        >
+                          Nenhuma venda no período.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      q.data.bySupplier.map((r) => (
+                        <TableRow
+                          key={r.supplierId ?? `none-${r.name}`}
+                        >
+                          <TableCell className="px-4 py-2">{r.name}</TableCell>
+                          <TableCell className="px-4 py-2">
+                            {r.orderCount}
+                          </TableCell>
+                          <TableCell className="px-4 py-2 tabular-nums">
+                            R$ {fmtMoney(r.totalAmount)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="px-4">Produto</TableHead>
+                      <TableHead className="px-4">Qtd.</TableHead>
+                      <TableHead className="px-4">Pedidos</TableHead>
+                      <TableHead className="px-4">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {q.data.byProduct.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={4}
+                          className="px-4 py-6 text-center text-muted-foreground"
+                        >
+                          Nenhuma venda no período.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      q.data.byProduct.map((r) => (
+                        <TableRow key={r.productId}>
+                          <TableCell className="px-4 py-2">{r.name}</TableCell>
+                          <TableCell className="px-4 py-2 tabular-nums">
+                            {r.quantity}
+                          </TableCell>
+                          <TableCell className="px-4 py-2">
+                            {r.orderCount}
+                          </TableCell>
+                          <TableCell className="px-4 py-2 tabular-nums">
+                            R$ {fmtMoney(r.totalAmount)}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
           </div>
         </div>
       ) : null}

@@ -93,6 +93,37 @@ function pageBottom(doc: PDFKit.PDFDocument) {
   return doc.page.height - CONTENT_BOTTOM;
 }
 
+/** Rodapé fixo no fim da página — Y acima da margem inferior para não disparar addPage do PDFKit. */
+function drawPageFooter(
+  doc: PDFKit.PDFDocument,
+  leftText: string,
+  rightText: string,
+) {
+  const lineH = 10;
+  const textY = doc.page.height - doc.page.margins.bottom - lineH;
+  const lineY = textY - 6;
+  doc
+    .strokeColor(COLORS.border)
+    .lineWidth(0.5)
+    .moveTo(PAGE.left, lineY)
+    .lineTo(PAGE.right, lineY)
+    .stroke();
+  doc
+    .fillColor(COLORS.muted)
+    .fontSize(8)
+    .font("Helvetica")
+    .text(leftText, PAGE.left, textY, {
+      width: PAGE.width / 2,
+      lineBreak: false,
+    });
+  doc.text(rightText, PAGE.left, textY, {
+    width: PAGE.width,
+    align: "right",
+    lineBreak: false,
+    ellipsis: true,
+  });
+}
+
 function ensureSpace(
   doc: PDFKit.PDFDocument,
   needed: number,
@@ -695,25 +726,5 @@ export function drawOrderPdfContents(
     doc.y = notesTop + notesH + 10;
   }
 
-  const footerY = doc.page.height - 36;
-  doc
-    .strokeColor(COLORS.border)
-    .lineWidth(0.5)
-    .moveTo(PAGE.left, footerY)
-    .lineTo(PAGE.right, footerY)
-    .stroke();
-  doc
-    .fillColor(COLORS.muted)
-    .fontSize(8)
-    .font("Helvetica")
-    .text(`Gerado em ${generatedAt}`, PAGE.left, footerY + 8, {
-      width: PAGE.width / 2,
-      lineBreak: false,
-    });
-  doc.text(orgName, PAGE.left, footerY + 8, {
-    width: PAGE.width,
-    align: "right",
-    lineBreak: false,
-    ellipsis: true,
-  });
+  drawPageFooter(doc, `Gerado em ${generatedAt}`, orgName);
 }

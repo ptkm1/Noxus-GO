@@ -15,16 +15,12 @@ import {
     getPlanDefinition,
     HOME_INDICATOR_KEYS,
     HOME_INDICATOR_LABELS,
-    HOME_INDICATORS_LAYOUT_LABELS,
-    HOME_INDICATORS_LAYOUTS,
     MAX_HOME_INDICATORS,
     normalizeHomeIndicators,
-    normalizeHomeIndicatorsLayout,
     planHasFeature,
     listPlans,
     planSeatPriceCaption,
     type HomeIndicatorKey,
-    type HomeIndicatorsLayout,
     type PlanId,
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -66,7 +62,6 @@ type SystemSettings = {
   sellerCanEditQueuedSales: boolean;
   autoInactivateCustomersAfterMonths: boolean;
   homeIndicators: HomeIndicatorKey[];
-  homeIndicatorsLayout: HomeIndicatorsLayout;
 };
 
 type SettingsModal = "permissions" | "audit" | null;
@@ -236,9 +231,6 @@ export function SystemSettingsPage() {
   });
 
   const selectedIndicators = normalizeHomeIndicators(settings?.homeIndicators);
-  const indicatorsLayout = normalizeHomeIndicatorsLayout(
-    settings?.homeIndicatorsLayout,
-  );
 
   function toggleIndicator(key: HomeIndicatorKey) {
     const current = selectedIndicators;
@@ -731,39 +723,13 @@ export function SystemSettingsPage() {
           <SettingsCategory
             id="painel"
             title="Painel"
-            description="Indicadores e layout exibidos na home do painel."
+            description="Widgets exibidos na coluna direita da home."
           >
             <FormSection
               title="Indicadores do painel"
-              description={`Escolha até ${MAX_HOME_INDICATORS} indicadores exibidos na home. A ordem abaixo é a ordem no painel.`}
+              description={`Escolha até ${MAX_HOME_INDICATORS} indicadores exibidos na home. A ordem abaixo é a ordem na coluna de widgets.`}
             >
               <div className="max-w-xl space-y-3">
-                <FormField
-                  label="Tipo de visualização"
-                  htmlFor="home-indicators-layout"
-                  hint={
-                    indicatorsLayout === "grid"
-                      ? "Os gráficos ficam na mesma grade, lado a lado (até 3 colunas no desktop)."
-                      : "Cada gráfico ocupa a largura inteira, um abaixo do outro."
-                  }
-                >
-                  <AppSelect
-                    id="home-indicators-layout"
-                    value={indicatorsLayout}
-                    disabled={
-                      isLoading || patch.isPending || settings === undefined
-                    }
-                    options={HOME_INDICATORS_LAYOUTS.map((layout) => ({
-                      value: layout,
-                      label: HOME_INDICATORS_LAYOUT_LABELS[layout],
-                    }))}
-                    onValueChange={(v) =>
-                      patch.mutate({
-                        homeIndicatorsLayout: v as HomeIndicatorsLayout,
-                      })
-                    }
-                  />
-                </FormField>
                 <p className="text-xs text-muted-foreground">
                   Selecionados: {selectedIndicators.length}/
                   {MAX_HOME_INDICATORS}

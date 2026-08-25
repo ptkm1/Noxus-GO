@@ -88,11 +88,23 @@ export function useSellerProductCatalog(options: Options = {}) {
       categoryFilterIds.length > 0 ? new Set(categoryFilterIds) : null;
     const supplierSet =
       supplierFilterIds.length > 0 ? new Set(supplierFilterIds) : null;
-    return products.filter((p) => {
+    const list = products.filter((p) => {
       if (catSet && (!p.category || !catSet.has(p.category.id))) return false;
       if (supplierSet && (!p.supplier || !supplierSet.has(p.supplier.id)))
         return false;
       return matchesProductSearch(p, productQuery);
+    });
+    return [...list].sort((a, b) => {
+      const ha =
+        a.highlighted || a.featured || a.hasActivePromotion || a.promotionLabel
+          ? 1
+          : 0;
+      const hb =
+        b.highlighted || b.featured || b.hasActivePromotion || b.promotionLabel
+          ? 1
+          : 0;
+      if (hb !== ha) return hb - ha;
+      return a.name.localeCompare(b.name, "pt");
     });
   }, [products, productQuery, categoryFilterIds, supplierFilterIds]);
 
@@ -104,6 +116,18 @@ export function useSellerProductCatalog(options: Options = {}) {
   const favoriteProductsList = useMemo(() => {
     return products.filter((p) => favoriteIds.has(p.id)).slice(0, 18);
   }, [products, favoriteIds]);
+
+  const highlightedProducts = useMemo(() => {
+    return products
+      .filter(
+        (p) =>
+          p.highlighted ||
+          p.featured ||
+          p.hasActivePromotion ||
+          Boolean(p.promotionLabel),
+      )
+      .slice(0, 18);
+  }, [products]);
 
   return {
     products,
@@ -123,5 +147,6 @@ export function useSellerProductCatalog(options: Options = {}) {
     filteredProducts,
     topSellingProducts,
     favoriteProductsList,
+    highlightedProducts,
   };
 }

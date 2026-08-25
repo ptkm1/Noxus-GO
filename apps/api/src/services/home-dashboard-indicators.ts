@@ -1,4 +1,4 @@
-import type { HomeIndicatorKey } from "@pedidos/shared";
+import type { HomeChartIndicatorKey } from "@pedidos/shared";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { decToNum } from "../util/money.js";
@@ -18,7 +18,7 @@ export type HomeIndicatorRow = {
 };
 
 export type HomeIndicatorSummary = {
-  key: HomeIndicatorKey;
+  key: HomeChartIndicatorKey;
   generatedAt: string;
   period: { from: string; to: string };
   metric: "sales" | "profit";
@@ -49,7 +49,7 @@ function parseOptionalDate(raw: string | undefined): Date | null {
 }
 
 function emptySummary(
-  key: HomeIndicatorKey,
+  key: HomeChartIndicatorKey,
   metric: "sales" | "profit",
   fromDt: Date,
   toDt: Date,
@@ -66,7 +66,7 @@ function emptySummary(
 
 export async function buildHomeIndicator(params: {
   organizationId: string;
-  key: HomeIndicatorKey;
+  key: HomeChartIndicatorKey;
   sellerIds?: string[];
   establishmentId?: string | null;
   from?: string;

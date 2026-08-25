@@ -13,7 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   HOME_INDICATOR_SHORT_LABELS,
-  type HomeIndicatorKey,
+  type HomeChartIndicatorKey,
 } from "@pedidos/shared";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
@@ -29,7 +29,7 @@ import {
 } from "recharts";
 
 export type HomeIndicatorSummary = {
-  key: HomeIndicatorKey;
+  key: HomeChartIndicatorKey;
   period: { from: string; to: string };
   metric: "sales" | "profit";
   totals: {
@@ -57,7 +57,7 @@ const PRESETS: PeriodPreset[] = [
   "last_90_days",
 ];
 
-const EMPTY_HINT: Record<HomeIndicatorKey, string> = {
+const EMPTY_HINT: Record<HomeChartIndicatorKey, string> = {
   sales_by_supplier: "Nenhuma venda com fornecedor no período.",
   sales_by_seller: "Nenhuma venda por vendedor no período.",
   profit_by_city: "Nenhuma rentabilidade por cidade no período.",
@@ -66,8 +66,8 @@ const EMPTY_HINT: Record<HomeIndicatorKey, string> = {
 };
 
 type Props = {
-  indicatorKey: HomeIndicatorKey;
-  /** Layout compacto para grade lado a lado. */
+  indicatorKey: HomeChartIndicatorKey;
+  /** Layout compacto para a coluna de widgets da home. */
   compact?: boolean;
   /** Filtro opcional por estabelecimento (consolidado = omitir). */
   establishmentId?: string | null;

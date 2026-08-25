@@ -592,7 +592,7 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
             return (
               <div
                 key={line.key}
-                className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-[minmax(0,1.6fr)_5.5rem_5.5rem_minmax(0,7rem)_auto] sm:items-end"
+                className="grid gap-3 rounded-lg border border-border p-3 pb-5 sm:grid-cols-[minmax(0,1.6fr)_5.5rem_5.5rem_minmax(0,7rem)_auto] sm:items-start"
               >
                 <FormField label="Produto" htmlFor={`item-prod-${line.key}`}>
                   <ProductCombobox
@@ -638,11 +638,15 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
                   label="Desc. %"
                   htmlFor={`item-disc-${line.key}`}
                   hint={maxDisc > 0 ? `Máx. ${maxDisc}%` : undefined}
+                  hintOverlay
                 >
                   <Input
                     id={`item-disc-${line.key}`}
                     inputMode="decimal"
                     disabled={maxDisc <= 0}
+                    title={
+                      maxDisc > 0 ? `Desconto máximo: ${maxDisc}%` : undefined
+                    }
                     value={line.discountPercent}
                     onChange={(e) =>
                       setLines((prev) =>
@@ -672,7 +676,10 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className={cn("shrink-0", lines.length === 1 && "invisible")}
+                  className={cn(
+                    "shrink-0 sm:self-end",
+                    lines.length === 1 && "invisible",
+                  )}
                   disabled={lines.length === 1}
                   onClick={() =>
                     setLines((prev) => prev.filter((l) => l.key !== line.key))

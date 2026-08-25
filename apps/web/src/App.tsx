@@ -52,6 +52,8 @@ import { PriceTablesPage } from "./pages/PriceTablesPage";
 import { ProductCategoriesPage } from "./pages/ProductCategoriesPage";
 import { ProductFormPage } from "./pages/ProductFormPage";
 import { ProductsPage } from "./pages/ProductsPage";
+import { ProductFeaturedPage } from "./pages/ProductFeaturedPage";
+import { ProductPromotionsPage } from "./pages/ProductPromotionsPage";
 import { PaymentPendingPage } from "./pages/PaymentPendingPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { RegisterPage } from "./pages/RegisterPage";
@@ -319,6 +321,14 @@ function AppRoutes() {
               element={<ProductCategoriesPage />}
             />
             <Route path="produtos/novo" element={<ProductFormPage />} />
+            <Route
+              path="produtos/promocoes"
+              element={<ProductPromotionsPage />}
+            />
+            <Route
+              path="produtos/destaques"
+              element={<ProductFeaturedPage />}
+            />
             <Route
               path="produtos/:productId/editar"
               element={<ProductFormPage />}

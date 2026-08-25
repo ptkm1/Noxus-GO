@@ -1,12 +1,27 @@
 import { HomeSlot } from "@/components/home/HomeSlot";
+import type { ReactNode } from "react";
 
-const KPI_LABELS = ["KPI 1", "KPI 2", "KPI 3", "KPI 4"] as const;
+type HomeDashboardLayoutProps = {
+  /** Três resumos no topo (KPI 1–3). Se omitido, mostra placeholders. */
+  kpis?: ReactNode;
+  /** Gráfico principal (área esquerda superior). Se omitido, mostra placeholder. */
+  mainChart?: ReactNode;
+  /** Lista/tabela no corpo esquerdo. Se omitido, mostra placeholder. */
+  ordersList?: ReactNode;
+  /** Três widgets da coluna direita. Se omitido, mostra placeholders. */
+  sideWidgets?: ReactNode;
+};
 
 /**
  * Grade estrutural da home (Início).
- * Apenas slots — widgets reais entram depois.
+ * KPIs, gráfico, lista e widgets laterais podem receber conteúdo real.
  */
-export function HomeDashboardLayout() {
+export function HomeDashboardLayout({
+  kpis,
+  mainChart,
+  ordersList,
+  sideWidgets,
+}: Readonly<HomeDashboardLayoutProps>) {
   return (
     <div className="space-y-4 md:space-y-5">
       {/* Topo: título + controles (placeholders) */}
@@ -24,34 +39,43 @@ export function HomeDashboardLayout() {
         </div>
       </div>
 
-      {/* Linha de 4 KPIs */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {KPI_LABELS.map((label) => (
-          <HomeSlot
-            key={label}
-            label={label}
-            minHeightClassName="min-h-[6.5rem]"
-          />
-        ))}
+      {/* Linha de 3 KPIs */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {kpis ??
+          (["KPI 1", "KPI 2", "KPI 3"] as const).map((label) => (
+            <HomeSlot
+              key={label}
+              label={label}
+              minHeightClassName="min-h-[6.5rem]"
+            />
+          ))}
       </div>
 
       {/* Corpo: ~2/3 + ~1/3 */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="flex flex-col gap-4 lg:col-span-2">
-          <HomeSlot
-            label="Gráfico principal"
-            minHeightClassName="min-h-[18rem]"
-          />
-          <HomeSlot
-            label="Tabela / lista"
-            minHeightClassName="min-h-[14rem]"
-          />
+          {mainChart ?? (
+            <HomeSlot
+              label="Gráfico principal"
+              minHeightClassName="min-h-[18rem]"
+            />
+          )}
+          {ordersList ?? (
+            <HomeSlot
+              label="Tabela / lista"
+              minHeightClassName="min-h-[14rem]"
+            />
+          )}
         </div>
 
         <div className="flex flex-col gap-4">
-          <HomeSlot label="Widget" minHeightClassName="min-h-[10rem]" />
-          <HomeSlot label="Widget" minHeightClassName="min-h-[10rem]" />
-          <HomeSlot label="Widget" minHeightClassName="min-h-[10rem]" />
+          {sideWidgets ?? (
+            <>
+              <HomeSlot label="Widget" minHeightClassName="min-h-[10rem]" />
+              <HomeSlot label="Widget" minHeightClassName="min-h-[10rem]" />
+              <HomeSlot label="Widget" minHeightClassName="min-h-[10rem]" />
+            </>
+          )}
         </div>
       </div>
     </div>

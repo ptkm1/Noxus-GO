@@ -5,7 +5,12 @@ export type CatalogTileProduct = {
   imageUrl?: string | null;
   category?: { id: string; name: string } | null;
   effectiveUnitPrice?: number;
+  catalogUnitPrice?: number;
   stockQty?: number;
   blockSaleWhenOutOfStock?: boolean;
   attributes?: Record<string, unknown>;
+  featured?: boolean;
+  hasActivePromotion?: boolean;
+  highlighted?: boolean;
+  promotionLabel?: string | null;
 };

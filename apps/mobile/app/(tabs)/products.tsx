@@ -90,6 +90,18 @@ export default function ProductsScreen() {
       </View>
 
       <CollapsibleCatalogSection
+        title="Destaques e promoções"
+        products={catalog.highlightedProducts}
+        viewMode={viewMode}
+        tileWidth={layout.tileW}
+        listTileWidth={layout.listTileW}
+        catalogGap={layout.catalogGap}
+        favoriteIds={catalog.favoriteIds}
+        onToggleFavorite={catalog.toggleFavorite}
+        onProductPress={() => onRailProductPress()}
+      />
+
+      <CollapsibleCatalogSection
         title="Mais vendidos"
         products={catalog.topSellingProducts}
         viewMode={viewMode}

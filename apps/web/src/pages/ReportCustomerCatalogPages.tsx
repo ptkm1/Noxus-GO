@@ -78,6 +78,12 @@ type Positivacao = {
     positivacaoPct: number;
     totalAmount: number;
   };
+  categories?: {
+    novos: number;
+    ativos: number;
+    inativosRecentes: number;
+    inativosAntigos: number;
+  };
   positivados: Array<{
     customerId: string;
     name: string;

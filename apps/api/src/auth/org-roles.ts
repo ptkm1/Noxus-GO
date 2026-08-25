@@ -45,6 +45,8 @@ const MANAGER_GET_ALLOW = [
   /^\/reports\/product-positivacao$/,
   /^\/reports\/commission-by-order$/,
   /^\/reports\/invoiced-orders$/,
+  /^\/reports\/home-dashboard-config$/,
+  /^\/reports\/home-indicator$/,
   /^\/reports\/route-romaneio\.pdf$/,
   /^\/expedition/,
   /^\/notifications$/,
@@ -98,6 +100,8 @@ const TEAM_LEADER_GET_ALLOW = [
   /^\/reports\/customer-positivacao$/,
   /^\/reports\/customer-abc$/,
   /^\/reports\/product-positivacao$/,
+  /^\/reports\/home-dashboard-config$/,
+  /^\/reports\/home-indicator$/,
   /^\/reports\/route-romaneio\.pdf$/,
 ] as const;
 

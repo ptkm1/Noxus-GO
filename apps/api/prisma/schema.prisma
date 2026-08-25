@@ -273,7 +273,7 @@ model Organization {
   autoInactivateCustomersAfterMonths Boolean @default(false)
   /// Indicadores do painel home (até 3 chaves ordenadas). Null = defaults do shared.
   homeIndicators   Json?
-  /// Layout dos indicadores na home: "stack" | "grid". Null/ausente no código = grade.
+  /// Legado: layout grade/stack dos indicadores (não usado na home de widgets).
   homeIndicatorsLayout String @default("grid")
   /// TODO futuro: CNPJ do emitente para NF-e real / certificado.
   cnpj             String?
@@ -720,6 +720,8 @@ model Product {
   description      String?
   /// URL pública da foto (CDN, bucket, etc.) para catálogo no app do vendedor.
   imageUrl         String?
+  /// Em destaque no app de vendas (aparece primeiro e com indicação visual).
+  featured         Boolean            @default(false)
   basePrice        Decimal            @db.Decimal(12, 2)
   /// Limite extra do vendedor sobre preço já promocional (null = usa limite da organização).
   maxSellerDiscountPercent Decimal?    @db.Decimal(5, 2)

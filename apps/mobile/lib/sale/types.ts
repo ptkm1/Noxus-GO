@@ -8,6 +8,9 @@ export type SaleProduct = {
   catalogUnitPrice?: number;
   effectiveUnitPrice?: number;
   promotionLabel?: string | null;
+  featured?: boolean;
+  hasActivePromotion?: boolean;
+  highlighted?: boolean;
   maxSellerDiscountPercent?: number | null;
   maxSellerDiscountPercentEffective?: number;
   minSaleUnitPrice?: number | null;

@@ -41,6 +41,11 @@ export function ProductCatalogTile(props: {
     product.blockSaleWhenOutOfStock ?? false,
   );
   const disabled = disabledProp ?? blocked;
+  const isPromo =
+    Boolean(product.hasActivePromotion) || Boolean(product.promotionLabel);
+  const isFeatured = Boolean(product.featured);
+  const isHighlighted =
+    Boolean(product.highlighted) || isFeatured || isPromo;
 
   const imgHeight = variant === "rail" ? 104 : variant === "list" ? 88 : 128;
   const styles = useProductCatalogTileStyles({
@@ -49,6 +54,7 @@ export function ProductCatalogTile(props: {
     imgHeight,
     badgeBackgroundColor,
     disabled,
+    highlighted: isHighlighted,
   });
   const { colors } = useTheme();
   const uri = product.imageUrl?.trim();
@@ -64,10 +70,25 @@ export function ProductCatalogTile(props: {
             product.attributes,
           )
         : `R$ ${fmtMoney(product.effectiveUnitPrice)}`;
-    priceNode = <Text style={styles.price}>{priceText}</Text>;
+    const showCatalogStrike =
+      isPromo &&
+      typeof product.catalogUnitPrice === "number" &&
+      product.catalogUnitPrice > product.effectiveUnitPrice;
+    priceNode = (
+      <View>
+        {showCatalogStrike ? (
+          <Text style={styles.catalogStrike}>
+            R$ {fmtMoney(product.catalogUnitPrice!)}
+          </Text>
+        ) : null}
+        <Text style={styles.price}>{priceText}</Text>
+      </View>
+    );
   } else {
     priceNode = <Text style={styles.noPrice}>Sem preço</Text>;
   }
+
+  const highlightLabel = isPromo ? "Promo" : isFeatured ? "Destaque" : null;
 
   return (
     <View style={styles.card}>
@@ -108,6 +129,18 @@ export function ProductCatalogTile(props: {
               />
             </View>
           )}
+          {highlightLabel ? (
+            <View
+              style={[
+                styles.highlightChip,
+                {
+                  backgroundColor: isPromo ? colors.danger : colors.primary,
+                },
+              ]}
+            >
+              <Text style={styles.highlightChipTxt}>{highlightLabel}</Text>
+            </View>
+          ) : null}
           {qtyInCart != null && qtyInCart > 0 ? (
             <View style={styles.badge}>
               <Text style={styles.badgeTxt}>{qtyInCart}</Text>
