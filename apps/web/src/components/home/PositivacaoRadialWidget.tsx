@@ -185,7 +185,7 @@ export function PositivacaoRadialWidget() {
           size: 5,
         },
         formatter: (seriesName, opts) => {
-          const n = counts[opts.seriesIndex] ?? 0;
+          const n = counts[opts?.seriesIndex ?? -1] ?? 0;
           return `${seriesName}: ${n}`;
         },
         itemMargin: {
@@ -196,7 +196,7 @@ export function PositivacaoRadialWidget() {
         theme: colors.isDark ? "dark" : "light",
         y: {
           formatter: (_val, opts) => {
-            const n = counts[opts.seriesIndex] ?? 0;
+            const n = counts[opts?.seriesIndex ?? -1] ?? 0;
             return `${n} cliente(s)`;
           },
         },

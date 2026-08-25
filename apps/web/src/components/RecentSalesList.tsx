@@ -1,13 +1,26 @@
-import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { stageBadgeClass } from "@/lib/order-kanban";
 import { formatOrderCode } from "@/lib/order-code";
+import { cn } from "@/lib/utils";
 import {
   formatRelativeSaleDate,
   formatSaleItemCount,
+  orderStatusLabel,
   paymentConditionLabel,
+  situationCodeFromOrderStatus,
+  type OrderStatus,
 } from "@pedidos/shared";
-import { Loader2, MoreHorizontal, ShoppingCart } from "lucide-react";
-import { Link } from "react-router-dom";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Loader2 } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
 
 export type RecentSaleOrder = {
   id: string;
@@ -55,16 +68,41 @@ function customerLabel(order: RecentSaleOrder): string {
   );
 }
 
-function metaParts(order: RecentSaleOrder, showSeller: boolean): string[] {
-  const parts: string[] = [];
-  const city = order.customer?.city?.trim();
-  if (city) parts.push(city);
-  parts.push(paymentConditionLabel(order.paymentCondition));
-  if (showSeller && order.seller?.user.name) {
-    parts.push(order.seller.user.name);
-  }
-  parts.push(formatSaleItemCount(order.items.length));
-  return parts;
+const headClass =
+  "px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground";
+
+type RecentSalesTableHeaderProps = Readonly<{ showSeller: boolean }>;
+
+function RecentSalesTableHeader({
+  showSeller,
+}: RecentSalesTableHeaderProps) {
+  return (
+    <TableHeader>
+      <TableRow className="hover:bg-transparent">
+        <TableHead className={headClass}>Pedido</TableHead>
+        <TableHead className={headClass}>Cliente</TableHead>
+        <TableHead className={cn("hidden md:table-cell", headClass)}>
+          Cidade
+        </TableHead>
+        <TableHead className={cn("hidden lg:table-cell", headClass)}>
+          Condição
+        </TableHead>
+        {showSeller ? (
+          <TableHead className={cn("hidden lg:table-cell", headClass)}>
+            Vendedor
+          </TableHead>
+        ) : null}
+        <TableHead className={cn("hidden sm:table-cell", headClass)}>
+          Itens
+        </TableHead>
+        <TableHead className={headClass}>Etapa</TableHead>
+        <TableHead className={cn("text-right", headClass)}>Total</TableHead>
+        <TableHead className={cn("hidden text-right sm:table-cell", headClass)}>
+          Data
+        </TableHead>
+      </TableRow>
+    </TableHeader>
+  );
 }
 
 export function RecentSalesList({
@@ -76,6 +114,7 @@ export function RecentSalesList({
   subtitle = "Pedidos mais recentes da organização.",
   showSeller = true,
 }: Props) {
+  const navigate = useNavigate();
   const visible = orders.slice(0, limit);
   const isRefetching = isFetching && !isLoading;
 
@@ -97,83 +136,124 @@ export function RecentSalesList({
       </div>
 
       {isLoading ? (
-        <ul className="divide-y divide-border">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <li
-              key={i}
-              className="flex items-center gap-3 px-4 py-3.5 sm:gap-4 sm:px-6"
-            >
-              <Skeleton className="h-10 w-10 shrink-0 rounded-xl" />
-              <div className="min-w-0 flex-1 space-y-2">
-                <Skeleton className="h-3.5 w-16" />
-                <Skeleton className="h-4 w-40" />
-                <Skeleton className="h-3 w-48" />
-              </div>
-              <div className="space-y-2 text-right">
-                <Skeleton className="ml-auto h-4 w-20" />
-                <Skeleton className="ml-auto h-3 w-14" />
-              </div>
-            </li>
-          ))}
-        </ul>
+        <div className="px-2 py-2 sm:px-4">
+          <Table>
+            <RecentSalesTableHeader showSeller={showSeller} />
+            <TableBody>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={i} className="hover:bg-transparent">
+                  <TableCell className="px-3 py-3">
+                    <Skeleton className="h-4 w-14" />
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
+                    <Skeleton className="h-4 w-36" />
+                  </TableCell>
+                  <TableCell className="hidden px-3 py-3 md:table-cell">
+                    <Skeleton className="h-4 w-24" />
+                  </TableCell>
+                  <TableCell className="hidden px-3 py-3 lg:table-cell">
+                    <Skeleton className="h-4 w-20" />
+                  </TableCell>
+                  {showSeller ? (
+                    <TableCell className="hidden px-3 py-3 lg:table-cell">
+                      <Skeleton className="h-4 w-24" />
+                    </TableCell>
+                  ) : null}
+                  <TableCell className="hidden px-3 py-3 sm:table-cell">
+                    <Skeleton className="h-4 w-10" />
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
+                    <Skeleton className="h-5 w-20 rounded-md" />
+                  </TableCell>
+                  <TableCell className="px-3 py-3">
+                    <Skeleton className="ml-auto h-4 w-20" />
+                  </TableCell>
+                  <TableCell className="hidden px-3 py-3 sm:table-cell">
+                    <Skeleton className="ml-auto h-4 w-16" />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       ) : visible.length === 0 ? (
         <p className="px-4 py-8 text-center text-sm text-muted-foreground sm:px-6">
           Nenhuma venda registrada ainda.
         </p>
       ) : (
-        <ul className="divide-y divide-border">
-          {visible.map((order) => {
-            const confirmed = order.status === "CONFIRMED";
-            const code = formatOrderCode(order);
-            const meta = metaParts(order, showSeller);
-            return (
-              <li key={order.id}>
-                <Link
-                  to={`/pedidos/${order.id}`}
-                  aria-label={`Pedido ${code}, ${customerLabel(order)}`}
-                  className="group flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40 sm:gap-4 sm:px-6"
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 ring-1 ring-primary/20">
-                    <ShoppingCart className="h-4 w-4 text-primary" />
-                  </div>
+        <div className="px-2 py-1 sm:px-4 sm:py-2">
+          <Table>
+            <RecentSalesTableHeader showSeller={showSeller} />
+            <TableBody>
+              {visible.map((order) => {
+                const confirmed = order.status === "CONFIRMED";
+                const code = formatOrderCode(order);
+                const city = order.customer?.city?.trim() || "—";
+                const href = `/pedidos/${order.id}`;
+                const stageCode = situationCodeFromOrderStatus(
+                  order.status as OrderStatus,
+                );
 
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium tabular-nums text-muted-foreground">
-                      Pedido {code}
-                    </p>
-                    <p className="mt-0.5 truncate text-sm font-medium text-foreground">
+                return (
+                  <TableRow
+                    key={order.id}
+                    className="cursor-pointer"
+                    onClick={() => navigate(href)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        navigate(href);
+                      }
+                    }}
+                    tabIndex={0}
+                    role="link"
+                    aria-label={`Pedido ${code}, ${customerLabel(order)}`}
+                  >
+                    <TableCell className="px-3 py-3 font-medium tabular-nums text-foreground">
+                      {code}
+                    </TableCell>
+                    <TableCell className="max-w-48 truncate px-3 py-3 font-medium text-foreground">
                       {customerLabel(order)}
-                    </p>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {meta.join(" · ")}
-                    </p>
-                  </div>
-
-                  <div className="shrink-0 text-right">
-                    <p
+                    </TableCell>
+                    <TableCell className="hidden max-w-36 truncate px-3 py-3 text-muted-foreground md:table-cell">
+                      {city}
+                    </TableCell>
+                    <TableCell className="hidden max-w-40 truncate px-3 py-3 text-muted-foreground lg:table-cell">
+                      {paymentConditionLabel(order.paymentCondition)}
+                    </TableCell>
+                    {showSeller ? (
+                      <TableCell className="hidden max-w-36 truncate px-3 py-3 text-muted-foreground lg:table-cell">
+                        {order.seller?.user.name ?? "—"}
+                      </TableCell>
+                    ) : null}
+                    <TableCell className="hidden px-3 py-3 tabular-nums text-muted-foreground sm:table-cell">
+                      {formatSaleItemCount(order.items.length)}
+                    </TableCell>
+                    <TableCell className="px-3 py-3">
+                      <Badge
+                        variant="outline"
+                        className={stageBadgeClass(stageCode)}
+                      >
+                        {orderStatusLabel(order.status)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell
                       className={cn(
-                        "text-sm font-semibold tabular-nums",
+                        "px-3 py-3 text-right font-semibold tabular-nums",
                         confirmed ? "text-success" : "text-foreground",
                       )}
                     >
                       {fmtMoney(order.totalAmount)}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="hidden px-3 py-3 text-right text-muted-foreground sm:table-cell">
                       {formatRelativeSaleDate(order.createdAt)}
-                    </p>
-                  </div>
-
-                  <span
-                    className="shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-                    aria-hidden
-                  >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       {isRefetching ? (

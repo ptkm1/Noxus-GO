@@ -204,7 +204,10 @@ export async function buildOrdersPdf(
         if (idx > 0) doc.addPage();
         drawOrderPdfContents(doc, page.input);
         if (withProfit) {
-          const footerY = doc.page.height - 50;
+          const prevY = doc.y;
+          const prevBottom = doc.page.margins.bottom;
+          doc.page.margins.bottom = 0;
+          const profitY = doc.page.height - 56;
           doc
             .fillColor("#0f172a")
             .fontSize(9)
@@ -212,9 +215,11 @@ export async function buildOrdersPdf(
             .text(
               `Lucro %: ${formatProfitPct(page.profitPct)}`,
               48,
-              footerY - 6,
-              { lineBreak: false },
+              profitY,
+              { lineBreak: false, height: 12 },
             );
+          doc.page.margins.bottom = prevBottom;
+          doc.y = prevY;
         }
       });
     });
