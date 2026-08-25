@@ -107,7 +107,6 @@ export function SellersPage() {
   const [password, setPassword] = useState("");
   const [sendInvite, setSendInvite] = useState(true);
   const [name, setName] = useState("");
-  const [matricula, setMatricula] = useState("");
   const [commissionType, setCommissionType] =
     useState<SellerCommissionType>("FIXED");
   const [commission, setCommission] = useState("10");
@@ -144,7 +143,6 @@ export function SellersPage() {
     setPassword("");
     setSendInvite(true);
     setName("");
-    setMatricula("");
     setCommissionType("FIXED");
     setCommission("10");
     setManagerUserId("");
@@ -163,7 +161,6 @@ export function SellersPage() {
     setEmail(s.user.email);
     setPassword("");
     setName(s.user.name);
-    setMatricula(s.user.matricula ?? "");
     setCommissionType(s.commissionType ?? "FIXED");
     setCommission(String(Number(s.commissionPercent)));
     setManagerUserId(s.managerUserId ?? "");
@@ -201,7 +198,6 @@ export function SellersPage() {
         const payload: Record<string, unknown> = {
           name: name.trim(),
           email: email.trim(),
-          matricula: matricula.trim() || null,
           commissionType,
           active,
           managerUserId: managerUserId === "" ? null : managerUserId,
@@ -222,7 +218,6 @@ export function SellersPage() {
       const createBody: Record<string, unknown> = {
         email: email.trim(),
         name: name.trim(),
-        ...(matricula.trim() ? { matricula: matricula.trim() } : {}),
         commissionType,
         ...(commissionType === "FIXED"
           ? { commissionPercent: Number(commission) }
@@ -507,14 +502,6 @@ export function SellersPage() {
               aria-invalid={fieldErrors.name ? true : undefined}
               value={name}
               onChange={(e) => setName(e.target.value)}
-            />
-          </FormField>
-          <FormField label="Matrícula" htmlFor="seller-matricula">
-            <Input
-              id="seller-matricula"
-              placeholder="Opcional"
-              value={matricula}
-              onChange={(e) => setMatricula(e.target.value)}
             />
           </FormField>
           <FormField

@@ -43,11 +43,11 @@ export function ProductCard({ product, onDelete, className }: Props) {
   return (
     <article
       className={cn(
-        "surface-card group flex flex-col overflow-hidden transition-all hover:border-primary/35",
+        "surface-card group flex h-full flex-col overflow-hidden transition-all hover:border-primary/35",
         className,
       )}
     >
-      <div className="relative h-24 overflow-hidden bg-muted/80 sm:h-28">
+      <div className="relative h-24 shrink-0 overflow-hidden bg-muted/80 sm:h-28">
         {imageUrl ? (
           <img
             src={imageUrl}
@@ -78,37 +78,39 @@ export function ProductCard({ product, onDelete, className }: Props) {
         ) : null}
       </div>
 
-      <div className="flex flex-1 flex-col gap-1 p-2">
-        <h3 className="line-clamp-2 text-xs font-semibold leading-tight text-foreground">
-          {product.name}
-        </h3>
-        {product.sku ? (
-          <p className="truncate text-[10px] text-muted-foreground">
-            SKU {product.sku}
-          </p>
-        ) : null}
-        {product.barcode ? (
-          <p className="truncate text-[10px] text-muted-foreground">
-            EAN {product.barcode}
-          </p>
-        ) : null}
+      <div className="flex min-h-0 flex-1 flex-col p-2">
+        <div className="flex flex-1 flex-col gap-1">
+          <h3 className="line-clamp-2 text-xs font-semibold leading-tight text-foreground">
+            {product.name}
+          </h3>
+          {product.sku ? (
+            <p className="truncate text-[10px] text-muted-foreground">
+              SKU {product.sku}
+            </p>
+          ) : null}
+          {product.barcode ? (
+            <p className="truncate text-[10px] text-muted-foreground">
+              EAN {product.barcode}
+            </p>
+          ) : null}
 
-        <p className="text-sm font-bold text-success">
-          R$ {Number.isFinite(price) ? price.toFixed(2) : "—"}
-        </p>
-        {unitLabel ? (
-          <p className="text-[10px] text-muted-foreground">{unitLabel}</p>
-        ) : null}
-        <p
-          className={cn(
-            "text-[10px] font-medium",
-            outOfStock ? "text-destructive" : "text-muted-foreground",
-          )}
-        >
-          {formatProductStockLabel(stockQty)}
-        </p>
+          <p className="text-sm font-bold text-success">
+            R$ {Number.isFinite(price) ? price.toFixed(2) : "—"}
+          </p>
+          {unitLabel ? (
+            <p className="text-[10px] text-muted-foreground">{unitLabel}</p>
+          ) : null}
+          <p
+            className={cn(
+              "text-[10px] font-medium",
+              outOfStock ? "text-destructive" : "text-muted-foreground",
+            )}
+          >
+            {formatProductStockLabel(stockQty)}
+          </p>
+        </div>
 
-        <div className="mt-1 flex gap-1.5 border-t border-border/60 pt-2">
+        <div className="mt-2 flex shrink-0 gap-1.5 border-t border-border/60 pt-2">
           <Button variant="outline" size="xs" className="h-7 flex-1" asChild>
             <Link to={`/produtos/${product.id}/editar`}>
               <Pencil className="h-3 w-3" />

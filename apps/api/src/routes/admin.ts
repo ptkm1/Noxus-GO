@@ -27,6 +27,7 @@ import {
     isOrgStaff,
     isTeamLeaderAuth,
     isTeamLeaderGetAllowed,
+    isTeamLeaderWriteAllowed,
     orderScopeWhere,
     requireAdmin,
     requireOrgStaff,
@@ -397,6 +398,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
       if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
         if (auth.role === "MANAGER" && isManagerWriteAllowed(routePath)) {
+          return;
+        }
+        if (
+          isTeamLeaderAuth(auth) &&
+          isTeamLeaderWriteAllowed(routePath)
+        ) {
           return;
         }
         if (!requireAdmin(reply, auth)) return;
@@ -6866,6 +6873,52 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
     return {
       homeIndicators: normalizeHomeIndicators(org?.homeIndicators),
+    };
+  });
+
+  /**
+   * Atualiza a ordem/seleção dos widgets da home (`Organization.homeIndicators`).
+   * Aceita lista parcial (ex.: líder sem rentabilidade): preserva keys omitidas no fim.
+   */
+  app.patch("/reports/home-dashboard-config", async (req, reply) => {
+    const auth = req.auth!;
+    const homeIndicatorKeySchema = z.enum(
+      HOME_INDICATOR_KEYS as unknown as [
+        HomeIndicatorKey,
+        ...HomeIndicatorKey[],
+      ],
+    );
+    const body = z
+      .object({
+        homeIndicators: z
+          .array(homeIndicatorKeySchema)
+          .min(1)
+          .max(MAX_HOME_INDICATORS),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return sendZodError(reply, body.error, req);
+    }
+
+    const org = await prisma.organization.findUnique({
+      where: { id: auth.organizationId },
+      select: { homeIndicators: true },
+    });
+    const current = normalizeHomeIndicators(org?.homeIndicators);
+    const requested = normalizeHomeIndicators(body.data.homeIndicators);
+    const requestedSet = new Set(requested);
+    const merged = normalizeHomeIndicators([
+      ...requested,
+      ...current.filter((k) => !requestedSet.has(k)),
+    ]);
+
+    const updated = await prisma.organization.update({
+      where: { id: auth.organizationId },
+      data: { homeIndicators: merged },
+      select: { homeIndicators: true },
+    });
+    return {
+      homeIndicators: normalizeHomeIndicators(updated.homeIndicators),
     };
   });
 

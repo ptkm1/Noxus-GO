@@ -93,6 +93,12 @@ import { StockMovementsPage } from "./pages/StockMovementsPage";
 import { StockPage } from "./pages/StockPage";
 import { SuppliersPage } from "./pages/SuppliersPage";
 import { SystemSettingsPage } from "./pages/SystemSettingsPage";
+import { AccountSettingsPage } from "./pages/settings/AccountSettingsPage";
+import { CustomerSettingsPage } from "./pages/settings/CustomerSettingsPage";
+import { EstablishmentsSettingsPage } from "./pages/settings/EstablishmentsSettingsPage";
+import { HomePanelSettingsPage } from "./pages/settings/HomePanelSettingsPage";
+import { OrderFlowSettingsPage } from "./pages/settings/OrderFlowSettingsPage";
+import { OrderSyncSettingsPage } from "./pages/settings/OrderSyncSettingsPage";
 import { TeamsPage } from "./pages/TeamsPage";
 import { UsersPage } from "./pages/UsersPage";
 
@@ -402,6 +408,30 @@ function AppRoutes() {
               element={<Navigate to="/configuracoes?abrir=auditoria" replace />}
             />
             <Route path="configuracoes" element={<SystemSettingsPage />} />
+            <Route
+              path="configuracoes/conta"
+              element={<AccountSettingsPage />}
+            />
+            <Route
+              path="configuracoes/estabelecimentos"
+              element={<EstablishmentsSettingsPage />}
+            />
+            <Route
+              path="configuracoes/pedidos-sincronizacao"
+              element={<OrderSyncSettingsPage />}
+            />
+            <Route
+              path="configuracoes/fluxo-pedido"
+              element={<OrderFlowSettingsPage />}
+            />
+            <Route
+              path="configuracoes/clientes"
+              element={<CustomerSettingsPage />}
+            />
+            <Route
+              path="configuracoes/painel"
+              element={<HomePanelSettingsPage />}
+            />
             <Route path="relatorios" element={<ReportsHubPage />} />
             <Route
               path="relatorios/clientes"

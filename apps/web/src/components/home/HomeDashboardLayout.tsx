@@ -29,7 +29,10 @@ export function HomeDashboardLayout({
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Início
         </h1>
-        <div className="flex flex-wrap items-center gap-2">
+        {/*
+          Oculto por enquanto (print / filtros futuros). Remover `hidden` para reativar.
+        */}
+        <div className="hidden flex-wrap items-center gap-2">
           <div className="flex h-9 min-w-[9.5rem] items-center rounded-lg border border-dashed border-border bg-card px-3 text-xs text-muted-foreground/70">
             Filtro de data
           </div>
