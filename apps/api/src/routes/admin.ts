@@ -140,7 +140,6 @@ import {
 import {
     ensureDefaultOrderSituations,
     findOrgSituationId,
-    isLifecycleSituationCode,
     normalizeSituationCode,
     situationIdForOrderStatus,
 } from "../services/order-situations.js";

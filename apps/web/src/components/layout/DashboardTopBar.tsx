@@ -88,7 +88,7 @@ export function DashboardTopBar() {
                 </span>
               ) : (
                 <AppSelect
-                  value={activeEstablishmentId ?? undefined}
+                  value={activeEstablishmentId ?? ""}
                   onValueChange={setActiveEstablishmentId}
                   className="h-8 min-w-[11rem] max-w-[16rem]"
                   options={establishments.map((e) => ({
