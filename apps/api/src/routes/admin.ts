@@ -140,6 +140,7 @@ import {
 import {
     ensureDefaultOrderSituations,
     findOrgSituationId,
+    isLifecycleSituationCode,
     normalizeSituationCode,
     situationIdForOrderStatus,
 } from "../services/order-situations.js";
@@ -1489,9 +1490,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       where: { id, organizationId: auth.organizationId },
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
-    if (existing.isSystem) {
+    if (isLifecycleSituationCode(existing.code)) {
       return reply.status(400).send({
-        error: "Etapa do sistema não pode ser excluída.",
+        error:
+          "Rascunho, aguardando crédito, entregue e cancelado não podem ser excluídos.",
       });
     }
     const inUse = await prisma.order.count({

@@ -1,5 +1,6 @@
 import type { OrderStatus } from "@prisma/client";
 import {
+  isLifecycleSituationCode,
   isReservedSituationCode,
   orderStatusFromSituation,
   situationCodeFromOrderStatus,
@@ -59,12 +60,24 @@ export const DEFAULT_ORDER_SITUATIONS = [
   },
 ] as const;
 
-export { isReservedSituationCode, SYSTEM_SITUATION_CODES };
+export {
+  isLifecycleSituationCode,
+  isReservedSituationCode,
+  SYSTEM_SITUATION_CODES,
+};
 
 export async function ensureDefaultOrderSituations(
   organizationId: string,
 ): Promise<void> {
-  for (const d of DEFAULT_ORDER_SITUATIONS) {
+  const existingCount = await prisma.orderSituation.count({
+    where: { organizationId },
+  });
+  const defaults =
+    existingCount === 0
+      ? DEFAULT_ORDER_SITUATIONS
+      : DEFAULT_ORDER_SITUATIONS.filter((d) => isLifecycleSituationCode(d.code));
+
+  for (const d of defaults) {
     await prisma.orderSituation.upsert({
       where: {
         organizationId_code: { organizationId, code: d.code },
