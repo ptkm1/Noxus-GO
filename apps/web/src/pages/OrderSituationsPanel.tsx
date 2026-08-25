@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
+import { isLifecycleSituationCode } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { apiFetch } from "../lib/api";
@@ -46,7 +47,7 @@ export function situationCodeFromName(name: string): string {
 
 export function OrderSituationsPanel() {
   const qc = useQueryClient();
-  const { confirm } = useConfirm();
+  const { confirm, alert } = useConfirm();
   const { data: situations = [], isLoading } = useQuery({
     queryKey: ["admin", "order-situations"],
     queryFn: () => apiFetch<OrderSituation[]>("/admin/order-situations"),
@@ -297,7 +298,6 @@ export function OrderSituationsPanel() {
             <TableHeader>
               <TableRow>
                 <TableHead className="px-4">Ordem</TableHead>
-                <TableHead className="px-4">Código</TableHead>
                 <TableHead className="px-4">Nome</TableHead>
                 <TableHead className="px-4">Ativa</TableHead>
                 <TableHead className="px-4" />
@@ -308,14 +308,6 @@ export function OrderSituationsPanel() {
                 <TableRow key={row.id}>
                   <TableCell className="px-4 py-3 text-muted-foreground">
                     {row.sortOrder}
-                  </TableCell>
-                  <TableCell className="px-4 py-3 font-mono text-xs text-foreground">
-                    {row.code}
-                    {row.isSystem ? (
-                      <span className="ml-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-                        padrão
-                      </span>
-                    ) : null}
                   </TableCell>
                   <TableCell className="px-4 py-3">
                     {row.name}
@@ -347,24 +339,31 @@ export function OrderSituationsPanel() {
                     >
                       Editar
                     </button>
-                    {!row.isSystem ? (
-                      <button
-                        type="button"
-                        className="ml-3 text-destructive"
-                        onClick={() => {
-                          void confirm({
-                            title: "Excluir etapa?",
-                            description: `A etapa “${row.name}” será removida. Mova os pedidos desta etapa antes de excluir.`,
-                            confirmLabel: "Excluir",
-                            tone: "destructive",
-                          }).then((ok) => {
-                            if (ok) remove.mutate(row.id);
+                    <button
+                      type="button"
+                      className="ml-3 text-destructive"
+                      disabled={remove.isPending}
+                      onClick={() => {
+                        if (isLifecycleSituationCode(row.code)) {
+                          void alert({
+                            title: "Não é possível excluir",
+                            description:
+                              "Rascunho, aguardando crédito, entregue e cancelado fazem parte do fluxo padrão e não podem ser removidos.",
                           });
-                        }}
-                      >
-                        Excluir
-                      </button>
-                    ) : null}
+                          return;
+                        }
+                        void confirm({
+                          title: "Excluir etapa?",
+                          description: `A etapa “${row.name}” será removida. Mova os pedidos desta etapa antes de excluir.`,
+                          confirmLabel: "Excluir",
+                          tone: "destructive",
+                        }).then((ok) => {
+                          if (ok) remove.mutate(row.id);
+                        });
+                      }}
+                    >
+                      Excluir
+                    </button>
                   </TableCell>
                 </TableRow>
               ))}
