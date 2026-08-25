@@ -126,7 +126,8 @@ import {
     replySaleCreateError,
     sellerAllowedProductIds,
 } from "../services/create-sale-order.js";
-import { evaluateOrderCredit } from "../services/credit.js";
+import { checkCustomer, evaluateOrderCredit } from "../services/credit.js";
+import { bankingAdminRoutes } from "./banking-admin.js";
 import { resolveEffectiveUnitPrice } from "../services/price-resolve.js";
 import {
     listAssignedProductsInOrg,
@@ -139,7 +140,6 @@ import {
 import {
     ensureDefaultOrderSituations,
     findOrgSituationId,
-    isLifecycleSituationCode,
     normalizeSituationCode,
     situationIdForOrderStatus,
 } from "../services/order-situations.js";
@@ -4219,6 +4219,91 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         seller: { include: { user: { select: { name: true } } } },
         region: { select: { id: true, code: true, name: true } },
       },
+    }).then(async (customers) => {
+      if (!customers.length) return customers;
+      const ids = customers.map((c) => c.id);
+      const today0 = new Date();
+      today0.setHours(0, 0, 0, 0);
+
+      const [openTitles, openReceivables] = await Promise.all([
+        prisma.customerCreditTitle.findMany({
+          where: {
+            organizationId: auth.organizationId,
+            customerId: { in: ids },
+            status: "OPEN",
+          },
+          select: {
+            customerId: true,
+            amount: true,
+            paidAmount: true,
+            dueDate: true,
+          },
+        }),
+        prisma.receivable.findMany({
+          where: {
+            organizationId: auth.organizationId,
+            customerId: { in: ids },
+            status: { in: ["PENDING", "PARTIALLY_PAID", "OVERDUE"] },
+          },
+          select: {
+            customerId: true,
+            amount: true,
+            paidAmount: true,
+            dueDate: true,
+            status: true,
+          },
+        }),
+      ]);
+
+      const summary = new Map<
+        string,
+        { openAmount: number; overdueAmount: number; situation: string }
+      >();
+      for (const id of ids) {
+        summary.set(id, {
+          openAmount: 0,
+          overdueAmount: 0,
+          situation: "OK",
+        });
+      }
+      const round = (n: number) => Math.round(n * 100) / 100;
+      for (const t of openTitles) {
+        const rem =
+          Number(t.amount) - Number(t.paidAmount);
+        if (rem <= 0) continue;
+        const s = summary.get(t.customerId)!;
+        s.openAmount = round(s.openAmount + rem);
+        if (t.dueDate < today0) {
+          s.overdueAmount = round(s.overdueAmount + rem);
+        }
+      }
+      for (const r of openReceivables) {
+        const rem = Number(r.amount) - Number(r.paidAmount);
+        if (rem <= 0) continue;
+        const s = summary.get(r.customerId)!;
+        s.openAmount = round(s.openAmount + rem);
+        if (r.status === "OVERDUE" || r.dueDate < today0) {
+          s.overdueAmount = round(s.overdueAmount + rem);
+        }
+      }
+      for (const c of customers) {
+        const s = summary.get(c.id)!;
+        if (c.creditBlocked || s.overdueAmount > 0) {
+          s.situation = "OVERDUE";
+        } else if (s.openAmount > 0) {
+          s.situation = "OPEN";
+        }
+      }
+
+      return customers.map((c) => {
+        const s = summary.get(c.id)!;
+        return {
+          ...c,
+          creditSituation: s.situation,
+          creditOpenAmount: s.openAmount,
+          creditOverdueAmount: s.overdueAmount,
+        };
+      });
     });
   });
 
@@ -5049,6 +5134,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         legalName: z.string().optional(),
         /** Alias de legalName (também busca em customer.name). */
         name: z.string().optional(),
+        establishmentId: z.string().optional(),
       })
       .safeParse(req.query);
 
@@ -5058,6 +5144,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (q.success) {
       if (q.data.sellerId) where.sellerId = q.data.sellerId;
       if (q.data.status) where.status = q.data.status as OrderStatus;
+      if (q.data.establishmentId) where.establishmentId = q.data.establishmentId;
       if (q.data.situationId) where.situationId = q.data.situationId;
       if (q.data.situationCode) {
         const sid = await findOrgSituationId(
@@ -5118,6 +5205,15 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       include: {
         seller: { include: { user: { select: { name: true, email: true } } } },
         customer: true,
+        establishment: {
+          select: {
+            id: true,
+            legalName: true,
+            tradeName: true,
+            cnpj: true,
+            isPrimary: true,
+          },
+        },
         situation: {
           select: {
             id: true,
@@ -5370,7 +5466,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         customerId: body.data.customerId,
         proposedOrderTotal: sale.netTotal,
       });
-      return { ...sale, credit };
+      const creditCheck = await checkCustomer(
+        auth.organizationId,
+        body.data.customerId,
+        sale.netTotal,
+      );
+      return { ...sale, credit: { ...credit, check: creditCheck } };
     } catch (e) {
       if (e instanceof OrderPricingError)
         return reply.status(400).send({ error: e.message });
@@ -5559,6 +5660,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         customerId: z.string().min(1),
         paymentConditionId: z.string().min(1),
         priceTableId: z.string().min(1).optional(),
+        establishmentId: z.string().min(1).optional(),
         status: z.enum(["DRAFT", "CONFIRMED", "CANCELLED"]).optional(),
         notes: z.string().optional(),
         items: z
@@ -5610,6 +5712,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         customerId: body.data.customerId,
         paymentConditionId: body.data.paymentConditionId,
         priceTableId: body.data.priceTableId ?? null,
+        establishmentId: body.data.establishmentId,
         items: body.data.items.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
@@ -5618,6 +5721,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         notes: body.data.notes,
         status: body.data.status,
         source: "admin",
+        actorRole: auth.role,
         allowedProductIds: await sellerAllowedProductIds(
           body.data.sellerId,
           auth.organizationId,
@@ -6662,6 +6766,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         from: z.string().optional(),
         to: z.string().optional(),
         limit: z.coerce.number().int().min(1).max(20).optional(),
+        establishmentId: z.string().optional(),
       })
       .safeParse(req.query);
     if (!q.success)
@@ -6710,6 +6815,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       organizationId: auth.organizationId,
       key: q.data.key,
       sellerIds,
+      establishmentId: q.data.establishmentId,
       from: q.data.from,
       to: q.data.to,
       limit: q.data.limit,
@@ -7083,4 +7189,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
   await app.register(fiscalRoutes, { prefix: "/fiscal" });
   await app.register(expeditionRoutes);
+  await app.register(bankingAdminRoutes);
+  const { establishmentRoutes } = await import("./establishments.js");
+  await app.register(establishmentRoutes, { prefix: "/establishments" });
 };

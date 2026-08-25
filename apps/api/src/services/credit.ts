@@ -1,4 +1,9 @@
-import type { CreditPolicy, CreditTitleStatus, Prisma } from "@prisma/client";
+import type {
+  CreditPolicy,
+  CreditTitleStatus,
+  Prisma,
+  ReceivableStatus,
+} from "@prisma/client";
 import { prisma } from "../db.js";
 import { decToNum } from "../util/money.js";
 import {
@@ -10,7 +15,32 @@ export type CreditViolation = { code: string; message: string };
 
 export type CreditEffectiveAction = "ALLOW" | "BLOCK" | "APPROVAL";
 
+/** Resultado de checkCustomer — só PostgreSQL local (nunca API do banco). */
+export type CustomerCreditCheckStatus = "OK" | "BLOCKED" | "WARN";
+
+export type CustomerCreditCheck = {
+  status: CustomerCreditCheckStatus;
+  reason?: string;
+  overdueAmount?: number;
+  openAmount?: number;
+  overdueReceivables?: Array<{
+    id: string;
+    amount: number;
+    paidAmount: number;
+    remaining: number;
+    dueDate: string;
+    status: ReceivableStatus;
+    nossoNumero: string | null;
+  }>;
+  policy: CreditPolicy;
+  action: CreditEffectiveAction;
+  violations: CreditViolation[];
+};
+
 const EPS = 1e-6;
+
+/** Extensível: tolerância em dias após vencimento (0 = no dia). Via org metadata futuro. */
+const DEFAULT_OVERDUE_GRACE_DAYS = 0;
 
 function roundMoney(n: number): number {
   return Math.round(n * 100) / 100;
@@ -19,6 +49,18 @@ function roundMoney(n: number): number {
 function startOfToday(at: Date): Date {
   return new Date(at.getFullYear(), at.getMonth(), at.getDate(), 0, 0, 0, 0);
 }
+
+function dueCutoff(at: Date, graceDays = DEFAULT_OVERDUE_GRACE_DAYS): Date {
+  const d = startOfToday(at);
+  if (graceDays > 0) d.setDate(d.getDate() - graceDays);
+  return d;
+}
+
+const OPEN_RECEIVABLE: ReceivableStatus[] = [
+  "PENDING",
+  "PARTIALLY_PAID",
+  "OVERDUE",
+];
 
 export function resolveCreditEffectiveAction(
   policy: CreditPolicy,
@@ -61,18 +103,27 @@ export async function computeCreditViolations(input: {
     return { violations: [], policy };
   }
 
-  const titles = await prisma.customerCreditTitle.findMany({
-    where: {
-      organizationId,
-      customerId,
-      status: "OPEN",
-    },
-  });
+  const [titles, receivables] = await Promise.all([
+    prisma.customerCreditTitle.findMany({
+      where: {
+        organizationId,
+        customerId,
+        status: "OPEN",
+      },
+    }),
+    prisma.receivable.findMany({
+      where: {
+        organizationId,
+        customerId,
+        status: { in: OPEN_RECEIVABLE },
+      },
+    }),
+  ]);
 
   let openBalance = 0;
   let overdueAmount = 0;
   let overdueCount = 0;
-  const today0 = startOfToday(new Date());
+  const cutoff = dueCutoff(new Date());
 
   for (const t of titles) {
     const amt = decToNum(t.amount);
@@ -80,9 +131,24 @@ export async function computeCreditViolations(input: {
     const remaining = roundMoney(amt - paid);
     if (remaining <= EPS) continue;
     openBalance = roundMoney(openBalance + remaining);
-    if (t.dueDate < today0) {
+    if (t.dueDate < cutoff) {
       overdueAmount = roundMoney(overdueAmount + remaining);
       overdueCount++;
+    }
+  }
+
+  let overdueReceivableCount = 0;
+  for (const r of receivables) {
+    const amt = decToNum(r.amount);
+    const paid = decToNum(r.paidAmount);
+    const remaining = roundMoney(amt - paid);
+    if (remaining <= EPS) continue;
+    openBalance = roundMoney(openBalance + remaining);
+    const isOverdue = r.status === "OVERDUE" || r.dueDate < cutoff;
+    if (isOverdue) {
+      overdueAmount = roundMoney(overdueAmount + remaining);
+      overdueCount++;
+      overdueReceivableCount++;
     }
   }
 
@@ -96,9 +162,13 @@ export async function computeCreditViolations(input: {
   }
 
   if (overdueCount > 0) {
+    const boletoHint =
+      overdueReceivableCount > 0
+        ? ` (inclui ${overdueReceivableCount} boleto(s) bancário(s))`
+        : "";
     violations.push({
       code: "OVERDUE_TITLES",
-      message: `Há ${overdueCount} título(s) vencido(s) em aberto (total vencido R$ ${overdueAmount.toFixed(2).replace(".", ",")}).`,
+      message: `Há ${overdueCount} título(s) vencido(s) em aberto (total vencido R$ ${overdueAmount.toFixed(2).replace(".", ",")})${boletoHint}.`,
     });
   }
 
@@ -147,6 +217,95 @@ export async function evaluateOrderCredit(params: {
   return { violations, policy, action };
 }
 
+/**
+ * Checagem de crédito do cliente lendo apenas o banco local.
+ * Usado na confirmação de pedido e na UI de cliente.
+ */
+export async function checkCustomer(
+  organizationId: string,
+  customerId: string,
+  previewOrderTotal?: number | null,
+): Promise<CustomerCreditCheck> {
+  const { violations, policy } = await computeCreditViolations({
+    organizationId,
+    customerId,
+    previewOrderTotal: previewOrderTotal ?? null,
+  });
+  const action = resolveCreditEffectiveAction(policy, violations);
+
+  const cutoff = dueCutoff(new Date());
+  const receivables = await prisma.receivable.findMany({
+    where: {
+      organizationId,
+      customerId,
+      status: { in: OPEN_RECEIVABLE },
+    },
+    orderBy: { dueDate: "asc" },
+    take: 40,
+  });
+
+  const overdueReceivables: NonNullable<
+    CustomerCreditCheck["overdueReceivables"]
+  > = [];
+  let openAmount = 0;
+  let overdueAmount = 0;
+  for (const r of receivables) {
+    const amt = decToNum(r.amount);
+    const paid = decToNum(r.paidAmount);
+    const remaining = roundMoney(amt - paid);
+    if (remaining <= EPS) continue;
+    openAmount = roundMoney(openAmount + remaining);
+    if (r.status === "OVERDUE" || r.dueDate < cutoff) {
+      overdueAmount = roundMoney(overdueAmount + remaining);
+      overdueReceivables.push({
+        id: r.id,
+        amount: amt,
+        paidAmount: paid,
+        remaining,
+        dueDate: r.dueDate.toISOString(),
+        status: r.status,
+        nossoNumero: r.nossoNumero,
+      });
+    }
+  }
+
+  // Soma títulos manuais ao open/overdue reportados
+  const titles = await prisma.customerCreditTitle.findMany({
+    where: { organizationId, customerId, status: "OPEN" },
+  });
+  for (const t of titles) {
+    const remaining = roundMoney(decToNum(t.amount) - decToNum(t.paidAmount));
+    if (remaining <= EPS) continue;
+    openAmount = roundMoney(openAmount + remaining);
+    if (t.dueDate < cutoff) {
+      overdueAmount = roundMoney(overdueAmount + remaining);
+    }
+  }
+
+  let status: CustomerCreditCheckStatus = "OK";
+  if (action === "BLOCK" || customerBlocked(violations)) {
+    status = "BLOCKED";
+  } else if (violations.length > 0) {
+    status = "WARN";
+  }
+
+  return {
+    status,
+    reason: violations[0]?.message,
+    overdueAmount: overdueAmount > EPS ? overdueAmount : undefined,
+    openAmount: openAmount > EPS ? openAmount : undefined,
+    overdueReceivables:
+      overdueReceivables.length > 0 ? overdueReceivables : undefined,
+    policy,
+    action,
+    violations,
+  };
+}
+
+function customerBlocked(violations: CreditViolation[]): boolean {
+  return violations.some((v) => v.code === "CUSTOMER_BLOCKED");
+}
+
 export function violationsToJson(
   violations: CreditViolation[],
 ): Prisma.InputJsonValue {
@@ -191,6 +350,7 @@ export async function buildSellerCustomerCreditSnapshot(params: {
     status: CreditTitleStatus;
     notes: string | null;
   }>;
+  creditCheck: CustomerCreditCheck;
 }> {
   const showUnassigned = await getSellerShowUnassignedCustomers(
     params.organizationId,
@@ -234,6 +394,11 @@ export async function buildSellerCustomerCreditSnapshot(params: {
   });
 
   const today0 = startOfToday(new Date());
+  const check = await checkCustomer(
+    params.organizationId,
+    cust.id,
+    params.previewAmount ?? null,
+  );
 
   function serialize(t: (typeof allTitles)[number]) {
     const amt = decToNum(t.amount);
@@ -262,31 +427,21 @@ export async function buildSellerCustomerCreditSnapshot(params: {
     .filter((x) => x.status !== "OPEN")
     .slice(0, 25);
 
-  let overdueAmount = 0;
-  let overdueCount = 0;
-  let openBalance = 0;
-  for (const x of titlesOpen) {
-    openBalance += x.remaining;
-    if (x.overdue) {
-      overdueCount++;
-      overdueAmount += x.remaining;
-    }
-  }
-  openBalance = roundMoney(openBalance);
-  overdueAmount = roundMoney(overdueAmount);
-
   return {
     customerId: cust.id,
     creditBlocked: cust.creditBlocked,
     creditLimit:
       cust.creditLimit != null ? roundMoney(decToNum(cust.creditLimit)) : null,
     creditPolicy: org?.creditPolicy ?? "WARN_ONLY",
-    openBalance,
-    overdueCount,
-    overdueAmount,
+    openBalance: check.openAmount ?? 0,
+    overdueCount:
+      (check.overdueReceivables?.length ?? 0) +
+      titlesOpen.filter((x) => x.overdue).length,
+    overdueAmount: check.overdueAmount ?? 0,
     violations,
     effectiveAction,
     titlesOpen,
     titlesHistory,
+    creditCheck: check,
   };
 }

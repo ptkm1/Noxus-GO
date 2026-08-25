@@ -32,6 +32,14 @@ describe.skipIf(!hasDb)("POST /admin/orders", () => {
         name: `Order A ${stamp}`,
         displayName: `Order A ${stamp}`,
         accessStatus: "ACTIVE",
+        establishments: {
+          create: {
+            legalName: `Order A ${stamp}`,
+            isPrimary: true,
+            active: true,
+            cnpj: null,
+          },
+        },
       },
     });
     orgA = a.id;
@@ -40,6 +48,14 @@ describe.skipIf(!hasDb)("POST /admin/orders", () => {
         name: `Order B ${stamp}`,
         displayName: `Order B ${stamp}`,
         accessStatus: "ACTIVE",
+        establishments: {
+          create: {
+            legalName: `Order B ${stamp}`,
+            isPrimary: true,
+            active: true,
+            cnpj: null,
+          },
+        },
       },
     });
     orgB = b.id;

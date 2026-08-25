@@ -1,7 +1,7 @@
 import type {
   FiscalInvoice,
   FiscalInvoiceItem,
-  OrganizationFiscalConfig,
+  Establishment,
 } from "@prisma/client";
 import { taxRegimeToCrt } from "./certificate-store.js";
 import {
@@ -56,7 +56,7 @@ function resolveFiscalOrigin(
 }
 
 function buildIcmsXml(
-  taxRegime: OrganizationFiscalConfig["taxRegime"],
+  taxRegime: Establishment["taxRegime"],
   tax: Record<string, unknown>,
   lineNumber: number,
 ): string {
@@ -217,7 +217,7 @@ function sumTaxSnapshots(items: FiscalInvoiceItem[]) {
 }
 
 export function buildSignedNfePackage(input: {
-  config: OrganizationFiscalConfig;
+  config: Establishment;
   invoice: FiscalInvoice & { items: FiscalInvoiceItem[] };
   recipient: Recipient;
   emitterName: string;
@@ -261,7 +261,7 @@ export function buildSignedNfePackage(input: {
 }
 
 function buildInfNFe(input: {
-  config: OrganizationFiscalConfig;
+  config: Establishment;
   invoice: FiscalInvoice & { items: FiscalInvoiceItem[] };
   recipient: Recipient;
   emitterName: string;

@@ -289,6 +289,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       .object({
         customerId: z.string().min(1),
         paymentConditionId: z.string().min(1),
+        establishmentId: z.string().min(1).optional(),
         operation: z.enum(["SALE"]).optional(),
         /** Idempotência — mesmo valor em replay devolve o mesmo pedido (offline queue). */
         clientMutationId: z.string().min(8).max(80).optional(),
@@ -368,6 +369,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         sellerId: auth.sellerId!,
         customerId: body.data.customerId,
         paymentConditionId: body.data.paymentConditionId,
+        establishmentId: body.data.establishmentId,
         items: body.data.items.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
@@ -378,6 +380,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         operation: body.data.operation,
         clientMutationId,
         source: "seller",
+        actorRole: auth.role,
         allowedProductIds: await sellerAllowedProductIds(
           auth.sellerId!,
           auth.organizationId,

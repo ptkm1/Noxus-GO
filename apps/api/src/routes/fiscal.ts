@@ -46,6 +46,14 @@ import {
   loadInvoiceForDanfe,
   sendDanfePdfReply,
 } from "../services/nfe-danfe-load.js";
+import {
+  assertEstablishmentPermission,
+  getEstablishmentInOrg,
+  getPrimaryEstablishment,
+  toSettingsPayload,
+  updateEstablishment,
+  EstablishmentError,
+} from "../services/establishments.js";
 
 const idParam = z.object({ id: z.string().min(1) });
 
@@ -93,44 +101,54 @@ function outboundInvoiceSearchWhere(
   return where;
 }
 
+
+async function resolveFiscalEstablishment(
+  organizationId: string,
+  establishmentId?: string | null,
+) {
+  if (establishmentId?.trim()) {
+    return getEstablishmentInOrg(organizationId, establishmentId.trim());
+  }
+  return getPrimaryEstablishment(organizationId);
+}
+
 export const fiscalRoutes: FastifyPluginAsync = async (app) => {
-  app.get("/settings", async (req) => {
+  app.get("/settings", async (req, reply) => {
     const auth = req.auth!;
-    const config = await prisma.organizationFiscalConfig.findUnique({
-      where: { organizationId: auth.organizationId },
-    });
+    const q = z
+      .object({ establishmentId: z.string().optional() })
+      .safeParse(req.query);
+    const establishmentId = q.success ? q.data.establishmentId : undefined;
+    const config = await resolveFiscalEstablishment(
+      auth.organizationId,
+      establishmentId,
+    );
     if (!config) {
       return {
         configured: false,
         autoStockOnInboundInvoice: false,
       };
     }
+    try {
+      assertEstablishmentPermission({
+        role: auth.role,
+        allowedEstablishmentIds: (
+          await prisma.user.findUnique({
+            where: { id: auth.sub },
+            select: { allowedEstablishmentIds: true },
+          })
+        )?.allowedEstablishmentIds,
+        establishmentId: config.id,
+      });
+    } catch (e) {
+      if (e instanceof EstablishmentError) {
+        return reply.status(e.httpStatus).send({ error: e.message, code: e.code });
+      }
+      throw e;
+    }
     const cert = certificateStatus(config.certificateExpiresAt);
     return {
-      configured: true,
-      cnpj: config.cnpj,
-      stateRegistration: config.stateRegistration,
-      municipalRegistration: config.municipalRegistration,
-      taxRegime: config.taxRegime,
-      uf: config.uf,
-      cityIbge: config.cityIbge,
-      street: config.street,
-      addressNumber: config.addressNumber,
-      complement: config.complement,
-      district: config.district,
-      city: config.city,
-      zipCode: config.zipCode,
-      nfeEnvironment: config.nfeEnvironment,
-      nfeSeries: config.nfeSeries,
-      nfeLastNumber: config.nfeLastNumber,
-      nfceSeries: config.nfceSeries,
-      nfceLastNumber: config.nfceLastNumber,
-      contingencyEnabled: config.contingencyEnabled,
-      autoStockOnInboundInvoice: config.autoStockOnInboundInvoice,
-      logo: {
-        uploaded: Boolean(config.danfeLogoBytes?.length),
-        mimeType: config.danfeLogoMimeType,
-      },
+      ...toSettingsPayload(config),
       certificate: {
         uploaded: Boolean(config.certificatePfxEncrypted),
         cnpj: config.certificateCnpj,
@@ -145,6 +163,9 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     if (!requireAdmin(reply, auth)) return;
     const body = z
       .object({
+        establishmentId: z.string().optional(),
+        legalName: z.string().optional(),
+        tradeName: z.string().optional(),
         cnpj: z.string().optional(),
         stateRegistration: z.string().optional(),
         municipalRegistration: z.string().optional(),
@@ -161,7 +182,6 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         zipCode: z.string().optional(),
         nfeEnvironment: z.enum(["HOMOLOGATION", "PRODUCTION"]).optional(),
         nfeSeries: z.number().int().positive().optional(),
-        /** true = forçar SVC; o fallback automático ocorre mesmo com false. */
         contingencyEnabled: z.boolean().optional(),
         autoStockOnInboundInvoice: z.boolean().optional(),
       })
@@ -170,18 +190,33 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         return sendZodError(reply, body.error, req);
       }
 
-    const config = await prisma.organizationFiscalConfig.upsert({
-      where: { organizationId: auth.organizationId },
-      create: { organizationId: auth.organizationId, ...body.data },
-      update: body.data,
-    });
-    await auditFromAuth(auth, {
-      action: AUDIT_ACTION.FISCAL_SETTINGS,
-      entityType: AUDIT_ENTITY.FiscalConfig,
-      entityId: config.id,
-      metadata: { fields: Object.keys(body.data) },
-    });
-    return config;
+    const { establishmentId, ...fields } = body.data;
+    const target = await resolveFiscalEstablishment(
+      auth.organizationId,
+      establishmentId,
+    );
+    if (!target) {
+      return reply.status(400).send({ error: "Estabelecimento não encontrado" });
+    }
+    try {
+      const config = await updateEstablishment(
+        auth.organizationId,
+        target.id,
+        fields,
+      );
+      await auditFromAuth(auth, {
+        action: AUDIT_ACTION.FISCAL_SETTINGS,
+        entityType: AUDIT_ENTITY.FiscalConfig,
+        entityId: config.id,
+        metadata: { fields: Object.keys(fields) },
+      });
+      return config;
+    } catch (e) {
+      if (e instanceof EstablishmentError) {
+        return reply.status(e.httpStatus).send({ error: e.message, code: e.code });
+      }
+      throw e;
+    }
   });
 
   app.post("/certificate", async (req, reply) => {
@@ -189,6 +224,7 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     if (!requireAdmin(reply, auth)) return;
     const body = z
       .object({
+        establishmentId: z.string().optional(),
         pfxBase64: z.string().min(1),
         password: z.string().min(1),
       })
@@ -196,6 +232,14 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     if (!body.success) {
         return sendZodError(reply, body.error, req);
       }
+
+    const target = await resolveFiscalEstablishment(
+      auth.organizationId,
+      body.data.establishmentId,
+    );
+    if (!target) {
+      return reply.status(400).send({ error: "Estabelecimento não encontrado" });
+    }
 
     let pfx: Buffer;
     try {
@@ -218,16 +262,9 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    await prisma.organizationFiscalConfig.upsert({
-      where: { organizationId: auth.organizationId },
-      create: {
-        organizationId: auth.organizationId,
-        certificatePfxEncrypted: new Uint8Array(encryptedPfx),
-        certificatePasswordEncrypted: encryptedPassword,
-        certificateExpiresAt: meta.expiresAt,
-        certificateCnpj: meta.cnpj,
-      },
-      update: {
+    await prisma.establishment.update({
+      where: { id: target.id },
+      data: {
         certificatePfxEncrypted: new Uint8Array(encryptedPfx),
         certificatePasswordEncrypted: encryptedPassword,
         certificateExpiresAt: meta.expiresAt,
@@ -239,22 +276,25 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     await auditFromAuth(auth, {
       action: AUDIT_ACTION.FISCAL_CERTIFICATE,
       entityType: AUDIT_ENTITY.FiscalConfig,
-      entityId: auth.organizationId,
+      entityId: target.id,
       metadata: {
         certificateCnpj: meta.cnpj,
         expiresAt: meta.expiresAt ? meta.expiresAt.toISOString() : null,
       },
     });
 
-    return { ok: true, certificate: meta };
+    return { ok: true, certificate: meta, establishmentId: target.id };
   });
 
   app.get("/logo", async (req, reply) => {
     const auth = req.auth!;
-    const config = await prisma.organizationFiscalConfig.findUnique({
-      where: { organizationId: auth.organizationId },
-      select: { danfeLogoBytes: true, danfeLogoMimeType: true },
-    });
+    const q = z
+      .object({ establishmentId: z.string().optional() })
+      .safeParse(req.query);
+    const config = await resolveFiscalEstablishment(
+      auth.organizationId,
+      q.success ? q.data.establishmentId : undefined,
+    );
     if (!config?.danfeLogoBytes?.length) {
       return reply.status(404).send({ error: "Logo não configurada" });
     }
@@ -269,6 +309,7 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     if (!requireAdmin(reply, auth)) return;
     const body = z
       .object({
+        establishmentId: z.string().optional(),
         imageBase64: z.string().min(1),
         mimeType: z.string().min(1),
       })
@@ -277,6 +318,14 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         return sendZodError(reply, body.error, req);
       }
 
+    const target = await resolveFiscalEstablishment(
+      auth.organizationId,
+      body.data.establishmentId,
+    );
+    if (!target) {
+      return reply.status(400).send({ error: "Estabelecimento não encontrado" });
+    }
+
     const parsed = parseLogoUpload(body.data.imageBase64, body.data.mimeType);
     if (!parsed) {
       return reply.status(400).send({
@@ -284,14 +333,9 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    await prisma.organizationFiscalConfig.upsert({
-      where: { organizationId: auth.organizationId },
-      create: {
-        organizationId: auth.organizationId,
-        danfeLogoBytes: new Uint8Array(parsed.buffer),
-        danfeLogoMimeType: parsed.mimeType,
-      },
-      update: {
+    await prisma.establishment.update({
+      where: { id: target.id },
+      data: {
         danfeLogoBytes: new Uint8Array(parsed.buffer),
         danfeLogoMimeType: parsed.mimeType,
       },
@@ -300,7 +344,7 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
     await auditFromAuth(auth, {
       action: AUDIT_ACTION.FISCAL_LOGO,
       entityType: AUDIT_ENTITY.FiscalConfig,
-      entityId: auth.organizationId,
+      entityId: target.id,
       metadata: { mimeType: parsed.mimeType, op: "upload" },
     });
 
@@ -310,14 +354,24 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
   app.delete("/logo", async (req, reply) => {
     const auth = req.auth!;
     if (!requireAdmin(reply, auth)) return;
-    await prisma.organizationFiscalConfig.updateMany({
-      where: { organizationId: auth.organizationId },
+    const q = z
+      .object({ establishmentId: z.string().optional() })
+      .safeParse(req.query);
+    const target = await resolveFiscalEstablishment(
+      auth.organizationId,
+      q.success ? q.data.establishmentId : undefined,
+    );
+    if (!target) {
+      return reply.status(400).send({ error: "Estabelecimento não encontrado" });
+    }
+    await prisma.establishment.update({
+      where: { id: target.id },
       data: { danfeLogoBytes: null, danfeLogoMimeType: null },
     });
     await auditFromAuth(auth, {
       action: AUDIT_ACTION.FISCAL_LOGO,
       entityType: AUDIT_ENTITY.FiscalConfig,
-      entityId: auth.organizationId,
+      entityId: target.id,
       metadata: { op: "delete" },
     });
     return { ok: true };

@@ -1,4 +1,4 @@
-import { Landmark, Receipt, type LucideIcon } from "lucide-react";
+import { Building2, Landmark, Receipt, type LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const CARDS: Array<{
@@ -21,6 +21,13 @@ const CARDS: Array<{
       "Lançamentos com fornecedor, vencimento, descontos, juros e status.",
     icon: Receipt,
   },
+  {
+    to: "/financeiro/integracoes-bancarias",
+    title: "Integrações bancárias",
+    description:
+      "Conciliação de boletos dos clientes (Itaú, BB, Santander) via API.",
+    icon: Building2,
+  },
 ];
 
 export function FiscalHubPage() {
@@ -36,7 +43,7 @@ export function FiscalHubPage() {
         </nav>
         <h1 className="text-2xl font-semibold text-foreground">Financeiro</h1>
         <p className="max-w-2xl text-sm text-muted-foreground">
-          Despesas operacionais e contas a pagar da organização.
+          Despesas operacionais, contas a pagar e conciliação de boletos.
         </p>
       </div>
 

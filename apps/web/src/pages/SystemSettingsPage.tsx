@@ -43,6 +43,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { apiFetch } from "../lib/api";
+import { EstablishmentsSettingsPanel } from "@/components/EstablishmentsSettingsPanel";
 import { AuditLogsPanel } from "./AuditLogsPage";
 import { OrderSituationsPanel } from "./OrderSituationsPanel";
 import { PermissionsPanel } from "./PermissionsPage";
@@ -526,6 +527,16 @@ export function SystemSettingsPage() {
           </div>
         </FormSection>
       </SettingsCategory>
+
+      {isAdmin ? (
+        <SettingsCategory
+          id="estabelecimentos"
+          title="Estabelecimentos"
+          description="CNPJs da conta (estoque compartilhado, fiscal por CNPJ)."
+        >
+          <EstablishmentsSettingsPanel />
+        </SettingsCategory>
+      ) : null}
 
       {isAdmin ? (
         <>

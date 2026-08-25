@@ -92,7 +92,7 @@ export async function confirmInboundImport(
   productMappings: Record<string, string>,
   userId?: string,
 ) {
-  const config = await prisma.organizationFiscalConfig.findUnique({ where: { organizationId } });
+  const config = await prisma.establishment.findFirst({ where: { organizationId, isPrimary: true } });
   const invoice = await prisma.fiscalInvoice.findFirst({
     where: { id: invoiceId, organizationId, direction: "INBOUND" },
     include: { items: true },
@@ -207,8 +207,8 @@ export async function listInboundPending(organizationId: string) {
 }
 
 export async function syncInboundDfe(organizationId: string, ultNsu?: string) {
-  const config = await prisma.organizationFiscalConfig.findUnique({
-    where: { organizationId },
+  const config = await prisma.establishment.findFirst({
+    where: { organizationId, isPrimary: true },
   });
   if (!config?.certificatePfxEncrypted) {
     return { ok: false as const, error: "Certificado A1 obrigatório para consulta DF-e" };
@@ -276,8 +276,8 @@ export async function manifestInboundNfe(
   type: FiscalManifestationType,
   justification?: string,
 ) {
-  const config = await prisma.organizationFiscalConfig.findUnique({
-    where: { organizationId },
+  const config = await prisma.establishment.findFirst({
+    where: { organizationId, isPrimary: true },
   });
   if (!config?.certificatePfxEncrypted || !config.cnpj) {
     return { ok: false as const, error: "Certificado A1 e CNPJ obrigatórios" };

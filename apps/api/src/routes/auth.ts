@@ -6,6 +6,7 @@ import {
     isValidCnpj,
     type PlanId,
 } from "@pedidos/shared";
+import { Prisma } from "@prisma/client";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
@@ -86,6 +87,9 @@ async function userResponseForMe(user: {
   });
   const organizationName =
     org?.displayName?.trim() || org?.name?.trim() || "";
+  const preferredEstablishmentId =
+    (user as { preferredEstablishmentId?: string | null })
+      .preferredEstablishmentId ?? null;
   return {
     id: user.id,
     email: user.email,
@@ -95,6 +99,7 @@ async function userResponseForMe(user: {
     organizationId: user.organizationId,
     organizationName,
     organizationProfileId: user.organizationProfileId ?? null,
+    preferredEstablishmentId,
     sellerId: user.seller?.id ?? null,
     commissionPercent: user.seller
       ? Number(user.seller.commissionPercent)
@@ -139,6 +144,47 @@ const registerBody = z.object({
   planId: z.string().trim().optional(),
   cnpj: z.string().trim().min(1, "CNPJ obrigatório"),
 });
+
+const patchMeBody = z
+  .object({
+    name: z.string().trim().min(1, "Nome obrigatório").optional(),
+    email: z
+      .string()
+      .email()
+      .transform((e) => e.trim().toLowerCase())
+      .optional(),
+    matricula: z
+      .union([z.string().max(40), z.null()])
+      .optional()
+      .transform((v) => {
+        if (v === undefined) return undefined;
+        if (v === null) return null;
+        const t = v.trim();
+        return t.length ? t : null;
+      }),
+  })
+  .refine(
+    (d) =>
+      d.name !== undefined ||
+      d.email !== undefined ||
+      d.matricula !== undefined,
+    { message: "Nenhum campo para atualizar" },
+  );
+
+function uniqueConflictMessage(e: Prisma.PrismaClientKnownRequestError) {
+  const target = (e.meta?.target as string[] | undefined) ?? [];
+  if (target.includes("email")) return "Email já cadastrado";
+  return "Matrícula já cadastrada nesta empresa";
+}
+
+async function assertEmailAvailable(email: string, currentEmail: string) {
+  if (email === currentEmail) return null;
+  const taken = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true },
+  });
+  return taken ? "Email já cadastrado" : null;
+}
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
   app.post("/register", async (req, reply) => {
@@ -191,8 +237,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
           cnpj,
         },
       });
-      await tx.organizationFiscalConfig.create({
-        data: fiscalConfigCreateData(org.id, emitente),
+      await tx.establishment.create({
+        data: fiscalConfigCreateData(org.id, emitente, organizationName),
       });
       const now = new Date();
       await tx.organizationSubscription.create({
@@ -368,6 +414,64 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!user)
       return reply.status(404).send({ error: "Usuário não encontrado" });
+
+    return userResponseForMe(user);
+  });
+
+  /** Usuário autenticado altera apenas a si mesmo (nome, e-mail, matrícula). */
+  app.patch("/me", async (req, reply) => {
+    const auth = getAuth(req, reply);
+    if (!auth) return;
+
+    const parsed = patchMeBody.safeParse(req.body);
+    if (!parsed.success) {
+      return sendZodError(reply, parsed.error, req);
+    }
+
+    const selfWhere = { id: auth.sub, organizationId: auth.organizationId };
+    const existing = await prisma.user.findFirst({
+      where: selfWhere,
+      select: { id: true, email: true },
+    });
+    if (!existing) {
+      return reply.status(404).send({ error: "Usuário não encontrado" });
+    }
+
+    const { name, email, matricula } = parsed.data;
+    if (email) {
+      const conflict = await assertEmailAvailable(email, existing.email);
+      if (conflict) return reply.status(409).send({ error: conflict });
+    }
+
+    try {
+      const updated = await prisma.user.updateMany({
+        where: selfWhere,
+        data: {
+          ...(name !== undefined ? { name } : {}),
+          ...(email !== undefined ? { email } : {}),
+          ...(matricula !== undefined ? { matricula } : {}),
+        },
+      });
+      if (updated.count === 0) {
+        return reply.status(404).send({ error: "Usuário não encontrado" });
+      }
+    } catch (e) {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === "P2002"
+      ) {
+        return reply.status(409).send({ error: uniqueConflictMessage(e) });
+      }
+      throw e;
+    }
+
+    const user = await prisma.user.findFirst({
+      where: selfWhere,
+      include: { seller: true },
+    });
+    if (!user) {
+      return reply.status(404).send({ error: "Usuário não encontrado" });
+    }
 
     return userResponseForMe(user);
   });

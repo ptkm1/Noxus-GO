@@ -38,6 +38,7 @@ import { FirstAccessPage } from "./pages/FirstAccessPage";
 import { FiscalAccountsPayablePage } from "./pages/FiscalAccountsPayablePage";
 import { FiscalFixedExpensesPage } from "./pages/FiscalFixedExpensesPage";
 import { FiscalHubPage } from "./pages/FiscalHubPage";
+import { BankingIntegrationsPage } from "./pages/BankingIntegrationsPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { IndicatorsHubPage } from "./pages/IndicatorsHubPage";
@@ -52,6 +53,7 @@ import { ProductCategoriesPage } from "./pages/ProductCategoriesPage";
 import { ProductFormPage } from "./pages/ProductFormPage";
 import { ProductsPage } from "./pages/ProductsPage";
 import { PaymentPendingPage } from "./pages/PaymentPendingPage";
+import { ProfilePage } from "./pages/ProfilePage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ReportCustomersPage } from "./pages/ReportCustomersPage";
 import {
@@ -122,6 +124,7 @@ function SellerNotice() {
 
 const TEAM_LEADER_ROUTE_PREFIXES = [
   "/",
+  "/perfil",
   "/rastreio",
   "/visitas",
   "/pedidos",
@@ -309,6 +312,7 @@ function AppRoutes() {
         <Route element={<TeamLeaderRouteGuard />}>
           <Route element={<PermissionRouteGuard />}>
             <Route index element={<DashboardHome />} />
+            <Route path="perfil" element={<ProfilePage />} />
             <Route path="tabelas-preco" element={<PriceTablesPage />} />
             <Route
               path="produtos/categorias"
@@ -335,6 +339,10 @@ function AppRoutes() {
             <Route
               path="financeiro/contas-a-pagar"
               element={<FiscalAccountsPayablePage />}
+            />
+            <Route
+              path="financeiro/integracoes-bancarias"
+              element={<BankingIntegrationsPage />}
             />
             <Route path="faturamento" element={<FaturamentoPage />} />
             <Route

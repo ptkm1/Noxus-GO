@@ -50,6 +50,11 @@ const MANAGER_GET_ALLOW = [
   /^\/notifications$/,
   /^\/notifications\/unread-count$/,
   /^\/push-vapid-public-key$/,
+  /^\/banking\//,
+  /^\/receivables$/,
+  /^\/customers\/[^/]+\/credit-check$/,
+  /^\/customers\/[^/]+\/receivables$/,
+  /^\/establishments$/,
 ] as const;
 
 /** Write paths managers may use (inbox + push + broadcast + aprovação de clientes). */
@@ -64,6 +69,7 @@ const MANAGER_WRITE_ALLOW = [
   /^\/expedition/,
   /^\/orders$/,
   /^\/orders\/preview$/,
+  /^\/establishments\/preferred$/,
 ] as const;
 
 export function isManagerWriteAllowed(routePath: string): boolean {

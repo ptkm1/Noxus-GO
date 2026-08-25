@@ -5,12 +5,17 @@ import { Bell, LogOut, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/auth/AuthContext";
+import {
+  formatCnpjShort,
+  useActiveEstablishment,
+} from "@/auth/EstablishmentContext";
 import { apiFetch } from "@/lib/api";
 import { isWebAdmin, isWebManager } from "@/lib/staff";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { EnableWebPushButton } from "@/components/EnableWebPushButton";
 import { dashboardBackTarget } from "./dashboardBackTarget";
 import { DashboardSidebar } from "./DashboardSidebar";
+import { AppSelect } from "@/components/ui/app-select";
 
 export function DashboardTopBar() {
   const { user, logout } = useAuth();
@@ -20,6 +25,11 @@ export function DashboardTopBar() {
   const backTo = dashboardBackTarget(location.pathname);
   const showAlerts =
     isWebAdmin(user?.role) || isWebManager(user?.role);
+  const {
+    establishments,
+    activeEstablishmentId,
+    setActiveEstablishmentId,
+  } = useActiveEstablishment();
 
   const { data: unreadPayload } = useQuery({
     queryKey: ["admin", "notifications-unread"],
@@ -32,9 +42,11 @@ export function DashboardTopBar() {
   });
   const unreadCount = unreadPayload?.count ?? 0;
 
+  const orgLabel = user?.organizationName?.trim() || "Empresa";
+
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-border bg-card/80 px-4 backdrop-blur-md md:h-16 md:px-6">
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetTrigger asChild>
             <Button
@@ -62,6 +74,32 @@ export function DashboardTopBar() {
             ← Voltar
           </Button>
         ) : null}
+
+        <div className="hidden min-w-0 items-center gap-2 sm:flex">
+          <span className="truncate text-sm font-medium text-foreground">
+            {orgLabel}
+          </span>
+          {establishments.length > 0 ? (
+            <>
+              <span className="text-muted-foreground">·</span>
+              {establishments.length === 1 ? (
+                <span className="truncate text-sm text-muted-foreground">
+                  {formatCnpjShort(establishments[0]?.cnpj)}
+                </span>
+              ) : (
+                <AppSelect
+                  value={activeEstablishmentId ?? ""}
+                  onValueChange={setActiveEstablishmentId}
+                  className="h-8 min-w-[11rem] max-w-[16rem]"
+                  options={establishments.map((e) => ({
+                    value: e.id,
+                    label: `${formatCnpjShort(e.cnpj)} — ${e.tradeName || e.legalName}`,
+                  }))}
+                />
+              )}
+            </>
+          ) : null}
+        </div>
       </div>
 
       <div className="flex items-center gap-2">

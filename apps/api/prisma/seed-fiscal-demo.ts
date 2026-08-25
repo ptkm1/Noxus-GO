@@ -5,38 +5,49 @@ const DEMO_NCM = "27101932";
 
 /** Garante dados fiscais mínimos para emitir NF-e demo (homologação). */
 export async function upsertFiscalDemoData(organizationId: string) {
-  await prisma.organizationFiscalConfig.upsert({
-    where: { organizationId },
-    create: {
-      organizationId,
-      cnpj: DEMO_CNPJ,
-      stateRegistration: "123456789112",
-      taxRegime: "SIMPLES_NACIONAL",
-      uf: "SP",
-      city: "São Paulo",
-      street: "Rua Exemplo",
-      addressNumber: "100",
-      district: "Centro",
-      zipCode: "01001000",
-      cityIbge: "3550308",
-      nfeEnvironment: "HOMOLOGATION",
-      nfeSeries: 1,
-      nfeLastNumber: 0,
-    },
-    update: {
-      cnpj: DEMO_CNPJ,
-      stateRegistration: "123456789112",
-      taxRegime: "SIMPLES_NACIONAL",
-      uf: "SP",
-      city: "São Paulo",
-      street: "Rua Exemplo",
-      addressNumber: "100",
-      district: "Centro",
-      zipCode: "01001000",
-      cityIbge: "3550308",
-      nfeEnvironment: "HOMOLOGATION",
-    },
+  const primary = await prisma.establishment.findFirst({
+    where: { organizationId, isPrimary: true },
   });
+  if (primary) {
+    await prisma.establishment.update({
+      where: { id: primary.id },
+      data: {
+        cnpj: DEMO_CNPJ,
+        stateRegistration: "123456789112",
+        taxRegime: "SIMPLES_NACIONAL",
+        uf: "SP",
+        city: "São Paulo",
+        street: "Rua Exemplo",
+        addressNumber: "100",
+        district: "Centro",
+        zipCode: "01001000",
+        cityIbge: "3550308",
+        nfeEnvironment: "HOMOLOGATION",
+      },
+    });
+  } else {
+    await prisma.establishment.create({
+      data: {
+        organizationId,
+        legalName: "Demo Emitente",
+        cnpj: DEMO_CNPJ,
+        stateRegistration: "123456789112",
+        taxRegime: "SIMPLES_NACIONAL",
+        uf: "SP",
+        city: "São Paulo",
+        street: "Rua Exemplo",
+        addressNumber: "100",
+        district: "Centro",
+        zipCode: "01001000",
+        cityIbge: "3550308",
+        nfeEnvironment: "HOMOLOGATION",
+        nfeSeries: 1,
+        nfeLastNumber: 0,
+        isPrimary: true,
+        active: true,
+      },
+    });
+  }
 
   const ncm = await prisma.fiscalNcm.upsert({
     where: {

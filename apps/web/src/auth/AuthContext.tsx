@@ -39,6 +39,7 @@ export type User = {
   /** Nome visível da empresa (white-label / isolamento). */
   organizationName?: string | null;
   organizationProfileId?: string | null;
+  preferredEstablishmentId?: string | null;
   sellerId: string | null;
   isTeamLeader?: boolean;
   teamId?: string | null;
