@@ -108,6 +108,7 @@ export function ProductPromotionsPanel({ productId }: Props) {
       await qc.invalidateQueries({
         queryKey: ["admin", "product-promotions", productId],
       });
+      await qc.invalidateQueries({ queryKey: ["admin", "promotions"] });
     },
     onError: (e: Error) => setHint(e.message),
   });
@@ -123,6 +124,7 @@ export function ProductPromotionsPanel({ productId }: Props) {
       await qc.invalidateQueries({
         queryKey: ["admin", "product-promotions", productId],
       });
+      await qc.invalidateQueries({ queryKey: ["admin", "promotions"] });
       setHint(null);
     },
     onError: (e: Error) => setHint(e.message),
@@ -139,6 +141,7 @@ export function ProductPromotionsPanel({ productId }: Props) {
       await qc.invalidateQueries({
         queryKey: ["admin", "product-promotions", productId],
       });
+      await qc.invalidateQueries({ queryKey: ["admin", "promotions"] });
       setHint(null);
       setLabel("");
       setValueStr(

@@ -8,6 +8,7 @@ export type ProductCatalogTileStylesParams = {
   imgHeight: number;
   badgeBackgroundColor?: string;
   disabled?: boolean;
+  highlighted?: boolean;
 };
 
 export function useProductCatalogTileStyles(
@@ -20,6 +21,7 @@ export function useProductCatalogTileStyles(
     imgHeight,
     badgeBackgroundColor = colors.primary,
     disabled = false,
+    highlighted = false,
   } = params;
 
   return useMemo(
@@ -29,8 +31,8 @@ export function useProductCatalogTileStyles(
           width: tileWidth,
           backgroundColor: colors.card,
           borderRadius: 14,
-          borderWidth: 1,
-          borderColor: colors.border,
+          borderWidth: highlighted ? 1.5 : 1,
+          borderColor: highlighted ? colors.primary : colors.border,
           overflow: "hidden",
           marginBottom: 2,
           opacity: disabled ? 0.55 : 1,
@@ -62,6 +64,20 @@ export function useProductCatalogTileStyles(
         },
         img: { width: "100%", height: "100%" },
         imgPh: { flex: 1, alignItems: "center", justifyContent: "center" },
+        highlightChip: {
+          position: "absolute",
+          top: 6,
+          left: 6,
+          paddingHorizontal: 7,
+          paddingVertical: 3,
+          borderRadius: 6,
+        },
+        highlightChipTxt: {
+          color: "#fff",
+          fontWeight: "800",
+          fontSize: 10,
+          letterSpacing: 0.2,
+        },
         badge: {
           position: "absolute",
           bottom: 8,
@@ -77,6 +93,12 @@ export function useProductCatalogTileStyles(
           color: colors.chipTextActive,
           fontWeight: "800",
           fontSize: 13,
+        },
+        catalogStrike: {
+          fontSize: 11,
+          color: colors.textMuted,
+          textDecorationLine: "line-through",
+          marginBottom: 1,
         },
         body: {
           flex: variant === "list" ? 1 : undefined,
@@ -116,6 +138,14 @@ export function useProductCatalogTileStyles(
           color: colors.textMuted,
         },
       }),
-    [variant, tileWidth, imgHeight, badgeBackgroundColor, disabled, colors],
+    [
+      colors,
+      variant,
+      tileWidth,
+      imgHeight,
+      badgeBackgroundColor,
+      disabled,
+      highlighted,
+    ],
   );
 }

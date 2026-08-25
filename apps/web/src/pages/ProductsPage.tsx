@@ -1,4 +1,5 @@
 import { ProductCard, type ProductCardItem } from "@/components/ProductCard";
+import { ProductsHubNav } from "@/components/products/ProductsHubNav";
 import { useConfirm } from "@/components/confirm";
 import { FormField } from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
@@ -54,13 +55,16 @@ export function ProductsPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Produtos</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {isLoading
-              ? "Carregando…"
-              : `${products.length} produto(s) no catálogo`}
-          </p>
+        <div className="space-y-3">
+          <ProductsHubNav />
+          <div>
+            <h1 className="text-2xl font-semibold text-foreground">Produtos</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {isLoading
+                ? "Carregando…"
+                : `${products.length} produto(s) no catálogo`}
+            </p>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" asChild>

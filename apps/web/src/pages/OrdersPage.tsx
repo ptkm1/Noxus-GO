@@ -1,7 +1,7 @@
 import { useAuth } from "@/auth/AuthContext";
 import {
-  formatCnpjShort,
-  useActiveEstablishment,
+    formatCnpjShort,
+    useActiveEstablishment,
 } from "@/auth/EstablishmentContext";
 import { useConfirm } from "@/components/confirm";
 import { FilterBar, FormField } from "@/components/forms";
@@ -13,29 +13,30 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { notifySuccess } from "@/lib/app-notifications";
 import { apiFetch, downloadPdf, printPdf } from "@/lib/api";
 import { formatOrderCode, orderCodeFilenamePart } from "@/lib/order-code";
 import {
-  formatOrderMoney,
-  needsStageConfirmDialog,
-  stageBadgeClass,
-  stageChangeHint,
+    formatOrderMoney,
+    needsStageConfirmDialog,
+    stageBadgeClass,
+    stageChangeHint,
 } from "@/lib/order-kanban";
 import { isWebAdmin } from "@/lib/staff";
 import { cn } from "@/lib/utils";
 import {
-  SYSTEM_SITUATION_CODES,
-  canRead,
-  canWrite as canWritePermission,
+    SYSTEM_SITUATION_CODES,
+    canRead,
+    canWrite as canWritePermission,
+    paymentConditionLabel,
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Kanban, List, Printer, ShoppingCart } from "lucide-react";
@@ -81,6 +82,12 @@ type Order = {
     quantity: number;
     unitPrice: unknown;
   }[];
+  paymentCondition?: {
+    id: string;
+    name: string;
+    days: number;
+    sortOrder: number;
+  } | null;
 };
 
 function useDebouncedValue<T>(value: T, delayMs = 300): T {
@@ -664,7 +671,7 @@ export function OrdersPage() {
                     aria-label="Selecionar todas"
                   />
                 </TableHead>
-                <TableHead className="px-4">Número do pedido</TableHead>
+                <TableHead className="px-4">N de pedidos</TableHead>
                 <TableHead className="px-4">Data</TableHead>
                 <TableHead className="px-4">Etapa</TableHead>
                 <TableHead className="px-4">Vendedor</TableHead>
@@ -672,6 +679,7 @@ export function OrdersPage() {
                 <TableHead className="px-4">Cliente</TableHead>
                 <TableHead className="px-4">Cidade</TableHead>
                 <TableHead className="px-4">Itens</TableHead>
+                <TableHead className="px-4">Condição de pagamento</TableHead>
                 <TableHead className="px-4 text-right">Total</TableHead>
                 <TableHead className="px-4" />
               </TableRow>
@@ -696,7 +704,7 @@ export function OrdersPage() {
                       {code}
                     </TableCell>
                     <TableCell className="px-4 py-3 whitespace-nowrap text-sm text-muted-foreground">
-                      {new Date(o.createdAt).toLocaleString("pt-BR")}
+                      {new Date(o.createdAt).toLocaleDateString("pt-BR")}
                     </TableCell>
                     <TableCell className="px-4 py-3">
                       {canWrite ? (
@@ -740,6 +748,9 @@ export function OrdersPage() {
                     </TableCell>
                     <TableCell className="px-4 py-3 text-muted-foreground tabular-nums">
                       {o.items.length}
+                    </TableCell>
+                    <TableCell className="px-4 py-3 text-sm text-muted-foreground">
+                      {paymentConditionLabel(o.paymentCondition)}
                     </TableCell>
                     <TableCell className="px-4 py-3 text-right font-medium tabular-nums">
                       {formatOrderMoney(o.totalAmount)}

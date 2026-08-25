@@ -9,6 +9,10 @@ export function dashboardBackTarget(pathname: string): string | null {
   // Edição de produto: /produtos/:id/editar → lista de produtos
   if (/^\/produtos\/[^/]+\/editar$/.test(raw)) return "/produtos";
 
+  // Promoções / destaques → hub de produtos
+  if (raw === "/produtos/promocoes" || raw === "/produtos/destaques")
+    return "/produtos";
+
   // Indicadores: filhos voltam ao hub
   if (raw === "/insights" || raw === "/relatorios") return "/indicadores";
 

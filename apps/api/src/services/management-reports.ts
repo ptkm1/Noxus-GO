@@ -61,6 +61,20 @@ export async function buildSalesScorecard(params: {
           team: { select: { id: true, name: true } },
         },
       },
+      items: {
+        select: {
+          productId: true,
+          productName: true,
+          quantity: true,
+          unitPrice: true,
+          product: {
+            select: {
+              supplierId: true,
+              supplier: { select: { tradeName: true, legalName: true } },
+            },
+          },
+        },
+      },
     },
   });
 
@@ -78,6 +92,24 @@ export async function buildSalesScorecard(params: {
     }
   >();
   const byDay = new Map<string, { orderCount: number; totalAmount: number }>();
+  const bySupplier = new Map<
+    string,
+    {
+      supplierId: string | null;
+      name: string;
+      orderIds: Set<string>;
+      totalAmount: number;
+    }
+  >();
+  const byProduct = new Map<
+    string,
+    {
+      name: string;
+      quantity: number;
+      orderIds: Set<string>;
+      totalAmount: number;
+    }
+  >();
 
   let totalAmount = 0;
   for (const o of orders) {
@@ -111,6 +143,36 @@ export async function buildSalesScorecard(params: {
     day.orderCount += 1;
     day.totalAmount += amount;
     byDay.set(dk, day);
+
+    for (const it of o.items) {
+      const lineTotal = decToNum(it.unitPrice) * it.quantity;
+
+      const supplierKey = it.product.supplierId ?? "__none__";
+      const supplierName =
+        it.product.supplier?.tradeName ??
+        it.product.supplier?.legalName ??
+        "Sem fornecedor";
+      const sup = bySupplier.get(supplierKey) ?? {
+        supplierId: it.product.supplierId ?? null,
+        name: supplierName,
+        orderIds: new Set<string>(),
+        totalAmount: 0,
+      };
+      sup.orderIds.add(o.id);
+      sup.totalAmount += lineTotal;
+      bySupplier.set(supplierKey, sup);
+
+      const prod = byProduct.get(it.productId) ?? {
+        name: it.productName,
+        quantity: 0,
+        orderIds: new Set<string>(),
+        totalAmount: 0,
+      };
+      prod.quantity += it.quantity;
+      prod.orderIds.add(o.id);
+      prod.totalAmount += lineTotal;
+      byProduct.set(it.productId, prod);
+    }
   }
 
   const orderCount = orders.length;
@@ -136,6 +198,27 @@ export async function buildSalesScorecard(params: {
       .map((t) => ({
         ...t,
         totalAmount: roundMoney(t.totalAmount),
+      }))
+      .sort((a, b) => b.totalAmount - a.totalAmount),
+    bySupplier: [...bySupplier.values()]
+      .map((r) => ({
+        supplierId: r.supplierId,
+        name: r.name,
+        orderCount: r.orderIds.size,
+        totalAmount: roundMoney(r.totalAmount),
+      }))
+      .sort((a, b) => {
+        if (a.supplierId == null) return 1;
+        if (b.supplierId == null) return -1;
+        return b.totalAmount - a.totalAmount;
+      }),
+    byProduct: [...byProduct.entries()]
+      .map(([productId, r]) => ({
+        productId,
+        name: r.name,
+        quantity: r.quantity,
+        orderCount: r.orderIds.size,
+        totalAmount: roundMoney(r.totalAmount),
       }))
       .sort((a, b) => b.totalAmount - a.totalAmount),
     daily: [...byDay.entries()]

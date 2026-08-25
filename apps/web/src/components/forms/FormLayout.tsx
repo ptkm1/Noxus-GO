@@ -32,6 +32,11 @@ type FormFieldProps = {
   required?: boolean;
   className?: string;
   children: ReactNode;
+  /**
+   * Posiciona hint/erro sob o controlo sem aumentar a altura do campo.
+   * Útil em grelhas densas (ex.: linha de itens) para não desalinear siblings.
+   */
+  hintOverlay?: boolean;
 };
 
 export function FormField({
@@ -42,10 +47,37 @@ export function FormField({
   required,
   className,
   children,
+  hintOverlay = false,
 }: FormFieldProps) {
+  const message = error ? (
+    <p
+      className={cn(
+        "text-xs text-destructive",
+        hintOverlay &&
+          "pointer-events-none absolute left-0 right-0 top-full z-10 mt-0.5 truncate",
+      )}
+    >
+      {error}
+    </p>
+  ) : hint ? (
+    <p
+      className={cn(
+        "text-xs text-muted-foreground",
+        hintOverlay &&
+          "pointer-events-none absolute left-0 right-0 top-full z-10 mt-0.5 truncate",
+      )}
+    >
+      {hint}
+    </p>
+  ) : null;
+
   return (
     <div
-      className={cn("flex flex-col gap-1.5", className)}
+      className={cn(
+        "flex flex-col gap-1.5",
+        hintOverlay && "relative",
+        className,
+      )}
       data-error={error ? "true" : undefined}
     >
       <Label htmlFor={htmlFor} className="text-foreground">
@@ -53,11 +85,7 @@ export function FormField({
         {required ? <span className="text-destructive"> *</span> : null}
       </Label>
       {children}
-      {error ? (
-        <p className="text-xs text-destructive">{error}</p>
-      ) : hint ? (
-        <p className="text-xs text-muted-foreground">{hint}</p>
-      ) : null}
+      {message}
     </div>
   );
 }

@@ -482,9 +482,13 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       );
       out.push({
         ...p,
+        featured: Boolean(p.featured),
         catalogUnitPrice: priced.catalogUnitPrice,
         effectiveUnitPrice: priced.effectiveUnitPrice,
         promotionLabel: priced.promotionLabel,
+        hasActivePromotion: Boolean(priced.promotionId),
+        highlighted:
+          Boolean(p.featured) || Boolean(priced.promotionId),
         soldQty: soldQtyMap.get(p.id) ?? 0,
         maxSellerDiscountPercent:
           p.maxSellerDiscountPercent != null
@@ -500,6 +504,12 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     }
 
     out.sort((a, b) => {
+      const ha = a.highlighted ? 1 : 0;
+      const hb = b.highlighted ? 1 : 0;
+      if (hb !== ha) return hb - ha;
+      if (a.featured !== b.featured) return a.featured ? -1 : 1;
+      if (a.hasActivePromotion !== b.hasActivePromotion)
+        return a.hasActivePromotion ? -1 : 1;
       const dq = (b.soldQty ?? 0) - (a.soldQty ?? 0);
       if (dq !== 0) return dq;
       return a.name.localeCompare(b.name, "pt");

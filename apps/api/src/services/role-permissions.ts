@@ -432,7 +432,8 @@ export function adminPathToResource(
   if (
     path.startsWith("/products") ||
     path.startsWith("/product-categories") ||
-    path.startsWith("/purchase-units")
+    path.startsWith("/purchase-units") ||
+    path.startsWith("/promotions")
   )
     return "products";
   if (path.startsWith("/stock")) return "stock";

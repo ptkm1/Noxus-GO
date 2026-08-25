@@ -257,11 +257,13 @@ export {
 export {
   DEFAULT_HOME_INDICATORS,
   DEFAULT_HOME_INDICATORS_LAYOUT,
+  HOME_CHART_INDICATOR_KEYS,
   HOME_INDICATOR_KEYS,
   HOME_INDICATOR_LABELS,
   HOME_INDICATOR_SHORT_LABELS,
   HOME_INDICATORS_LAYOUT_LABELS,
   HOME_INDICATORS_LAYOUTS,
+  isHomeChartIndicatorKey,
   isHomeIndicatorKey,
   isHomeIndicatorsLayout,
   MAX_HOME_INDICATORS,
@@ -269,6 +271,7 @@ export {
   normalizeHomeIndicatorsLayout,
 } from "./home-indicators.js";
 export type {
+  HomeChartIndicatorKey,
   HomeIndicatorKey,
   HomeIndicatorsLayout,
 } from "./home-indicators.js";

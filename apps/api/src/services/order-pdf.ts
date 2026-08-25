@@ -93,6 +93,51 @@ function pageBottom(doc: PDFKit.PDFDocument) {
   return doc.page.height - CONTENT_BOTTOM;
 }
 
+/**
+ * Rodapé fixo no fim da página.
+ * PDFKit chama addPage() se y + lineHeight > page.height - margins.bottom.
+ * Dois `.text()` nessa condição = exatamente +2 páginas (quase) em branco —
+ * sintomas do romaneio. Desliga a margem inferior só durante o desenho.
+ */
+function drawPageFooter(
+  doc: PDFKit.PDFDocument,
+  leftText: string,
+  rightText: string,
+) {
+  const prevY = doc.y;
+  const prevBottom = doc.page.margins.bottom;
+  doc.page.margins.bottom = 0;
+
+  const textH = 10;
+  const textY = doc.page.height - prevBottom - textH;
+  const lineY = textY - 6;
+  doc
+    .strokeColor(COLORS.border)
+    .lineWidth(0.5)
+    .moveTo(PAGE.left, lineY)
+    .lineTo(PAGE.right, lineY)
+    .stroke();
+  doc
+    .fillColor(COLORS.muted)
+    .fontSize(8)
+    .font("Helvetica")
+    .text(leftText, PAGE.left, textY, {
+      width: PAGE.width / 2,
+      lineBreak: false,
+      height: textH,
+    });
+  doc.text(rightText, PAGE.left, textY, {
+    width: PAGE.width,
+    align: "right",
+    lineBreak: false,
+    ellipsis: true,
+    height: textH,
+  });
+
+  doc.page.margins.bottom = prevBottom;
+  doc.y = prevY;
+}
+
 function ensureSpace(
   doc: PDFKit.PDFDocument,
   needed: number,
@@ -218,6 +263,8 @@ function drawItemRow(
   doc.fillColor(COLORS.text).fontSize(9).font("Helvetica");
   doc.text(name, COLS.product.x + pad, textY, {
     width: COLS.product.w - pad * 2,
+    height: rowH - 8,
+    ellipsis: true,
   });
   doc
     .fillColor(COLORS.muted)
@@ -364,7 +411,7 @@ function drawInfoCard(
       .fillColor(COLORS.text)
       .font(font)
       .fontSize(size)
-      .text(full, PAGE.left + padX, ty, { width: innerW });
+      .text(full, PAGE.left + padX, ty, { width: innerW, height: h + 2 });
     ty += h + 2;
   }
 
@@ -580,6 +627,7 @@ export function drawOrderPdfContents(
       .text("Nenhum item neste pedido.", PAGE.left + 8, emptyY + 10, {
         width: PAGE.width - 16,
         align: "center",
+        lineBreak: false,
       });
     doc.y = emptyY + 36;
     doc.fillColor(COLORS.text);
@@ -691,29 +739,10 @@ export function drawOrderPdfContents(
       .font("Helvetica")
       .text(notesText, PAGE.left + 10, notesTop + 8, {
         width: PAGE.width - 20,
+        height: notesH - 12,
       });
     doc.y = notesTop + notesH + 10;
   }
 
-  const footerY = doc.page.height - 36;
-  doc
-    .strokeColor(COLORS.border)
-    .lineWidth(0.5)
-    .moveTo(PAGE.left, footerY)
-    .lineTo(PAGE.right, footerY)
-    .stroke();
-  doc
-    .fillColor(COLORS.muted)
-    .fontSize(8)
-    .font("Helvetica")
-    .text(`Gerado em ${generatedAt}`, PAGE.left, footerY + 8, {
-      width: PAGE.width / 2,
-      lineBreak: false,
-    });
-  doc.text(orgName, PAGE.left, footerY + 8, {
-    width: PAGE.width,
-    align: "right",
-    lineBreak: false,
-    ellipsis: true,
-  });
+  drawPageFooter(doc, `Gerado em ${generatedAt}`, orgName);
 }
