@@ -55,6 +55,7 @@ const orderPdfInclude = {
           purchaseUnit: true,
           grossWeightKg: true,
           netWeightKg: true,
+          basePrice: true,
         },
       },
     },
