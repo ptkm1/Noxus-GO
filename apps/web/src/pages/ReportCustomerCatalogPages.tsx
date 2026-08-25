@@ -414,17 +414,13 @@ export function ReportCustomerPositivacaoPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(tab === "ok"
-                  ? q.data.positivados
-                  : q.data.semPositivacao
-                ).map((r) => (
-                  <TableRow key={r.customerId}>
-                    <TableCell className="px-4 py-2">{r.name}</TableCell>
-                    <TableCell className="px-4 py-2 text-muted-foreground">
-                      {r.sellerName ?? "—"}
-                    </TableCell>
-                    {tab === "ok" && "orderCount" in r ? (
-                      <>
+                {tab === "ok"
+                  ? q.data.positivados.map((r) => (
+                      <TableRow key={r.customerId}>
+                        <TableCell className="px-4 py-2">{r.name}</TableCell>
+                        <TableCell className="px-4 py-2 text-muted-foreground">
+                          {r.sellerName ?? "—"}
+                        </TableCell>
                         <TableCell className="px-4 py-2">
                           {r.orderCount}
                         </TableCell>
@@ -434,10 +430,16 @@ export function ReportCustomerPositivacaoPage() {
                         <TableCell className="px-4 py-2 text-sm text-muted-foreground">
                           {fmtDateTime(r.lastPurchaseAt)}
                         </TableCell>
-                      </>
-                    ) : null}
-                  </TableRow>
-                ))}
+                      </TableRow>
+                    ))
+                  : q.data.semPositivacao.map((r) => (
+                      <TableRow key={r.customerId}>
+                        <TableCell className="px-4 py-2">{r.name}</TableCell>
+                        <TableCell className="px-4 py-2 text-muted-foreground">
+                          {r.sellerName ?? "—"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
               </TableBody>
             </Table>
           </div>
