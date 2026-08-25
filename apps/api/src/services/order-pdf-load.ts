@@ -39,12 +39,26 @@ const orderPdfInclude = {
       state: true,
       cep: true,
       addressNote: true,
+      stateRegistration: true,
+      buyerName: true,
     },
   },
   paymentCondition: {
     select: { id: true, name: true, days: true, sortOrder: true },
   },
-  items: { include: { product: { select: { sku: true } } } },
+  items: {
+    include: {
+      product: {
+        select: {
+          sku: true,
+          barcode: true,
+          purchaseUnit: true,
+          grossWeightKg: true,
+          netWeightKg: true,
+        },
+      },
+    },
+  },
   establishment: {
     select: {
       legalName: true,
@@ -99,6 +113,8 @@ function toCustomer(
     state: customer.state,
     cep: customer.cep,
     addressNote: customer.addressNote,
+    stateRegistration: customer.stateRegistration,
+    buyerName: customer.buyerName,
   };
 }
 

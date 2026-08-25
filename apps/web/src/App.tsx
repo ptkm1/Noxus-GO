@@ -40,6 +40,8 @@ import { FiscalFixedExpensesPage } from "./pages/FiscalFixedExpensesPage";
 import { FiscalHubPage } from "./pages/FiscalHubPage";
 import { BankingIntegrationsPage } from "./pages/BankingIntegrationsPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { GuidePage } from "./pages/GuidePage";
+import { HelpPage } from "./pages/HelpPage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { IndicatorsHubPage } from "./pages/IndicatorsHubPage";
 import { LegalDocumentPage } from "./pages/LegalDocumentPage";
@@ -133,6 +135,8 @@ function SellerNotice() {
 const TEAM_LEADER_ROUTE_PREFIXES = [
   "/",
   "/perfil",
+  "/guia",
+  "/ajuda",
   "/rastreio",
   "/visitas",
   "/pedidos",
@@ -321,6 +325,8 @@ function AppRoutes() {
           <Route element={<PermissionRouteGuard />}>
             <Route index element={<DashboardHome />} />
             <Route path="perfil" element={<ProfilePage />} />
+            <Route path="guia" element={<GuidePage />} />
+            <Route path="ajuda" element={<HelpPage />} />
             <Route path="tabelas-preco" element={<PriceTablesPage />} />
             <Route
               path="produtos/categorias"
