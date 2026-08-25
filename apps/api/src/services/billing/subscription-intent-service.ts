@@ -154,8 +154,8 @@ async function loadCustomerBillingProfile(
   organizationId: string,
   phone?: string | null,
 ): Promise<import("./payment-gateway.js").GatewayCustomerBilling> {
-  const fiscal = await prisma.organizationFiscalConfig.findUnique({
-    where: { organizationId },
+  const fiscal = await prisma.establishment.findFirst({
+    where: { organizationId, isPrimary: true },
   });
   const digits = phone?.replace(/\D/g, "") ?? "";
   const mobile =
@@ -295,8 +295,8 @@ export async function createSubscriptionIntent(
       },
     });
 
-    await tx.organizationFiscalConfig.create({
-      data: fiscalConfigCreateData(org.id, emitente),
+    await tx.establishment.create({
+      data: fiscalConfigCreateData(org.id, emitente, input.companyName.trim()),
     });
 
     await tx.organizationSubscription.create({

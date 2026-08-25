@@ -13,13 +13,13 @@ export type CertExpiryAlertRunResult = {
 
 /**
  * Notifica ADMIN/MANAGER quando o certificado A1 cruza limiares 60/30/15/7/0.
- * Deduplica via OrganizationFiscalConfig.certificateLastAlertThreshold:
+ * Deduplica via Establishment.certificateLastAlertThreshold:
  * só reenvia se o limiar atual for mais crítico (menor) que o já notificado.
  */
 export async function runCertificateExpiryAlerts(params?: {
   organizationId?: string;
 }): Promise<CertExpiryAlertRunResult> {
-  const configs = await prisma.organizationFiscalConfig.findMany({
+  const configs = await prisma.establishment.findMany({
     where: {
       ...(params?.organizationId
         ? { organizationId: params.organizationId }
@@ -27,6 +27,7 @@ export async function runCertificateExpiryAlerts(params?: {
       certificatePfxEncrypted: { not: null },
     },
     select: {
+      id: true,
       organizationId: true,
       certificateExpiresAt: true,
       certificateLastAlertThreshold: true,
@@ -75,8 +76,8 @@ export async function runCertificateExpiryAlerts(params?: {
       },
     });
 
-    await prisma.organizationFiscalConfig.update({
-      where: { organizationId: cfg.organizationId },
+    await prisma.establishment.update({
+      where: { id: cfg.id },
       data: { certificateLastAlertThreshold: threshold },
     });
     notified += 1;

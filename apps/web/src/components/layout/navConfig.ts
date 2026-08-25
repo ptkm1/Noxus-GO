@@ -35,6 +35,18 @@ export type NavItem = {
   planFeature?: PlanFeature;
 };
 
+/** Rota fixa no rodapé da sidebar (fora do drag-and-drop). */
+export const SETTINGS_NAV_TO = "/configuracoes";
+
+export function splitMainAndSettingsNav(items: NavItem[]): {
+  main: NavItem[];
+  settings: NavItem | null;
+} {
+  const settings = items.find((item) => item.to === SETTINGS_NAV_TO) ?? null;
+  const main = items.filter((item) => item.to !== SETTINGS_NAV_TO);
+  return { main, settings };
+}
+
 const home: NavItem = {
   to: "/",
   label: "Início",

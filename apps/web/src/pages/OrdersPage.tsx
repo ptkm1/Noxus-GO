@@ -1,4 +1,8 @@
 import { useAuth } from "@/auth/AuthContext";
+import {
+  formatCnpjShort,
+  useActiveEstablishment,
+} from "@/auth/EstablishmentContext";
 import { useConfirm } from "@/components/confirm";
 import { FilterBar, FormField } from "@/components/forms";
 import { CreateOrderSheet } from "@/components/orders/CreateOrderSheet";
@@ -59,6 +63,12 @@ type Order = {
   totalAmount: unknown;
   createdAt: string;
   seller: { user: { name: string } };
+  establishment?: {
+    id: string;
+    legalName: string;
+    tradeName?: string | null;
+    cnpj?: string | null;
+  } | null;
   customer: {
     name: string;
     city?: string | null;
@@ -127,6 +137,8 @@ export function OrdersPage() {
   const [tradeName, setTradeName] = useState("");
   const [legalName, setLegalName] = useState("");
   const [sellerId, setSellerId] = useState("");
+  const [establishmentFilter, setEstablishmentFilter] = useState("");
+  const { establishments } = useActiveEstablishment();
 
   const debouncedOrderNumber = useDebouncedValue(orderNumber);
   const debouncedCity = useDebouncedValue(city);
@@ -153,6 +165,7 @@ export function OrdersPage() {
       debouncedTradeName.trim(),
       debouncedLegalName.trim(),
       sellerId,
+      establishmentFilter,
     ],
     [
       situationFilter,
@@ -161,6 +174,7 @@ export function OrdersPage() {
       debouncedTradeName,
       debouncedLegalName,
       sellerId,
+      establishmentFilter,
     ],
   );
 
@@ -184,6 +198,8 @@ export function OrdersPage() {
       const legal = debouncedLegalName.trim();
       if (legal) params.set("legalName", legal);
       if (sellerId) params.set("sellerId", sellerId);
+      if (establishmentFilter)
+        params.set("establishmentId", establishmentFilter);
       const qs = params.toString();
       return apiFetch<Order[]>(`/admin/orders${qs ? `?${qs}` : ""}`);
     },
@@ -198,6 +214,7 @@ export function OrdersPage() {
     debouncedTradeName,
     debouncedLegalName,
     sellerId,
+    establishmentFilter,
   ]);
 
   const visibleIds = useMemo(() => orders.map((o) => o.id), [orders]);
@@ -513,6 +530,21 @@ export function OrdersPage() {
             }))}
           />
         </FormField>
+        {establishments.length > 1 ? (
+          <FormField label="CNPJ emissor" htmlFor="orders-filter-est">
+            <AppSelect
+              id="orders-filter-est"
+              value={establishmentFilter}
+              onValueChange={setEstablishmentFilter}
+              emptyLabel="Todos"
+              placeholder="Todos"
+              options={establishments.map((e) => ({
+                value: e.id,
+                label: `${formatCnpjShort(e.cnpj)} — ${e.tradeName || e.legalName}`,
+              }))}
+            />
+          </FormField>
+        ) : null}
       </FilterBar>
 
       {actionError ? (
@@ -636,6 +668,7 @@ export function OrdersPage() {
                 <TableHead className="px-4">Data</TableHead>
                 <TableHead className="px-4">Etapa</TableHead>
                 <TableHead className="px-4">Vendedor</TableHead>
+                <TableHead className="px-4">CNPJ</TableHead>
                 <TableHead className="px-4">Cliente</TableHead>
                 <TableHead className="px-4">Cidade</TableHead>
                 <TableHead className="px-4">Itens</TableHead>
@@ -691,6 +724,11 @@ export function OrdersPage() {
                     </TableCell>
                     <TableCell className="px-4 py-3">
                       {o.seller.user.name}
+                    </TableCell>
+                    <TableCell className="px-4 py-3 text-sm text-muted-foreground">
+                      {o.establishment
+                        ? formatCnpjShort(o.establishment.cnpj)
+                        : "—"}
                     </TableCell>
                     <TableCell className="px-4 py-3">
                       {o.customer?.tradeName?.trim() ||

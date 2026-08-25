@@ -70,14 +70,19 @@ export function emptyFiscalEmitente(cnpj: string): FiscalEmitenteSeed {
 export function fiscalConfigCreateData(
   organizationId: string,
   emitente: FiscalEmitenteSeed,
+  legalName = "Estabelecimento principal",
 ) {
   return {
     organizationId,
+    legalName,
+    tradeName: null as string | null,
     ...emitente,
     cnpj: emitente.cnpj || null,
     taxRegime: "SIMPLES_NACIONAL" as const,
     nfeEnvironment: "HOMOLOGATION" as const,
     nfeSeries: 1,
     nfeLastNumber: 0,
+    isPrimary: true,
+    active: true,
   };
 }

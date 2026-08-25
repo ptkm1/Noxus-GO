@@ -10,11 +10,19 @@ import { buildDanfePdf, danfePdfFilename } from "./nfe-danfe-pdf.js";
 
 const DANFE_STATUSES = new Set(["AUTHORIZED", "IMPORTED", "CANCELLED"]);
 
-export async function loadFiscalDanfeLogo(organizationId: string) {
-  const config = await prisma.organizationFiscalConfig.findUnique({
-    where: { organizationId },
-    select: { danfeLogoBytes: true, danfeLogoMimeType: true },
-  });
+export async function loadFiscalDanfeLogo(
+  organizationId: string,
+  establishmentId?: string | null,
+) {
+  const config = establishmentId
+    ? await prisma.establishment.findFirst({
+        where: { id: establishmentId, organizationId },
+        select: { danfeLogoBytes: true, danfeLogoMimeType: true },
+      })
+    : await prisma.establishment.findFirst({
+        where: { organizationId, isPrimary: true },
+        select: { danfeLogoBytes: true, danfeLogoMimeType: true },
+      });
   if (!config?.danfeLogoBytes?.length) return null;
   return {
     buffer: Buffer.from(config.danfeLogoBytes),

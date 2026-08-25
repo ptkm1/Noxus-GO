@@ -26,11 +26,21 @@ import {
   stockErrorPayload,
 } from "./product-stock.js";
 import { listSellerCatalogProductIds } from "./seller-product-catalog.js";
+import { resolveEstablishmentForOrder, EstablishmentError } from "./establishments.js";
 
 const createdOrderInclude = {
   items: true,
   customer: true,
   paymentCondition: true,
+  establishment: {
+    select: {
+      id: true,
+      legalName: true,
+      tradeName: true,
+      cnpj: true,
+      isPrimary: true,
+    },
+  },
   situation: {
     select: {
       id: true,
@@ -82,6 +92,10 @@ export type CreateSaleOrderParams = {
   clientMutationId?: string;
   source: "seller" | "admin";
   allowedProductIds: Set<string>;
+  /** CNPJ emissor; se omitido, usa preferência do usuário ou o principal. */
+  establishmentId?: string | null;
+  actorRole?: import("@prisma/client").Role;
+  allowedEstablishmentIds?: unknown;
 };
 
 /** Envia 400/403 se for erro de venda conhecido. */
@@ -215,11 +229,38 @@ export async function createSaleOrder(params: CreateSaleOrderParams) {
     orderStatus,
   );
 
+  const actor = await prisma.user.findUnique({
+    where: { id: params.actorUserId },
+    select: {
+      role: true,
+      preferredEstablishmentId: true,
+      allowedEstablishmentIds: true,
+    },
+  });
+
+  let establishment;
+  try {
+    establishment = await resolveEstablishmentForOrder({
+      organizationId: params.organizationId,
+      establishmentId: params.establishmentId,
+      preferredEstablishmentId: actor?.preferredEstablishmentId,
+      role: params.actorRole ?? actor?.role ?? "SELLER",
+      allowedEstablishmentIds:
+        params.allowedEstablishmentIds ?? actor?.allowedEstablishmentIds,
+    });
+  } catch (e) {
+    if (e instanceof EstablishmentError) {
+      throw new SaleCreateError(e.message, e.httpStatus, { code: e.code });
+    }
+    throw e;
+  }
+
   const order = await prisma.$transaction(async (tx) => {
     const orderNumber = await nextOrderNumber(tx, params.organizationId);
     return tx.order.create({
       data: {
         organizationId: params.organizationId,
+        establishmentId: establishment.id,
         sellerId: params.sellerId,
         customerId: params.customerId,
         paymentConditionId: params.paymentConditionId,

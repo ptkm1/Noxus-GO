@@ -439,11 +439,14 @@ export function adminPathToResource(
   if (path.startsWith("/suppliers")) return "suppliers";
   if (
     path.startsWith("/fiscal") ||
+    path.startsWith("/establishments") ||
     path.startsWith("/fixed-expenses") ||
     path.startsWith("/accounts-payable") ||
     path.startsWith("/cost-centers") ||
     path.startsWith("/expense-histories") ||
-    path.startsWith("/nfe")
+    path.startsWith("/nfe") ||
+    path.startsWith("/banking") ||
+    path.startsWith("/receivables")
   )
     return "fiscal";
   if (path.startsWith("/customers") || path.startsWith("/credit"))

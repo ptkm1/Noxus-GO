@@ -1,15 +1,17 @@
 import type {
   FiscalInvoice,
   FiscalInvoiceItem,
-  OrganizationFiscalConfig,
+  Establishment,
 } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 import { buildSignedNfePackage } from "./nfe-xml-builder.js";
 
-function stubConfig(): OrganizationFiscalConfig {
+function stubConfig(): Establishment {
   return {
     id: "cfg",
     organizationId: "org",
+    legalName: "Empresa Teste LTDA",
+    tradeName: "Empresa Teste",
     cnpj: "11222333000181",
     stateRegistration: "123",
     municipalRegistration: null,
@@ -36,6 +38,8 @@ function stubConfig(): OrganizationFiscalConfig {
     autoStockOnInboundInvoice: false,
     danfeLogoBytes: null,
     danfeLogoMimeType: null,
+    isPrimary: true,
+    active: true,
     createdAt: new Date(),
     updatedAt: new Date(),
   };

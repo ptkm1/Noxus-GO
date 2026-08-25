@@ -1,7 +1,8 @@
-import type { OrganizationFiscalConfig } from "@prisma/client";
+import type { Establishment } from "@prisma/client";
 import forge from "node-forge";
 import { prisma } from "../db.js";
 import { decryptBuffer, decryptSecret } from "./encryption.js";
+import { getPrimaryEstablishment } from "../services/establishments.js";
 
 export type LoadedCertificate = {
   pfx: Buffer;
@@ -17,12 +18,27 @@ export type ExtractedPfx = {
   caPems: string[];
 };
 
+export async function loadEstablishmentCertificate(
+  establishmentId: string,
+): Promise<LoadedCertificate | null> {
+  const config = await prisma.establishment.findUnique({
+    where: { id: establishmentId },
+  });
+  return decryptEstablishmentCert(config);
+}
+
+/** @deprecated Prefer loadEstablishmentCertificate — usa o estabelecimento principal. */
 export async function loadOrganizationCertificate(
   organizationId: string,
 ): Promise<LoadedCertificate | null> {
-  const config = await prisma.organizationFiscalConfig.findUnique({
-    where: { organizationId },
-  });
+  const primary = await getPrimaryEstablishment(organizationId);
+  if (!primary) return null;
+  return decryptEstablishmentCert(primary);
+}
+
+function decryptEstablishmentCert(
+  config: Establishment | null,
+): LoadedCertificate | null {
   if (
     !config?.certificatePfxEncrypted ||
     !config.certificatePasswordEncrypted
@@ -62,7 +78,7 @@ export function extractPemFromPfx(pfx: Buffer, password: string): ExtractedPfx {
 }
 
 export function taxRegimeToCrt(
-  regime: OrganizationFiscalConfig["taxRegime"],
+  regime: Establishment["taxRegime"],
 ): string {
   switch (regime) {
     case "SIMPLES_NACIONAL":

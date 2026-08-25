@@ -1,6 +1,9 @@
-import type { OrganizationFiscalConfig } from "@prisma/client";
+import type { Establishment } from "@prisma/client";
 import { prisma } from "../db.js";
-import { loadOrganizationCertificate } from "../fiscal/certificate-store.js";
+import { loadEstablishmentCertificate } from "../fiscal/certificate-store.js";
+import {
+  getPrimaryEstablishment,
+} from "./establishments.js";
 import {
   customerFiscalDocument,
   customerFiscalRecipientSnapshot,
@@ -45,22 +48,49 @@ import {
   validateProductFiscal,
 } from "../fiscal/validation.js";
 
+
+async function resolveEmitenteForOrg(
+  organizationId: string,
+  establishmentId?: string | null,
+): Promise<Establishment | null> {
+  if (establishmentId) {
+    const est = await prisma.establishment.findFirst({
+      where: { id: establishmentId, organizationId },
+    });
+    if (est) return est;
+  }
+  return getPrimaryEstablishment(organizationId);
+}
+
+async function resolveEmitenteForInvoice(invoice: {
+  organizationId: string;
+  establishmentId: string | null;
+  orderId: string | null;
+}): Promise<Establishment | null> {
+  if (invoice.establishmentId) {
+    return resolveEmitenteForOrg(invoice.organizationId, invoice.establishmentId);
+  }
+  if (invoice.orderId) {
+    const order = await prisma.order.findFirst({
+      where: { id: invoice.orderId, organizationId: invoice.organizationId },
+      select: { establishmentId: true },
+    });
+    if (order?.establishmentId) {
+      return resolveEmitenteForOrg(invoice.organizationId, order.establishmentId);
+    }
+  }
+  return getPrimaryEstablishment(invoice.organizationId);
+}
+
 export async function buildOutboundInvoiceFromOrder(
   organizationId: string,
   orderId: string,
 ) {
-  const config = await prisma.organizationFiscalConfig.findUnique({
-    where: { organizationId },
-  });
-  const orgIssues = validateOrganizationFiscalConfigForEmit(config);
-  if (orgIssues.length) {
-    return { ok: false as const, issues: orgIssues };
-  }
-
   const order = await prisma.order.findFirst({
     where: { id: orderId, organizationId, status: "CONFIRMED" },
     include: {
       customer: true,
+      establishment: true,
       items: {
         include: {
           product: { include: { fiscalNcm: true, outboundOperation: true } },
@@ -96,6 +126,12 @@ export async function buildOutboundInvoiceFromOrder(
         },
       ],
     };
+  }
+
+  const config = order.establishment;
+  const orgIssues = validateOrganizationFiscalConfigForEmit(config);
+  if (orgIssues.length) {
+    return { ok: false as const, issues: orgIssues };
   }
 
   const cfg = config!;
@@ -183,14 +219,15 @@ export async function buildOutboundInvoiceFromOrder(
   const nature = resolveInvoiceNature(invoiceItems);
 
   const invoice = await prisma.$transaction(async (tx) => {
-    await tx.organizationFiscalConfig.update({
-      where: { organizationId },
+    await tx.establishment.update({
+      where: { id: cfg.id },
       data: { nfeLastNumber: nextNumber },
     });
 
     return tx.fiscalInvoice.create({
       data: {
         organizationId,
+        establishmentId: cfg.id,
         direction: "OUTBOUND",
         status: "DRAFT",
         documentModel: 55,
@@ -240,9 +277,7 @@ export async function transmitOutboundInvoice(
     return { ok: false as const, error: "Status inválido para transmissão" };
   }
 
-  const config = await prisma.organizationFiscalConfig.findUnique({
-    where: { organizationId },
-  });
+  const config = await resolveEmitenteForInvoice(invoice);
   const issues = validateOrganizationFiscalConfig(config);
   if (issues.length)
     return {
@@ -254,7 +289,7 @@ export async function transmitOutboundInvoice(
     where: { id: organizationId },
     select: { name: true, displayName: true },
   });
-  const cert = await loadOrganizationCertificate(organizationId);
+  const cert = await loadEstablishmentCertificate(config!.id);
   if (!cert)
     return { ok: false as const, error: "Certificado A1 não disponível" };
 
@@ -297,7 +332,12 @@ export async function transmitOutboundInvoice(
   const packageOpts = {
     config: config!,
     recipient,
-    emitterName: org?.displayName ?? org?.name ?? "Emitente",
+    emitterName:
+      config!.legalName?.trim() ||
+      config!.tradeName?.trim() ||
+      org?.displayName?.trim() ||
+      org?.name ||
+      "Emitente",
     payment: {
       days: invoice.order?.paymentCondition?.days ?? 0,
     },
@@ -555,9 +595,7 @@ export async function cancelOutboundInvoice(
     };
   }
 
-  const config = await prisma.organizationFiscalConfig.findUnique({
-    where: { organizationId },
-  });
+  const config = await resolveEmitenteForInvoice(invoice);
   const issues = validateOrganizationFiscalConfig(config);
   if (issues.length)
     return {
@@ -565,7 +603,7 @@ export async function cancelOutboundInvoice(
       error: issues.map((i) => i.message).join("; "),
     };
 
-  const cert = await loadOrganizationCertificate(organizationId);
+  const cert = await loadEstablishmentCertificate(config!.id);
   if (!cert)
     return { ok: false as const, error: "Certificado A1 não disponível" };
 
@@ -654,9 +692,7 @@ export async function sendCartaCorrecao(
     return { ok: false as const, error: "Chave de acesso ausente" };
   }
 
-  const config = await prisma.organizationFiscalConfig.findUnique({
-    where: { organizationId },
-  });
+  const config = await resolveEmitenteForInvoice(invoice);
   const issues = validateOrganizationFiscalConfig(config);
   if (issues.length) {
     return {
@@ -665,7 +701,7 @@ export async function sendCartaCorrecao(
     };
   }
 
-  const cert = await loadOrganizationCertificate(organizationId);
+  const cert = await loadEstablishmentCertificate(config!.id);
   if (!cert)
     return { ok: false as const, error: "Certificado A1 não disponível" };
 
@@ -739,10 +775,8 @@ export async function consultOutboundInvoiceSituation(
     return { ok: false as const, error: "Chave de acesso ausente" };
   }
 
-  const config = await prisma.organizationFiscalConfig.findUnique({
-    where: { organizationId },
-  });
-  const cert = await loadOrganizationCertificate(organizationId);
+  const config = await resolveEmitenteForInvoice(invoice);
+  const cert = config ? await loadEstablishmentCertificate(config.id) : null;
   if (!config || !cert) {
     return {
       ok: false as const,
@@ -810,10 +844,12 @@ export async function inutilizarNumeracao(input: {
   justification: string;
   series?: number;
   year?: number;
+  establishmentId?: string;
 }) {
-  const config = await prisma.organizationFiscalConfig.findUnique({
-    where: { organizationId: input.organizationId },
-  });
+  const config = await resolveEmitenteForOrg(
+    input.organizationId,
+    input.establishmentId,
+  );
   const issues = validateOrganizationFiscalConfig(config);
   if (issues.length) {
     return {
@@ -825,7 +861,7 @@ export async function inutilizarNumeracao(input: {
     return { ok: false as const, error: "Número final menor que o inicial" };
   }
 
-  const cert = await loadOrganizationCertificate(input.organizationId);
+  const cert = await loadEstablishmentCertificate(config!.id);
   if (!cert)
     return { ok: false as const, error: "Certificado A1 não disponível" };
 
@@ -875,7 +911,7 @@ export async function inutilizarNumeracao(input: {
 }
 
 function buildIssuerSnapshot(
-  cfg: OrganizationFiscalConfig,
+  cfg: Establishment,
   nature?: string | null,
 ) {
   return {
@@ -885,6 +921,9 @@ function buildIssuerSnapshot(
     city: cfg.city,
     street: cfg.street,
     number: cfg.addressNumber,
+    legalName: cfg.legalName,
+    tradeName: cfg.tradeName,
+    establishmentId: cfg.id,
     nature: normalizeNfeNature(nature),
   };
 }
@@ -932,15 +971,31 @@ function buildRecipientSnapshot(
 }
 
 export async function listEligibleOutboundOrders(organizationId: string) {
-  const config = await prisma.organizationFiscalConfig.findUnique({
-    where: { organizationId },
-  });
-
   const orders = await prisma.order.findMany({
     where: { organizationId, status: "CONFIRMED" },
     orderBy: { createdAt: "desc" },
     include: {
       customer: true,
+      establishment: {
+        select: {
+          id: true,
+          legalName: true,
+          tradeName: true,
+          cnpj: true,
+          uf: true,
+          certificatePfxEncrypted: true,
+          certificateExpiresAt: true,
+          taxRegime: true,
+          stateRegistration: true,
+          city: true,
+          street: true,
+          addressNumber: true,
+          nfeEnvironment: true,
+          nfeSeries: true,
+          nfeLastNumber: true,
+          contingencyEnabled: true,
+        },
+      },
       seller: { include: { user: { select: { name: true } } } },
       items: { include: { product: true } },
       fiscalInvoices: {
@@ -959,7 +1014,7 @@ export async function listEligibleOutboundOrders(organizationId: string) {
   });
 
   return orders.map((o) => {
-    const orgIssues = validateOrganizationFiscalConfigForEmit(config);
+    const orgIssues = validateOrganizationFiscalConfigForEmit(o.establishment);
     const customerIssues = o.customer
       ? validateCustomerFiscal(o.customer)
       : [{ code: "NO_CUSTOMER", message: "Pedido sem cliente" }];

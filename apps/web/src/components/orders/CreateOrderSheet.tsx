@@ -1,4 +1,5 @@
 import { useAuth } from "@/auth/AuthContext";
+import { useActiveEstablishment } from "@/auth/EstablishmentContext";
 import {
   FormErrorBanner,
   FormField,
@@ -70,6 +71,19 @@ type PreviewLine = {
 type CreditPreview = {
   action: "ALLOW" | "BLOCK" | "APPROVAL";
   violations: Array<{ code: string; message: string }>;
+  check?: {
+    status: "OK" | "BLOCKED" | "WARN";
+    reason?: string;
+    overdueAmount?: number;
+    openAmount?: number;
+    overdueReceivables?: Array<{
+      id: string;
+      remaining: number;
+      dueDate: string;
+      nossoNumero: string | null;
+      status: string;
+    }>;
+  };
 };
 
 type PreviewResponse = {
@@ -125,6 +139,8 @@ type Props = Readonly<{
 
 export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
   const { user } = useAuth();
+  const { activeEstablishmentId, activeEstablishment } =
+    useActiveEstablishment();
   const [sellerId, setSellerId] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [customerQuery, setCustomerQuery] = useState("");
@@ -321,6 +337,7 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
           customerId,
           paymentConditionId,
           priceTableId: priceTableId || undefined,
+          establishmentId: activeEstablishmentId || undefined,
           status,
           notes: notes.trim() || undefined,
           items: payloadItems,
@@ -389,7 +406,11 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
         else onOpenChange(true);
       }}
       title="Novo pedido"
-      description="Lançamento pelo escritório. Preços seguem a tabela do cliente e do vendedor."
+      description={
+        activeEstablishment
+          ? `CNPJ emissor: ${activeEstablishment.tradeName || activeEstablishment.legalName}. Preços seguem tabela do cliente/vendedor.`
+          : "Lançamento pelo escritório. Preços seguem a tabela do cliente e do vendedor."
+      }
       contentClassName="sm:max-h-[92vh]"
       footer={
         <>
@@ -700,14 +721,35 @@ export function CreateOrderSheet({ open, onOpenChange, onCreated }: Props) {
       ) : null}
 
       {credit?.action === "BLOCK" ? (
-        <p className="mt-3 text-sm text-destructive" role="alert">
-          {credit.violations.map((v) => v.message).join(" ")} Você ainda pode
-          salvar como rascunho.
-        </p>
+        <div className="mt-3 space-y-2 text-sm text-destructive" role="alert">
+          <p>
+            {credit.violations.map((v) => v.message).join(" ")} Você ainda pode
+            salvar como rascunho.
+          </p>
+          {credit.check?.overdueReceivables?.length ? (
+            <ul className="list-inside list-disc text-xs">
+              {credit.check.overdueReceivables.slice(0, 5).map((r) => (
+                <li key={r.id}>
+                  Boleto {r.nossoNumero ?? r.id.slice(0, 8)} — R${" "}
+                  {r.remaining.toFixed(2).replace(".", ",")} (venc.{" "}
+                  {new Date(r.dueDate).toLocaleDateString("pt-BR")})
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       ) : null}
       {credit?.action === "APPROVAL" ? (
         <p className="mt-3 text-sm text-amber-800 dark:text-amber-300">
           Ao confirmar, o pedido ficará aguardando aprovação de crédito.
+          {credit.check?.overdueAmount
+            ? ` Vencido: R$ ${credit.check.overdueAmount.toFixed(2).replace(".", ",")}.`
+            : ""}
+        </p>
+      ) : null}
+      {credit?.action === "ALLOW" && credit.check?.status === "WARN" ? (
+        <p className="mt-3 text-sm text-amber-800 dark:text-amber-300">
+          {credit.violations.map((v) => v.message).join(" ")}
         </p>
       ) : null}
     </FormSheet>

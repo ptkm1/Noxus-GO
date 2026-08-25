@@ -69,9 +69,15 @@ type Props = {
   indicatorKey: HomeIndicatorKey;
   /** Layout compacto para grade lado a lado. */
   compact?: boolean;
+  /** Filtro opcional por estabelecimento (consolidado = omitir). */
+  establishmentId?: string | null;
 };
 
-export function HomeIndicatorWidget({ indicatorKey, compact = false }: Props) {
+export function HomeIndicatorWidget({
+  indicatorKey,
+  compact = false,
+  establishmentId = null,
+}: Props) {
   const [mode, setMode] = useState<PeriodMode>("this_month");
   const [customFrom, setCustomFrom] = useState(
     () => periodRangeYmd("this_month").from,
@@ -98,6 +104,7 @@ export function HomeIndicatorWidget({ indicatorKey, compact = false }: Props) {
       indicatorKey,
       range?.from ?? "",
       range?.to ?? "",
+      establishmentId ?? "",
     ],
     queryFn: () => {
       const params = new URLSearchParams({
@@ -106,6 +113,7 @@ export function HomeIndicatorWidget({ indicatorKey, compact = false }: Props) {
         to: range!.to,
         limit: "5",
       });
+      if (establishmentId) params.set("establishmentId", establishmentId);
       return apiFetch<HomeIndicatorSummary>(
         `/admin/reports/home-indicator?${params}`,
       );

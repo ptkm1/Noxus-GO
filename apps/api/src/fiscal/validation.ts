@@ -1,12 +1,26 @@
-import type {
-  FiscalTaxRegime,
-  OrganizationFiscalConfig,
-  Product,
-} from "@prisma/client";
+import type { Establishment, FiscalTaxRegime, Product } from "@prisma/client";
 import {
   customerFiscalDocument,
   type CustomerFiscalFields,
 } from "./customer-fiscal.js";
+
+/** Campos fiscais do emitente (Establishment). */
+export type OrganizationFiscalConfig = Pick<
+  Establishment,
+  | "cnpj"
+  | "uf"
+  | "certificatePfxEncrypted"
+  | "certificateExpiresAt"
+  | "taxRegime"
+  | "stateRegistration"
+  | "city"
+  | "street"
+  | "addressNumber"
+  | "nfeEnvironment"
+  | "nfeSeries"
+  | "nfeLastNumber"
+  | "contingencyEnabled"
+>;
 
 export type FiscalReadinessIssue = { code: string; message: string };
 
@@ -27,7 +41,7 @@ export function validateOrganizationFiscalConfigForEmit(
   if (!config) {
     issues.push({
       code: "NO_CONFIG",
-      message: "Configuração fiscal da empresa não cadastrada",
+      message: "Configuração fiscal do estabelecimento não cadastrada",
     });
     return issues;
   }

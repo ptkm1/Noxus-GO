@@ -45,6 +45,21 @@ const orderPdfInclude = {
     select: { id: true, name: true, days: true, sortOrder: true },
   },
   items: { include: { product: { select: { sku: true } } } },
+  establishment: {
+    select: {
+      legalName: true,
+      tradeName: true,
+      cnpj: true,
+      stateRegistration: true,
+      street: true,
+      addressNumber: true,
+      complement: true,
+      district: true,
+      city: true,
+      zipCode: true,
+      uf: true,
+    },
+  },
   organization: {
     select: {
       name: true,
@@ -53,19 +68,6 @@ const orderPdfInclude = {
       cnpj: true,
       document: true,
       stateRegistration: true,
-      fiscalConfig: {
-        select: {
-          cnpj: true,
-          stateRegistration: true,
-          street: true,
-          addressNumber: true,
-          complement: true,
-          district: true,
-          city: true,
-          zipCode: true,
-          uf: true,
-        },
-      },
     },
   },
 } as const;
@@ -113,9 +115,16 @@ function formatOrgCnpj(raw: string | null | undefined): string | null {
 
 function toOrganization(
   org: NonNullable<Awaited<ReturnType<typeof loadOrderForPdf>>>["organization"],
+  fiscal: NonNullable<
+    Awaited<ReturnType<typeof loadOrderForPdf>>
+  >["establishment"] | null,
 ): OrderPdfOrganization {
-  const fiscal = org.fiscalConfig;
-  const name = (org.displayName?.trim() || org.name).trim() || "—";
+  const name =
+    (fiscal?.tradeName?.trim() ||
+      fiscal?.legalName?.trim() ||
+      org.displayName?.trim() ||
+      org.name
+    ).trim() || "—";
   const cnpj =
     formatOrgCnpj(fiscal?.cnpj) ??
     formatOrgCnpj(org.cnpj) ??
@@ -167,7 +176,10 @@ export async function orderToPdfInput(
     logoUrl: order.organization.logoUrl,
   });
 
-  const organization = toOrganization(order.organization);
+  const organization = toOrganization(
+    order.organization,
+    order.establishment,
+  );
 
   return {
     id: order.id,

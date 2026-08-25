@@ -825,13 +825,53 @@ export function CustomersPage() {
                       )}
                     </TableCell>
                     <TableCell className="px-4 py-3">
-                      {c.creditBlocked ? (
-                        <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-900">
-                          Bloqueado
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
+                      {(() => {
+                        const row = c as CustomerRecord & {
+                          creditSituation?: string;
+                          creditOpenAmount?: number;
+                          creditOverdueAmount?: number;
+                        };
+                        if (row.creditBlocked || row.creditSituation === "OVERDUE") {
+                          return (
+                            <div>
+                              <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-900">
+                                Inadimplente
+                              </span>
+                              {row.creditOverdueAmount != null &&
+                              row.creditOverdueAmount > 0 ? (
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  Vencido R${" "}
+                                  {row.creditOverdueAmount
+                                    .toFixed(2)
+                                    .replace(".", ",")}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        }
+                        if (row.creditSituation === "OPEN") {
+                          return (
+                            <div>
+                              <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
+                                Em aberto
+                              </span>
+                              {row.creditOpenAmount != null ? (
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  R${" "}
+                                  {row.creditOpenAmount
+                                    .toFixed(2)
+                                    .replace(".", ",")}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        }
+                        return (
+                          <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-900">
+                            Em dia
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell className="px-4 py-3 text-right">
                       <button

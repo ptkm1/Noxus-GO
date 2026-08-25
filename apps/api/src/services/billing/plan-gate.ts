@@ -12,6 +12,10 @@ export function adminPathToPlanFeature(routePath: string): PlanFeature | null {
   if (p.startsWith("/fiscal") || p === "/reports/invoiced-orders") {
     return "fiscal_nfe";
   }
+  if (p.startsWith("/establishments") && p !== "/establishments" && !p.endsWith("/preferred")) {
+    // list/preferred always allowed; create second CNPJ gated in service
+    return null;
+  }
   if (p.startsWith("/expedition")) return "expedition";
   if (
     p.startsWith("/seller-locations") ||

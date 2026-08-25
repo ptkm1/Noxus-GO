@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { runCertificateExpiryAlerts } from "../services/cert-expiry-alerts.js";
+import { reconcileOpenReceivables } from "../services/banking/receivable-service.js";
 import { runCustomerInactivation } from "../services/customer-status.js";
 import { runFiscalTransmitJobs } from "../services/fiscal-transmit-queue.js";
 import { runMorningBriefJob } from "../services/morning-brief.js";
@@ -97,6 +98,23 @@ export async function jobsRoutes(app: FastifyInstance) {
       .safeParse(req.body ?? {});
     return runCustomerInactivation({
       organizationId: body.success ? body.data.organizationId : undefined,
+    });
+  });
+
+  /** Reconciliação leve de boletos (overdue local; sync remoto opcional). */
+  app.post("/banking-reconcile", async (req, reply) => {
+    if (!assertCronSecret(reply, readCronSecret(req))) return;
+    const body = z
+      .object({
+        organizationId: z.string().optional(),
+        syncRemote: z.boolean().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+      })
+      .safeParse(req.body ?? {});
+    return reconcileOpenReceivables({
+      organizationId: body.success ? body.data.organizationId : undefined,
+      syncRemote: body.success ? Boolean(body.data.syncRemote) : false,
+      limit: body.success ? body.data.limit : undefined,
     });
   });
 }

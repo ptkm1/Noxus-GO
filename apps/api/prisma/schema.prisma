@@ -74,6 +74,29 @@ enum CreditTitleStatus {
   CANCELLED
 }
 
+/// Provedor bancário de cobrança (boletos dos clientes — não SaaS).
+enum BankingProviderKind {
+  ITAU
+  BB
+  SANTANDER
+}
+
+enum BankConnectionStatus {
+  PENDING_SETUP
+  ACTIVE
+  ERROR
+  DISCONNECTED
+}
+
+/// Status interno do recebível (boleto) após mapeamento do provedor.
+enum ReceivableStatus {
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  OVERDUE
+  CANCELLED
+}
+
 /// Status da assinatura SaaS da organização.
 enum SubscriptionStatus {
   TRIAL
@@ -280,6 +303,8 @@ model Organization {
   paymentConditions PaymentCondition[]
   orderSituations  OrderSituation[]
   customerCreditTitles CustomerCreditTitle[]
+  bankConnections      BankConnection[]
+  receivables          Receivable[]
   sellerCustomerVisits SellerCustomerVisit[]
   sellerLiveLocations  SellerLiveLocation[]
   sellerLocationHistory SellerLocationHistory[]
@@ -294,7 +319,7 @@ model Organization {
   accountsPayables   AccountsPayable[]
   rolePermissions    OrganizationRolePermission[]
   profiles           OrganizationProfile[]
-  fiscalConfig          OrganizationFiscalConfig?
+  establishments        Establishment[]
   fiscalNcms            FiscalNcm[]
   fiscalOperations      FiscalOperation[]
   fiscalInvoices        FiscalInvoice[]
@@ -491,11 +516,17 @@ model User {
   expeditionsStarted    OrderExpedition[] @relation("ExpeditionStartedBy")
   expeditionsFinished   OrderExpedition[] @relation("ExpeditionFinishedBy")
   expeditionEvents      OrderExpeditionEvent[]
+  /// CNPJ/estabelecimento preferido na UI (header). Não altera pedidos antigos.
+  preferredEstablishmentId String?
+  preferredEstablishment   Establishment? @relation("UserPreferredEstablishment", fields: [preferredEstablishmentId], references: [id], onDelete: SetNull)
+  /// null = todos os estabelecimentos; senão lista de IDs permitidos (V1).
+  allowedEstablishmentIds  Json?
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
 
   @@unique([organizationId, matricula])
   @@index([organizationProfileId])
+  @@index([preferredEstablishmentId])
 }
 
 model Seller {
@@ -1042,6 +1073,7 @@ model Customer {
   priceTables    PriceTable[]
   orders         Order[]
   creditTitles   CustomerCreditTitle[]
+  receivables    Receivable[]
   sellerCustomerVisits SellerCustomerVisit[]
   /// Coordenadas para mapa / rota (opcional; configuradas pelo admin).
   latitude       Decimal?           @db.Decimal(10, 8)
@@ -1100,6 +1132,86 @@ model CustomerCreditTitle {
   updatedAt        DateTime          @updatedAt
 
   @@index([organizationId, customerId])
+}
+
+/// Conexão da organização com API de cobrança bancária (boletos de clientes).
+model BankConnection {
+  id                       String               @id @default(cuid())
+  organizationId           String
+  organization             Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  provider                 BankingProviderKind
+  status                   BankConnectionStatus @default(PENDING_SETUP)
+  /// Metadados não-secretos: agência, conta, carteira, convênio, workspaceId, ambiente.
+  metadata                 Json?
+  /// Segredos criptografados (AES-GCM). Preferir refs em env via credentialsEnvPrefix.
+  credentialsEncrypted     String?              @db.Text
+  /// Prefixo de variáveis de ambiente com secrets (nunca exposto ao frontend).
+  credentialsEnvPrefix     String?
+  webhookSecretEncrypted   String?              @db.Text
+  lastSyncAt               DateTime?
+  lastError                String?
+  /// Reserva futura: importação CNAB (não implementado).
+  cnabEnabled              Boolean              @default(false)
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+  receivables              Receivable[]
+
+  @@unique([organizationId, provider])
+  @@index([organizationId, status])
+}
+
+/// Conta a receber (boleto) sincronizada com o banco — distinta da assinatura SaaS Asaas.
+model Receivable {
+  id               String            @id @default(cuid())
+  organizationId   String
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerId       String
+  customer         Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orderId          String?
+  order            Order?            @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  bankConnectionId String
+  bankConnection   BankConnection    @relation(fields: [bankConnectionId], references: [id], onDelete: Restrict)
+  externalId       String?
+  nossoNumero      String?
+  digitableLine    String?
+  barcode          String?
+  amount           Decimal           @db.Decimal(14, 2)
+  paidAmount       Decimal           @default(0) @db.Decimal(14, 2)
+  dueDate          DateTime
+  paidAt           DateTime?
+  status           ReceivableStatus  @default(PENDING)
+  externalStatus   String?
+  lastSyncedAt     DateTime?
+  metadata         Json?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([bankConnectionId, externalId])
+  @@index([organizationId, customerId, status])
+  @@index([organizationId, status, dueDate])
+  @@index([organizationId, orderId])
+  @@index([bankConnectionId, nossoNumero])
+}
+
+/// Eventos de webhook bancário (idempotência + auditoria). Separado do Asaas SaaS.
+model BankingWebhookEvent {
+  id               String              @id @default(cuid())
+  provider         BankingProviderKind
+  providerEventId  String
+  eventType        String
+  /// received | processed | ignored | failed
+  status           String              @default("received")
+  organizationId   String?
+  bankConnectionId String?
+  receivableId     String?
+  receivedAt       DateTime            @default(now())
+  processedAt      DateTime?
+  errorMessage     String?
+  payloadSanitized Json?
+
+  @@unique([provider, providerEventId])
+  @@index([provider, receivedAt])
+  @@index([organizationId, receivedAt])
 }
 
 model SellerCustomerVisit {
@@ -1174,6 +1286,9 @@ model Order {
   status         OrderStatus  @default(DRAFT)
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Estabelecimento (CNPJ) emissor — snapshot no momento da venda.
+  establishmentId String
+  establishment   Establishment @relation(fields: [establishmentId], references: [id], onDelete: Restrict)
   sellerId       String
   seller         Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   customerId     String?
@@ -1202,6 +1317,7 @@ model Order {
   stockMovements StockMovement[]
   fiscalInvoices FiscalInvoice[]
   expedition     OrderExpedition?
+  receivables    Receivable[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -1209,6 +1325,8 @@ model Order {
   @@index([organizationId, createdAt])
   @@index([organizationId, paymentConditionId])
   @@index([organizationId, situationId])
+  @@index([organizationId, establishmentId])
+  @@index([establishmentId])
 }
 
 model OrderItem {
@@ -1408,10 +1526,14 @@ model AccountsPayable {
   @@index([organizationId, supplierId])
 }
 
-model OrganizationFiscalConfig {
+/// Estabelecimento (CNPJ/filial) dentro da Organization. Estoque continua por org;
+/// emissão NF-e e numeração são por estabelecimento.
+model Establishment {
   id                        String          @id @default(cuid())
-  organizationId            String          @unique
+  organizationId            String
   organization              Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  legalName                 String
+  tradeName                 String?
   cnpj                      String?
   stateRegistration         String?
   municipalRegistration     String?
@@ -1443,8 +1565,17 @@ model OrganizationFiscalConfig {
   /// Imagem da logo exibida no DANFE (PNG/JPEG/WebP).
   danfeLogoBytes            Bytes?
   danfeLogoMimeType         String?
+  isPrimary                 Boolean         @default(false)
+  active                    Boolean         @default(true)
+  orders                    Order[]
+  fiscalInvoices            FiscalInvoice[]
+  preferredByUsers          User[]          @relation("UserPreferredEstablishment")
   createdAt                 DateTime        @default(now())
   updatedAt                 DateTime        @updatedAt
+
+  @@unique([organizationId, cnpj])
+  @@index([organizationId, active])
+  @@index([organizationId, isPrimary])
 }
 
 model FiscalNcm {
@@ -1492,6 +1623,9 @@ model FiscalInvoice {
   id               String                  @id @default(cuid())
   organizationId   String
   organization     Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// Emitente da nota (mesmo do pedido na saída).
+  establishmentId  String?
+  establishment    Establishment?          @relation(fields: [establishmentId], references: [id], onDelete: SetNull)
   direction        FiscalDocumentDirection
   status           FiscalInvoiceStatus     @default(DRAFT)
   /// 55 = NF-e; 65 = NFC-e (arquitetura — emissão 65 ainda não implementada).
@@ -1531,6 +1665,8 @@ model FiscalInvoice {
 
   @@index([organizationId, direction, status])
   @@index([organizationId, orderId])
+  @@index([organizationId, establishmentId])
+  @@index([establishmentId])
 }
 
 /// Job de transmissão/poll assíncrono da NF-e.

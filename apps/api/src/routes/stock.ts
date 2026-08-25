@@ -5,16 +5,14 @@ import { requireAdmin } from "../auth/org-roles.js";
 import { prisma } from "../db.js";
 import { sendZodError } from "../util/zod-reply.js";
 import { applyStockMovement } from "../services/stock.js";
+import { getPrimaryEstablishment } from "../services/establishments.js";
 
 const idParam = z.object({ id: z.string().min(1) });
 
 export const stockRoutes: FastifyPluginAsync = async (app) => {
   app.get("/settings", async (req) => {
     const auth = req.auth!;
-    const config = await prisma.organizationFiscalConfig.findUnique({
-      where: { organizationId: auth.organizationId },
-      select: { autoStockOnInboundInvoice: true },
-    });
+    const config = await getPrimaryEstablishment(auth.organizationId);
     return {
       autoStockOnInboundInvoice: config?.autoStockOnInboundInvoice ?? false,
     };
@@ -27,13 +25,13 @@ export const stockRoutes: FastifyPluginAsync = async (app) => {
       .object({ autoStockOnInboundInvoice: z.boolean() })
       .safeParse(req.body);
     if (!body.success) return sendZodError(reply, body.error, req);
-    await prisma.organizationFiscalConfig.upsert({
-      where: { organizationId: auth.organizationId },
-      create: {
-        organizationId: auth.organizationId,
-        autoStockOnInboundInvoice: body.data.autoStockOnInboundInvoice,
-      },
-      update: { autoStockOnInboundInvoice: body.data.autoStockOnInboundInvoice },
+    const primary = await getPrimaryEstablishment(auth.organizationId);
+    if (!primary) {
+      return reply.status(400).send({ error: "Nenhum estabelecimento cadastrado" });
+    }
+    await prisma.establishment.update({
+      where: { id: primary.id },
+      data: { autoStockOnInboundInvoice: body.data.autoStockOnInboundInvoice },
     });
     return body.data;
   });

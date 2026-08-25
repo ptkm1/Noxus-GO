@@ -68,6 +68,7 @@ export async function buildHomeIndicator(params: {
   organizationId: string;
   key: HomeIndicatorKey;
   sellerIds?: string[];
+  establishmentId?: string | null;
   from?: string;
   to?: string;
   limit?: number;
@@ -88,6 +89,9 @@ export async function buildHomeIndicator(params: {
   };
   if (params.sellerIds && params.sellerIds.length > 0) {
     orderWhere.sellerId = { in: params.sellerIds };
+  }
+  if (params.establishmentId) {
+    orderWhere.establishmentId = params.establishmentId;
   }
 
   if (params.key === "sales_by_seller") {

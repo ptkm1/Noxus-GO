@@ -187,8 +187,8 @@ async function computeTips(
         scope: "ALL",
       },
     }),
-    prisma.organizationFiscalConfig.findUnique({
-      where: { organizationId },
+    prisma.establishment.findFirst({
+      where: { organizationId, isPrimary: true },
       select: { certificateExpiresAt: true, certificatePfxEncrypted: true },
     }),
   ]);

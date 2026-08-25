@@ -5,6 +5,7 @@ import { verifyAccessToken, type AccessPayload } from "./auth/jwt.js";
 import { adminRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { asaasWebhookRoutes, billingRoutes } from "./routes/billing.js";
+import { bankingWebhookRoutes } from "./routes/banking-webhooks.js";
 import { integrationsRoutes } from "./routes/integrations.js";
 import { jobsRoutes } from "./routes/jobs.js";
 import { sellerRoutes } from "./routes/seller.js";
@@ -29,6 +30,9 @@ export async function buildApp() {
       "authorization",
       "x-cron-secret",
       "asaas-access-token",
+      "x-banking-webhook-token",
+      "x-webhook-token",
+      "x-santander-webhook-token",
       "ngrok-skip-browser-warning",
     ],
   });
@@ -50,6 +54,7 @@ export async function buildApp() {
   const v1 = API_PREFIX;
 
   await app.register(asaasWebhookRoutes, { prefix: `${v1}/webhooks` });
+  await app.register(bankingWebhookRoutes, { prefix: `${v1}/webhooks` });
 
   await app.register(
     async (r) => {
