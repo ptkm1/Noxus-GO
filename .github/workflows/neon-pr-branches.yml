@@ -44,11 +44,11 @@ jobs:
           branch_name: preview/pr-${{ github.event.number }}-${{ needs.setup.outputs.branch }}
           api_key: ${{ secrets.NEON_API_KEY }}
           expires_at: ${{ env.EXPIRES_AT }}
-          # Default da action é "neondb"; neste projeto o DB Neon é "noxusgo"
-          # (path da connection string). Override: repo variable NEON_DATABASE.
+          # Default da action é "neondb" / "neondb_owner"; neste projeto Neon:
+          # DB = noxusgo, role = default (user da connection string).
+          # Override: vars NEON_DATABASE / NEON_ROLE.
           database: ${{ vars.NEON_DATABASE || 'noxusgo' }}
-          # Default "neondb_owner". Override se o role no console for outro.
-          role: ${{ vars.NEON_ROLE || 'neondb_owner' }}
+          role: ${{ vars.NEON_ROLE || 'default' }}
 
       - name: Checkout
         uses: actions/checkout@v4
