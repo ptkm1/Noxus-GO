@@ -1,7 +1,13 @@
+import { DatePicker } from "@/components/ui/date-picker";
 import { apiFetch } from "@/lib/api";
 import {
+  CUSTOM_PERIOD_LABEL,
   PERIOD_PRESET_LABELS,
   periodRange,
+  periodRangeYmd,
+  validateCustomPeriod,
+  ymdToIsoRange,
+  type PeriodMode,
   type PeriodPreset,
 } from "@/lib/period-presets";
 import { cn } from "@/lib/utils";
@@ -66,25 +72,61 @@ type Props = {
 };
 
 export function HomeIndicatorWidget({ indicatorKey, compact = false }: Props) {
-  const [preset, setPreset] = useState<PeriodPreset>("this_month");
-  const range = useMemo(() => periodRange(preset), [preset]);
+  const [mode, setMode] = useState<PeriodMode>("this_month");
+  const [customFrom, setCustomFrom] = useState(
+    () => periodRangeYmd("this_month").from,
+  );
+  const [customTo, setCustomTo] = useState(
+    () => periodRangeYmd("this_month").to,
+  );
+
+  const customError =
+    mode === "custom" ? validateCustomPeriod(customFrom, customTo) : null;
+
+  const range = useMemo(() => {
+    if (mode === "custom") {
+      if (customError) return null;
+      return ymdToIsoRange(customFrom, customTo);
+    }
+    return periodRange(mode);
+  }, [mode, customFrom, customTo, customError]);
 
   const q = useQuery({
-    queryKey: ["admin", "home-indicator", indicatorKey, range.from, range.to],
+    queryKey: [
+      "admin",
+      "home-indicator",
+      indicatorKey,
+      range?.from ?? "",
+      range?.to ?? "",
+    ],
     queryFn: () => {
       const params = new URLSearchParams({
         key: indicatorKey,
-        from: range.from,
-        to: range.to,
+        from: range!.from,
+        to: range!.to,
         limit: "5",
       });
       return apiFetch<HomeIndicatorSummary>(
         `/admin/reports/home-indicator?${params}`,
       );
     },
+    enabled: range != null,
     staleTime: 30_000,
     placeholderData: keepPreviousData,
   });
+
+  function selectPreset(p: PeriodPreset) {
+    setMode(p);
+  }
+
+  function selectCustom() {
+    if (mode !== "custom") {
+      const ymd = periodRangeYmd(mode);
+      setCustomFrom(ymd.from);
+      setCustomTo(ymd.to);
+    }
+    setMode("custom");
+  }
 
   const isRefetching = q.isFetching && !q.isLoading;
   const isProfit =
@@ -114,6 +156,15 @@ export function HomeIndicatorWidget({ indicatorKey, compact = false }: Props) {
       );
     }
   }
+
+  const pillClass = (active: boolean) =>
+    cn(
+      "rounded-md font-medium transition-colors",
+      compact ? "px-2 py-1 text-[10px]" : "px-3 py-1.5 text-xs",
+      active
+        ? "bg-sidebar-primary text-sidebar-primary-foreground"
+        : "border border-border bg-card text-muted-foreground hover:bg-muted",
+    );
 
   return (
     <section
@@ -158,25 +209,62 @@ export function HomeIndicatorWidget({ indicatorKey, compact = false }: Props) {
             <button
               key={p}
               type="button"
-              onClick={() => setPreset(p)}
-              className={cn(
-                "rounded-md font-medium transition-colors",
-                compact ? "px-2 py-1 text-[10px]" : "px-3 py-1.5 text-xs",
-                preset === p
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                  : "border border-border bg-card text-muted-foreground hover:bg-muted",
-              )}
+              onClick={() => selectPreset(p)}
+              className={pillClass(mode === p)}
             >
               {PERIOD_PRESET_LABELS[p]}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={selectCustom}
+            className={pillClass(mode === "custom")}
+          >
+            {CUSTOM_PERIOD_LABEL}
+          </button>
         </div>
       </div>
+
+      {mode === "custom" ? (
+        <div
+          className={cn(
+            "mt-3 flex flex-col gap-2",
+            compact ? "gap-1.5" : "sm:flex-row sm:flex-wrap sm:items-center",
+          )}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <DatePicker
+              value={customFrom}
+              onChange={setCustomFrom}
+              placeholder="De"
+              className={cn(compact ? "h-8 w-[9.5rem] text-xs" : "w-[11rem]")}
+              max={customTo || undefined}
+            />
+            <span className="text-xs text-muted-foreground">até</span>
+            <DatePicker
+              value={customTo}
+              onChange={setCustomTo}
+              placeholder="Até"
+              className={cn(compact ? "h-8 w-[9.5rem] text-xs" : "w-[11rem]")}
+              min={customFrom || undefined}
+            />
+          </div>
+          {customError ? (
+            <p className="text-xs text-destructive" role="alert">
+              {customError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <div
         className={cn("relative w-full", compact ? "mt-3 h-48" : "mt-6 h-64")}
       >
-        {q.isLoading ? (
+        {customError ? (
+          <p className="text-sm text-muted-foreground">
+            Ajuste o período para carregar o gráfico.
+          </p>
+        ) : q.isLoading ? (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             <span className="sr-only">Carregando gráfico…</span>

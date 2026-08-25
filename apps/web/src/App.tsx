@@ -40,6 +40,7 @@ import { FiscalFixedExpensesPage } from "./pages/FiscalFixedExpensesPage";
 import { FiscalHubPage } from "./pages/FiscalHubPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { InsightsPage } from "./pages/InsightsPage";
+import { IndicatorsHubPage } from "./pages/IndicatorsHubPage";
 import { LegalDocumentPage } from "./pages/LegalDocumentPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
@@ -53,8 +54,29 @@ import { ProductsPage } from "./pages/ProductsPage";
 import { PaymentPendingPage } from "./pages/PaymentPendingPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ReportCustomersPage } from "./pages/ReportCustomersPage";
+import {
+  ReportCommissionByOrderPage,
+  ReportCommissionsPage,
+  ReportInvoicedOrdersPage,
+} from "./pages/ReportBillingCatalogPages";
+import {
+  ReportCustomerAbcPage,
+  ReportCustomerPositivacaoPage,
+  ReportPortfolioBySellerPage,
+  ReportPortfolioPage,
+  ReportVisitsCheckinPage,
+} from "./pages/ReportCustomerCatalogPages";
 import { ReportOrderItemsPage } from "./pages/ReportOrderItemsPage";
 import { ReportOrdersPage } from "./pages/ReportOrdersPage";
+import {
+  ReportProductPositivacaoPage,
+  ReportTopProductsPage,
+} from "./pages/ReportProductCatalogPages";
+import {
+  ReportSalesDetailedPage,
+  ReportSalesSummaryPage,
+  ReportSellerRankingPage,
+} from "./pages/ReportSalesCatalogPages";
 import { ReportsHubPage } from "./pages/ReportsHubPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { ReportStockPage } from "./pages/ReportStockPage";
@@ -107,6 +129,7 @@ const TEAM_LEADER_ROUTE_PREFIXES = [
   "/vendas",
   "/insights",
   "/relatorios",
+  "/indicadores",
 ];
 
 function TeamLeaderRouteGuard() {
@@ -366,9 +389,61 @@ function AppRoutes() {
               path="relatorios/clientes"
               element={<ReportCustomersPage />}
             />
+            <Route
+              path="relatorios/clientes/carteira"
+              element={<ReportPortfolioPage />}
+            />
+            <Route
+              path="relatorios/clientes/carteira-vendedor"
+              element={<ReportPortfolioBySellerPage />}
+            />
+            <Route
+              path="relatorios/clientes/positivacao"
+              element={<ReportCustomerPositivacaoPage />}
+            />
+            <Route
+              path="relatorios/clientes/abc"
+              element={<ReportCustomerAbcPage />}
+            />
+            <Route
+              path="relatorios/clientes/visitas"
+              element={<ReportVisitsCheckinPage />}
+            />
             <Route path="relatorios/pedidos" element={<ReportOrdersPage />} />
             <Route path="relatorios/itens" element={<ReportOrderItemsPage />} />
             <Route path="relatorios/estoque" element={<ReportStockPage />} />
+            <Route
+              path="relatorios/vendas/resumo"
+              element={<ReportSalesSummaryPage />}
+            />
+            <Route
+              path="relatorios/vendas/detalhadas"
+              element={<ReportSalesDetailedPage />}
+            />
+            <Route
+              path="relatorios/vendas/ranking"
+              element={<ReportSellerRankingPage />}
+            />
+            <Route
+              path="relatorios/produtos/mais-vendidos"
+              element={<ReportTopProductsPage />}
+            />
+            <Route
+              path="relatorios/produtos/positivacao"
+              element={<ReportProductPositivacaoPage />}
+            />
+            <Route
+              path="relatorios/faturamento/pedidos"
+              element={<ReportInvoicedOrdersPage />}
+            />
+            <Route
+              path="relatorios/comissoes"
+              element={<ReportCommissionsPage />}
+            />
+            <Route
+              path="relatorios/comissoes/por-pedido"
+              element={<ReportCommissionByOrderPage />}
+            />
             <Route path="relatorios/gestao" element={<ReportsPage />} />
             <Route path="visitas" element={<CustomerVisitsPage />} />
             <Route path="rastreio" element={<SellerTrackingPage />} />
@@ -380,10 +455,7 @@ function AppRoutes() {
             <Route path="vendas" element={<LegacyVendasRedirect />} />
             <Route path="vendas/:orderId" element={<LegacyVendasRedirect />} />
             <Route path="insights" element={<InsightsPage />} />
-            <Route
-              path="indicadores"
-              element={<Navigate to="/insights" replace />}
-            />
+            <Route path="indicadores" element={<IndicatorsHubPage />} />
           </Route>
         </Route>
       </Route>

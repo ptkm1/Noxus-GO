@@ -12,6 +12,7 @@ import {
 import { isWebAdmin, isWebTeamLeader } from "@/lib/staff";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { apiFetch, downloadPdf } from "../lib/api";
 
 type Seller = { id: string; user: { name: string } };
@@ -236,8 +237,14 @@ export function ReportsPage() {
         <h1 className="text-2xl font-semibold text-foreground">Relatórios</h1>
         <p className="mt-2 max-w-2xl text-muted-foreground">
           Relatórios gerenciais de vendas, margem, comissão, estoque, crédito,
-          fiscal e visitas. Para indicadores do dia a dia, use a aba
-          Indicadores.
+          fiscal e visitas. Para indicadores do dia a dia, use{" "}
+          <Link
+            to="/indicadores"
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Indicadores
+          </Link>
+          .
         </p>
       </div>
 

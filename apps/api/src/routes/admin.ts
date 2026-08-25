@@ -20,7 +20,7 @@ import {
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import PDFDocument from "pdfkit";
 import { z } from "zod";
-import { verifyAccessToken } from "../auth/jwt.js";
+import { verifyAccessToken, type AccessPayload } from "../auth/jwt.js";
 import {
     adminRelativePath,
     isManagerGetAllowed,
@@ -91,6 +91,15 @@ import {
     NfeXmlError,
 } from "../services/fiscal/nfe-xml.js";
 import { buildHomeIndicator } from "../services/home-dashboard-indicators.js";
+import {
+    buildCommissionByOrderReport,
+    buildCustomerAbcReport,
+    buildCustomerPositivacaoReport,
+    buildInvoicedOrdersReport,
+    buildPortfolioBySellerReport,
+    buildProductPositivacaoByCustomerReport,
+    buildTopProductsReport,
+} from "../services/catalog-reports.js";
 import {
     buildCommissionStatement,
     buildCreditAgingReport,
@@ -6385,6 +6394,176 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
+  async function scopedSellerIds(
+    auth: AccessPayload,
+  ): Promise<string[] | undefined> {
+    if (isTeamLeaderAuth(auth)) {
+      return teamMemberSellerIds(auth.teamLeaderTeamId!);
+    }
+    if (auth.role === "MANAGER") {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      return sellers.map((s) => s.id);
+    }
+    return undefined;
+  }
+
+  app.get("/reports/customer-abc", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        sellerId: z.string().optional(),
+      })
+      .safeParse(req.query);
+    const sellerIds = await scopedSellerIds(auth);
+    let sellerId = q.success ? q.data.sellerId : undefined;
+    if (sellerId && sellerIds && !sellerIds.includes(sellerId)) {
+      sellerId = undefined;
+    }
+    return buildCustomerAbcReport({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerId,
+      sellerIds: sellerId ? undefined : sellerIds,
+    });
+  });
+
+  app.get("/reports/customer-positivacao", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        sellerId: z.string().optional(),
+      })
+      .safeParse(req.query);
+    const sellerIds = await scopedSellerIds(auth);
+    let sellerId = q.success ? q.data.sellerId : undefined;
+    if (sellerId && sellerIds && !sellerIds.includes(sellerId)) {
+      sellerId = undefined;
+    }
+    return buildCustomerPositivacaoReport({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerId,
+      sellerIds: sellerId ? undefined : sellerIds,
+    });
+  });
+
+  app.get("/reports/portfolio-by-seller", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({
+        error: "Carteira por vendedor disponível apenas para admin/gestor",
+      });
+    }
+    return buildPortfolioBySellerReport({
+      organizationId: auth.organizationId,
+    });
+  });
+
+  app.get("/reports/top-products", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        sellerId: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(200).optional(),
+      })
+      .safeParse(req.query);
+    const sellerIds = await scopedSellerIds(auth);
+    let sellerId = q.success ? q.data.sellerId : undefined;
+    if (sellerId && sellerIds && !sellerIds.includes(sellerId)) {
+      sellerId = undefined;
+    }
+    return buildTopProductsReport({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerId,
+      sellerIds: sellerId ? undefined : sellerIds,
+      limit: q.success ? q.data.limit : undefined,
+    });
+  });
+
+  app.get("/reports/product-positivacao", async (req) => {
+    const auth = req.auth!;
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        sellerId: z.string().optional(),
+        customerId: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(2000).optional(),
+      })
+      .safeParse(req.query);
+    const sellerIds = await scopedSellerIds(auth);
+    let sellerId = q.success ? q.data.sellerId : undefined;
+    if (sellerId && sellerIds && !sellerIds.includes(sellerId)) {
+      sellerId = undefined;
+    }
+    return buildProductPositivacaoByCustomerReport({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerId,
+      sellerIds: sellerId ? undefined : sellerIds,
+      customerId: q.success ? q.data.customerId : undefined,
+      limit: q.success ? q.data.limit : undefined,
+    });
+  });
+
+  app.get("/reports/commission-by-order", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply
+        .status(403)
+        .send({ error: "Comissões por pedido disponível apenas para admin" });
+    }
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        sellerId: z.string().optional(),
+      })
+      .safeParse(req.query);
+    return buildCommissionByOrderReport({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerId: q.success ? q.data.sellerId : undefined,
+    });
+  });
+
+  app.get("/reports/invoiced-orders", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({
+        error: "Pedidos faturados disponível apenas para admin/gestor",
+      });
+    }
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        sellerId: z.string().optional(),
+      })
+      .safeParse(req.query);
+    return buildInvoicedOrdersReport({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerId: q.success ? q.data.sellerId : undefined,
+    });
+  });
+
   app.get("/reports/team-summary", async (req, reply) => {
     const auth = req.auth!;
     const q = z
@@ -6491,6 +6670,29 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         error:
           "Indicadores de rentabilidade disponíveis apenas para admin/gestor",
       });
+    }
+
+    /** Espelha o limite do de–para da home (~2 anos). */
+    const MAX_RANGE_MS = 730 * 24 * 60 * 60 * 1000;
+    const fromDt = q.data.from ? new Date(q.data.from) : null;
+    const toDt = q.data.to ? new Date(q.data.to) : null;
+    if (
+      (q.data.from && (!fromDt || Number.isNaN(fromDt.getTime()))) ||
+      (q.data.to && (!toDt || Number.isNaN(toDt.getTime())))
+    ) {
+      return reply.status(400).send({ error: "Datas inválidas" });
+    }
+    if (fromDt && toDt) {
+      if (toDt < fromDt) {
+        return reply.status(400).send({
+          error: "A data final deve ser maior ou igual à inicial",
+        });
+      }
+      if (toDt.getTime() - fromDt.getTime() > MAX_RANGE_MS) {
+        return reply.status(400).send({
+          error: "Período máximo de 730 dias (cerca de 2 anos)",
+        });
+      }
     }
 
     let sellerIds: string[] | undefined;

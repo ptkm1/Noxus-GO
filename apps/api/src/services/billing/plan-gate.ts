@@ -9,7 +9,9 @@ import { getOrgEntitlements, orgHasPlanFeature } from "./entitlements.js";
 export function adminPathToPlanFeature(routePath: string): PlanFeature | null {
   const p = routePath.split("?")[0] ?? routePath;
 
-  if (p.startsWith("/fiscal")) return "fiscal_nfe";
+  if (p.startsWith("/fiscal") || p === "/reports/invoiced-orders") {
+    return "fiscal_nfe";
+  }
   if (p.startsWith("/expedition")) return "expedition";
   if (
     p.startsWith("/seller-locations") ||
@@ -29,7 +31,8 @@ export function adminPathToPlanFeature(routePath: string): PlanFeature | null {
     p.startsWith("/commission") ||
     p.startsWith("/seller-monthly-goals") ||
     p.startsWith("/commission-progressive") ||
-    p === "/reports/commission-statement"
+    p === "/reports/commission-statement" ||
+    p === "/reports/commission-by-order"
   ) {
     return "commissions";
   }
@@ -50,6 +53,11 @@ export function adminPathToPlanFeature(routePath: string): PlanFeature | null {
     p === "/reports/credit-aging" ||
     p === "/reports/fiscal-outbound-summary" ||
     p === "/reports/fiscal-reconciliation" ||
+    p === "/reports/customer-abc" ||
+    p === "/reports/customer-positivacao" ||
+    p === "/reports/portfolio-by-seller" ||
+    p === "/reports/top-products" ||
+    p === "/reports/product-positivacao" ||
     p.startsWith("/reports/management")
   ) {
     return "reports_advanced";

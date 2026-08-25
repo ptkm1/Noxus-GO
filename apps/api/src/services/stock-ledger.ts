@@ -1,4 +1,5 @@
 import type { Prisma, StockMovementType } from "@prisma/client";
+import { formatProductUnitLabel } from "@pedidos/shared";
 import { prisma } from "../db.js";
 import { AUDIT_ACTION, AUDIT_ENTITY, writeAuditLog } from "./audit-log.js";
 import { StockError } from "./product-stock.js";
@@ -198,9 +199,13 @@ export async function applyManualStockEntry(
 
   const product = await prisma.product.findFirst({
     where: { id: input.productId, organizationId: input.organizationId },
-    select: { id: true, name: true, stockQty: true },
+    select: { id: true, name: true, stockQty: true, attributes: true },
   });
   if (!product) throw new StockError("Produto não encontrado.");
+
+  const unitLabel = formatProductUnitLabel(
+    product.attributes as Record<string, unknown> | null,
+  );
 
   return prisma.$transaction(async (tx) => {
     let lot = await tx.productLot.findUnique({
@@ -305,6 +310,7 @@ export async function applyManualStockEntry(
           qtyDelta,
           balanceAfter: newProductQty,
           reason: input.reason ?? null,
+          unitLabel: unitLabel ?? null,
         },
       },
       tx,
