@@ -20,6 +20,28 @@ export function formatProductUnitLabel(
   return null;
 }
 
+/** Ex.: 500 + "Fardo" → "500 fardos"; sem unidade → "500". */
+export function formatStockQtyWithUnit(
+  qty: number,
+  unitOrAttributes?: string | Record<string, unknown> | null,
+): string {
+  const abs = Math.abs(Number(qty));
+  const qtyLabel = Number.isFinite(abs) ? String(abs) : String(qty);
+
+  let unit: string | null = null;
+  if (typeof unitOrAttributes === "string") {
+    unit = unitOrAttributes.trim() || null;
+  } else if (unitOrAttributes && typeof unitOrAttributes === "object") {
+    unit = formatProductUnitLabel(unitOrAttributes);
+  }
+  if (!unit) return qtyLabel;
+
+  const lower = unit.toLowerCase();
+  const plural =
+    abs === 1 ? lower : lower.endsWith("s") ? lower : `${lower}s`;
+  return `${qtyLabel} ${plural}`;
+}
+
 export function formatProductPriceWithUnit(
   price: number,
   attributes?: Record<string, unknown> | null,

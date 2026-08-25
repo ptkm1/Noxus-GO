@@ -7,12 +7,11 @@ import {
 } from "@pedidos/shared";
 import type { LucideIcon } from "lucide-react";
 import {
-    BarChart3,
+    Activity,
     Bell,
     ClipboardList,
     FileText,
     LayoutDashboard,
-    Lightbulb,
     MapPin,
     Navigation,
     Package,
@@ -20,13 +19,10 @@ import {
     Receipt,
     Settings,
     ShoppingCart,
-    Table,
-    Target,
     Truck,
     UserCircle,
     UserCog,
     Users,
-    Wallet,
 } from "lucide-react";
 
 export type NavItem = {
@@ -50,25 +46,12 @@ const home: NavItem = {
 /** Catálogo completo (admin); filtrado por `canRead` efetivo. */
 export const DASHBOARD_NAV: NavItem[] = [
   home,
-  {
-    to: "/tabelas-preco",
-    label: "Tabelas de preço",
-    icon: Table,
-    resource: "price_tables",
-    planFeature: "price_tables",
-  },
   { to: "/produtos", label: "Produtos", icon: Package, resource: "products" },
   {
     to: "/fornecedores",
     label: "Fornecedores",
     icon: Truck,
     resource: "suppliers",
-  },
-  {
-    to: "/condicoes-pagamento",
-    label: "Condições de pagamento",
-    icon: Wallet,
-    resource: "orders",
   },
   { to: "/vendedores", label: "Vendedores", icon: Users, resource: "sellers" },
   {
@@ -79,13 +62,6 @@ export const DASHBOARD_NAV: NavItem[] = [
     planFeature: "broadcast",
   },
   { to: "/usuarios", label: "Usuários", icon: UserCog, resource: "users" },
-  {
-    to: "/comissao",
-    label: "Comissões e metas",
-    icon: Target,
-    resource: "commissions",
-    planFeature: "commissions",
-  },
   {
     to: "/clientes",
     label: "Clientes",
@@ -127,17 +103,10 @@ export const DASHBOARD_NAV: NavItem[] = [
     planFeature: "fiscal_nfe",
   },
   {
-    to: "/relatorios",
-    label: "Relatórios",
-    icon: BarChart3,
+    to: "/indicadores",
+    label: "Indicadores",
+    icon: Activity,
     resource: "reports",
-  },
-  {
-    to: "/insights",
-    label: "Insights",
-    icon: Lightbulb,
-    resource: "reports",
-    planFeature: "insights",
   },
   {
     to: "/configuracoes",
@@ -171,9 +140,9 @@ export const TEAM_LEADER_NAV: NavItem[] = [
     resource: "orders",
   },
   {
-    to: "/insights",
-    label: "Insights da equipe",
-    icon: BarChart3,
+    to: "/indicadores",
+    label: "Indicadores",
+    icon: Activity,
     resource: "reports",
     planFeature: "insights",
   },
@@ -258,16 +227,37 @@ export function navForRole(
 
 /** Features de plano para rotas fora do sidebar (acesso via outras páginas). */
 const OFF_NAV_PLAN_FEATURES: { prefix: string; feature: PlanFeature }[] = [
+  { prefix: "/tabelas-preco", feature: "price_tables" },
+  { prefix: "/comissao", feature: "commissions" },
   { prefix: "/equipes", feature: "teams" },
   { prefix: "/rastreio", feature: "tracking" },
+  { prefix: "/relatorios/comissoes", feature: "commissions" },
+  { prefix: "/relatorios/clientes/visitas", feature: "visits" },
+  { prefix: "/relatorios/faturamento", feature: "fiscal_nfe" },
+  { prefix: "/relatorios/vendas/resumo", feature: "reports_advanced" },
+  { prefix: "/relatorios/vendas/ranking", feature: "reports_advanced" },
+  { prefix: "/relatorios/clientes/carteira", feature: "reports_advanced" },
+  { prefix: "/relatorios/clientes/carteira-vendedor", feature: "reports_advanced" },
+  { prefix: "/relatorios/clientes/positivacao", feature: "reports_advanced" },
+  { prefix: "/relatorios/clientes/abc", feature: "reports_advanced" },
+  { prefix: "/relatorios/produtos/mais-vendidos", feature: "reports_advanced" },
+  { prefix: "/relatorios/produtos/positivacao", feature: "reports_advanced" },
+  { prefix: "/relatorios/gestao", feature: "reports_advanced" },
 ];
 
 export function planFeatureForPath(pathname: string): PlanFeature | null {
+  // Hub de indicadores: não exige feature; cards internos (insights) são filtrados na página.
+  if (pathname === "/indicadores" || pathname === "/indicadores/") {
+    return null;
+  }
   const item = [...DASHBOARD_NAV, ...TEAM_LEADER_NAV].find((nav) => {
     if (nav.end) return pathname === nav.to;
     return pathname === nav.to || pathname.startsWith(`${nav.to}/`);
   });
   if (item?.planFeature) return item.planFeature;
+  if (pathname === "/insights" || pathname.startsWith("/insights/")) {
+    return "insights";
+  }
   const offNav = OFF_NAV_PLAN_FEATURES.find(
     (r) => pathname === r.prefix || pathname.startsWith(`${r.prefix}/`),
   );

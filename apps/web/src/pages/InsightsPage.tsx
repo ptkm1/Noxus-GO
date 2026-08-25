@@ -216,6 +216,17 @@ export function InsightsPage() {
     return (
       <div className="space-y-10">
         <div>
+          <nav className="mb-2 text-sm text-muted-foreground">
+            <Link to="/" className="hover:text-foreground">
+              Início
+            </Link>
+            <span className="mx-1.5">›</span>
+            <Link to="/indicadores" className="hover:text-foreground">
+              Indicadores
+            </Link>
+            <span className="mx-1.5">›</span>
+            <span className="text-foreground">Insights</span>
+          </nav>
           <h1 className="text-2xl font-semibold text-foreground">
             Insights da equipe
           </h1>
@@ -363,6 +374,17 @@ export function InsightsPage() {
       <div>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
+            <nav className="mb-2 text-sm text-muted-foreground">
+              <Link to="/" className="hover:text-foreground">
+                Início
+              </Link>
+              <span className="mx-1.5">›</span>
+              <Link to="/indicadores" className="hover:text-foreground">
+                Indicadores
+              </Link>
+              <span className="mx-1.5">›</span>
+              <span className="text-foreground">Insights</span>
+            </nav>
             <h1 className="text-2xl font-semibold text-foreground">Insights</h1>
             <p className="mt-2 max-w-2xl text-muted-foreground">
               Visão pronta para o dia a dia: sem filtros obrigatórios. Use o

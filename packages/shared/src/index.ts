@@ -347,6 +347,7 @@ export {
   formatProductStockItemLabel,
   formatProductStockLabel,
   formatProductUnitLabel,
+  formatStockQtyWithUnit,
   isProductSaleBlockedByStock,
 } from "./product-display.js";
 export {
@@ -387,5 +388,10 @@ export type {
   RomaneioPaymentCondition,
   RomaneioPaymentGroup,
 } from "./route-romaneio.js";
-export { STOCK_MOVEMENT_TYPE_LABELS } from "./stock.js";
+export {
+  formatStockAuditDetails,
+  STOCK_MOVEMENT_TYPE_LABELS,
+  STOCK_MOVEMENT_TYPE_SHORT_LABELS,
+  stockMovementTypeLabel,
+} from "./stock.js";
 export type { StockMovementType } from "./stock.js";

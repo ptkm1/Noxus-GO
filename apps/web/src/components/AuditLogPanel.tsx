@@ -23,6 +23,7 @@ type AuditLogPanelProps = {
   entityType?: string;
   entityId?: string;
   action?: string;
+  /** Título do painel; string vazia oculta o heading. */
   title?: string;
   take?: number;
   className?: string;
@@ -64,7 +65,11 @@ export function AuditLogPanel({
   return (
     <div className={cn("space-y-3", className)}>
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        {title ? (
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        ) : (
+          <span />
+        )}
         {data != null ? (
           <span className="text-xs text-muted-foreground">
             {data.total} registro{data.total === 1 ? "" : "s"}

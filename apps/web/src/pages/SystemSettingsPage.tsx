@@ -34,8 +34,12 @@ import {
     ChevronUp,
     History,
     Shield,
+    Table,
+    Target,
+    Wallet,
+    type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { apiFetch } from "../lib/api";
@@ -66,6 +70,13 @@ type SystemSettings = {
 
 type SettingsModal = "permissions" | "audit" | null;
 
+type SalesShortcut = {
+  to: string;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+};
+
 type BillingReconcileUiReport = {
   dryRun: boolean;
   issues: string[];
@@ -78,6 +89,30 @@ type BillingReconcileUiReport = {
     isCanonical: boolean;
   }>;
 };
+
+function SettingsCategory({
+  id,
+  title,
+  description,
+  children,
+}: {
+  id?: string;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section id={id} className="space-y-4 scroll-mt-6">
+      <div className="border-b border-border/60 pb-3">
+        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+          {description}
+        </p>
+      </div>
+      <div className="space-y-4">{children}</div>
+    </section>
+  );
+}
 
 export function SystemSettingsPage() {
   const { user, refreshUser } = useAuth();
@@ -106,6 +141,61 @@ export function SystemSettingsPage() {
     planHasFeature(user?.subscription?.planId, "audit");
   const canAudit = canAuditRbac && hasAuditPlan;
   const canAccess = isAdmin || canPermissions || canAuditRbac;
+
+  const hasPriceTablesPlan =
+    user?.subscription?.features?.includes("price_tables") ??
+    planHasFeature(user?.subscription?.planId, "price_tables");
+  const canPriceTables = Boolean(
+    user &&
+      canRead(user.role, "price_tables", user.permissions) &&
+      hasPriceTablesPlan,
+  );
+  const canPaymentConditions = Boolean(
+    user && canRead(user.role, "orders", user.permissions),
+  );
+  const hasCommissionsPlan =
+    user?.subscription?.features?.includes("commissions") ??
+    planHasFeature(user?.subscription?.planId, "commissions");
+  const canCommissions = Boolean(
+    user &&
+      canRead(user.role, "commissions", user.permissions) &&
+      hasCommissionsPlan,
+  );
+  const canSalesSettings =
+    canPriceTables || canPaymentConditions || canCommissions;
+
+  const salesShortcuts: SalesShortcut[] = [
+    ...(canPriceTables
+      ? [
+          {
+            to: "/tabelas-preco",
+            title: "Tabelas de preço",
+            description: "Tabelas e preços por produto",
+            icon: Table,
+          } satisfies SalesShortcut,
+        ]
+      : []),
+    ...(canPaymentConditions
+      ? [
+          {
+            to: "/condicoes-pagamento",
+            title: "Condições de pagamento",
+            description: "Prazos, formas e regras de pagamento",
+            icon: Wallet,
+          } satisfies SalesShortcut,
+        ]
+      : []),
+    ...(canCommissions
+      ? [
+          {
+            to: "/comissao",
+            title: "Comissões e metas",
+            description: "Faixas progressivas ou metas mensais",
+            icon: Target,
+          } satisfies SalesShortcut,
+        ]
+      : []),
+  ];
 
   const planDef = getPlanDefinition(user?.subscription?.planId);
   const sub = user?.subscription;
@@ -205,514 +295,547 @@ export function SystemSettingsPage() {
   if (!canAccess) return <Navigate to="/" replace />;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <div>
         <h1 className="text-2xl font-semibold">Configurações</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Regras do sistema e ferramentas administrativas.
+          Regras do sistema e ferramentas administrativas, agrupadas por área.
         </p>
       </div>
 
-      <FormSection
-        title="Plano atual"
-        description="Assinatura da organização e limites do plano."
+      <SettingsCategory
+        id="conta"
+        title="Conta e assinatura"
+        description="Plano da organização, limites e cobrança."
       >
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-2 text-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-lg font-semibold text-foreground">
-                {planDef.name}
-              </span>
-              <Badge variant="secondary">{statusLabel}</Badge>
-            </div>
-            {periodEnd ? (
+        <FormSection
+          title="Plano atual"
+          description="Assinatura da organização e limites do plano."
+        >
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-2 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-lg font-semibold text-foreground">
+                  {planDef.name}
+                </span>
+                <Badge variant="secondary">{statusLabel}</Badge>
+              </div>
+              {periodEnd ? (
+                <p className="text-muted-foreground">
+                  Período até {periodEnd}
+                  {sub?.cancelAtPeriodEnd
+                    ? " · cancela ao fim do período"
+                    : null}
+                </p>
+              ) : null}
               <p className="text-muted-foreground">
-                Período até {periodEnd}
-                {sub?.cancelAtPeriodEnd ? " · cancela ao fim do período" : null}
+                {planSeatPriceCaption(planDef)}. Vendedores ilimitados.{" "}
+                {limits.includedAdmins} acesso
+                {limits.includedAdmins === 1 ? "" : "s"} administrativo
+                {limits.includedAdmins === 1 ? "" : "s"} incluso
+                {limits.includedAdmins === 1 ? "" : "s"}; extra R$ 29,90/mês.
               </p>
-            ) : null}
-            <p className="text-muted-foreground">
-              {planSeatPriceCaption(planDef)}. Vendedores ilimitados.{" "}
-              {limits.includedAdmins} acesso
-              {limits.includedAdmins === 1 ? "" : "s"} administrativo
-              {limits.includedAdmins === 1 ? "" : "s"} incluso
-              {limits.includedAdmins === 1 ? "" : "s"}; extra R$ 29,90/mês.
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-col gap-2 sm:items-end">
-            {isAdmin ? (
-              <div className="flex flex-col gap-2 sm:items-end">
-                <AppSelect
-                  value={checkoutPlanId}
-                  onValueChange={(v) => {
-                    userPickedPlanRef.current = true;
-                    setCheckoutPlanId(v as PlanId);
-                  }}
-                  options={listPlans().map((p) => ({
-                    value: p.id,
-                    label: `${p.name} — ${planSeatPriceCaption(p)}`,
-                  }))}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={!canChangePlan || patch.isPending}
-                  onClick={() => {
-                    if (!canChangePlan) {
-                      setCheckoutErr("Este já é o seu plano atual.");
-                      return;
-                    }
-                    setCheckoutErr(null);
-                    void apiFetch<{ checkoutUrl?: string | null; intentId?: string }>(
-                      "/billing/checkout",
-                      {
+            </div>
+            <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+              {isAdmin ? (
+                <div className="flex flex-col gap-2 sm:items-end">
+                  <AppSelect
+                    value={checkoutPlanId}
+                    onValueChange={(v) => {
+                      userPickedPlanRef.current = true;
+                      setCheckoutPlanId(v as PlanId);
+                    }}
+                    options={listPlans().map((p) => ({
+                      value: p.id,
+                      label: `${p.name} — ${planSeatPriceCaption(p)}`,
+                    }))}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!canChangePlan || patch.isPending}
+                    onClick={() => {
+                      if (!canChangePlan) {
+                        setCheckoutErr("Este já é o seu plano atual.");
+                        return;
+                      }
+                      setCheckoutErr(null);
+                      void apiFetch<{
+                        checkoutUrl?: string | null;
+                        intentId?: string;
+                      }>("/billing/checkout", {
                         method: "POST",
                         body: JSON.stringify({ planId: checkoutPlanId }),
-                      },
-                    )
-                      .then((data) => {
-                        if (data.intentId) {
-                          const q = isTrial
-                            ? `?intentId=${encodeURIComponent(data.intentId)}`
-                            : `?intentId=${encodeURIComponent(data.intentId)}&change=plan`;
-                          nav(`/pagamento${q}`);
-                        } else {
-                          setCheckoutErr("Não foi possível iniciar a alteração de plano.");
-                        }
                       })
-                      .catch((ex: unknown) => {
-                        setCheckoutErr(
-                          ex instanceof Error
-                            ? ex.message
-                            : "Falha ao iniciar checkout",
-                        );
-                      });
+                        .then((data) => {
+                          if (data.intentId) {
+                            const q = isTrial
+                              ? `?intentId=${encodeURIComponent(data.intentId)}`
+                              : `?intentId=${encodeURIComponent(data.intentId)}&change=plan`;
+                            nav(`/pagamento${q}`);
+                          } else {
+                            setCheckoutErr(
+                              "Não foi possível iniciar a alteração de plano.",
+                            );
+                          }
+                        })
+                        .catch((ex: unknown) => {
+                          setCheckoutErr(
+                            ex instanceof Error
+                              ? ex.message
+                              : "Falha ao iniciar checkout",
+                          );
+                        });
+                    }}
+                  >
+                    {checkoutButtonLabel}
+                  </Button>
+                  {!canChangePlan ? (
+                    <p className="text-xs text-muted-foreground">
+                      Selecione outro plano para alterar a assinatura.
+                    </p>
+                  ) : null}
+                  {checkoutErr ? (
+                    <p className="text-xs text-destructive">{checkoutErr}</p>
+                  ) : null}
+                  {sub?.provider === "asaas" ? (
+                    <div className="flex flex-col gap-1 border-t border-border/50 pt-3">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Asaas (admin)
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={reconcileLoading}
+                          onClick={() => {
+                            setReconcileLoading(true);
+                            setReconcileReport(null);
+                            void apiFetch<BillingReconcileUiReport>(
+                              "/billing/reconcile",
+                              {
+                                method: "POST",
+                                body: JSON.stringify({ dryRun: true }),
+                              },
+                            )
+                              .then(setReconcileReport)
+                              .catch((ex: unknown) => {
+                                setCheckoutErr(
+                                  ex instanceof Error
+                                    ? ex.message
+                                    : "Falha ao diagnosticar billing",
+                                );
+                              })
+                              .finally(() => setReconcileLoading(false));
+                          }}
+                        >
+                          Diagnosticar
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={reconcileLoading}
+                          onClick={() => {
+                            setReconcileLoading(true);
+                            setReconcileReport(null);
+                            void apiFetch<BillingReconcileUiReport>(
+                              "/billing/reconcile",
+                              {
+                                method: "POST",
+                                body: JSON.stringify({ dryRun: false }),
+                              },
+                            )
+                              .then(async (report) => {
+                                setReconcileReport(report);
+                                await refreshUser();
+                              })
+                              .catch((ex: unknown) => {
+                                setCheckoutErr(
+                                  ex instanceof Error
+                                    ? ex.message
+                                    : "Falha ao reconciliar billing",
+                                );
+                              })
+                              .finally(() => setReconcileLoading(false));
+                          }}
+                        >
+                          Reconciliar
+                        </Button>
+                      </div>
+                      {reconcileReport ? (
+                        <div className="mt-1 max-w-sm rounded-md border border-border/60 bg-muted/30 p-2 text-xs text-muted-foreground">
+                          {reconcileReport.dryRun ? (
+                            <p className="font-medium text-foreground">
+                              Diagnóstico (sem alterações)
+                            </p>
+                          ) : (
+                            <p className="font-medium text-foreground">
+                              Reconciliação aplicada
+                            </p>
+                          )}
+                          {reconcileReport.fixed.length > 0 ? (
+                            <ul className="mt-1 list-inside list-disc">
+                              {reconcileReport.fixed.map((f) => (
+                                <li key={f}>{f}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          {reconcileReport.issues.length > 0 ? (
+                            <ul className="mt-1 list-inside list-disc text-amber-700 dark:text-amber-400">
+                              {reconcileReport.issues.map((i) => (
+                                <li key={i}>{i}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          {reconcileReport.duplicateCustomers.length > 0 ? (
+                            <p className="mt-1">
+                              {reconcileReport.duplicateCustomers.length}{" "}
+                              clientes duplicados no Asaas (remova no sandbox
+                              os sem assinatura).
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {isAdmin && sub && !sub.cancelAtPeriodEnd ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-destructive"
+                  disabled={patch.isPending}
+                  onClick={() => {
+                    void apiFetch("/billing/cancel", { method: "POST" }).then(
+                      () => {
+                        void qc.invalidateQueries({
+                          queryKey: ["admin", "system-settings"],
+                        });
+                        window.location.reload();
+                      },
+                    );
                   }}
                 >
-                  {checkoutButtonLabel}
+                  Cancelar renovação
                 </Button>
-                {!canChangePlan ? (
-                  <p className="text-xs text-muted-foreground">
-                    Selecione outro plano para alterar a assinatura.
-                  </p>
-                ) : null}
-                {checkoutErr ? (
-                  <p className="text-xs text-destructive">{checkoutErr}</p>
-                ) : null}
-                {sub?.provider === "asaas" ? (
-                  <div className="flex flex-col gap-1 border-t border-border/50 pt-3">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Asaas (admin)
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={reconcileLoading}
-                        onClick={() => {
-                          setReconcileLoading(true);
-                          setReconcileReport(null);
-                          void apiFetch<BillingReconcileUiReport>(
-                            "/billing/reconcile",
-                            {
-                              method: "POST",
-                              body: JSON.stringify({ dryRun: true }),
-                            },
-                          )
-                            .then(setReconcileReport)
-                            .catch((ex: unknown) => {
-                              setCheckoutErr(
-                                ex instanceof Error
-                                  ? ex.message
-                                  : "Falha ao diagnosticar billing",
-                              );
-                            })
-                            .finally(() => setReconcileLoading(false));
-                        }}
-                      >
-                        Diagnosticar
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        disabled={reconcileLoading}
-                        onClick={() => {
-                          setReconcileLoading(true);
-                          setReconcileReport(null);
-                          void apiFetch<BillingReconcileUiReport>(
-                            "/billing/reconcile",
-                            {
-                              method: "POST",
-                              body: JSON.stringify({ dryRun: false }),
-                            },
-                          )
-                            .then(async (report) => {
-                              setReconcileReport(report);
-                              await refreshUser();
-                            })
-                            .catch((ex: unknown) => {
-                              setCheckoutErr(
-                                ex instanceof Error
-                                  ? ex.message
-                                  : "Falha ao reconciliar billing",
-                              );
-                            })
-                            .finally(() => setReconcileLoading(false));
-                        }}
-                      >
-                        Reconciliar
-                      </Button>
-                    </div>
-                    {reconcileReport ? (
-                      <div className="mt-1 max-w-sm rounded-md border border-border/60 bg-muted/30 p-2 text-xs text-muted-foreground">
-                        {reconcileReport.dryRun ? (
-                          <p className="font-medium text-foreground">
-                            Diagnóstico (sem alterações)
-                          </p>
-                        ) : (
-                          <p className="font-medium text-foreground">
-                            Reconciliação aplicada
-                          </p>
-                        )}
-                        {reconcileReport.fixed.length > 0 ? (
-                          <ul className="mt-1 list-inside list-disc">
-                            {reconcileReport.fixed.map((f) => (
-                              <li key={f}>{f}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                        {reconcileReport.issues.length > 0 ? (
-                          <ul className="mt-1 list-inside list-disc text-amber-700 dark:text-amber-400">
-                            {reconcileReport.issues.map((i) => (
-                              <li key={i}>{i}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                        {reconcileReport.duplicateCustomers.length > 0 ? (
-                          <p className="mt-1">
-                            {reconcileReport.duplicateCustomers.length}{" "}
-                            clientes duplicados no Asaas (remova no sandbox os
-                            sem assinatura).
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            {isAdmin && sub && !sub.cancelAtPeriodEnd ? (
-              <Button
-                type="button"
-                variant="ghost"
-                className="text-destructive"
-                disabled={patch.isPending}
-                onClick={() => {
-                  void apiFetch("/billing/cancel", { method: "POST" }).then(
-                    () => {
-                      void qc.invalidateQueries({
-                        queryKey: ["admin", "system-settings"],
-                      });
-                      window.location.reload();
-                    },
-                  );
-                }}
-              >
-                Cancelar renovação
-              </Button>
-            ) : null}
+              ) : null}
+            </div>
           </div>
-        </div>
-      </FormSection>
+        </FormSection>
+      </SettingsCategory>
 
       {isAdmin ? (
         <>
-          <FormSection
-            title="Sincronização de pedidos"
-            description="Define se o app envia pedidos sozinho ou se o vendedor precisa tocar em “Sincronizar”."
+          <SettingsCategory
+            id="pedidos"
+            title="Pedidos e app do vendedor"
+            description="Sincronização, edição na fila e etapas do fluxo de pedido."
           >
-            <FormGrid cols={2}>
-              <FormField
-                label="Modo de envio"
-                htmlFor="order-sync-mode"
-                className="sm:col-span-2 max-w-xl"
-                hint={
-                  (settings?.orderSyncMode ?? "AUTO") === "MANUAL"
-                    ? "Manual: cada pedido fica na fila local até o vendedor sincronizar — mesmo com internet."
-                    : "Automático: tenta enviar na hora; se falhar, enfileira e reenvia sozinho quando houver rede."
-                }
-              >
-                <AppSelect
-                  id="order-sync-mode"
-                  value={settings?.orderSyncMode ?? "AUTO"}
-                  disabled={
-                    isLoading || patch.isPending || settings === undefined
+            <FormSection
+              title="Sincronização de pedidos"
+              description="Define se o app envia pedidos sozinho ou se o vendedor precisa tocar em “Sincronizar”."
+            >
+              <FormGrid cols={2}>
+                <FormField
+                  label="Modo de envio"
+                  htmlFor="order-sync-mode"
+                  className="sm:col-span-2 max-w-xl"
+                  hint={
+                    (settings?.orderSyncMode ?? "AUTO") === "MANUAL"
+                      ? "Manual: cada pedido fica na fila local até o vendedor sincronizar — mesmo com internet."
+                      : "Automático: tenta enviar na hora; se falhar, enfileira e reenvia sozinho quando houver rede."
                   }
-                  options={[
-                    {
-                      value: "AUTO",
-                      label: "Automático (comportamento atual)",
-                    },
-                    {
-                      value: "MANUAL",
-                      label: "Manual (vendedor sincroniza na fila)",
-                    },
-                  ]}
-                  onValueChange={(v) =>
-                    patch.mutate({ orderSyncMode: v as OrderSyncMode })
-                  }
-                />
-              </FormField>
-              <label className="flex max-w-xl cursor-pointer items-start gap-3 text-sm text-foreground sm:col-span-2">
+                >
+                  <AppSelect
+                    id="order-sync-mode"
+                    value={settings?.orderSyncMode ?? "AUTO"}
+                    disabled={
+                      isLoading || patch.isPending || settings === undefined
+                    }
+                    options={[
+                      {
+                        value: "AUTO",
+                        label: "Automático (comportamento atual)",
+                      },
+                      {
+                        value: "MANUAL",
+                        label: "Manual (vendedor sincroniza na fila)",
+                      },
+                    ]}
+                    onValueChange={(v) =>
+                      patch.mutate({ orderSyncMode: v as OrderSyncMode })
+                    }
+                  />
+                </FormField>
+                <label className="flex max-w-xl cursor-pointer items-start gap-3 text-sm text-foreground sm:col-span-2">
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={settings?.sellerCanEditQueuedSales ?? false}
+                    disabled={
+                      isLoading || patch.isPending || settings === undefined
+                    }
+                    onCheckedChange={(v) =>
+                      patch.mutate({
+                        sellerCanEditQueuedSales: v === true,
+                      })
+                    }
+                  />
+                  <span>
+                    <span className="font-medium">
+                      Permitir que o vendedor edite suas vendas antes de
+                      sincronizar
+                    </span>
+                    <span className="mt-0.5 block text-muted-foreground">
+                      Aplica-se apenas à fila offline/manual, antes da
+                      sincronização. Depois que o pedido for enviado com
+                      sucesso, o vendedor não poderá mais editá-lo.
+                    </span>
+                  </span>
+                </label>
+              </FormGrid>
+            </FormSection>
+
+            <FormSection
+              title="Fluxo do pedido"
+              description="Único cadastro de etapas do pedido: rascunho, crédito, operação, entrega e cancelamento."
+            >
+              <OrderSituationsPanel />
+            </FormSection>
+          </SettingsCategory>
+
+          <SettingsCategory
+            id="clientes"
+            title="Clientes"
+            description="Carteira no app, aprovação de cadastro e inativação automática."
+          >
+            <FormSection
+              title="Clientes no app do vendedor"
+              description="Controla se a “carteira” sem vendedor (clientes sem dono) aparece na lista, na rota e nas vendas."
+            >
+              <label className="flex max-w-xl cursor-pointer items-start gap-3 text-sm text-foreground">
                 <Checkbox
                   className="mt-0.5"
-                  checked={settings?.sellerCanEditQueuedSales ?? false}
+                  checked={settings?.sellerShowUnassignedCustomers ?? true}
                   disabled={
                     isLoading || patch.isPending || settings === undefined
                   }
                   onCheckedChange={(v) =>
                     patch.mutate({
-                      sellerCanEditQueuedSales: v === true,
+                      sellerShowUnassignedCustomers: v === true,
                     })
                   }
                 />
                 <span>
                   <span className="font-medium">
-                    Permitir que o vendedor edite suas vendas antes de
-                    sincronizar
+                    Mostrar clientes sem vendedor atribuído
                   </span>
                   <span className="mt-0.5 block text-muted-foreground">
-                    Aplica-se apenas à fila offline/manual, antes da
-                    sincronização. Depois que o pedido for enviado com sucesso,
-                    o vendedor não poderá mais editá-lo.
+                    Desligado: o vendedor só vê clientes atribuídos a ele. O
+                    filtro “Só meus clientes” na rota deixa de ter efeito sobre
+                    a carteira livre.
                   </span>
                 </span>
               </label>
-            </FormGrid>
-          </FormSection>
+            </FormSection>
 
-          <FormSection
-            title="Clientes no app do vendedor"
-            description="Controla se a “carteira” sem vendedor (clientes sem dono) aparece na lista, na rota e nas vendas."
-          >
-            <label className="flex max-w-xl cursor-pointer items-start gap-3 text-sm text-foreground">
-              <Checkbox
-                className="mt-0.5"
-                checked={settings?.sellerShowUnassignedCustomers ?? true}
-                disabled={
-                  isLoading || patch.isPending || settings === undefined
-                }
-                onCheckedChange={(v) =>
-                  patch.mutate({
-                    sellerShowUnassignedCustomers: v === true,
-                  })
-                }
-              />
-              <span>
-                <span className="font-medium">
-                  Mostrar clientes sem vendedor atribuído
-                </span>
-                <span className="mt-0.5 block text-muted-foreground">
-                  Desligado: o vendedor só vê clientes atribuídos a ele. O
-                  filtro “Só meus clientes” na rota deixa de ter efeito sobre a
-                  carteira livre.
-                </span>
-              </span>
-            </label>
-          </FormSection>
+            <FormSection
+              title="Cadastro de clientes pelo vendedor"
+              description="Define se o cliente criado no app já pode ser usado nas vendas ou se precisa de validação no escritório."
+            >
+              <FormGrid cols={2}>
+                <FormField
+                  label="Modo de cadastro"
+                  htmlFor="customer-registration-mode"
+                  className="sm:col-span-2 max-w-xl"
+                  hint={
+                    (settings?.customerRegistrationMode ?? "AUTO") ===
+                    "REQUIRE_APPROVAL"
+                      ? "Com validação: o cadastro fica pendente até um admin ou gestor com permissão aprovar na tela de Clientes."
+                      : "Automático: o vendedor cadastra e o cliente já fica disponível para venda e rota."
+                  }
+                >
+                  <AppSelect
+                    id="customer-registration-mode"
+                    value={settings?.customerRegistrationMode ?? "AUTO"}
+                    disabled={
+                      isLoading || patch.isPending || settings === undefined
+                    }
+                    options={[
+                      {
+                        value: "AUTO",
+                        label: "Automático (liberado na hora)",
+                      },
+                      {
+                        value: "REQUIRE_APPROVAL",
+                        label: "Aguardar validação do escritório",
+                      },
+                    ]}
+                    onValueChange={(v) =>
+                      patch.mutate({
+                        customerRegistrationMode:
+                          v as CustomerRegistrationMode,
+                      })
+                    }
+                  />
+                </FormField>
+              </FormGrid>
+            </FormSection>
 
-          <FormSection
-            title="Cadastro de clientes pelo vendedor"
-            description="Define se o cliente criado no app já pode ser usado nas vendas ou se precisa de validação no escritório."
-          >
-            <FormGrid cols={2}>
-              <FormField
-                label="Modo de cadastro"
-                htmlFor="customer-registration-mode"
-                className="sm:col-span-2 max-w-xl"
-                hint={
-                  (settings?.customerRegistrationMode ?? "AUTO") ===
-                  "REQUIRE_APPROVAL"
-                    ? "Com validação: o cadastro fica pendente até um admin ou gestor com permissão aprovar na tela de Clientes."
-                    : "Automático: o vendedor cadastra e o cliente já fica disponível para venda e rota."
-                }
-              >
-                <AppSelect
-                  id="customer-registration-mode"
-                  value={settings?.customerRegistrationMode ?? "AUTO"}
+            <FormSection
+              title="Inativação automática de clientes"
+              description="Marca como inativo o cliente sem pedido confirmado há 6 meses. Ao comprar de novo, o status volta para ativo."
+            >
+              <label className="flex max-w-xl cursor-pointer items-start gap-3 text-sm text-foreground">
+                <Checkbox
+                  className="mt-0.5"
+                  checked={
+                    settings?.autoInactivateCustomersAfterMonths ?? false
+                  }
                   disabled={
                     isLoading || patch.isPending || settings === undefined
                   }
-                  options={[
-                    {
-                      value: "AUTO",
-                      label: "Automático (liberado na hora)",
-                    },
-                    {
-                      value: "REQUIRE_APPROVAL",
-                      label: "Aguardar validação do escritório",
-                    },
-                  ]}
-                  onValueChange={(v) =>
+                  onCheckedChange={(v) =>
                     patch.mutate({
-                      customerRegistrationMode: v as CustomerRegistrationMode,
+                      autoInactivateCustomersAfterMonths: v === true,
                     })
                   }
                 />
-              </FormField>
-            </FormGrid>
-          </FormSection>
-
-          <FormSection
-            title="Inativação automática de clientes"
-            description="Marca como inativo o cliente sem pedido confirmado há 6 meses. Ao comprar de novo, o status volta para ativo."
-          >
-            <label className="flex max-w-xl cursor-pointer items-start gap-3 text-sm text-foreground">
-              <Checkbox
-                className="mt-0.5"
-                checked={settings?.autoInactivateCustomersAfterMonths ?? false}
-                disabled={
-                  isLoading || patch.isPending || settings === undefined
-                }
-                onCheckedChange={(v) =>
-                  patch.mutate({
-                    autoInactivateCustomersAfterMonths: v === true,
-                  })
-                }
-              />
-              <span>
-                <span className="font-medium">
-                  Inativar clientes sem movimento há 6 meses
+                <span>
+                  <span className="font-medium">
+                    Inativar clientes sem movimento há 6 meses
+                  </span>
+                  <span className="mt-0.5 block text-muted-foreground">
+                    Desligado por padrão. Quando ligado, a situação comercial
+                    do cliente passa a Inativo sem compra confirmada no
+                    período; uma nova venda confirmada reativa automaticamente.
+                  </span>
                 </span>
-                <span className="mt-0.5 block text-muted-foreground">
-                  Desligado por padrão. Quando ligado, a situação comercial do
-                  cliente passa a Inativo sem compra confirmada no período; uma
-                  nova venda confirmada reativa automaticamente.
-                </span>
-              </span>
-            </label>
-          </FormSection>
+              </label>
+            </FormSection>
+          </SettingsCategory>
 
-          <FormSection
-            title="Indicadores do painel"
-            description={`Escolha até ${MAX_HOME_INDICATORS} indicadores exibidos na home. A ordem abaixo é a ordem no painel.`}
+          <SettingsCategory
+            id="painel"
+            title="Painel"
+            description="Indicadores e layout exibidos na home do painel."
           >
-            <div className="max-w-xl space-y-3">
-              <FormField
-                label="Tipo de visualização"
-                htmlFor="home-indicators-layout"
-                hint={
-                  indicatorsLayout === "grid"
-                    ? "Os gráficos ficam na mesma grade, lado a lado (até 3 colunas no desktop)."
-                    : "Cada gráfico ocupa a largura inteira, um abaixo do outro."
-                }
-              >
-                <AppSelect
-                  id="home-indicators-layout"
-                  value={indicatorsLayout}
-                  disabled={
-                    isLoading || patch.isPending || settings === undefined
+            <FormSection
+              title="Indicadores do painel"
+              description={`Escolha até ${MAX_HOME_INDICATORS} indicadores exibidos na home. A ordem abaixo é a ordem no painel.`}
+            >
+              <div className="max-w-xl space-y-3">
+                <FormField
+                  label="Tipo de visualização"
+                  htmlFor="home-indicators-layout"
+                  hint={
+                    indicatorsLayout === "grid"
+                      ? "Os gráficos ficam na mesma grade, lado a lado (até 3 colunas no desktop)."
+                      : "Cada gráfico ocupa a largura inteira, um abaixo do outro."
                   }
-                  options={HOME_INDICATORS_LAYOUTS.map((layout) => ({
-                    value: layout,
-                    label: HOME_INDICATORS_LAYOUT_LABELS[layout],
-                  }))}
-                  onValueChange={(v) =>
-                    patch.mutate({
-                      homeIndicatorsLayout: v as HomeIndicatorsLayout,
-                    })
-                  }
-                />
-              </FormField>
-              <p className="text-xs text-muted-foreground">
-                Selecionados: {selectedIndicators.length}/{MAX_HOME_INDICATORS}
-                {selectedIndicators.length >= MAX_HOME_INDICATORS
-                  ? " — desmarque um para escolher outro."
-                  : null}
-              </p>
-              <ul className="divide-y divide-border rounded-xl border border-border bg-card">
-                {HOME_INDICATOR_KEYS.map((key) => {
-                  const checked = selectedIndicators.includes(key);
-                  const orderIdx = selectedIndicators.indexOf(key);
-                  const atCap =
-                    !checked &&
-                    selectedIndicators.length >= MAX_HOME_INDICATORS;
-                  return (
-                    <li
-                      key={key}
-                      className="flex items-center gap-3 px-3 py-2.5"
-                    >
-                      <Checkbox
-                        checked={checked}
-                        disabled={
-                          isLoading ||
-                          patch.isPending ||
-                          settings === undefined ||
-                          atCap ||
-                          (checked && selectedIndicators.length <= 1)
-                        }
-                        onCheckedChange={() => toggleIndicator(key)}
-                      />
-                      <span className="min-w-0 flex-1 text-sm text-foreground">
-                        {HOME_INDICATOR_LABELS[key]}
+                >
+                  <AppSelect
+                    id="home-indicators-layout"
+                    value={indicatorsLayout}
+                    disabled={
+                      isLoading || patch.isPending || settings === undefined
+                    }
+                    options={HOME_INDICATORS_LAYOUTS.map((layout) => ({
+                      value: layout,
+                      label: HOME_INDICATORS_LAYOUT_LABELS[layout],
+                    }))}
+                    onValueChange={(v) =>
+                      patch.mutate({
+                        homeIndicatorsLayout: v as HomeIndicatorsLayout,
+                      })
+                    }
+                  />
+                </FormField>
+                <p className="text-xs text-muted-foreground">
+                  Selecionados: {selectedIndicators.length}/
+                  {MAX_HOME_INDICATORS}
+                  {selectedIndicators.length >= MAX_HOME_INDICATORS
+                    ? " — desmarque um para escolher outro."
+                    : null}
+                </p>
+                <ul className="divide-y divide-border rounded-xl border border-border bg-card">
+                  {HOME_INDICATOR_KEYS.map((key) => {
+                    const checked = selectedIndicators.includes(key);
+                    const orderIdx = selectedIndicators.indexOf(key);
+                    const atCap =
+                      !checked &&
+                      selectedIndicators.length >= MAX_HOME_INDICATORS;
+                    return (
+                      <li
+                        key={key}
+                        className="flex items-center gap-3 px-3 py-2.5"
+                      >
+                        <Checkbox
+                          checked={checked}
+                          disabled={
+                            isLoading ||
+                            patch.isPending ||
+                            settings === undefined ||
+                            atCap ||
+                            (checked && selectedIndicators.length <= 1)
+                          }
+                          onCheckedChange={() => toggleIndicator(key)}
+                        />
+                        <span className="min-w-0 flex-1 text-sm text-foreground">
+                          {HOME_INDICATOR_LABELS[key]}
+                          {checked ? (
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              #{orderIdx + 1}
+                            </span>
+                          ) : null}
+                        </span>
                         {checked ? (
-                          <span className="ml-2 text-xs text-muted-foreground">
-                            #{orderIdx + 1}
+                          <span className="flex shrink-0 gap-0.5">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-8"
+                              disabled={
+                                orderIdx <= 0 || patch.isPending || isLoading
+                              }
+                              onClick={() => moveIndicator(key, -1)}
+                              aria-label="Mover para cima"
+                            >
+                              <ChevronUp className="size-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-8"
+                              disabled={
+                                orderIdx < 0 ||
+                                orderIdx >= selectedIndicators.length - 1 ||
+                                patch.isPending ||
+                                isLoading
+                              }
+                              onClick={() => moveIndicator(key, 1)}
+                              aria-label="Mover para baixo"
+                            >
+                              <ChevronDown className="size-4" />
+                            </Button>
                           </span>
                         ) : null}
-                      </span>
-                      {checked ? (
-                        <span className="flex shrink-0 gap-0.5">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-8"
-                            disabled={
-                              orderIdx <= 0 || patch.isPending || isLoading
-                            }
-                            onClick={() => moveIndicator(key, -1)}
-                            aria-label="Mover para cima"
-                          >
-                            <ChevronUp className="size-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-8"
-                            disabled={
-                              orderIdx < 0 ||
-                              orderIdx >= selectedIndicators.length - 1 ||
-                              patch.isPending ||
-                              isLoading
-                            }
-                            onClick={() => moveIndicator(key, 1)}
-                            aria-label="Mover para baixo"
-                          >
-                            <ChevronDown className="size-4" />
-                          </Button>
-                        </span>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-              <p className="text-xs text-muted-foreground">
-                Rentabilidade = receita − custo do produto cadastrado. Itens sem
-                custo aparecem com custo zero e são sinalizados no gráfico.
-              </p>
-            </div>
-          </FormSection>
-
-          <FormSection
-            title="Fluxo do pedido"
-            description="Único cadastro de etapas do pedido: rascunho, crédito, operação, entrega e cancelamento."
-          >
-            <OrderSituationsPanel />
-          </FormSection>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p className="text-xs text-muted-foreground">
+                  Rentabilidade = receita − custo do produto cadastrado. Itens
+                  sem custo aparecem com custo zero e são sinalizados no
+                  gráfico.
+                </p>
+              </div>
+            </FormSection>
+          </SettingsCategory>
         </>
       ) : null}
 
@@ -722,55 +845,101 @@ export function SystemSettingsPage() {
         </p>
       ) : null}
 
-      {(canPermissions || canAudit) && (
-        <FormSection
-          title="Administração"
-          description="Abra cada área em um painel, sem sair desta tela."
+      {canSalesSettings ? (
+        <SettingsCategory
+          id="vendas"
+          title="Configurações de venda"
+          description="Tabelas de preço, condições de pagamento e comissões."
         >
-          <div className="divide-y divide-border rounded-xl border border-border bg-card">
-            {canPermissions ? (
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/50"
-                onClick={() => setModal("permissions")}
-              >
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Shield className="size-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block font-medium text-foreground">
-                    Permissões
+          <FormSection
+            title="Atalhos"
+            description="Abra cada área na tela dedicada."
+          >
+            <div className="divide-y divide-border rounded-xl border border-border bg-card">
+              {salesShortcuts.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.to}
+                    type="button"
+                    className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/50"
+                    onClick={() => nav(item.to)}
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Icon className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium text-foreground">
+                        {item.title}
+                      </span>
+                      <span className="block text-sm text-muted-foreground">
+                        {item.description}
+                      </span>
+                    </span>
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                  </button>
+                );
+              })}
+            </div>
+          </FormSection>
+        </SettingsCategory>
+      ) : null}
+
+      {canPermissions || canAudit ? (
+        <SettingsCategory
+          id="seguranca"
+          title="Segurança e administração"
+          description="Permissões por perfil e histórico de auditoria."
+        >
+          <FormSection
+            title="Ferramentas"
+            description="Abra cada área em um painel, sem sair desta tela."
+          >
+            <div className="divide-y divide-border rounded-xl border border-border bg-card">
+              {canPermissions ? (
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/50"
+                  onClick={() => setModal("permissions")}
+                >
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Shield className="size-4" />
                   </span>
-                  <span className="block text-sm text-muted-foreground">
-                    Matriz de leitura e escrita por role
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium text-foreground">
+                      Permissões
+                    </span>
+                    <span className="block text-sm text-muted-foreground">
+                      Matriz de leitura e escrita por role
+                    </span>
                   </span>
-                </span>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-              </button>
-            ) : null}
-            {canAudit ? (
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/50"
-                onClick={() => setModal("audit")}
-              >
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <History className="size-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block font-medium text-foreground">
-                    Auditoria
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                </button>
+              ) : null}
+              {canAudit ? (
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/50"
+                  onClick={() => setModal("audit")}
+                >
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <History className="size-4" />
                   </span>
-                  <span className="block text-sm text-muted-foreground">
-                    Histórico de alterações no painel e no app
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium text-foreground">
+                      Auditoria
+                    </span>
+                    <span className="block text-sm text-muted-foreground">
+                      Histórico de alterações no painel e no app
+                    </span>
                   </span>
-                </span>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-              </button>
-            ) : null}
-          </div>
-        </FormSection>
-      )}
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                </button>
+              ) : null}
+            </div>
+          </FormSection>
+        </SettingsCategory>
+      ) : null}
 
       <Dialog
         open={modal === "permissions"}

@@ -131,7 +131,7 @@ description: "Vendas, margem, estoque, fiscal, visitas e PDFs",
   {
     to: "/indicadores",
     title: "Indicadores",
-    description: "Quem vendeu menos, carteira e giro",
+    description: "Relatórios, insights e análises da operação",
     icon: Activity,
   },
 ];
@@ -177,9 +177,9 @@ const teamLeaderCards: DashCard[] = [
     icon: ShoppingCart,
   },
   {
-    to: "/insights",
-    title: "Insights da equipe",
-    description: "Totais, ranking e produtos vendidos",
+    to: "/indicadores",
+    title: "Indicadores",
+    description: "Relatórios e insights da equipe",
     icon: BarChart3,
   },
 ];

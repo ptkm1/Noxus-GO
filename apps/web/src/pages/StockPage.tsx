@@ -25,7 +25,7 @@ import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import { apiFetch, downloadPdf, printPdf } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Package } from "lucide-react";
+import { AlertTriangle, History, Package } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -86,6 +86,9 @@ export function StockPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [pdfBusy, setPdfBusy] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<StockProduct | null>(
+    null,
+  );
+  const [historyProduct, setHistoryProduct] = useState<StockProduct | null>(
     null,
   );
   const [entryType, setEntryType] = useState<EntryType>("MANUAL_IN");
@@ -454,13 +457,25 @@ export function StockPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => openEntry(p)}
-                      >
-                        Movimentar
-                      </Button>
+                      <div className="inline-flex items-center justify-end gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Histórico de ${p.name}`}
+                          title="Histórico de movimentações"
+                          onClick={() => setHistoryProduct(p)}
+                        >
+                          <History className="size-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => openEntry(p)}
+                        >
+                          Movimentar
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -646,6 +661,32 @@ export function StockPage() {
           </FormField>
           <FormErrorBanner message={formError} className="sm:col-span-2" />
         </FormGrid>
+      </FormSheet>
+
+      <FormSheet
+        open={historyProduct != null}
+        onOpenChange={(open) => {
+          if (!open) setHistoryProduct(null);
+        }}
+        title={
+          historyProduct
+            ? `Histórico — ${historyProduct.name}`
+            : "Histórico de movimentações"
+        }
+        description="Movimentações de estoque registradas para este produto."
+        contentClassName="max-h-[85vh]"
+      >
+        {historyProduct ? (
+          <AuditLogPanel
+            key={historyProduct.id}
+            title=""
+            entityType="Product"
+            entityId={historyProduct.id}
+            action="STOCK_ENTRY"
+            take={50}
+            enabled={historyProduct != null}
+          />
+        ) : null}
       </FormSheet>
     </div>
   );

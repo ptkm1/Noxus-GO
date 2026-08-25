@@ -1,3 +1,5 @@
+import { formatStockAuditDetails } from "@pedidos/shared";
+
 export type AuditLogRow = {
   id: string;
   action: string;
@@ -115,20 +117,92 @@ export function formatAuditDateTime(iso: string): string {
   });
 }
 
+const STOCK_META_KEYS = new Set([
+  "movementType",
+  "qtyDelta",
+  "qty",
+  "lotCode",
+  "unitLabel",
+  "unit",
+  "reason",
+  "movementId",
+  "lotId",
+  "expiresAt",
+  "balanceAfter",
+]);
+
+/** Parseia metadata legado serializado como "chave: valor - chave: valor". */
+function parseLooseKeyValueMetadata(
+  raw: string,
+): Record<string, unknown> | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      /* segue para key:value */
+    }
+  }
+  if (!trimmed.includes(":")) return null;
+
+  const obj: Record<string, unknown> = {};
+  const chunks = trimmed.split(/\s+[·\-–—]\s+/);
+  const numericKeys = new Set(["qtyDelta", "qty", "balanceAfter", "count"]);
+  for (const chunk of chunks) {
+    const colon = chunk.indexOf(":");
+    if (colon <= 0) continue;
+    const key = chunk.slice(0, colon).trim();
+    if (!/^\w+$/.test(key)) continue;
+    let value: unknown = chunk.slice(colon + 1).trim();
+    if (value === "null") value = null;
+    else if (value === "true") value = true;
+    else if (value === "false") value = false;
+    else if (
+      numericKeys.has(key) &&
+      typeof value === "string" &&
+      /^-?\d+(\.\d+)?$/.test(value)
+    ) {
+      value = Number(value);
+    }
+    obj[key] = value;
+  }
+  return Object.keys(obj).length > 0 ? obj : null;
+}
+
+function coerceMetadataObject(
+  metadata: unknown,
+): Record<string, unknown> | null {
+  if (metadata == null) return null;
+  if (typeof metadata === "object" && !Array.isArray(metadata)) {
+    return metadata as Record<string, unknown>;
+  }
+  if (typeof metadata === "string") {
+    return parseLooseKeyValueMetadata(metadata);
+  }
+  return null;
+}
+
 export function summarizeMetadata(metadata: unknown): string {
   if (metadata == null) return "—";
-  if (typeof metadata !== "object") return String(metadata);
-  const obj = metadata as Record<string, unknown>;
+
+  const obj = coerceMetadataObject(metadata);
+  if (!obj) {
+    return typeof metadata === "string" ? metadata || "—" : String(metadata);
+  }
+
+  const stockDetails = formatStockAuditDetails(obj);
+  if (stockDetails) return stockDetails;
+
   const parts: string[] = [];
   const pick = [
     "name",
     "fromStatus",
     "toStatus",
     "status",
-    "movementType",
-    "qtyDelta",
-    "lotCode",
-    "reason",
     "fields",
     "justification",
     "accessKey",
@@ -142,6 +216,7 @@ export function summarizeMetadata(metadata: unknown): string {
   for (const key of pick) {
     const v = obj[key];
     if (v == null) continue;
+    if (STOCK_META_KEYS.has(key)) continue;
     if (key === "fields" && Array.isArray(v)) {
       parts.push(`campos: ${v.join(", ")}`);
       continue;
@@ -162,7 +237,7 @@ export function summarizeMetadata(metadata: unknown): string {
   }
   if (parts.length === 0) {
     try {
-      const raw = JSON.stringify(metadata);
+      const raw = JSON.stringify(obj);
       return raw.length > 120 ? `${raw.slice(0, 117)}…` : raw;
     } catch {
       return "—";
