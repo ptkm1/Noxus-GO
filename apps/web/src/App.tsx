@@ -86,6 +86,7 @@ import {
 import { ReportsHubPage } from "./pages/ReportsHubPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { ReportStockPage } from "./pages/ReportStockPage";
+import { ReportStockCountPage } from "./pages/ReportStockCountPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { RouteRomaneioPage } from "./pages/RouteRomaneioPage";
 import { SellerProductsPage } from "./pages/SellerProductsPage";
@@ -466,6 +467,10 @@ function AppRoutes() {
             <Route path="relatorios/pedidos" element={<ReportOrdersPage />} />
             <Route path="relatorios/itens" element={<ReportOrderItemsPage />} />
             <Route path="relatorios/estoque" element={<ReportStockPage />} />
+            <Route
+              path="relatorios/estoque/contagem"
+              element={<ReportStockCountPage />}
+            />
             <Route
               path="relatorios/vendas/resumo"
               element={<ReportSalesSummaryPage />}

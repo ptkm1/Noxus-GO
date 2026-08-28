@@ -124,6 +124,11 @@ const CATEGORIES: ReportCategory[] = [
         title: "Estoque",
         description: "Saldos, grupos, fornecedores e validade.",
       },
+      {
+        to: "/relatorios/estoque/contagem",
+        title: "Lista para Contagem de Estoque",
+        description: "PDF para contagem física com espaço para anotar quantidades.",
+      },
     ],
   },
   {

@@ -69,7 +69,7 @@ export function ReportOrderItemsPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [situationId, setSituationId] = useState("");
-  const [groupByOrder, setGroupByOrder] = useState(true);
+  const [groupItems, setGroupItems] = useState(false);
   const [extras, setExtras] = useState<ExtraFilterRow[]>([]);
   const [inclusionMode, setInclusionMode] = useState<InclusionMode>("filters");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -159,7 +159,7 @@ export function ReportOrderItemsPage() {
     setFrom("");
     setTo("");
     setSituationId("");
-    setGroupByOrder(true);
+    setGroupItems(false);
     setExtras([]);
     setInclusionMode("filters");
     setSelectedIds(new Set());
@@ -175,7 +175,7 @@ export function ReportOrderItemsPage() {
     setPending(true);
     try {
       const q = new URLSearchParams();
-      if (groupByOrder) q.set("groupByOrder", "1");
+      if (groupItems) q.set("groupItems", "1");
 
       if (inclusionMode === "manual") {
         q.set("orderIds", [...selectedIds].join(","));
@@ -275,12 +275,17 @@ export function ReportOrderItemsPage() {
         />
       </ReportField>
       <ReportField label="Agrupar itens">
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox
-            checked={groupByOrder}
-            onCheckedChange={(v) => setGroupByOrder(v === true)}
-          />
-          Segregar por pedido (quebra de página)
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="flex items-center gap-2">
+            <Checkbox
+              checked={groupItems}
+              onCheckedChange={(v) => setGroupItems(v === true)}
+            />
+            Somar quantidades do mesmo produto
+          </span>
+          <span className="text-muted-foreground pl-6">
+            Desmarcado: uma seção por pedido (quebra de página).
+          </span>
         </label>
       </ReportField>
 

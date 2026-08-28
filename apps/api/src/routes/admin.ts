@@ -17,7 +17,6 @@ import {
     type PromotionScope,
 } from "@prisma/client";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
-import PDFDocument from "pdfkit";
 import { z } from "zod";
 import { verifyAccessToken, type AccessPayload } from "../auth/jwt.js";
 import {
@@ -177,9 +176,10 @@ import { buildCustomersPdf } from "../services/reports/customers-pdf.js";
 import { readExtraParams } from "../services/reports/extra-filters.js";
 import { buildOrderItemsPdf } from "../services/reports/order-items-pdf.js";
 import { buildOrdersPdf } from "../services/reports/orders-pdf.js";
-import { orderCode } from "../services/reports/pdf-common.js";
 import { buildRouteRomaneioPdf } from "../services/reports/route-romaneio-pdf.js";
+import { buildSalesDetailedPdf } from "../services/reports/sales-pdf.js";
 import { buildStockPdf } from "../services/reports/stock-pdf.js";
+import { buildStockCountPdf } from "../services/reports/stock-count-pdf.js";
 import {
     adminPathToResource,
     buildEffectivePermissionsMatrix,
@@ -2353,6 +2353,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         stockQty: z.number().int().min(0).optional(),
         blockSaleWhenOutOfStock: z.boolean().optional(),
         priceTableId: z.string().optional(),
+        priceTablePrices: z
+          .array(
+            z.object({
+              priceTableId: z.string().min(1),
+              price: z.number().nonnegative(),
+            }),
+          )
+          .optional(),
         ...productCadastroFieldsSchema,
       })
       .safeParse(req.body);
@@ -2375,15 +2383,32 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!supplierOk)
       return reply.status(400).send({ error: "Fornecedor inválido" });
 
-    if (body.data.priceTableId) {
-      const tableOk = await prisma.priceTable.findFirst({
+    const createPriceRows =
+      body.data.priceTablePrices && body.data.priceTablePrices.length > 0
+        ? body.data.priceTablePrices
+        : body.data.priceTableId
+          ? [
+              {
+                priceTableId: body.data.priceTableId,
+                price: body.data.basePrice,
+              },
+            ]
+          : [];
+
+    if (createPriceRows.length > 0) {
+      const tableIds = createPriceRows.map((p) => p.priceTableId);
+      const tables = await prisma.priceTable.findMany({
         where: {
-          id: body.data.priceTableId,
+          id: { in: tableIds },
           organizationId: auth.organizationId,
         },
+        select: { id: true },
       });
-      if (!tableOk)
+      const okIds = new Set(tables.map((t) => t.id));
+      const invalid = tableIds.filter((tid) => !okIds.has(tid));
+      if (invalid.length > 0) {
         return reply.status(400).send({ error: "Tabela de preço inválida" });
+      }
     }
 
     const defs = await loadCategoryDefs(resolvedCatId, auth.organizationId);
@@ -2461,21 +2486,25 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         include: productRelationsInclude,
       });
 
-      if (body.data.priceTableId) {
-        await prisma.priceTableItem.upsert({
-          where: {
-            priceTableId_productId: {
-              priceTableId: body.data.priceTableId,
-              productId: created.id,
-            },
-          },
-          create: {
-            priceTableId: body.data.priceTableId,
-            productId: created.id,
-            price: body.data.basePrice,
-          },
-          update: { price: body.data.basePrice },
-        });
+      if (createPriceRows.length > 0) {
+        await prisma.$transaction(
+          createPriceRows.map((row) =>
+            prisma.priceTableItem.upsert({
+              where: {
+                priceTableId_productId: {
+                  priceTableId: row.priceTableId,
+                  productId: created.id,
+                },
+              },
+              create: {
+                priceTableId: row.priceTableId,
+                productId: created.id,
+                price: row.price,
+              },
+              update: { price: row.price },
+            }),
+          ),
+        );
       }
 
       const actor = await prisma.user.findUnique({
@@ -2507,6 +2536,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           name: created.name,
           stockQty: initialQty,
           priceTableId: body.data.priceTableId ?? null,
+          priceTableCount: createPriceRows.length,
         },
       });
 
@@ -7202,7 +7232,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
           .optional(),
         situationId: z.string().optional(),
-        groupByOrder: z
+        groupItems: z
           .union([z.literal("1"), z.literal("true"), z.literal("0")])
           .optional(),
         /** Comma-separated or repeated query: orderIds=a,b or orderIds=a&orderIds=b */
@@ -7228,8 +7258,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       to: filters.to,
       status: filters.status,
       situationId: filters.situationId,
-      groupByOrder:
-        filters.groupByOrder === "1" || filters.groupByOrder === "true",
+      groupItems:
+        filters.groupItems === "1" || filters.groupItems === "true",
       orderIds: orderIds?.length ? orderIds : undefined,
       extras,
     });
@@ -7251,6 +7281,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         categoryId: z.string().optional(),
         q: z.string().optional(),
         productIds: z.string().optional(),
+        stockValueBasis: z
+          .enum(["none", "last_cost", "avg_sale", "default_sale"])
+          .optional(),
       })
       .passthrough()
       .safeParse(req.query);
@@ -7269,12 +7302,54 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       q: filters.q,
       productIds: productIds?.length ? productIds : undefined,
       extras,
+      stockValueBasis: filters.stockValueBasis,
     });
     return reply
       .header("Content-Type", "application/pdf")
       .header(
         "Content-Disposition",
         'attachment; filename="relatorio-estoque.pdf"',
+      )
+      .send(pdf);
+  });
+
+  app.get("/reports/stock-count.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const q = z
+      .object({
+        supplierId: z.string().optional(),
+        categoryId: z.string().optional(),
+        q: z.string().optional(),
+        productIds: z.string().optional(),
+        stockSituation: z.enum(["with_stock", "all"]).optional(),
+        sortBy: z.enum(["supplier", "name", "sku"]).optional(),
+      })
+      .passthrough()
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    const extras = readExtraParams(
+      (q.success ? q.data : req.query) as Record<string, unknown>,
+    );
+    const productIds = filters.productIds
+      ?.split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const pdf = await buildStockCountPdf({
+      organizationId: auth.organizationId,
+      supplierId: filters.supplierId,
+      categoryId: filters.categoryId,
+      q: filters.q,
+      productIds: productIds?.length ? productIds : undefined,
+      extras,
+      stockSituation: filters.stockSituation,
+      sortBy: filters.sortBy,
+    });
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="lista-contagem-estoque.pdf"',
       )
       .send(pdf);
   });
@@ -7288,66 +7363,13 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         sellerId: z.string().optional(),
       })
       .safeParse(req.query);
-
-    const where: Prisma.OrderWhereInput = {
+    const filters = q.success ? q.data : {};
+    const pdf = await buildSalesDetailedPdf({
       organizationId: auth.organizationId,
-      status: "CONFIRMED",
-    };
-    if (q.success && q.data.sellerId) where.sellerId = q.data.sellerId;
-    const createdAt: Prisma.DateTimeFilter = {};
-    if (q.success && q.data.from) createdAt.gte = new Date(q.data.from);
-    if (q.success && q.data.to) createdAt.lte = new Date(q.data.to);
-    if (Object.keys(createdAt).length) where.createdAt = createdAt;
-
-    const orders = await prisma.order.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      include: {
-        seller: { include: { user: { select: { name: true } } } },
-        customer: true,
-        items: true,
-      },
+      sellerId: filters.sellerId,
+      from: filters.from,
+      to: filters.to,
     });
-
-    const doc = new PDFDocument({ margin: 50 });
-    const chunks: Buffer[] = [];
-    doc.on("data", (c) => chunks.push(c));
-    const done = new Promise<Buffer>((resolve) => {
-      doc.on("end", () => resolve(Buffer.concat(chunks)));
-    });
-
-    doc.fontSize(18).text("Relatório de vendas", { align: "center" });
-    doc.moveDown();
-    doc.fontSize(10).text(`Gerado em: ${new Date().toLocaleString("pt-BR")}`, {
-      align: "right",
-    });
-    doc.moveDown();
-
-    let sum = 0;
-    for (const o of orders) {
-      const amount = decToNum(o.totalAmount);
-      sum += amount;
-      doc.fontSize(12).text(`Pedido ${orderCode(o)} — ${o.status}`, {
-        continued: false,
-      });
-      doc
-        .fontSize(10)
-        .text(
-          `Vendedor: ${o.seller.user.name} | Cliente: ${o.customer?.name ?? "-"} | Total: R$ ${amount.toFixed(2)} | ${o.createdAt.toISOString()}`,
-        );
-      for (const it of o.items) {
-        doc.text(
-          `  • ${it.productName} x${it.quantity} @ R$ ${decToNum(it.unitPrice).toFixed(2)} = R$ ${(decToNum(it.unitPrice) * it.quantity).toFixed(2)}`,
-        );
-      }
-      doc.moveDown(0.5);
-    }
-    doc
-      .fontSize(12)
-      .text(`Total geral: R$ ${sum.toFixed(2)}`, { align: "right" });
-    doc.end();
-
-    const pdf = await done;
     return reply
       .header("Content-Type", "application/pdf")
       .header(

@@ -11,19 +11,25 @@ import {
 import { AppSelect } from "@/components/ui/app-select";
 import { Input } from "@/components/ui/input";
 import { apiFetch, downloadPdf } from "@/lib/api";
-import { STOCK_VALUE_BASIS_OPTIONS, type StockValueBasis } from "@pedidos/shared";
+import {
+  STOCK_COUNT_SORT_OPTIONS,
+  STOCK_SITUATION_OPTIONS,
+  type StockCountSortBy,
+  type StockSituation,
+} from "@pedidos/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 type Category = { id: string; name: string };
 type Supplier = { id: string; tradeName: string; legalName: string };
 
-export function ReportStockPage() {
+export function ReportStockCountPage() {
   const [supplierId, setSupplierId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [q, setQ] = useState("");
-  const [stockValueBasis, setStockValueBasis] =
-    useState<StockValueBasis>("none");
+  const [stockSituation, setStockSituation] =
+    useState<StockSituation>("with_stock");
+  const [sortBy, setSortBy] = useState<StockCountSortBy>("name");
   const [extras, setExtras] = useState<ExtraFilterRow[]>([]);
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -41,7 +47,8 @@ export function ReportStockPage() {
     setSupplierId("");
     setCategoryId("");
     setQ("");
-    setStockValueBasis("none");
+    setStockSituation("with_stock");
+    setSortBy("name");
     setExtras([]);
     setErr(null);
   }
@@ -54,13 +61,14 @@ export function ReportStockPage() {
       if (supplierId) params.set("supplierId", supplierId);
       if (categoryId) params.set("categoryId", categoryId);
       if (q.trim()) params.set("q", q.trim());
-      if (stockValueBasis !== "none") {
-        params.set("stockValueBasis", stockValueBasis);
+      if (stockSituation !== "with_stock") {
+        params.set("stockSituation", stockSituation);
       }
+      params.set("sortBy", sortBy);
       appendExtraFilters(params, extras);
       await downloadPdf(
-        `/admin/reports/stock.pdf?${params.toString()}`,
-        "relatorio-estoque.pdf",
+        `/admin/reports/stock-count.pdf?${params.toString()}`,
+        "lista-contagem-estoque.pdf",
       );
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Falha ao gerar PDF");
@@ -71,7 +79,7 @@ export function ReportStockPage() {
 
   return (
     <ReportFormLayout
-      title="Relatório de Estoque"
+      title="Lista para Contagem de Estoque"
       onClear={clear}
       onGenerate={() => void generate()}
       generating={pending}
@@ -105,11 +113,21 @@ export function ReportStockPage() {
           onChange={(e) => setQ(e.target.value)}
         />
       </ReportField>
-      <ReportField label="Valor do Estoque">
+      <ReportField label="Situação do estoque">
         <AppSelect
-          value={stockValueBasis}
-          onValueChange={(v) => setStockValueBasis(v as StockValueBasis)}
-          options={STOCK_VALUE_BASIS_OPTIONS.map((o) => ({
+          value={stockSituation}
+          onValueChange={(v) => setStockSituation(v as StockSituation)}
+          options={STOCK_SITUATION_OPTIONS.map((o) => ({
+            value: o.value,
+            label: o.label,
+          }))}
+        />
+      </ReportField>
+      <ReportField label="Ordenar por">
+        <AppSelect
+          value={sortBy}
+          onValueChange={(v) => setSortBy(v as StockCountSortBy)}
+          options={STOCK_COUNT_SORT_OPTIONS.map((o) => ({
             value: o.value,
             label: o.label,
           }))}

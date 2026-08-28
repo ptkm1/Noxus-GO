@@ -10,7 +10,8 @@ import { apiFetch } from "@/lib/api";
 import { cnpjDigitsOnly, isValidCnpj, planHasFeature } from "@pedidos/shared";
 import { useAuth } from "@/auth/AuthContext";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, Plus } from "lucide-react";
+import { EstablishmentFiscalConfigSheet } from "@/components/EstablishmentFiscalConfigSheet";
+import { Building2, Plus, Settings2 } from "lucide-react";
 import { useState } from "react";
 
 type ListResponse = {
@@ -38,6 +39,9 @@ export function EstablishmentsSettingsPanel() {
   const [cnpj, setCnpj] = useState("");
   const [uf, setUf] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [configEstablishmentId, setConfigEstablishmentId] = useState<
+    string | null
+  >(null);
 
   const listQ = useQuery({
     queryKey: ["admin", "establishments"],
@@ -118,7 +122,17 @@ export function EstablishmentsSettingsPanel() {
                 </div>
               </div>
             </div>
-            <div className="flex gap-1">
+            <div className="flex flex-wrap items-center gap-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-label={`Configurar fiscal de ${e.tradeName || e.legalName}`}
+                onClick={() => setConfigEstablishmentId(e.id)}
+              >
+                <Settings2 className="mr-1 h-4 w-4" />
+                Configurar
+              </Button>
               {e.isPrimary ? <Badge variant="secondary">Principal</Badge> : null}
               {!e.active ? <Badge variant="outline">Inativo</Badge> : null}
             </div>
@@ -191,6 +205,20 @@ export function EstablishmentsSettingsPanel() {
           sempre usa o estabelecimento gravado no pedido.
         </p>
       ) : null}
+
+      <EstablishmentFiscalConfigSheet
+        establishmentId={configEstablishmentId}
+        establishmentLabel={
+          configEstablishmentId
+            ? items.find((e) => e.id === configEstablishmentId)?.tradeName ||
+              items.find((e) => e.id === configEstablishmentId)?.legalName
+            : undefined
+        }
+        open={Boolean(configEstablishmentId)}
+        onOpenChange={(open) => {
+          if (!open) setConfigEstablishmentId(null);
+        }}
+      />
     </FormSection>
   );
 }

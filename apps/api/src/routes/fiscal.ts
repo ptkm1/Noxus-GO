@@ -1013,6 +1013,7 @@ export const fiscalRoutes: FastifyPluginAsync = async (app) => {
         justification: z.string().min(15),
         series: z.number().int().positive().optional(),
         year: z.number().int().min(2000).max(2100).optional(),
+        establishmentId: z.string().optional(),
       })
       .safeParse(req.body);
     if (!body.success) {

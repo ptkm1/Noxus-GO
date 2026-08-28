@@ -398,3 +398,17 @@ export {
   stockMovementTypeLabel,
 } from "./stock.js";
 export type { StockMovementType } from "./stock.js";
+export {
+  isStockCountSortBy,
+  isStockSituation,
+  isStockValueBasis,
+  STOCK_COUNT_SORT_OPTIONS,
+  STOCK_SITUATION_OPTIONS,
+  STOCK_VALUE_BASIS_OPTIONS,
+  STOCK_VALUE_PRICE_COLUMN_LABELS,
+} from "./stock-report.js";
+export type {
+  StockCountSortBy,
+  StockSituation,
+  StockValueBasis,
+} from "./stock-report.js";
