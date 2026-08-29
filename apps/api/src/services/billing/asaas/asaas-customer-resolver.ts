@@ -1,7 +1,7 @@
 import { normalizeDocument } from "../document.js";
 import { PaymentGatewayError } from "../payment-gateway.js";
 import { asaasFetch } from "./asaas-client.js";
-import type { AsaasConfig } from "./asaas-config.js";
+import { liveAsaasResourceId, type AsaasConfig } from "./asaas-config.js";
 
 type AsaasCustomer = {
   id?: string;
@@ -53,7 +53,7 @@ export async function resolveAsaasCustomerForOrg(
   const doc = normalizeDocument(params.cpfCnpj);
   const email = normalizeEmail(params.email);
 
-  if (params.storedCustomerId) {
+  if (liveAsaasResourceId(params.storedCustomerId)) {
     try {
       const remote = await asaasFetch<AsaasCustomer>(
         cfg,

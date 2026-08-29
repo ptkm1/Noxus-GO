@@ -33,6 +33,8 @@ const MANAGER_GET_ALLOW = [
   /^\/reports\/sales-by-supplier$/,
   /^\/reports\/scorecard$/,
   /^\/reports\/margin$/,
+  /^\/reports\/financial-result$/,
+  /^\/reports\/financial-result\.pdf$/,
   /^\/reports\/commission-statement$/,
   /^\/reports\/stock-health$/,
   /^\/reports\/credit-aging$/,

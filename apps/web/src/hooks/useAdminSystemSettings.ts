@@ -1,5 +1,5 @@
 import {
-  normalizeHomeIndicators,
+  parseHomeIndicators,
   type HomeIndicatorKey,
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,6 +15,7 @@ export type SystemSettings = {
   sellerCanEditQueuedSales: boolean;
   autoInactivateCustomersAfterMonths: boolean;
   homeIndicators: HomeIndicatorKey[];
+  homeIndicatorLimit: number | null;
 };
 
 export function useAdminSystemSettings(enabled: boolean) {
@@ -40,7 +41,7 @@ export function useAdminSystemSettings(enabled: boolean) {
     },
   });
 
-  const selectedIndicators = normalizeHomeIndicators(
+  const selectedIndicators = parseHomeIndicators(
     query.data?.homeIndicators,
   );
 

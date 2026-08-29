@@ -73,6 +73,22 @@ export type SubscriptionCardPayBody = z.infer<
   typeof subscriptionCardPayBodySchema
 >;
 
+export const subscriptionPayBodySchema = z.union([
+  z.object({ method: z.literal("PIX") }),
+  z.object({ method: z.literal("BOLETO") }),
+  subscriptionCardPayBodySchema.and(
+    z.object({ method: z.literal("CREDIT_CARD").optional() }),
+  ),
+]);
+
+export type SubscriptionPayBody = z.infer<typeof subscriptionPayBodySchema>;
+
+export function isCardPayBody(
+  body: SubscriptionPayBody,
+): body is SubscriptionCardPayBody {
+  return "creditCard" in body;
+}
+
 export function toGatewayCardPayload(body: SubscriptionCardPayBody) {
   const expiry = parseCardExpiry(body.creditCard.expiry)!;
   return {

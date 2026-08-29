@@ -93,6 +93,8 @@ export async function listStockProducts(params: {
       stockQty: p.stockQty,
       minStockQty: p.minStockQty,
       maxStockQty: p.maxStockQty,
+      costPrice: p.costPrice,
+      basePrice: p.basePrice,
       blockSaleWhenOutOfStock: p.blockSaleWhenOutOfStock,
       category: p.category,
       supplier: p.supplier,

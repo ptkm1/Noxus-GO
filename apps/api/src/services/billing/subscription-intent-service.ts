@@ -1,4 +1,4 @@
-import { DEFAULT_PLAN_ID, getPlanDefinition, isPlanId, type PlanId } from "@pedidos/shared";
+import { DEFAULT_PLAN_ID, getPlanDefinition, isPlanId, type PlanId, type PublicPaymentInstructions, type SubscriptionPayMethod } from "@pedidos/shared";
 import { prisma } from "../../db.js";
 import {
     emptyFiscalEmitente,
@@ -24,7 +24,7 @@ import { resolvePaymentGateway } from "./resolve-payment-gateway.js";
 import { activateOrganizationFromPayment } from "./subscription-activation.js";
 import { resolveCheckoutAmountBrl } from "./seats.js";
 import { syncPlanFromAsaasProvider } from "./sync-asaas-subscription.js";
-import { readAsaasConfig } from "./asaas/asaas-config.js";
+import { liveAsaasResourceId, readAsaasConfig } from "./asaas/asaas-config.js";
 import {
     assertAsaasSubscriptionBelongsToCustomer,
     resolveAsaasCustomerForOrg,
@@ -77,6 +77,85 @@ function readPreviousPlanId(payload: unknown): string | null {
     return (payload as { previousPlanId: string }).previousPlanId;
   }
   return null;
+}
+
+function readPayMethod(payload: unknown): SubscriptionPayMethod | null {
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "paymentMethod" in payload &&
+    ((payload as { paymentMethod: unknown }).paymentMethod === "CREDIT_CARD" ||
+      (payload as { paymentMethod: unknown }).paymentMethod === "PIX" ||
+      (payload as { paymentMethod: unknown }).paymentMethod === "BOLETO")
+  ) {
+    return (payload as { paymentMethod: SubscriptionPayMethod }).paymentMethod;
+  }
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "paymentMode" in payload &&
+    (payload as { paymentMode: unknown }).paymentMode === "in_app_card"
+  ) {
+    return "CREDIT_CARD";
+  }
+  return null;
+}
+
+function readPaymentInstructions(
+  payload: unknown,
+): PublicPaymentInstructions | null {
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    !("instructions" in payload) ||
+    !(payload as { instructions: unknown }).instructions ||
+    typeof (payload as { instructions: unknown }).instructions !== "object"
+  ) {
+    return null;
+  }
+  const raw = (payload as { instructions: Record<string, unknown> }).instructions;
+  if (typeof raw.paymentId !== "string" || !raw.paymentId) return null;
+  const pix =
+    raw.pix && typeof raw.pix === "object"
+      ? (raw.pix as {
+          encodedImage?: unknown;
+          payload?: unknown;
+          expirationDate?: unknown;
+        })
+      : null;
+  const boleto =
+    raw.boleto && typeof raw.boleto === "object"
+      ? (raw.boleto as {
+          bankSlipUrl?: unknown;
+          invoiceUrl?: unknown;
+          identificationField?: unknown;
+          barCode?: unknown;
+        })
+      : null;
+  return {
+    paymentId: raw.paymentId,
+    pix: pix
+      ? {
+          encodedImage: typeof pix.encodedImage === "string" ? pix.encodedImage : "",
+          payload: typeof pix.payload === "string" ? pix.payload : "",
+          expirationDate:
+            typeof pix.expirationDate === "string" ? pix.expirationDate : null,
+        }
+      : undefined,
+    boleto: boleto
+      ? {
+          bankSlipUrl:
+            typeof boleto.bankSlipUrl === "string" ? boleto.bankSlipUrl : null,
+          invoiceUrl:
+            typeof boleto.invoiceUrl === "string" ? boleto.invoiceUrl : null,
+          identificationField:
+            typeof boleto.identificationField === "string"
+              ? boleto.identificationField
+              : null,
+          barCode: typeof boleto.barCode === "string" ? boleto.barCode : null,
+        }
+      : undefined,
+  };
 }
 
 function readStoredReturnSource(
@@ -147,6 +226,59 @@ function requireGateway(gateway?: PaymentGateway): PaymentGateway {
     });
   }
   return gw;
+}
+
+async function resolveOrgBillingDocument(
+  organizationId: string,
+  fallback?: string | null,
+): Promise<string> {
+  const first = normalizeDocument(fallback);
+  if (isValidCpfOrCnpj(first)) return first;
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { document: true, cnpj: true },
+  });
+  const fromOrg = normalizeDocument(org?.document || org?.cnpj);
+  if (isValidCpfOrCnpj(fromOrg)) return fromOrg;
+  throw Object.assign(
+    new Error(
+      "CPF ou CNPJ da empresa é inválido. Corrija o cadastro da organização.",
+    ),
+    { code: "INVALID_DOCUMENT", http: 400 },
+  );
+}
+
+function isAsaasSubscriptionNotUpdatable(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /não pode ser atualizada/i.test(msg) || /invalid_action/i.test(msg);
+}
+
+/**
+ * Sessão de outra org (ex.: demo logado + checkout da landing) não pode
+ * bloquear o pagamento público — sem token o mesmo intent já é pagável.
+ */
+function assertCanPayIntent(
+  intent: { organizationId: string; email: string; ownerUserId: string | null },
+  auth?: { organizationId: string; role: string; userId: string },
+  cardHolderEmail?: string,
+): void {
+  if (auth && auth.organizationId === intent.organizationId) {
+    const isOwner = Boolean(intent.ownerUserId && auth.userId === intent.ownerUserId);
+    if (auth.role !== "ADMIN" && !isOwner) {
+      throw Object.assign(new Error("Sem permissão para pagar esta intenção"), {
+        code: "FORBIDDEN",
+        http: 403,
+      });
+    }
+    return;
+  }
+  if (cardHolderEmail === undefined) return;
+  if (cardHolderEmail.trim().toLowerCase() !== intent.email.trim().toLowerCase()) {
+    throw Object.assign(
+      new Error("E-mail do titular deve coincidir com o da contratação"),
+      { code: "EMAIL_MISMATCH", http: 400 },
+    );
+  }
 }
 
 
@@ -373,6 +505,10 @@ export async function createCheckoutForRegisteredOrg(
   requireGateway(gateway);
   const now = new Date();
   const provider = "asaas";
+  const document = await resolveOrgBillingDocument(
+    input.organizationId,
+    input.document,
+  );
 
   await syncPlanFromAsaasProvider(input.organizationId, { force: true });
 
@@ -382,7 +518,7 @@ export async function createCheckoutForRegisteredOrg(
   const isPlanChange =
     !input.lockAccessUntilPaid &&
     sub?.status === "ACTIVE" &&
-    Boolean(sub.providerSubscriptionId) &&
+    Boolean(liveAsaasResourceId(sub.providerSubscriptionId)) &&
     sub.planId !== input.planId;
   const amountBrl = await resolveCheckoutAmountBrl(
     input.planId,
@@ -399,7 +535,7 @@ export async function createCheckoutForRegisteredOrg(
       companyName: input.companyName,
       adminName: input.adminName,
       phone: input.phone?.trim() || null,
-      document: input.document,
+      document,
       status: "CREATED",
       provider,
       termsAcceptedAt: input.termsAcceptedAt ?? now,
@@ -503,13 +639,20 @@ export async function retrySubscriptionCheckout(
   });
 }
 
+export type PayIntentResult = {
+  intentId: string;
+  status: "PROCESSING" | "ACTIVE";
+  paymentMethod?: SubscriptionPayMethod;
+  instructions?: PublicPaymentInstructions;
+};
+
 export async function paySubscriptionIntentWithCard(
   intentId: string,
   body: SubscriptionCardPayBody,
   remoteIp: string,
   auth?: { organizationId: string; userId: string; role: string },
   gateway?: PaymentGateway,
-): Promise<{ intentId: string; status: "PROCESSING" | "ACTIVE" }> {
+): Promise<PayIntentResult> {
   const intent = await prisma.checkoutIntent.findUnique({
     where: { id: intentId },
   });
@@ -526,7 +669,12 @@ export async function paySubscriptionIntentWithCard(
     });
   }
   if (intent.status === "PAYMENT_PROCESSING") {
-    return { intentId, status: "PROCESSING" };
+    return {
+      intentId,
+      status: "PROCESSING",
+      paymentMethod: readPayMethod(intent.checkoutPayload) ?? "CREDIT_CARD",
+      instructions: readPaymentInstructions(intent.checkoutPayload) ?? undefined,
+    };
   }
   if (!["CREATED", "CHECKOUT_CREATED", "FAILED", "EXPIRED", "CANCELED"].includes(intent.status)) {
     throw Object.assign(new Error("Intenção não elegível para pagamento"), {
@@ -535,22 +683,11 @@ export async function paySubscriptionIntentWithCard(
     });
   }
 
-  if (auth) {
-    if (auth.role !== "ADMIN" || auth.organizationId !== intent.organizationId) {
-      throw Object.assign(new Error("Sem permissão para pagar esta intenção"), {
-        code: "FORBIDDEN",
-        http: 403,
-      });
-    }
-  } else if (
-    body.creditCardHolderInfo.email.trim().toLowerCase() !==
-    intent.email.trim().toLowerCase()
-  ) {
-    throw Object.assign(
-      new Error("E-mail do titular deve coincidir com o da contratação"),
-      { code: "EMAIL_MISMATCH", http: 400 },
-    );
-  }
+  assertCanPayIntent(
+    intent,
+    auth,
+    body.creditCardHolderInfo.email,
+  );
 
   const planId = isPlanId(intent.planId) ? intent.planId : DEFAULT_PLAN_ID;
   const def = getPlanDefinition(planId);
@@ -566,10 +703,14 @@ export async function paySubscriptionIntentWithCard(
     intent.phone,
   );
 
-  const document = intent.document || cardPayload.creditCardHolderInfo.cpfCnpj;
+  const document = await resolveOrgBillingDocument(
+    intent.organizationId,
+    intent.document || cardPayload.creditCardHolderInfo.cpfCnpj,
+  );
   const changeType = readCheckoutChangeType(intent.checkoutPayload);
+  const liveSubId = liveAsaasResourceId(sub?.providerSubscriptionId);
   const isPlanChange =
-    Boolean(sub?.providerSubscriptionId) &&
+    Boolean(liveSubId) &&
     sub?.status === "ACTIVE" &&
     (changeType === "plan_change" || sub.planId !== planId);
   const amountBrl = await resolveCheckoutAmountBrl(
@@ -587,7 +728,9 @@ export async function paySubscriptionIntentWithCard(
         organizationId: intent.organizationId,
         cpfCnpj: document,
         email: intent.email,
-        storedCustomerId: sub?.providerCustomerId ?? intent.providerCustomerId,
+        storedCustomerId:
+          liveAsaasResourceId(sub?.providerCustomerId) ??
+          liveAsaasResourceId(intent.providerCustomerId),
       });
     } catch (err) {
       if (
@@ -611,8 +754,11 @@ export async function paySubscriptionIntentWithCard(
   try {
     let result: Awaited<ReturnType<PaymentGateway["createSubscriptionWithCard"]>>;
 
-    if (isPlanChange && sub?.providerSubscriptionId) {
-      const customerId = resolvedCustomerId ?? sub.providerCustomerId ?? "";
+    if (isPlanChange && liveSubId) {
+      const customerId =
+        resolvedCustomerId ??
+        liveAsaasResourceId(sub?.providerCustomerId) ??
+        "";
       if (!customerId) {
         throw new PaymentGatewayError(
           "Cliente Asaas não encontrado para alteração de plano",
@@ -623,12 +769,12 @@ export async function paySubscriptionIntentWithCard(
       if (asaasCfg) {
         await assertAsaasSubscriptionBelongsToCustomer(
           asaasCfg,
-          sub.providerSubscriptionId,
+          liveSubId,
           customerId,
         );
       }
       result = await gw.upgradeSubscriptionWithCard({
-        subscriptionId: sub.providerSubscriptionId,
+        subscriptionId: liveSubId,
         customerId,
         value: amountBrl,
         description: `Assinatura PedixPro — Plano ${def.name}`,
@@ -638,7 +784,10 @@ export async function paySubscriptionIntentWithCard(
       });
     } else {
       result = await gw.createSubscriptionWithCard({
-        customerId: resolvedCustomerId ?? sub?.providerCustomerId ?? intent.providerCustomerId ?? undefined,
+        customerId:
+          resolvedCustomerId ??
+          liveAsaasResourceId(sub?.providerCustomerId) ??
+          liveAsaasResourceId(intent.providerCustomerId),
         customer: {
           name: intent.companyName.trim(),
           email: intent.email,
@@ -670,6 +819,7 @@ export async function paySubscriptionIntentWithCard(
           planId,
           amountBrl,
           paymentMode: "in_app_card",
+          paymentMethod: "CREDIT_CARD",
           changeType: isPlanChange ? "plan_change" : "initial",
           previousPlanId: readPreviousPlanId(intent.checkoutPayload),
           creditCardBrand: result.creditCardBrand ?? null,
@@ -695,16 +845,247 @@ export async function paySubscriptionIntentWithCard(
         providerSubscriptionId: result.subscriptionId,
       });
       await syncPlanFromAsaasProvider(intent.organizationId, { force: true });
-      return { intentId, status: "ACTIVE" };
+      return { intentId, status: "ACTIVE", paymentMethod: "CREDIT_CARD" };
     }
 
-    return { intentId, status: "PROCESSING" };
+    return { intentId, status: "PROCESSING", paymentMethod: "CREDIT_CARD" };
   } catch (err) {
     const code = err instanceof PaymentGatewayError ? err.code : "PAYMENT_FAILED";
     const http =
       err instanceof PaymentGatewayError && err.status ? err.status : 402;
     const message = sanitizePaymentErrorMessage(
       err instanceof Error ? err.message : "Pagamento recusado",
+    );
+    await prisma.checkoutIntent.update({
+      where: { id: intent.id },
+      data: { status: "FAILED", errorCode: code },
+    });
+    throw Object.assign(new Error(message), { code, http, intentId });
+  }
+}
+
+export async function paySubscriptionIntentWithCharge(
+  intentId: string,
+  billingType: "PIX" | "BOLETO",
+  auth?: { organizationId: string; userId: string; role: string },
+  gateway?: PaymentGateway,
+): Promise<PayIntentResult> {
+  const intent = await prisma.checkoutIntent.findUnique({
+    where: { id: intentId },
+  });
+  if (!intent?.organizationId) {
+    throw Object.assign(new Error("Intenção não encontrada"), {
+      code: "NOT_FOUND",
+      http: 404,
+    });
+  }
+  if (intent.status === "COMPLETED") {
+    throw Object.assign(new Error("Contratação já concluída"), {
+      code: "ALREADY_COMPLETED",
+      http: 400,
+    });
+  }
+  if (intent.status === "PAYMENT_PROCESSING") {
+    const current = readPayMethod(intent.checkoutPayload);
+    const instructions = readPaymentInstructions(intent.checkoutPayload);
+    if (current === billingType && instructions) {
+      return {
+        intentId,
+        status: "PROCESSING",
+        paymentMethod: billingType,
+        instructions,
+      };
+    }
+    throw Object.assign(
+      new Error("Já existe um pagamento em andamento nesta contratação."),
+      { code: "PAYMENT_IN_PROGRESS", http: 409 },
+    );
+  }
+  if (!["CREATED", "CHECKOUT_CREATED", "FAILED", "EXPIRED", "CANCELED"].includes(intent.status)) {
+    throw Object.assign(new Error("Intenção não elegível para pagamento"), {
+      code: "NOT_PAYABLE",
+      http: 400,
+    });
+  }
+
+  assertCanPayIntent(intent, auth);
+
+  const planId = isPlanId(intent.planId) ? intent.planId : DEFAULT_PLAN_ID;
+  const def = getPlanDefinition(planId);
+  const gw = requireGateway(gateway);
+  const sub = await prisma.organizationSubscription.findUnique({
+    where: { organizationId: intent.organizationId },
+  });
+  const billing = await loadCustomerBillingProfile(
+    intent.organizationId,
+    intent.phone,
+  );
+  const document = await resolveOrgBillingDocument(
+    intent.organizationId,
+    intent.document,
+  );
+  const changeType = readCheckoutChangeType(intent.checkoutPayload);
+  const liveSubId = liveAsaasResourceId(sub?.providerSubscriptionId);
+  const isPlanChange =
+    Boolean(liveSubId) &&
+    sub?.status === "ACTIVE" &&
+    (changeType === "plan_change" || sub.planId !== planId);
+  const amountBrl = await resolveCheckoutAmountBrl(
+    planId,
+    intent.organizationId,
+    isPlanChange,
+  );
+
+  const asaasCfg = readAsaasConfig();
+  let resolvedCustomerId: string | undefined;
+  if (asaasCfg) {
+    try {
+      resolvedCustomerId = await resolveAsaasCustomerForOrg(asaasCfg, {
+        organizationId: intent.organizationId,
+        cpfCnpj: document,
+        email: intent.email,
+        storedCustomerId:
+          liveAsaasResourceId(sub?.providerCustomerId) ??
+          liveAsaasResourceId(intent.providerCustomerId),
+      });
+    } catch (err) {
+      if (
+        err instanceof PaymentGatewayError &&
+        err.code === "ASAAS_CUSTOMER_NOT_FOUND"
+      ) {
+        const created = await gw.createCustomer({
+          name: intent.companyName.trim(),
+          email: intent.email,
+          cpfCnpj: document,
+          mobilePhone: billing.phone,
+          externalReference: intent.organizationId,
+        });
+        resolvedCustomerId = created.id;
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  const prevPayload =
+    intent.checkoutPayload &&
+    typeof intent.checkoutPayload === "object" &&
+    !Array.isArray(intent.checkoutPayload)
+      ? (intent.checkoutPayload as Record<string, unknown>)
+      : {};
+
+  try {
+    const chargeInput = {
+      customerId:
+        resolvedCustomerId ??
+        liveAsaasResourceId(sub?.providerCustomerId) ??
+        liveAsaasResourceId(intent.providerCustomerId),
+      customer: {
+        name: intent.companyName.trim(),
+        email: intent.email,
+        cpfCnpj: document,
+        mobilePhone: billing.phone,
+        externalReference: intent.organizationId,
+      },
+      customerBilling: billing,
+      value: amountBrl,
+      cycle: "MONTHLY" as const,
+      nextDueDate: nextDueDateIso(),
+      description: `Assinatura PedixPro — Plano ${def.name}`,
+      externalReference: intent.id,
+      billingType,
+    };
+    let result: Awaited<ReturnType<PaymentGateway["createSubscriptionCharge"]>>;
+    if (isPlanChange && liveSubId) {
+      const customerId = chargeInput.customerId ?? "";
+      if (!customerId) {
+        throw new PaymentGatewayError(
+          "Cliente Asaas não encontrado para alteração de plano",
+          "ASAAS_CUSTOMER_REQUIRED",
+          400,
+        );
+      }
+      if (asaasCfg) {
+        await assertAsaasSubscriptionBelongsToCustomer(
+          asaasCfg,
+          liveSubId,
+          customerId,
+        );
+      }
+      try {
+        result = await gw.updateSubscriptionCharge({
+          subscriptionId: liveSubId,
+          customerId,
+          value: amountBrl,
+          description: chargeInput.description,
+          billingType,
+          updatePendingPayments: true,
+        });
+      } catch (err) {
+        if (!isAsaasSubscriptionNotUpdatable(err)) throw err;
+        try {
+          await gw.cancelSubscription(liveSubId);
+        } catch {
+          /* assinatura Pix travada segue; cria outra em boleto */
+        }
+        result = await gw.createSubscriptionCharge({
+          ...chargeInput,
+          customerId,
+        });
+      }
+    } else {
+      result = await gw.createSubscriptionCharge(chargeInput);
+    }
+
+    const instructions: PublicPaymentInstructions = {
+      paymentId: result.instructions.paymentId,
+      pix: result.instructions.pix,
+      boleto: result.instructions.boleto,
+    };
+
+    await prisma.checkoutIntent.update({
+      where: { id: intent.id },
+      data: {
+        status: "PAYMENT_PROCESSING",
+        providerCustomerId: result.customerId,
+        providerSubscriptionId: result.subscriptionId,
+        providerCheckoutId: null,
+        checkoutUrl: null,
+        errorCode: null,
+        checkoutPayload: {
+          ...prevPayload,
+          planId,
+          amountBrl,
+          paymentMode: billingType === "PIX" ? "in_app_pix" : "in_app_boleto",
+          paymentMethod: billingType,
+          changeType: isPlanChange ? "plan_change" : "initial",
+          previousPlanId: readPreviousPlanId(intent.checkoutPayload),
+          instructions,
+        },
+      },
+    });
+
+    await prisma.organizationSubscription.update({
+      where: { organizationId: intent.organizationId },
+      data: {
+        provider: "asaas",
+        providerCustomerId: result.customerId,
+        providerSubscriptionId: result.subscriptionId,
+      },
+    });
+
+    return {
+      intentId,
+      status: "PROCESSING",
+      paymentMethod: billingType,
+      instructions,
+    };
+  } catch (err) {
+    const code = err instanceof PaymentGatewayError ? err.code : "PAYMENT_FAILED";
+    const http =
+      err instanceof PaymentGatewayError && err.status ? err.status : 402;
+    const message = sanitizePaymentErrorMessage(
+      err instanceof Error ? err.message : "Não foi possível gerar a cobrança",
     );
     await prisma.checkoutIntent.update({
       where: { id: intent.id },
@@ -726,7 +1107,7 @@ export async function getOpenCheckoutForOrg(organizationId: string) {
   const intent = await prisma.checkoutIntent.findFirst({
     where: {
       organizationId,
-      status: { in: ["CREATED", "CHECKOUT_CREATED", "FAILED", "EXPIRED", "CANCELED"] },
+      status: { in: ["CREATED", "CHECKOUT_CREATED", "PAYMENT_PROCESSING", "FAILED", "EXPIRED", "CANCELED"] },
     },
     orderBy: { createdAt: "desc" },
     select: {
@@ -795,6 +1176,8 @@ export async function getPublicIntentStatus(intentId: string) {
     checkoutUrl: null,
     changeType: readCheckoutChangeType(intent.checkoutPayload),
     previousPlanId: readPreviousPlanId(intent.checkoutPayload),
+    paymentMethod: readPayMethod(intent.checkoutPayload),
+    instructions: readPaymentInstructions(intent.checkoutPayload),
     billingDefaults: {
       email: intent.email,
       holderName: intent.adminName || intent.companyName,

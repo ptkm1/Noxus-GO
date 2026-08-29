@@ -17,6 +17,27 @@ export type PublicIntentNextAction =
   | "ENTER_APP"
   | "NONE";
 
+export type SubscriptionPayMethod = "CREDIT_CARD" | "PIX" | "BOLETO";
+
+export type PublicPixInstructions = {
+  encodedImage: string;
+  payload: string;
+  expirationDate: string | null;
+};
+
+export type PublicBoletoInstructions = {
+  bankSlipUrl: string | null;
+  invoiceUrl: string | null;
+  identificationField: string | null;
+  barCode: string | null;
+};
+
+export type PublicPaymentInstructions = {
+  paymentId: string;
+  pix?: PublicPixInstructions;
+  boleto?: PublicBoletoInstructions;
+};
+
 /** Status internos persistidos em CheckoutIntent.status */
 export const CHECKOUT_INTENT_STATUSES = [
   "CREATED",

@@ -78,6 +78,7 @@ export function SubscriptionCardForm({
           method: "POST",
           skipAuth,
           body: JSON.stringify({
+            method: "CREDIT_CARD",
             creditCard: {
               holderName,
               number: normalizeCardNumber(number),

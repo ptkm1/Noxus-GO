@@ -83,6 +83,7 @@ import {
   ReportSalesSummaryPage,
   ReportSellerRankingPage,
 } from "./pages/ReportSalesCatalogPages";
+import { ReportFinancialResultPage } from "./pages/ReportFinancialResultPage";
 import { ReportsHubPage } from "./pages/ReportsHubPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { ReportStockPage } from "./pages/ReportStockPage";
@@ -474,6 +475,10 @@ function AppRoutes() {
             <Route
               path="relatorios/vendas/resumo"
               element={<ReportSalesSummaryPage />}
+            />
+            <Route
+              path="relatorios/vendas/resultado-financeiro"
+              element={<ReportFinancialResultPage />}
             />
             <Route
               path="relatorios/vendas/detalhadas"

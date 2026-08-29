@@ -1,5 +1,8 @@
+import { BillingMethodTabs } from "@/components/billing/BillingMethodTabs";
+import { BoletoChargePanel } from "@/components/billing/BoletoChargePanel";
+import { PixChargePanel } from "@/components/billing/PixChargePanel";
 import { SubscriptionCardForm } from "@/components/billing/SubscriptionCardForm";
-import { formatPlanPriceBrl, getPlanDefinition, isPlanId, planSeatPriceCaption, type PlanId } from "@pedidos/shared";
+import { formatPlanPriceBrl, getPlanDefinition, isPlanId, planSeatPriceCaption, type PlanId, type PublicPaymentInstructions, type SubscriptionPayMethod } from "@pedidos/shared";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth, type User } from "../auth/AuthContext";
@@ -15,6 +18,8 @@ type IntentStatus = {
   amountBrl?: number;
   changeType?: "plan_change" | "initial" | null;
   previousPlanId?: string | null;
+  paymentMethod?: SubscriptionPayMethod | null;
+  instructions?: PublicPaymentInstructions | null;
   billingDefaults?: {
     email?: string;
     holderName?: string;
@@ -70,6 +75,9 @@ export function PaymentPendingPage() {
   const [chargedAmountBrl, setChargedAmountBrl] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [processingPayment, setProcessingPayment] = useState(false);
+  const [payMethod, setPayMethod] = useState<SubscriptionPayMethod>("CREDIT_CARD");
+  const [instructions, setInstructions] = useState<PublicPaymentInstructions | null>(null);
+  const [generatingCharge, setGeneratingCharge] = useState(false);
   const [entering, setEntering] = useState(
     params.get("paid") === "1" || params.get("paid") === "true",
   );
@@ -177,6 +185,14 @@ export function PaymentPendingPage() {
       if (data.changeType === "plan_change") changeFlowRef.current = true;
     }
     if (data.previousPlanId) setPreviousPlanId(data.previousPlanId);
+    if (data.paymentMethod) setPayMethod(data.paymentMethod);
+    if (data.instructions) {
+      setInstructions(data.instructions);
+      if (data.paymentMethod === "PIX" || data.paymentMethod === "BOLETO") {
+        paymentStartedRef.current = true;
+        setProcessingPayment(true);
+      }
+    }
     if (
       data.status === "ACTIVE" &&
       (data.nextAction === "ENTER_APP" || data.nextAction === "LOGIN")
@@ -327,10 +343,19 @@ export function PaymentPendingPage() {
     );
   }
 
-  async function handleCardPaid(result: { status: string; intentId: string }) {
+  async function handleCardPaid(result: {
+    status: string;
+    intentId: string;
+    paymentMethod?: string | null;
+    instructions?: PublicPaymentInstructions | null;
+  }) {
     paymentStartedRef.current = true;
     setProcessingPayment(true);
     setError(null);
+    if (result.instructions) setInstructions(result.instructions);
+    if (result.paymentMethod === "PIX" || result.paymentMethod === "BOLETO") {
+      setPayMethod(result.paymentMethod);
+    }
     if (result.status === "ACTIVE") {
       await enterAppAfterPayment(result.intentId);
       return;
@@ -348,13 +373,43 @@ export function PaymentPendingPage() {
     }
   }
 
+  async function startCharge(method: "PIX" | "BOLETO") {
+    if (!intentId || generatingCharge) return;
+    setGeneratingCharge(true);
+    setError(null);
+    try {
+      const result = await apiFetch<{
+        intentId: string;
+        status: string;
+        paymentMethod?: string | null;
+        instructions?: PublicPaymentInstructions | null;
+      }>(`/billing/subscription-intents/${intentId}/pay`, {
+        method: "POST",
+        skipAuth: !getAccessToken(),
+        body: JSON.stringify({ method }),
+      });
+      await handleCardPaid(result);
+    } catch (ex) {
+      setError(ex instanceof Error ? ex.message : "Não foi possível gerar a cobrança");
+    } finally {
+      setGeneratingCharge(false);
+    }
+  }
+
   const plan = getPlanDefinition(String(planId));
   const previousPlan =
     previousPlanId != null ? getPlanDefinition(String(previousPlanId)) : null;
   const chargeBrl = chargedAmountBrl ?? plan.monthlyPriceBrl;
   const isPlanChange = isPlanChangeFlow && previousPlan != null;
+  const awaitingPixOrBoleto =
+    processingPayment &&
+    (payMethod === "PIX" || payMethod === "BOLETO") &&
+    Boolean(instructions?.pix || instructions?.boleto);
   const showForm =
-    Boolean(intentId) && !entering && !processingPayment && (isPlanChangeFlow || user?.accessStatus !== "ACTIVE");
+    Boolean(intentId) &&
+    !entering &&
+    (!processingPayment || awaitingPixOrBoleto) &&
+    (isPlanChangeFlow || user?.accessStatus !== "ACTIVE");
 
   if (entering) {
     return (
@@ -375,7 +430,7 @@ export function PaymentPendingPage() {
     );
   }
 
-  if (processingPayment) {
+  if (processingPayment && !awaitingPixOrBoleto) {
     return (
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center p-4 pb-10">
         <div className="glass glow-primary w-full max-w-md rounded-2xl border border-border/50 p-8 text-center shadow-2xl">
@@ -402,14 +457,14 @@ export function PaymentPendingPage() {
             <>
               Alterando de <strong>{previousPlan.name}</strong> (
               {planSeatPriceCaption(previousPlan)}) para{" "}
-              <strong>{plan.name}</strong> ({formatPlanPriceBrl(chargeBrl)}
-              /mês). Confirme o cartão para concluir.
+              <strong>{plan.name}</strong> (              {formatPlanPriceBrl(chargeBrl)}
+              /mês). Escolha a forma de pagamento para concluir.
             </>
           ) : isPlanChangeFlow ? (
             <>
               Novo plano: <strong>{plan.name}</strong> (
-              {formatPlanPriceBrl(chargeBrl)}/mês). Confirme o cartão para
-              concluir a alteração.
+              {formatPlanPriceBrl(chargeBrl)}/mês). Escolha a forma de pagamento
+              para concluir a alteração.
             </>
           ) : user?.orgAccessMessage ? (
             <>{user.orgAccessMessage}</>
@@ -423,22 +478,69 @@ export function PaymentPendingPage() {
         {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
 
         {showForm ? (
-          <div className="mt-6">
-            <SubscriptionCardForm
-              intentId={intentId}
-              planName={plan.name}
-              amountBrl={chargeBrl}
-              skipAuth={!getAccessToken()}
-              defaults={{
-                holderName: user?.name ?? billingDefaults?.holderName,
-                holderFullName: user?.name ?? billingDefaults?.holderFullName,
-                email: user?.email ?? billingDefaults?.email,
-                cpfCnpj: billingDefaults?.cpfCnpj,
-                mobilePhone: billingDefaults?.mobilePhone,
-              }}
-              onPaid={handleCardPaid}
-              onError={setError}
+          <div className="mt-6 space-y-4">
+            <BillingMethodTabs
+              value={payMethod}
+              onChange={setPayMethod}
+              disabled={awaitingPixOrBoleto || generatingCharge}
             />
+            {awaitingPixOrBoleto && payMethod === "PIX" && instructions?.pix ? (
+              <PixChargePanel pix={instructions.pix} amountBrl={chargeBrl} />
+            ) : awaitingPixOrBoleto &&
+              payMethod === "BOLETO" &&
+              instructions?.boleto ? (
+              <BoletoChargePanel
+                boleto={instructions.boleto}
+                amountBrl={chargeBrl}
+              />
+            ) : payMethod === "PIX" ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Geramos um QR Code Pix. O acesso libera assim que o pagamento
+                  for confirmado.
+                </p>
+                <Button
+                  type="button"
+                  className="w-full"
+                  disabled={generatingCharge}
+                  onClick={() => void startCharge("PIX")}
+                >
+                  {generatingCharge ? "Gerando Pix…" : `Gerar Pix de R$ ${chargeBrl}`}
+                </Button>
+              </div>
+            ) : payMethod === "BOLETO" ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Geramos um boleto mensal. O acesso libera após a compensação.
+                </p>
+                <Button
+                  type="button"
+                  className="w-full"
+                  disabled={generatingCharge}
+                  onClick={() => void startCharge("BOLETO")}
+                >
+                  {generatingCharge
+                    ? "Gerando boleto…"
+                    : `Gerar boleto de R$ ${chargeBrl}`}
+                </Button>
+              </div>
+            ) : (
+              <SubscriptionCardForm
+                intentId={intentId}
+                planName={plan.name}
+                amountBrl={chargeBrl}
+                skipAuth={!getAccessToken()}
+                defaults={{
+                  holderName: user?.name ?? billingDefaults?.holderName,
+                  holderFullName: user?.name ?? billingDefaults?.holderFullName,
+                  email: user?.email ?? billingDefaults?.email,
+                  cpfCnpj: billingDefaults?.cpfCnpj,
+                  mobilePhone: billingDefaults?.mobilePhone,
+                }}
+                onPaid={handleCardPaid}
+                onError={setError}
+              />
+            )}
           </div>
         ) : null}
 

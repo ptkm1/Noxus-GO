@@ -3,6 +3,7 @@ import {
   readPaymentGatewayMode,
 } from "./asaas/asaas-config.js";
 import { createAsaasPaymentGateway } from "./asaas/asaas-payment-gateway.js";
+import { FakePaymentGateway } from "./fake-payment-gateway.js";
 import type { PaymentGateway } from "./payment-gateway.js";
 
 /**
@@ -12,7 +13,7 @@ import type { PaymentGateway } from "./payment-gateway.js";
  */
 export function isPaymentRequiredForSignup(): boolean {
   const mode = readPaymentGatewayMode();
-  if (mode === "asaas") return true;
+  if (mode === "asaas" || mode === "fake") return true;
   return Boolean(readAsaasConfig());
 }
 
@@ -20,6 +21,9 @@ export function resolvePaymentGateway(
   override?: PaymentGateway,
 ): PaymentGateway | null {
   if (override) return override;
+  if (readPaymentGatewayMode() === "fake") {
+    return new FakePaymentGateway();
+  }
   const cfg = readAsaasConfig();
   if (cfg) return createAsaasPaymentGateway(cfg);
   return null;

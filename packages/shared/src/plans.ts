@@ -30,6 +30,8 @@ export type PlanLimits = {
   maxSellers: number | null;
   /** Acessos administrativos (ADMIN + MANAGER) inclusos na mensalidade base */
   includedAdmins: number;
+  /** Indicadores simultâneos no painel. null = todos os disponíveis */
+  maxHomeIndicators: number | null;
 };
 
 export const SELLER_SEAT_PRICE_BRL = 29.9;
@@ -118,7 +120,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     sellerSeatPriceBrl: SELLER_SEAT_PRICE_BRL,
     extraAdminSeatPriceBrl: EXTRA_ADMIN_SEAT_PRICE_BRL,
     features: START_FEATURES,
-    limits: { maxSellers: null, includedAdmins: 1 },
+    limits: { maxSellers: null, includedAdmins: 1, maxHomeIndicators: 3 },
     marketingFeatures: [
       "App de força de vendas",
       "Funcionamento offline",
@@ -130,6 +132,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
       "Controle de contas a pagar",
       "Relatórios básicos",
       "Logo personalizada",
+      "Até 3 indicadores no painel",
       "1 acesso administrativo",
     ],
   },
@@ -143,7 +146,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     sellerSeatPriceBrl: SELLER_SEAT_PRICE_BRL,
     extraAdminSeatPriceBrl: EXTRA_ADMIN_SEAT_PRICE_BRL,
     features: PRO_FEATURES,
-    limits: { maxSellers: null, includedAdmins: 2 },
+    limits: { maxSellers: null, includedAdmins: 2, maxHomeIndicators: 6 },
     highlighted: true,
     marketingFeatures: [
       "Tudo do plano Start",
@@ -157,6 +160,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
       "Fluxo integrado de pedido → NF-e → expedição",
       "Insights",
       "Análise e acompanhamento de indicadores da operação",
+      "Até 6 indicadores no painel",
     ],
   },
   business: {
@@ -169,7 +173,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     sellerSeatPriceBrl: SELLER_SEAT_PRICE_BRL,
     extraAdminSeatPriceBrl: EXTRA_ADMIN_SEAT_PRICE_BRL,
     features: BUSINESS_FEATURES,
-    limits: { maxSellers: null, includedAdmins: 6 },
+    limits: { maxSellers: null, includedAdmins: 6, maxHomeIndicators: null },
     marketingFeatures: [
       "Tudo do plano Pro",
       "6 acessos administrativos",
@@ -181,6 +185,7 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
       "Relatórios avançados",
       "Análise de IA nos relatórios",
       "Insights avançados",
+      "Indicadores ilimitados no painel",
       "Localização dos vendedores em tempo real",
       "Acompanhamento da equipe externa",
       "Funções personalizadas sob demanda",

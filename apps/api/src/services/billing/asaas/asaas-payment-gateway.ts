@@ -1,8 +1,13 @@
 import {
     PaymentGatewayError,
+    type GatewayChargeBillingType,
+    type GatewayChargeInstructions,
     type GatewayCustomer,
     type GatewayCustomerBilling,
     type GatewayCustomerInput,
+    type GatewaySubscriptionChargeInput,
+    type GatewaySubscriptionChargeResult,
+    type GatewaySubscriptionChargeUpdateInput,
     type GatewaySubscriptionCheckout,
     type GatewaySubscriptionCheckoutInput,
     type GatewaySubscriptionUpgradeInput,
@@ -186,7 +191,7 @@ export function createAsaasPaymentGateway(cfg: AsaasConfig): PaymentGateway {
       const billing = input.customerData?.billing;
 
       const body: Record<string, unknown> = {
-        billingTypes: ["CREDIT_CARD"],
+        billingTypes: ["CREDIT_CARD", "PIX", "BOLETO"],
         chargeTypes: ["RECURRENT"],
         minutesToExpire: input.minutesToExpire,
         callback: {
@@ -399,6 +404,182 @@ export function createAsaasPaymentGateway(cfg: AsaasConfig): PaymentGateway {
           }),
         },
       );
+    },
+
+    async createSubscriptionCharge(
+      input: GatewaySubscriptionChargeInput,
+    ): Promise<GatewaySubscriptionChargeResult> {
+      let customerId = input.customerId;
+      if (!customerId && input.customer) {
+        const created = await this.createCustomer(input.customer);
+        customerId = created.id;
+      }
+      if (!customerId) {
+        throw new PaymentGatewayError(
+          "Cliente Asaas obrigatório",
+          "ASAAS_CUSTOMER_REQUIRED",
+          400,
+        );
+      }
+
+      if (input.customer && input.customerBilling) {
+        await syncCustomerBilling(
+          cfg,
+          customerId,
+          input.customer.name,
+          input.customer.email,
+          input.customerBilling,
+        );
+      }
+
+      const data = await asaasFetch<AsaasSubscriptionResponse>(
+        cfg,
+        "/subscriptions",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            customer: customerId,
+            billingType: input.billingType,
+            value: input.value,
+            cycle: input.cycle,
+            nextDueDate: input.nextDueDate,
+            description: input.description.slice(0, 500),
+            externalReference: input.externalReference,
+          }),
+        },
+      );
+
+      if (!data?.id) {
+        throw new PaymentGatewayError(
+          "Assinatura Asaas inválida",
+          "ASAAS_SUBSCRIPTION_INVALID",
+        );
+      }
+
+      const instructions = await loadChargeInstructions(
+        cfg,
+        data.id,
+        input.billingType,
+      );
+
+      return {
+        subscriptionId: data.id,
+        customerId,
+        status: data.status ?? null,
+        instructions,
+      };
+    },
+
+    async updateSubscriptionCharge(
+      input: GatewaySubscriptionChargeUpdateInput,
+    ): Promise<GatewaySubscriptionChargeResult> {
+      await asaasFetch<AsaasSubscriptionResponse>(
+        cfg,
+        `/subscriptions/${input.subscriptionId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            billingType: input.billingType,
+            value: input.value,
+            description: input.description.slice(0, 500),
+            updatePendingPayments: input.updatePendingPayments,
+          }),
+        },
+      );
+
+      const instructions = await loadChargeInstructions(
+        cfg,
+        input.subscriptionId,
+        input.billingType,
+      );
+
+      return {
+        subscriptionId: input.subscriptionId,
+        customerId: input.customerId,
+        instructions,
+      };
+    },
+  };
+}
+
+type AsaasPayment = {
+  id?: string;
+  status?: string;
+  bankSlipUrl?: string;
+  invoiceUrl?: string;
+  identificationField?: string;
+  barCode?: string;
+};
+
+type AsaasPaymentList = { data?: AsaasPayment[] };
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForSubscriptionPayment(
+  cfg: AsaasConfig,
+  subscriptionId: string,
+): Promise<AsaasPayment> {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const list = await asaasFetch<AsaasPaymentList>(
+      cfg,
+      `/payments?subscription=${encodeURIComponent(subscriptionId)}&limit=5`,
+    );
+    const payment = list.data?.find((p) => p.id);
+    if (payment?.id) return payment;
+    await sleep(350);
+  }
+  throw new PaymentGatewayError(
+    "Cobrança Asaas ainda não disponível. Tente novamente em instantes.",
+    "ASAAS_PAYMENT_PENDING",
+    502,
+  );
+}
+
+async function loadChargeInstructions(
+  cfg: AsaasConfig,
+  subscriptionId: string,
+  billingType: GatewayChargeBillingType,
+): Promise<GatewayChargeInstructions> {
+  const payment = await waitForSubscriptionPayment(cfg, subscriptionId);
+  if (!payment.id) {
+    throw new PaymentGatewayError(
+      "Pagamento Asaas sem id",
+      "ASAAS_PAYMENT_INVALID",
+    );
+  }
+  if (billingType === "PIX") {
+    const qr = await asaasFetch<{
+      encodedImage?: string;
+      payload?: string;
+      expirationDate?: string;
+    }>(cfg, `/payments/${payment.id}/pixQrCode`);
+    if (!qr.payload && !qr.encodedImage) {
+      throw new PaymentGatewayError(
+        "QR Code Pix indisponível",
+        "ASAAS_PIX_QR_INVALID",
+        502,
+      );
+    }
+    return {
+      billingType: "PIX",
+      paymentId: payment.id,
+      pix: {
+        encodedImage: qr.encodedImage ?? "",
+        payload: qr.payload ?? "",
+        expirationDate: qr.expirationDate ?? null,
+      },
+    };
+  }
+  return {
+    billingType: "BOLETO",
+    paymentId: payment.id,
+    boleto: {
+      bankSlipUrl: payment.bankSlipUrl ?? null,
+      invoiceUrl: payment.invoiceUrl ?? null,
+      identificationField: payment.identificationField ?? null,
+      barCode: payment.barCode ?? null,
     },
   };
 }
