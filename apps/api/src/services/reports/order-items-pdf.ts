@@ -17,20 +17,8 @@ import {
 } from "./pdf-common.js";
 
 export type OrderItemsPdfFilters = OrdersPdfFilters & {
-  groupByOrder?: boolean;
-};
-
-const ITEMS_TABLE: PdfTable = {
-  columns: [
-    { key: "order", label: "Pedido", width: 55 },
-    { key: "code", label: "Código", width: 68 },
-    { key: "name", label: "Produto", width: 155 },
-    { key: "qtyUnit", label: "Qtd/un", width: 52, align: "right" },
-    { key: "unit", label: "Vlr unit.", width: 70, align: "right" },
-    { key: "discount", label: "Desc.", width: 60, align: "right" },
-    { key: "total", label: "Val total", width: 87, align: "right" },
-  ],
-  rowHeight: 20,
+  /** Soma quantidades e totais do mesmo produto entre os pedidos filtrados. */
+  groupItems?: boolean;
 };
 
 const GROUPED_TABLE: PdfTable = {
@@ -77,7 +65,16 @@ export async function buildOrderItemsPdf(
 
   const orgName = org?.displayName || org?.name || "";
 
-  function itemRows(o: (typeof orders)[number]) {
+  type ItemRow = {
+    code: string;
+    name: string;
+    qtyUnit: string;
+    unit: number;
+    discount: number;
+    total: number;
+  };
+
+  function itemRows(o: (typeof orders)[number]): ItemRow[] {
     return o.items.map((it) => {
       const unit = decToNum(it.unitPrice);
       const disc = lineDiscount({
@@ -97,115 +94,163 @@ export async function buildOrderItemsPdf(
     });
   }
 
-  if (filters.groupByOrder) {
+  function aggregateItemRows(): ItemRow[] {
+    const byProduct = new Map<
+      string,
+      {
+        code: string;
+        name: string;
+        unitLabel: string;
+        quantity: number;
+        discount: number;
+        total: number;
+      }
+    >();
+
+    for (const o of orders) {
+      for (const it of o.items) {
+        const unit = decToNum(it.unitPrice);
+        const disc =
+          lineDiscount({
+            unitPrice: it.unitPrice,
+            basePrice: it.product?.basePrice,
+          }) * it.quantity;
+        const total = unit * it.quantity;
+        const unitLabel = it.product?.purchaseUnit?.trim() || "UN";
+        const code =
+          it.product?.sku || it.product?.barcode || it.productId.slice(0, 8);
+        const existing = byProduct.get(it.productId);
+
+        if (existing) {
+          existing.quantity += it.quantity;
+          existing.discount += disc;
+          existing.total += total;
+        } else {
+          byProduct.set(it.productId, {
+            code,
+            name: it.productName,
+            unitLabel,
+            quantity: it.quantity,
+            discount: disc,
+            total,
+          });
+        }
+      }
+    }
+
+    return [...byProduct.values()]
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+      .map((item) => ({
+        code: item.code,
+        name: item.name,
+        qtyUnit: `${item.quantity} ${item.unitLabel}`,
+        unit: item.quantity > 0 ? item.total / item.quantity : 0,
+        discount: item.discount,
+        total: item.total,
+      }));
+  }
+
+  if (filters.groupItems) {
     return withPdfDoc((doc) => {
-      if (orders.length === 0) {
-        drawHeader(doc, "Relatório de Itens de Pedidos", orgName);
+      const rows = aggregateItemRows();
+
+      drawHeader(
+        doc,
+        "Relatório de Itens de Pedidos (agrupado)",
+        orgName,
+        `${orders.length} pedido(s) · ${new Date().toLocaleString("pt-BR")}`,
+      );
+
+      if (rows.length === 0) {
         drawEmptyState(doc, "Nenhum item encontrado.");
         return;
       }
-      orders.forEach((o, idx) => {
-        if (idx > 0) doc.addPage();
-        drawHeader(
+
+      drawTableHeader(doc, GROUPED_TABLE);
+      let sum = 0;
+      rows.forEach((row, i) => {
+        sum += row.total;
+        drawTableRow(
           doc,
-          `Itens — Pedido ${orderCode(o)}`,
-          orgName,
-          `${idx + 1} de ${orders.length}`,
-        );
-        drawInfoBar(doc, [
-          { label: "Cliente:", value: o.customer?.name ?? "—" },
-          { label: "Vendedor:", value: o.seller.user.name },
+          GROUPED_TABLE,
           {
-            label: "Emissão:",
-            value: o.createdAt.toLocaleString("pt-BR"),
+            code: row.code,
+            name: row.name,
+            qtyUnit: row.qtyUnit,
+            unit: money(row.unit),
+            discount: money(row.discount),
+            total: money(row.total),
           },
-        ]);
-        drawTableHeader(doc, GROUPED_TABLE);
-        let sum = 0;
-        const rows = itemRows(o);
-        rows.forEach((row, i) => {
-          sum += row.total;
-          drawTableRow(
-            doc,
-            GROUPED_TABLE,
-            {
-              code: row.code,
-              name: row.name,
-              qtyUnit: row.qtyUnit,
-              unit: money(row.unit),
-              discount: money(row.discount),
-              total: money(row.total),
-            },
-            {
-              index: i,
-              onNewPage: () =>
-                drawHeader(
-                  doc,
-                  `Itens — Pedido ${orderCode(o)} (cont.)`,
-                  orgName,
-                ),
-            },
-          );
-        });
-        drawTableFooter(doc, `Itens: ${rows.length}`, `Total: ${money(sum)}`);
+          {
+            index: i,
+            onNewPage: () =>
+              drawHeader(
+                doc,
+                "Relatório de Itens de Pedidos (agrupado, cont.)",
+                orgName,
+              ),
+          },
+        );
       });
+      drawTableFooter(
+        doc,
+        `Produtos distintos: ${rows.length}`,
+        `Total geral: ${money(sum)}`,
+      );
     });
   }
 
   return withPdfDoc((doc) => {
-    const all = orders.flatMap((o) =>
-      itemRows(o).map((row) => ({
-        ...row,
-        orderLabel: orderCode(o),
-      })),
-    );
-
-    drawHeader(
-      doc,
-      "Relatório de Itens de Pedidos",
-      orgName,
-      `${all.length} item(ns) · ${new Date().toLocaleString("pt-BR")}`,
-    );
-
-    if (all.length === 0) {
+    if (orders.length === 0) {
+      drawHeader(doc, "Relatório de Itens de Pedidos", orgName);
       drawEmptyState(doc, "Nenhum item encontrado.");
       return;
     }
-
-    drawTableHeader(doc, ITEMS_TABLE);
-    let sum = 0;
-    all.forEach((row, index) => {
-      sum += row.total;
-      drawTableRow(
+    orders.forEach((o, idx) => {
+      if (idx > 0) doc.addPage();
+      drawHeader(
         doc,
-        ITEMS_TABLE,
-        {
-          order: row.orderLabel,
-          code: row.code,
-          name: row.name,
-          qtyUnit: row.qtyUnit,
-          unit: money(row.unit),
-          discount: money(row.discount),
-          total: money(row.total),
-        },
-        {
-          index,
-          onNewPage: () =>
-            drawHeader(
-              doc,
-              "Relatório de Itens (cont.)",
-              orgName,
-              `${all.length} item(ns)`,
-            ),
-        },
+        `Itens — Pedido ${orderCode(o)}`,
+        orgName,
+        `${idx + 1} de ${orders.length}`,
       );
+      drawInfoBar(doc, [
+        { label: "Cliente:", value: o.customer?.name ?? "—" },
+        { label: "Vendedor:", value: o.seller.user.name },
+        {
+          label: "Emissão:",
+          value: o.createdAt.toLocaleString("pt-BR"),
+        },
+      ]);
+      drawTableHeader(doc, GROUPED_TABLE);
+      let sum = 0;
+      const rows = itemRows(o);
+      rows.forEach((row, i) => {
+        sum += row.total;
+        drawTableRow(
+          doc,
+          GROUPED_TABLE,
+          {
+            code: row.code,
+            name: row.name,
+            qtyUnit: row.qtyUnit,
+            unit: money(row.unit),
+            discount: money(row.discount),
+            total: money(row.total),
+          },
+          {
+            index: i,
+            onNewPage: () =>
+              drawHeader(
+                doc,
+                `Itens — Pedido ${orderCode(o)} (cont.)`,
+                orgName,
+              ),
+          },
+        );
+      });
+      drawTableFooter(doc, `Itens: ${rows.length}`, `Total: ${money(sum)}`);
     });
-
-    drawTableFooter(
-      doc,
-      `Total de linhas: ${all.length}`,
-      `Total geral: ${money(sum)}`,
-    );
   });
 }
 

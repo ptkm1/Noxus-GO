@@ -196,6 +196,7 @@ export function resourceForPath(pathname: string): PermissionResource | null {
   if (pathname.startsWith("/configuracoes")) return null;
   if (pathname.startsWith("/permissoes")) return "permissions";
   if (pathname.startsWith("/auditoria")) return "audit";
+  if (pathname.startsWith("/guia") || pathname.startsWith("/ajuda")) return null;
   return null;
 }
 

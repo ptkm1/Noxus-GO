@@ -11,6 +11,7 @@ import {
 import { AppSelect } from "@/components/ui/app-select";
 import { Input } from "@/components/ui/input";
 import { apiFetch, downloadPdf } from "@/lib/api";
+import { STOCK_VALUE_BASIS_OPTIONS, type StockValueBasis } from "@pedidos/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -21,6 +22,8 @@ export function ReportStockPage() {
   const [supplierId, setSupplierId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [q, setQ] = useState("");
+  const [stockValueBasis, setStockValueBasis] =
+    useState<StockValueBasis>("none");
   const [extras, setExtras] = useState<ExtraFilterRow[]>([]);
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -38,6 +41,7 @@ export function ReportStockPage() {
     setSupplierId("");
     setCategoryId("");
     setQ("");
+    setStockValueBasis("none");
     setExtras([]);
     setErr(null);
   }
@@ -50,6 +54,9 @@ export function ReportStockPage() {
       if (supplierId) params.set("supplierId", supplierId);
       if (categoryId) params.set("categoryId", categoryId);
       if (q.trim()) params.set("q", q.trim());
+      if (stockValueBasis !== "none") {
+        params.set("stockValueBasis", stockValueBasis);
+      }
       appendExtraFilters(params, extras);
       await downloadPdf(
         `/admin/reports/stock.pdf?${params.toString()}`,
@@ -96,6 +103,16 @@ export function ReportStockPage() {
           placeholder="Nome, SKU ou código de barras"
           value={q}
           onChange={(e) => setQ(e.target.value)}
+        />
+      </ReportField>
+      <ReportField label="Valor do Estoque">
+        <AppSelect
+          value={stockValueBasis}
+          onValueChange={(v) => setStockValueBasis(v as StockValueBasis)}
+          options={STOCK_VALUE_BASIS_OPTIONS.map((o) => ({
+            value: o.value,
+            label: o.label,
+          }))}
         />
       </ReportField>
       <ReportField label="Formato">

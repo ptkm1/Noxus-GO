@@ -1,11 +1,13 @@
 import {
+    capHomeIndicators,
     HOME_CHART_INDICATOR_KEYS,
     HOME_INDICATOR_KEYS,
+    homeIndicatorLimitForPlan,
     isLifecycleSituationCode,
     isReservedSituationCode,
-    MAX_HOME_INDICATORS,
-    normalizeHomeIndicators,
     normalizePurchaseUnitCode,
+    parseHomeIndicators,
+    persistHomeIndicatorsError,
     uniqueIdsPreserveOrder,
     type HomeChartIndicatorKey,
     type HomeIndicatorKey,
@@ -17,7 +19,6 @@ import {
     type PromotionScope,
 } from "@prisma/client";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
-import PDFDocument from "pdfkit";
 import { z } from "zod";
 import { verifyAccessToken, type AccessPayload } from "../auth/jwt.js";
 import {
@@ -27,6 +28,7 @@ import {
     isOrgStaff,
     isTeamLeaderAuth,
     isTeamLeaderGetAllowed,
+    isTeamLeaderWriteAllowed,
     orderScopeWhere,
     requireAdmin,
     requireOrgStaff,
@@ -48,6 +50,7 @@ import {
 } from "../services/audit-log.js";
 import { assertAdminPathPlanFeature } from "../services/billing/plan-gate.js";
 import { syncSubscriptionSeats } from "../services/billing/seats.js";
+import { ensureOrgSubscription } from "../services/billing/subscription.js";
 import {
     maybeInactivateStaleCustomersForOrg,
 } from "../services/customer-status.js";
@@ -109,6 +112,11 @@ import {
     buildStockHealthReport,
     buildVisitEffectiveness,
 } from "../services/management-reports.js";
+import {
+    buildFinancialResult,
+    buildFinancialResultPdf,
+    type FinancialPeriodGroup,
+} from "../services/financial-result-report.js";
 import { getOrCreateMorningBrief } from "../services/morning-brief.js";
 import { getWebPushPublicKey, notifyUsers } from "../services/notify.js";
 import {
@@ -176,9 +184,10 @@ import { buildCustomersPdf } from "../services/reports/customers-pdf.js";
 import { readExtraParams } from "../services/reports/extra-filters.js";
 import { buildOrderItemsPdf } from "../services/reports/order-items-pdf.js";
 import { buildOrdersPdf } from "../services/reports/orders-pdf.js";
-import { orderCode } from "../services/reports/pdf-common.js";
 import { buildRouteRomaneioPdf } from "../services/reports/route-romaneio-pdf.js";
+import { buildSalesDetailedPdf } from "../services/reports/sales-pdf.js";
 import { buildStockPdf } from "../services/reports/stock-pdf.js";
+import { buildStockCountPdf } from "../services/reports/stock-count-pdf.js";
 import {
     adminPathToResource,
     buildEffectivePermissionsMatrix,
@@ -399,6 +408,12 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         if (auth.role === "MANAGER" && isManagerWriteAllowed(routePath)) {
           return;
         }
+        if (
+          isTeamLeaderAuth(auth) &&
+          isTeamLeaderWriteAllowed(routePath)
+        ) {
+          return;
+        }
         if (!requireAdmin(reply, auth)) return;
         return;
       }
@@ -496,17 +511,21 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   /** Regras de sistema da org (sync de pedidos, etc.). */
   app.get("/system-settings", async (req) => {
     const auth = req.auth!;
-    const org = await prisma.organization.findUnique({
-      where: { id: auth.organizationId },
-      select: {
-        orderSyncMode: true,
-        sellerShowUnassignedCustomers: true,
-        customerRegistrationMode: true,
-        sellerCanEditQueuedSales: true,
-        autoInactivateCustomersAfterMonths: true,
-        homeIndicators: true,
-      },
-    });
+    const [org, sub] = await Promise.all([
+      prisma.organization.findUnique({
+        where: { id: auth.organizationId },
+        select: {
+          orderSyncMode: true,
+          sellerShowUnassignedCustomers: true,
+          customerRegistrationMode: true,
+          sellerCanEditQueuedSales: true,
+          autoInactivateCustomersAfterMonths: true,
+          homeIndicators: true,
+        },
+      }),
+      ensureOrgSubscription(auth.organizationId),
+    ]);
+    const homeIndicatorLimit = homeIndicatorLimitForPlan(sub.planId);
     return {
       orderSyncMode: org?.orderSyncMode ?? ("AUTO" as const),
       sellerShowUnassignedCustomers: org?.sellerShowUnassignedCustomers ?? true,
@@ -515,7 +534,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       sellerCanEditQueuedSales: org?.sellerCanEditQueuedSales ?? false,
       autoInactivateCustomersAfterMonths:
         org?.autoInactivateCustomersAfterMonths ?? false,
-      homeIndicators: normalizeHomeIndicators(org?.homeIndicators),
+      homeIndicators: parseHomeIndicators(org?.homeIndicators),
+      homeIndicatorLimit,
     };
   });
 
@@ -538,8 +558,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         autoInactivateCustomersAfterMonths: z.boolean().optional(),
         homeIndicators: z
           .array(homeIndicatorKeySchema)
-          .min(1)
-          .max(MAX_HOME_INDICATORS)
+          .min(1, "Selecione pelo menos 1 indicador.")
+          .max(HOME_INDICATOR_KEYS.length)
           .optional(),
       })
       .safeParse(req.body);
@@ -558,10 +578,27 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(400).send({ error: "Nada para atualizar" });
     }
 
-    const homeIndicators =
-      body.data.homeIndicators !== undefined
-        ? normalizeHomeIndicators(body.data.homeIndicators)
-        : undefined;
+    const sub = await ensureOrgSubscription(auth.organizationId);
+    const homeIndicatorLimit = homeIndicatorLimitForPlan(sub.planId);
+
+    let homeIndicators: HomeIndicatorKey[] | undefined;
+    if (body.data.homeIndicators !== undefined) {
+      const currentOrg = await prisma.organization.findUnique({
+        where: { id: auth.organizationId },
+        select: { homeIndicators: true },
+      });
+      const current = parseHomeIndicators(currentOrg?.homeIndicators);
+      const next = parseHomeIndicators(body.data.homeIndicators);
+      const persistError = persistHomeIndicatorsError({
+        next,
+        current,
+        limit: homeIndicatorLimit,
+      });
+      if (persistError) {
+        return reply.status(400).send({ error: persistError });
+      }
+      homeIndicators = next;
+    }
 
     const updated = await prisma.organization.update({
       where: { id: auth.organizationId },
@@ -610,7 +647,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       sellerCanEditQueuedSales: updated.sellerCanEditQueuedSales,
       autoInactivateCustomersAfterMonths:
         updated.autoInactivateCustomersAfterMonths,
-      homeIndicators: normalizeHomeIndicators(updated.homeIndicators),
+      homeIndicators: parseHomeIndicators(updated.homeIndicators),
+      homeIndicatorLimit,
     };
   });
 
@@ -2346,6 +2384,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         stockQty: z.number().int().min(0).optional(),
         blockSaleWhenOutOfStock: z.boolean().optional(),
         priceTableId: z.string().optional(),
+        priceTablePrices: z
+          .array(
+            z.object({
+              priceTableId: z.string().min(1),
+              price: z.number().nonnegative(),
+            }),
+          )
+          .optional(),
         ...productCadastroFieldsSchema,
       })
       .safeParse(req.body);
@@ -2368,15 +2414,32 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!supplierOk)
       return reply.status(400).send({ error: "Fornecedor inválido" });
 
-    if (body.data.priceTableId) {
-      const tableOk = await prisma.priceTable.findFirst({
+    const createPriceRows =
+      body.data.priceTablePrices && body.data.priceTablePrices.length > 0
+        ? body.data.priceTablePrices
+        : body.data.priceTableId
+          ? [
+              {
+                priceTableId: body.data.priceTableId,
+                price: body.data.basePrice,
+              },
+            ]
+          : [];
+
+    if (createPriceRows.length > 0) {
+      const tableIds = createPriceRows.map((p) => p.priceTableId);
+      const tables = await prisma.priceTable.findMany({
         where: {
-          id: body.data.priceTableId,
+          id: { in: tableIds },
           organizationId: auth.organizationId,
         },
+        select: { id: true },
       });
-      if (!tableOk)
+      const okIds = new Set(tables.map((t) => t.id));
+      const invalid = tableIds.filter((tid) => !okIds.has(tid));
+      if (invalid.length > 0) {
         return reply.status(400).send({ error: "Tabela de preço inválida" });
+      }
     }
 
     const defs = await loadCategoryDefs(resolvedCatId, auth.organizationId);
@@ -2454,21 +2517,25 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         include: productRelationsInclude,
       });
 
-      if (body.data.priceTableId) {
-        await prisma.priceTableItem.upsert({
-          where: {
-            priceTableId_productId: {
-              priceTableId: body.data.priceTableId,
-              productId: created.id,
-            },
-          },
-          create: {
-            priceTableId: body.data.priceTableId,
-            productId: created.id,
-            price: body.data.basePrice,
-          },
-          update: { price: body.data.basePrice },
-        });
+      if (createPriceRows.length > 0) {
+        await prisma.$transaction(
+          createPriceRows.map((row) =>
+            prisma.priceTableItem.upsert({
+              where: {
+                priceTableId_productId: {
+                  priceTableId: row.priceTableId,
+                  productId: created.id,
+                },
+              },
+              create: {
+                priceTableId: row.priceTableId,
+                productId: created.id,
+                price: row.price,
+              },
+              update: { price: row.price },
+            }),
+          ),
+        );
       }
 
       const actor = await prisma.user.findUnique({
@@ -2500,6 +2567,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           name: created.name,
           stockQty: initialQty,
           priceTableId: body.data.priceTableId ?? null,
+          priceTableCount: createPriceRows.length,
         },
       });
 
@@ -6518,6 +6586,110 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
+  app.get("/reports/financial-result", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({
+        error: "Resultado financeiro disponível apenas para admin/gestor",
+      });
+    }
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        sellerId: z.string().optional(),
+        includeFixedCosts: z
+          .union([z.literal("1"), z.literal("true"), z.literal("0")])
+          .optional(),
+        periodGroup: z.enum(["day", "week", "month"]).optional(),
+      })
+      .safeParse(req.query);
+    let sellerIds: string[] | undefined;
+    if (auth.role === "MANAGER") {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+    if (q.success && q.data.sellerId) {
+      sellerIds = sellerIds
+        ? sellerIds.filter((id) => id === q.data.sellerId)
+        : [q.data.sellerId];
+    }
+    return buildFinancialResult({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerIds,
+      includeFixedCosts:
+        q.success &&
+        (q.data.includeFixedCosts === "1" ||
+          q.data.includeFixedCosts === "true"),
+      periodGroup: (q.success ? q.data.periodGroup : undefined) as
+        | FinancialPeriodGroup
+        | undefined,
+    });
+  });
+
+  app.get("/reports/financial-result.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({
+        error: "Resultado financeiro disponível apenas para admin/gestor",
+      });
+    }
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        sellerId: z.string().optional(),
+        includeFixedCosts: z
+          .union([z.literal("1"), z.literal("true"), z.literal("0")])
+          .optional(),
+        periodGroup: z.enum(["day", "week", "month"]).optional(),
+      })
+      .safeParse(req.query);
+    let sellerIds: string[] | undefined;
+    if (auth.role === "MANAGER") {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+    if (q.success && q.data.sellerId) {
+      sellerIds = sellerIds
+        ? sellerIds.filter((id) => id === q.data.sellerId)
+        : [q.data.sellerId];
+    }
+    const org = await prisma.organization.findUnique({
+      where: { id: auth.organizationId },
+      select: { displayName: true, name: true },
+    });
+    const pdf = await buildFinancialResultPdf({
+      organizationId: auth.organizationId,
+      orgName: org?.displayName || org?.name,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerIds,
+      includeFixedCosts:
+        q.success &&
+        (q.data.includeFixedCosts === "1" ||
+          q.data.includeFixedCosts === "true"),
+      periodGroup: (q.success ? q.data.periodGroup : undefined) as
+        | FinancialPeriodGroup
+        | undefined,
+    });
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="resultado-financeiro.pdf"',
+      )
+      .send(pdf);
+  });
+
   app.get("/reports/commission-statement", async (req, reply) => {
     const auth = req.auth!;
     if (isTeamLeaderAuth(auth)) {
@@ -6860,12 +7032,82 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   /** Preferências de widgets do painel (leitura para admin/gestor/líder). */
   app.get("/reports/home-dashboard-config", async (req) => {
     const auth = req.auth!;
-    const org = await prisma.organization.findUnique({
+    const [org, sub] = await Promise.all([
+      prisma.organization.findUnique({
+        where: { id: auth.organizationId },
+        select: { homeIndicators: true },
+      }),
+      ensureOrgSubscription(auth.organizationId),
+    ]);
+    const homeIndicatorLimit = homeIndicatorLimitForPlan(sub.planId);
+    const stored = parseHomeIndicators(org?.homeIndicators);
+    return {
+      homeIndicators: capHomeIndicators(stored, homeIndicatorLimit),
+      homeIndicatorLimit,
+      homeIndicatorsOverLimit:
+        homeIndicatorLimit != null && stored.length > homeIndicatorLimit,
+    };
+  });
+
+  /**
+   * Atualiza a ordem/seleção dos widgets da home (`Organization.homeIndicators`).
+   * Aceita lista parcial (ex.: líder sem rentabilidade): preserva keys omitidas no fim.
+   */
+  app.patch("/reports/home-dashboard-config", async (req, reply) => {
+    const auth = req.auth!;
+    const homeIndicatorKeySchema = z.enum(
+      HOME_INDICATOR_KEYS as unknown as [
+        HomeIndicatorKey,
+        ...HomeIndicatorKey[],
+      ],
+    );
+    const body = z
+      .object({
+        homeIndicators: z
+          .array(homeIndicatorKeySchema)
+          .min(1)
+          .max(HOME_INDICATOR_KEYS.length),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return sendZodError(reply, body.error, req);
+    }
+
+    const [org, sub] = await Promise.all([
+      prisma.organization.findUnique({
+        where: { id: auth.organizationId },
+        select: { homeIndicators: true },
+      }),
+      ensureOrgSubscription(auth.organizationId),
+    ]);
+    const homeIndicatorLimit = homeIndicatorLimitForPlan(sub.planId);
+    const current = parseHomeIndicators(org?.homeIndicators);
+    const requested = parseHomeIndicators(body.data.homeIndicators);
+    const requestedSet = new Set(requested);
+    const merged = parseHomeIndicators([
+      ...requested,
+      ...current.filter((k) => !requestedSet.has(k)),
+    ]);
+    const persistError = persistHomeIndicatorsError({
+      next: merged,
+      current,
+      limit: homeIndicatorLimit,
+    });
+    if (persistError) {
+      return reply.status(400).send({ error: persistError });
+    }
+
+    const updated = await prisma.organization.update({
       where: { id: auth.organizationId },
+      data: { homeIndicators: merged },
       select: { homeIndicators: true },
     });
+    const stored = parseHomeIndicators(updated.homeIndicators);
     return {
-      homeIndicators: normalizeHomeIndicators(org?.homeIndicators),
+      homeIndicators: capHomeIndicators(stored, homeIndicatorLimit),
+      homeIndicatorLimit,
+      homeIndicatorsOverLimit:
+        homeIndicatorLimit != null && stored.length > homeIndicatorLimit,
     };
   });
 
@@ -7149,7 +7391,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .enum(["DRAFT", "CONFIRMED", "CANCELLED", "PENDING_CREDIT_APPROVAL"])
           .optional(),
         situationId: z.string().optional(),
-        groupByOrder: z
+        groupItems: z
           .union([z.literal("1"), z.literal("true"), z.literal("0")])
           .optional(),
         /** Comma-separated or repeated query: orderIds=a,b or orderIds=a&orderIds=b */
@@ -7175,8 +7417,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       to: filters.to,
       status: filters.status,
       situationId: filters.situationId,
-      groupByOrder:
-        filters.groupByOrder === "1" || filters.groupByOrder === "true",
+      groupItems:
+        filters.groupItems === "1" || filters.groupItems === "true",
       orderIds: orderIds?.length ? orderIds : undefined,
       extras,
     });
@@ -7198,6 +7440,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         categoryId: z.string().optional(),
         q: z.string().optional(),
         productIds: z.string().optional(),
+        stockValueBasis: z
+          .enum(["none", "last_cost", "avg_sale", "default_sale"])
+          .optional(),
       })
       .passthrough()
       .safeParse(req.query);
@@ -7216,12 +7461,54 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       q: filters.q,
       productIds: productIds?.length ? productIds : undefined,
       extras,
+      stockValueBasis: filters.stockValueBasis,
     });
     return reply
       .header("Content-Type", "application/pdf")
       .header(
         "Content-Disposition",
         'attachment; filename="relatorio-estoque.pdf"',
+      )
+      .send(pdf);
+  });
+
+  app.get("/reports/stock-count.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const q = z
+      .object({
+        supplierId: z.string().optional(),
+        categoryId: z.string().optional(),
+        q: z.string().optional(),
+        productIds: z.string().optional(),
+        stockSituation: z.enum(["with_stock", "all"]).optional(),
+        sortBy: z.enum(["supplier", "name", "sku"]).optional(),
+      })
+      .passthrough()
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    const extras = readExtraParams(
+      (q.success ? q.data : req.query) as Record<string, unknown>,
+    );
+    const productIds = filters.productIds
+      ?.split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const pdf = await buildStockCountPdf({
+      organizationId: auth.organizationId,
+      supplierId: filters.supplierId,
+      categoryId: filters.categoryId,
+      q: filters.q,
+      productIds: productIds?.length ? productIds : undefined,
+      extras,
+      stockSituation: filters.stockSituation,
+      sortBy: filters.sortBy,
+    });
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="lista-contagem-estoque.pdf"',
       )
       .send(pdf);
   });
@@ -7235,66 +7522,13 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         sellerId: z.string().optional(),
       })
       .safeParse(req.query);
-
-    const where: Prisma.OrderWhereInput = {
+    const filters = q.success ? q.data : {};
+    const pdf = await buildSalesDetailedPdf({
       organizationId: auth.organizationId,
-      status: "CONFIRMED",
-    };
-    if (q.success && q.data.sellerId) where.sellerId = q.data.sellerId;
-    const createdAt: Prisma.DateTimeFilter = {};
-    if (q.success && q.data.from) createdAt.gte = new Date(q.data.from);
-    if (q.success && q.data.to) createdAt.lte = new Date(q.data.to);
-    if (Object.keys(createdAt).length) where.createdAt = createdAt;
-
-    const orders = await prisma.order.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      include: {
-        seller: { include: { user: { select: { name: true } } } },
-        customer: true,
-        items: true,
-      },
+      sellerId: filters.sellerId,
+      from: filters.from,
+      to: filters.to,
     });
-
-    const doc = new PDFDocument({ margin: 50 });
-    const chunks: Buffer[] = [];
-    doc.on("data", (c) => chunks.push(c));
-    const done = new Promise<Buffer>((resolve) => {
-      doc.on("end", () => resolve(Buffer.concat(chunks)));
-    });
-
-    doc.fontSize(18).text("Relatório de vendas", { align: "center" });
-    doc.moveDown();
-    doc.fontSize(10).text(`Gerado em: ${new Date().toLocaleString("pt-BR")}`, {
-      align: "right",
-    });
-    doc.moveDown();
-
-    let sum = 0;
-    for (const o of orders) {
-      const amount = decToNum(o.totalAmount);
-      sum += amount;
-      doc.fontSize(12).text(`Pedido ${orderCode(o)} — ${o.status}`, {
-        continued: false,
-      });
-      doc
-        .fontSize(10)
-        .text(
-          `Vendedor: ${o.seller.user.name} | Cliente: ${o.customer?.name ?? "-"} | Total: R$ ${amount.toFixed(2)} | ${o.createdAt.toISOString()}`,
-        );
-      for (const it of o.items) {
-        doc.text(
-          `  • ${it.productName} x${it.quantity} @ R$ ${decToNum(it.unitPrice).toFixed(2)} = R$ ${(decToNum(it.unitPrice) * it.quantity).toFixed(2)}`,
-        );
-      }
-      doc.moveDown(0.5);
-    }
-    doc
-      .fontSize(12)
-      .text(`Total geral: R$ ${sum.toFixed(2)}`, { align: "right" });
-    doc.end();
-
-    const pdf = await done;
     return reply
       .header("Content-Type", "application/pdf")
       .header(

@@ -37,7 +37,6 @@ function ReadOnlyField({
 type ProfileForm = {
   name: string;
   email: string;
-  matricula: string;
 };
 
 export function ProfilePage() {
@@ -45,7 +44,6 @@ export function ProfilePage() {
   const [form, setForm] = useState<ProfileForm>({
     name: "",
     email: "",
-    matricula: "",
   });
   const [pending, setPending] = useState(false);
 
@@ -54,7 +52,6 @@ export function ProfilePage() {
     setForm({
       name: user.name ?? "",
       email: user.email ?? "",
-      matricula: user.matricula ?? "",
     });
   }, [user]);
 
@@ -87,7 +84,6 @@ export function ProfilePage() {
         body: JSON.stringify({
           name,
           email,
-          matricula: form.matricula.trim() || null,
         }),
       });
       await refreshUser();
@@ -147,21 +143,6 @@ export function ProfilePage() {
                     setForm((f) => ({ ...f, email: e.target.value }))
                   }
                   autoComplete="email"
-                  disabled={pending}
-                />
-              </FormField>
-              <FormField
-                label="Matrícula"
-                htmlFor="profile-matricula"
-                hint="Opcional. Deve ser única na empresa."
-              >
-                <Input
-                  id="profile-matricula"
-                  value={form.matricula}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, matricula: e.target.value }))
-                  }
-                  maxLength={40}
                   disabled={pending}
                 />
               </FormField>

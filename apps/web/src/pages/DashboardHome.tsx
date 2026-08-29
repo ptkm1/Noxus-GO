@@ -1,19 +1,18 @@
 import { useAuth } from "@/auth/AuthContext";
 import { HomeDashboardLayout } from "@/components/home/HomeDashboardLayout";
+import { HomeSideWidgets } from "@/components/home/HomeSideWidgets";
 import { HomeSlot } from "@/components/home/HomeSlot";
-import { PositivacaoRadialWidget } from "@/components/home/PositivacaoRadialWidget";
 import { SalesMonthAreaChart } from "@/components/home/SalesMonthAreaChart";
-import { HomeIndicatorWidget } from "@/components/HomeIndicatorWidget";
 import { RecentSalesList } from "@/components/RecentSalesList";
 import { apiFetch } from "@/lib/api";
 import { periodRange } from "@/lib/period-presets";
 import { isWebTeamLeader } from "@/lib/staff";
 import {
-  isHomeChartIndicatorKey,
-  normalizeHomeIndicators,
+  parseHomeIndicators,
   type HomeIndicatorKey,
 } from "@pedidos/shared";
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 
 type ScorecardTotals = {
@@ -24,16 +23,6 @@ type ScorecardTotals = {
 type HomeDashboardConfig = {
   homeIndicators: HomeIndicatorKey[];
 };
-
-function SideWidget({
-  indicatorKey,
-}: Readonly<{ indicatorKey: HomeIndicatorKey }>) {
-  if (indicatorKey === "customer_positivacao") {
-    return <PositivacaoRadialWidget />;
-  }
-  if (!isHomeChartIndicatorKey(indicatorKey)) return null;
-  return <HomeIndicatorWidget indicatorKey={indicatorKey} compact />;
-}
 
 export function DashboardHome() {
   const { user } = useAuth();
@@ -88,12 +77,12 @@ export function DashboardHome() {
     staleTime: 60_000,
   });
 
-  const sideIndicatorKeys = (() => {
-    const keys = normalizeHomeIndicators(homeConfig?.homeIndicators);
+  const sideIndicatorKeys = useMemo(() => {
+    const keys = parseHomeIndicators(homeConfig?.homeIndicators);
     if (!teamLeader) return keys;
     // Líderes não têm indicadores de rentabilidade (API 403).
     return keys.filter((k) => !k.startsWith("profit_"));
-  })();
+  }, [homeConfig?.homeIndicators, teamLeader]);
 
   const kpis = (
     <>
@@ -134,14 +123,6 @@ export function DashboardHome() {
     </>
   );
 
-  const sideWidgets = (
-    <>
-      {sideIndicatorKeys.map((key) => (
-        <SideWidget key={key} indicatorKey={key} />
-      ))}
-    </>
-  );
-
   return (
     <HomeDashboardLayout
       kpis={kpis}
@@ -168,7 +149,7 @@ export function DashboardHome() {
           />
         </div>
       }
-      sideWidgets={sideWidgets}
+      sideWidgets={<HomeSideWidgets indicatorKeys={sideIndicatorKeys} />}
     />
   );
 }

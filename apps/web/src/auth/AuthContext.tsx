@@ -76,7 +76,12 @@ type AuthState = {
   refreshUser: () => Promise<User | null>;
 };
 
-const AuthContext = createContext<AuthState | null>(null);
+/** Mesma instância no HMR do Vite — senão AppRoutes usa um Context e o Provider outro. */
+const authContextKey = "__pedixAuthContext" as const;
+const AuthContext = ((globalThis as Record<string, unknown>)[authContextKey] ??=
+  createContext<AuthState | null>(null)) as ReturnType<
+  typeof createContext<AuthState | null>
+>;
 
 function clearBrowserStorage() {
   try {

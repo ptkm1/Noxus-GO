@@ -66,7 +66,6 @@ export function useProductFormPage() {
   const [fieldErrors, setFieldErrors] = useState<
     Partial<Record<keyof ProductFormValues, string>>
   >({});
-  const [selectedPriceTableId, setSelectedPriceTableId] = useState<string>("");
   const [priceTablePrices, setPriceTablePrices] = useState<
     Record<string, string>
   >({});
@@ -163,7 +162,9 @@ export function useProductFormPage() {
 
   const create = useMutation({
     mutationFn: (
-      body: ReturnType<typeof formToProductPayload> & { priceTableId?: string },
+      body: ReturnType<typeof formToProductPayload> & {
+        priceTablePrices?: Array<{ priceTableId: string; price: number }>;
+      },
     ) =>
       apiFetch<ProductRecord>("/admin/products", {
         method: "POST",
@@ -203,10 +204,18 @@ export function useProductFormPage() {
       e.preventDefault();
       setFormError(null);
 
-      if (!isEdit && !selectedPriceTableId) {
+      const syncPrices = Object.entries(priceTablePrices)
+        .filter(([, raw]) => raw.trim() !== "")
+        .map(([priceTableId, raw]) => ({
+          priceTableId,
+          price: Number(raw),
+        }))
+        .filter((row) => !Number.isNaN(row.price) && row.price >= 0);
+
+      if (!isEdit && syncPrices.length === 0) {
         setActiveTab("precos");
         setFormError(
-          "Na aba Preços, selecione a tabela em que o produto será cadastrado.",
+          "Na aba Preços, informe o preço em pelo menos uma tabela de preço.",
         );
         return;
       }
@@ -224,13 +233,6 @@ export function useProductFormPage() {
         const payload = formToProductPayload(values, attrs);
         if (isEdit) {
           const { stockQty: _stockQty, ...rest } = payload;
-          const syncPrices = Object.entries(priceTablePrices)
-            .filter(([, raw]) => raw.trim() !== "")
-            .map(([priceTableId, raw]) => ({
-              priceTableId,
-              price: Number(raw),
-            }))
-            .filter((row) => !Number.isNaN(row.price) && row.price >= 0);
           update.mutate({
             ...(rest as typeof payload),
             ...(syncPrices.length > 0
@@ -240,22 +242,14 @@ export function useProductFormPage() {
         } else {
           create.mutate({
             ...payload,
-            priceTableId: selectedPriceTableId,
+            priceTablePrices: syncPrices,
           });
         }
       } catch (err) {
         setFormError(err instanceof Error ? err.message : "Erro ao salvar.");
       }
     },
-    [
-      attrs,
-      create,
-      isEdit,
-      priceTablePrices,
-      selectedPriceTableId,
-      update,
-      values,
-    ],
+    [attrs, create, isEdit, priceTablePrices, update, values],
   );
 
   const onCategoryChange = useCallback(
@@ -292,20 +286,16 @@ export function useProductFormPage() {
 
   const applyCreatedPriceTable = useCallback(
     (table: { id: string; name: string }) => {
-      if (isEdit) {
-        setPriceTablePrices((prev) => {
-          if (prev[table.id] !== undefined) return prev;
-          return {
-            ...prev,
-            [table.id]: values.basePrice || "0",
-          };
-        });
-        setAddPriceTableId("");
-        return;
-      }
-      setSelectedPriceTableId(table.id);
+      setPriceTablePrices((prev) => {
+        if (prev[table.id] !== undefined) return prev;
+        return {
+          ...prev,
+          [table.id]: values.basePrice || "0",
+        };
+      });
+      setAddPriceTableId("");
     },
-    [isEdit, values.basePrice],
+    [values.basePrice],
   );
 
   const applyCreatedPurchaseUnit = useCallback(
@@ -342,8 +332,6 @@ export function useProductFormPage() {
     handleSubmit,
     onCategoryChange,
     pending,
-    selectedPriceTableId,
-    setSelectedPriceTableId,
     priceTablePrices,
     setPriceForTable,
     addPriceTableId,

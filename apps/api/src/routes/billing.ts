@@ -16,9 +16,13 @@ import {
     getOpenCheckoutForOrg,
     getPublicIntentStatus,
     paySubscriptionIntentWithCard,
+    paySubscriptionIntentWithCharge,
     retrySubscriptionCheckout,
 } from "../services/billing/subscription-intent-service.js";
-import { subscriptionCardPayBodySchema } from "../services/billing/card-pay-validation.js";
+import {
+    isCardPayBody,
+    subscriptionPayBodySchema,
+} from "../services/billing/card-pay-validation.js";
 import { reconcileOrganizationBilling } from "../services/billing/reconcile-asaas-billing.js";
 import { resolveClientRemoteIp } from "../util/client-ip.js";
 import { getAuth } from "../util/guards.js";
@@ -143,13 +147,13 @@ export const billingRoutes: FastifyPluginAsync = async (app) => {
     });
     payApp.post("/subscription-intents/:id/pay", async (req, reply) => {
       const id = (req.params as { id: string }).id;
-      const parsed = subscriptionCardPayBodySchema.safeParse(req.body);
+      const parsed = subscriptionPayBodySchema.safeParse(req.body);
       if (!parsed.success) {
         return sendZodError(
           reply,
           parsed.error,
           req,
-          "Dados do cartão inválidos",
+          "Dados de pagamento inválidos",
         );
       }
 
@@ -164,23 +168,35 @@ export const billingRoutes: FastifyPluginAsync = async (app) => {
       }
 
       try {
-        const result = await paySubscriptionIntentWithCard(
-          id,
-          parsed.data,
-          remoteIp,
-          auth,
-        );
+        const result = isCardPayBody(parsed.data)
+          ? await paySubscriptionIntentWithCard(
+              id,
+              parsed.data,
+              remoteIp,
+              auth,
+            )
+          : await paySubscriptionIntentWithCharge(
+              id,
+              parsed.data.method,
+              auth,
+            );
         return {
           intentId: result.intentId,
           status: result.status,
+          paymentMethod: result.paymentMethod ?? null,
+          instructions: result.instructions ?? null,
           message:
             result.status === "ACTIVE"
               ? "Pagamento confirmado."
-              : "Pagamento em processamento. Aguarde a confirmação.",
+              : result.paymentMethod === "PIX"
+                ? "Pix gerado. Pague com o QR Code ou o código copia e cola."
+                : result.paymentMethod === "BOLETO"
+                  ? "Boleto gerado. Pague até o vencimento para ativar a assinatura."
+                  : "Pagamento em processamento. Aguarde a confirmação.",
         };
       } catch (err) {
         const { status, body } = httpErr(err);
-        req.log.warn({ err: body.code, intentId: id }, "card pay failed");
+        req.log.warn({ err: body.code, intentId: id }, "pay failed");
         return reply.status(status).send(body);
       }
     });

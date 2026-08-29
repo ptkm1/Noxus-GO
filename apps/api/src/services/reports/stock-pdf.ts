@@ -1,6 +1,6 @@
+import type { StockValueBasis } from "@pedidos/shared";
+import { STOCK_VALUE_PRICE_COLUMN_LABELS } from "@pedidos/shared";
 import { prisma } from "../../db.js";
-import { listStockProducts } from "../stock-ledger.js";
-import { parseStockExtras, type StockExtraFilters } from "./extra-filters.js";
 import {
   COLORS,
   drawEmptyState,
@@ -9,10 +9,13 @@ import {
   drawTableHeader,
   drawTableRow,
   ensureSpace,
+  money,
   PAGE,
-  type PdfTable,
   withPdfDoc,
+  type PdfTable,
 } from "./pdf-common.js";
+import { loadStockReportProducts } from "./stock-report-query.js";
+import { loadStockUnitPrices, stockLineValue } from "./stock-value.js";
 
 export type StockPdfFilters = {
   organizationId: string;
@@ -21,6 +24,7 @@ export type StockPdfFilters = {
   q?: string;
   productIds?: string[];
   extras?: Record<string, string>;
+  stockValueBasis?: StockValueBasis;
 };
 
 const TABLE: PdfTable = {
@@ -36,36 +40,59 @@ const TABLE: PdfTable = {
   rowHeight: 22,
 };
 
-export async function buildStockPdf(filters: StockPdfFilters): Promise<Buffer> {
-  const extra: StockExtraFilters = filters.extras
-    ? parseStockExtras(filters.extras)
-    : {};
+/** Mesmas colunas base + preço e valor do estoque (soma = PAGE.width). */
+function tableWithValue(basis: Exclude<StockValueBasis, "none">): PdfTable {
+  return {
+    columns: [
+      { key: "name", label: "Produto", width: 110 },
+      { key: "sku", label: "SKU", width: 55 },
+      { key: "stock", label: "Saldo", width: 36, align: "right" },
+      { key: "min", label: "Mín.", width: 32, align: "right" },
+      { key: "supplier", label: "Fornecedor", width: 80 },
+      { key: "category", label: "Grupo", width: 60 },
+      { key: "expiring", label: "Validade", width: 32, align: "center" },
+      {
+        key: "unitPrice",
+        label: STOCK_VALUE_PRICE_COLUMN_LABELS[basis],
+        width: 70,
+        align: "right",
+      },
+      {
+        key: "stockValue",
+        label: "Valor do Estoque",
+        width: 72,
+        align: "right",
+      },
+    ],
+    rowHeight: 22,
+  };
+}
 
-  const [org, listed] = await Promise.all([
+export async function buildStockPdf(filters: StockPdfFilters): Promise<Buffer> {
+  const stockValueBasis = filters.stockValueBasis ?? "none";
+  const showValue = stockValueBasis !== "none";
+
+  const [org, products] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: filters.organizationId },
       select: { name: true, displayName: true },
     }),
-    listStockProducts({
-      organizationId: filters.organizationId,
-      supplierId: filters.supplierId,
-      categoryId: filters.categoryId,
-      q: filters.q,
-      productIds: filters.productIds,
-      stockQtyMin: extra.stockQtyMin,
-      stockQtyMax: extra.stockQtyMax,
-      productLine: extra.productLine,
-      blockSaleWhenOutOfStock: extra.blockSaleWhenOutOfStock,
+    loadStockReportProducts({
+      ...filters,
+      stockSituation: "all",
     }),
   ]);
 
-  let products = listed;
-  if (extra.hasExpiringSoon === true) {
-    products = products.filter((p) => p.hasExpiringSoon);
-  } else if (extra.hasExpiringSoon === false) {
-    products = products.filter((p) => !p.hasExpiringSoon);
-  }
+  const unitPrices =
+    showValue && products.length > 0
+      ? await loadStockUnitPrices({
+          organizationId: filters.organizationId,
+          productIds: products.map((p) => p.id),
+          basis: stockValueBasis,
+        })
+      : new Map<string, number>();
 
+  const table = showValue ? tableWithValue(stockValueBasis) : TABLE;
   const orgName = org?.displayName || org?.name || "";
 
   return withPdfDoc((doc) => {
@@ -81,32 +108,40 @@ export async function buildStockPdf(filters: StockPdfFilters): Promise<Buffer> {
       return;
     }
 
-    drawTableHeader(doc, TABLE);
+    drawTableHeader(doc, table);
+
+    let totalStockValue = 0;
 
     products.forEach((p, index) => {
-      drawTableRow(
-        doc,
-        TABLE,
-        {
-          name: p.name,
-          sku: p.sku ?? "—",
-          stock: String(p.stockQty),
-          min: String(p.minStockQty),
-          supplier: p.supplier?.tradeName ?? "—",
-          category: p.category?.name ?? "—",
-          expiring: p.hasExpiringSoon ? "⚠" : "—",
-        },
-        {
-          index,
-          onNewPage: () =>
-            drawHeader(
-              doc,
-              "Relatório de Estoque (cont.)",
-              orgName,
-              `${products.length} produto(s)`,
-            ),
-        },
-      );
+      const unitPrice = unitPrices.get(p.id);
+      const lineValue = showValue ? stockLineValue(p.stockQty, unitPrice) : 0;
+      if (showValue) totalStockValue += lineValue;
+
+      const row: Record<string, string> = {
+        name: p.name,
+        sku: p.sku ?? "—",
+        stock: String(p.stockQty),
+        min: String(p.minStockQty),
+        supplier: p.supplier?.tradeName ?? "—",
+        category: p.category?.name ?? "—",
+        expiring: p.hasExpiringSoon ? "⚠" : "—",
+      };
+
+      if (showValue) {
+        row.unitPrice = money(unitPrice ?? 0);
+        row.stockValue = money(lineValue);
+      }
+
+      drawTableRow(doc, table, row, {
+        index,
+        onNewPage: () =>
+          drawHeader(
+            doc,
+            "Relatório de Estoque (cont.)",
+            orgName,
+            `${products.length} produto(s)`,
+          ),
+      });
 
       if (p.hasExpiringSoon && p.lots.length > 0) {
         const soon = p.lots
@@ -132,8 +167,13 @@ export async function buildStockPdf(filters: StockPdfFilters): Promise<Buffer> {
     const expiringCount = products.filter((p) => p.hasExpiringSoon).length;
     const leftFooter =
       expiringCount > 0
-        ? `Produtos: ${products.length} · Com validade em até 30 dias: ${expiringCount}`
-        : `Produtos: ${products.length}`;
-    drawTableFooter(doc, leftFooter, `Total unidades: ${totalUnits}`);
+        ? `Produtos: ${products.length} · Com validade em até 30 dias: ${expiringCount} · Total unidades: ${totalUnits}`
+        : `Produtos: ${products.length} · Total unidades: ${totalUnits}`;
+
+    const rightFooter = showValue
+      ? `Valor Total do Estoque: ${money(totalStockValue)}`
+      : `Total unidades: ${totalUnits}`;
+
+    drawTableFooter(doc, leftFooter, rightFooter);
   });
 }

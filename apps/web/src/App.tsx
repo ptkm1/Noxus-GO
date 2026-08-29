@@ -40,6 +40,8 @@ import { FiscalFixedExpensesPage } from "./pages/FiscalFixedExpensesPage";
 import { FiscalHubPage } from "./pages/FiscalHubPage";
 import { BankingIntegrationsPage } from "./pages/BankingIntegrationsPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { GuidePage } from "./pages/GuidePage";
+import { HelpPage } from "./pages/HelpPage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { IndicatorsHubPage } from "./pages/IndicatorsHubPage";
 import { LegalDocumentPage } from "./pages/LegalDocumentPage";
@@ -81,9 +83,11 @@ import {
   ReportSalesSummaryPage,
   ReportSellerRankingPage,
 } from "./pages/ReportSalesCatalogPages";
+import { ReportFinancialResultPage } from "./pages/ReportFinancialResultPage";
 import { ReportsHubPage } from "./pages/ReportsHubPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { ReportStockPage } from "./pages/ReportStockPage";
+import { ReportStockCountPage } from "./pages/ReportStockCountPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { RouteRomaneioPage } from "./pages/RouteRomaneioPage";
 import { SellerProductsPage } from "./pages/SellerProductsPage";
@@ -93,6 +97,12 @@ import { StockMovementsPage } from "./pages/StockMovementsPage";
 import { StockPage } from "./pages/StockPage";
 import { SuppliersPage } from "./pages/SuppliersPage";
 import { SystemSettingsPage } from "./pages/SystemSettingsPage";
+import { AccountSettingsPage } from "./pages/settings/AccountSettingsPage";
+import { CustomerSettingsPage } from "./pages/settings/CustomerSettingsPage";
+import { EstablishmentsSettingsPage } from "./pages/settings/EstablishmentsSettingsPage";
+import { HomePanelSettingsPage } from "./pages/settings/HomePanelSettingsPage";
+import { OrderFlowSettingsPage } from "./pages/settings/OrderFlowSettingsPage";
+import { OrderSyncSettingsPage } from "./pages/settings/OrderSyncSettingsPage";
 import { TeamsPage } from "./pages/TeamsPage";
 import { UsersPage } from "./pages/UsersPage";
 
@@ -127,6 +137,8 @@ function SellerNotice() {
 const TEAM_LEADER_ROUTE_PREFIXES = [
   "/",
   "/perfil",
+  "/guia",
+  "/ajuda",
   "/rastreio",
   "/visitas",
   "/pedidos",
@@ -315,6 +327,8 @@ function AppRoutes() {
           <Route element={<PermissionRouteGuard />}>
             <Route index element={<DashboardHome />} />
             <Route path="perfil" element={<ProfilePage />} />
+            <Route path="guia" element={<GuidePage />} />
+            <Route path="ajuda" element={<HelpPage />} />
             <Route path="tabelas-preco" element={<PriceTablesPage />} />
             <Route
               path="produtos/categorias"
@@ -402,6 +416,30 @@ function AppRoutes() {
               element={<Navigate to="/configuracoes?abrir=auditoria" replace />}
             />
             <Route path="configuracoes" element={<SystemSettingsPage />} />
+            <Route
+              path="configuracoes/conta"
+              element={<AccountSettingsPage />}
+            />
+            <Route
+              path="configuracoes/estabelecimentos"
+              element={<EstablishmentsSettingsPage />}
+            />
+            <Route
+              path="configuracoes/pedidos-sincronizacao"
+              element={<OrderSyncSettingsPage />}
+            />
+            <Route
+              path="configuracoes/fluxo-pedido"
+              element={<OrderFlowSettingsPage />}
+            />
+            <Route
+              path="configuracoes/clientes"
+              element={<CustomerSettingsPage />}
+            />
+            <Route
+              path="configuracoes/painel"
+              element={<HomePanelSettingsPage />}
+            />
             <Route path="relatorios" element={<ReportsHubPage />} />
             <Route
               path="relatorios/clientes"
@@ -431,8 +469,16 @@ function AppRoutes() {
             <Route path="relatorios/itens" element={<ReportOrderItemsPage />} />
             <Route path="relatorios/estoque" element={<ReportStockPage />} />
             <Route
+              path="relatorios/estoque/contagem"
+              element={<ReportStockCountPage />}
+            />
+            <Route
               path="relatorios/vendas/resumo"
               element={<ReportSalesSummaryPage />}
+            />
+            <Route
+              path="relatorios/vendas/resultado-financeiro"
+              element={<ReportFinancialResultPage />}
             />
             <Route
               path="relatorios/vendas/detalhadas"

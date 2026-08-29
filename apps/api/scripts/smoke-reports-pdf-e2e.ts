@@ -11,12 +11,14 @@ async function main() {
     process.exit(1);
   }
   const id = org.id;
-  const [customers, orders, romaneio, items, stock] = await Promise.all([
+  const [customers, orders, romaneio, items, stock, stockValue] =
+    await Promise.all([
     buildCustomersPdf({ organizationId: id }),
     buildOrdersPdf({ organizationId: id, romaneio: false }),
     buildOrdersPdf({ organizationId: id, romaneio: true }),
-    buildOrderItemsPdf({ organizationId: id, groupByOrder: true }),
+    buildOrderItemsPdf({ organizationId: id, groupItems: true }),
     buildStockPdf({ organizationId: id }),
+    buildStockPdf({ organizationId: id, stockValueBasis: "last_cost" }),
   ]);
 
   for (const [name, buf] of [
@@ -25,6 +27,7 @@ async function main() {
     ["romaneio", romaneio],
     ["items", items],
     ["stock", stock],
+    ["stock-value", stockValue],
   ] as const) {
     if (buf.length < 100 || buf.subarray(0, 4).toString() !== "%PDF") {
       throw new Error(`${name} não parece PDF válido (${buf.length} bytes)`);

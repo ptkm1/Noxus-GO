@@ -33,6 +33,8 @@ const MANAGER_GET_ALLOW = [
   /^\/reports\/sales-by-supplier$/,
   /^\/reports\/scorecard$/,
   /^\/reports\/margin$/,
+  /^\/reports\/financial-result$/,
+  /^\/reports\/financial-result\.pdf$/,
   /^\/reports\/commission-statement$/,
   /^\/reports\/stock-health$/,
   /^\/reports\/credit-aging$/,
@@ -68,6 +70,7 @@ const MANAGER_WRITE_ALLOW = [
   /^\/customers\/[^/]+\/approve$/,
   /^\/customers\/[^/]+\/reject$/,
   /^\/reports\/route-romaneio\.pdf$/,
+  /^\/reports\/home-dashboard-config$/,
   /^\/expedition/,
   /^\/orders$/,
   /^\/orders\/preview$/,
@@ -77,6 +80,16 @@ const MANAGER_WRITE_ALLOW = [
 export function isManagerWriteAllowed(routePath: string): boolean {
   const path = routePath.split("?")[0] ?? routePath;
   return MANAGER_WRITE_ALLOW.some((re) => re.test(path));
+}
+
+/** Write paths team leaders may use (ordem dos widgets da home). */
+const TEAM_LEADER_WRITE_ALLOW = [
+  /^\/reports\/home-dashboard-config$/,
+] as const;
+
+export function isTeamLeaderWriteAllowed(routePath: string): boolean {
+  const path = routePath.split("?")[0] ?? routePath;
+  return TEAM_LEADER_WRITE_ALLOW.some((re) => re.test(path));
 }
 
 /** GET paths allowed for team leader (seller with led team). */

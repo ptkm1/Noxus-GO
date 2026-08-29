@@ -38,6 +38,12 @@ const CATEGORIES: ReportCategory[] = [
         planFeature: "reports_advanced",
       },
       {
+        to: "/relatorios/vendas/resultado-financeiro",
+        title: "Resultado financeiro",
+        description:
+          "Faturamento, custos, comissões, margem e lucro do período.",
+      },
+      {
         to: "/relatorios/vendas/detalhadas",
         title: "Vendas detalhadas",
         description: "PDF com pedidos confirmados e itens.",
@@ -123,6 +129,11 @@ const CATEGORIES: ReportCategory[] = [
         to: "/relatorios/estoque",
         title: "Estoque",
         description: "Saldos, grupos, fornecedores e validade.",
+      },
+      {
+        to: "/relatorios/estoque/contagem",
+        title: "Lista para Contagem de Estoque",
+        description: "PDF para contagem física com espaço para anotar quantidades.",
       },
     ],
   },

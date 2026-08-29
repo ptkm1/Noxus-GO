@@ -25,6 +25,8 @@ export type OrderPdfCustomer = {
   documentType?: string | null;
   cnpj?: string | null;
   cpf?: string | null;
+  stateRegistration?: string | null;
+  buyerName?: string | null;
   street?: string | null;
   number?: string | null;
   neighborhood?: string | null;
@@ -67,7 +69,14 @@ export type OrderPdfInput = {
     productName: string;
     quantity: number;
     unitPrice: unknown;
-    product?: { sku: string | null } | null;
+    product?: {
+      sku: string | null;
+      barcode?: string | null;
+      purchaseUnit?: string | null;
+      grossWeightKg?: unknown;
+      netWeightKg?: unknown;
+      basePrice?: unknown;
+    } | null;
   }>;
 };
 
@@ -79,11 +88,13 @@ export function orderPdfFilename(order: {
 }
 
 const COLS = {
-  product: { x: PAGE.left, w: 248 },
-  sku: { x: PAGE.left + 248, w: 72 },
-  qty: { x: PAGE.left + 320, w: 48 },
-  unit: { x: PAGE.left + 368, w: 85 },
-  sub: { x: PAGE.left + 453, w: 94 },
+  code: { x: PAGE.left, w: 68 },
+  product: { x: PAGE.left + 68, w: 190 },
+  unitLabel: { x: PAGE.left + 258, w: 36 },
+  qty: { x: PAGE.left + 294, w: 44 },
+  unit: { x: PAGE.left + 338, w: 72 },
+  discount: { x: PAGE.left + 410, w: 60 },
+  sub: { x: PAGE.left + 470, w: 77 },
 } as const;
 
 const CONTENT_BOTTOM = 52;
@@ -201,12 +212,17 @@ function drawItemsTableHeader(doc: PDFKit.PDFDocument) {
   doc.fillColor(COLORS.headerFg).fontSize(8).font("Helvetica-Bold");
 
   const pad = 6;
+  doc.text("Código", COLS.code.x + pad, y + 7, {
+    width: COLS.code.w - pad * 2,
+    lineBreak: false,
+  });
   doc.text("Produto", COLS.product.x + pad, y + 7, {
     width: COLS.product.w - pad * 2,
     lineBreak: false,
   });
-  doc.text("SKU", COLS.sku.x + pad, y + 7, {
-    width: COLS.sku.w - pad * 2,
+  doc.text("Un.", COLS.unitLabel.x + pad, y + 7, {
+    width: COLS.unitLabel.w - pad * 2,
+    align: "center",
     lineBreak: false,
   });
   doc.text("Qtd", COLS.qty.x + pad, y + 7, {
@@ -216,6 +232,11 @@ function drawItemsTableHeader(doc: PDFKit.PDFDocument) {
   });
   doc.text("Preço unit.", COLS.unit.x + pad, y + 7, {
     width: COLS.unit.w - pad * 2,
+    align: "right",
+    lineBreak: false,
+  });
+  doc.text("Desc.", COLS.discount.x + pad, y + 7, {
+    width: COLS.discount.w - pad * 2,
     align: "right",
     lineBreak: false,
   });
@@ -236,7 +257,17 @@ function drawItemRow(
 ) {
   const unit = decToNum(item.unitPrice);
   const sub = unit * item.quantity;
-  const sku = item.product?.sku?.trim() || "—";
+  const basePrice = item.product?.basePrice ? decToNum(item.product.basePrice) : unit;
+  const discountPercent =
+    basePrice > unit && basePrice > 0
+      ? ((basePrice - unit) / basePrice) * 100
+      : 0;
+  const code =
+    item.product?.sku?.trim() ||
+    item.product?.barcode?.trim() ||
+    item.productName.trim().slice(0, 8) ||
+    "—";
+  const unitLabel = item.product?.purchaseUnit?.trim() || "UN";
   const name = item.productName.trim() || "—";
   const pad = 6;
 
@@ -261,16 +292,26 @@ function drawItemRow(
 
   const textY = y + 6;
   doc.fillColor(COLORS.text).fontSize(9).font("Helvetica");
+  doc
+    .fillColor(COLORS.muted)
+    .fontSize(8)
+    .text(code, COLS.code.x + pad, textY, {
+      width: COLS.code.w - pad * 2,
+      lineBreak: false,
+      ellipsis: true,
+      height: rowH - 8,
+    });
   doc.text(name, COLS.product.x + pad, textY, {
     width: COLS.product.w - pad * 2,
     height: rowH - 8,
     ellipsis: true,
   });
   doc
-    .fillColor(COLORS.muted)
+    .fillColor(COLORS.text)
     .fontSize(8)
-    .text(sku, COLS.sku.x + pad, textY, {
-      width: COLS.sku.w - pad * 2,
+    .text(unitLabel, COLS.unitLabel.x + pad, textY, {
+      width: COLS.unitLabel.w - pad * 2,
+      align: "center",
       lineBreak: false,
       ellipsis: true,
       height: rowH - 8,
@@ -285,6 +326,11 @@ function drawItemRow(
     });
   doc.text(money(unit), COLS.unit.x + pad, textY, {
     width: COLS.unit.w - pad * 2,
+    align: "right",
+    lineBreak: false,
+  });
+  doc.text(formatPercent(discountPercent), COLS.discount.x + pad, textY, {
+    width: COLS.discount.w - pad * 2,
     align: "right",
     lineBreak: false,
   });
@@ -348,6 +394,12 @@ function buildCustomerDetailLines(c: OrderPdfCustomer): Array<{
 
   const docLine = customerDocumentLine(c);
   if (docLine) lines.push({ text: docLine });
+  if (c.stateRegistration?.trim()) {
+    lines.push({ label: "I.E.", text: c.stateRegistration.trim() });
+  }
+  if (c.buyerName?.trim()) {
+    lines.push({ label: "Comprador", text: c.buyerName.trim() });
+  }
 
   const structured = formatStructuredAddress(c);
   if (structured) lines.push({ label: "Endereço", text: structured });
@@ -454,6 +506,112 @@ function orgDisplayName(order: OrderPdfInput): string {
   return order.organization?.name?.trim() || order.organizationName || "—";
 }
 
+function formatQty(value: number): string {
+  return new Intl.NumberFormat("pt-BR").format(value);
+}
+
+function formatWeight(value: number): string {
+  return `${value.toLocaleString("pt-BR", {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  })} kg`;
+}
+
+function formatPercent(value: number): string {
+  return `${value.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} %`;
+}
+
+function paymentTableLabel(
+  paymentCondition: OrderPdfInput["paymentCondition"],
+): string {
+  if (!paymentCondition) return "—";
+  return paymentCondition.days > 0 ? "A prazo" : "À vista";
+}
+
+function drawLabeledGridBox(
+  doc: PDFKit.PDFDocument,
+  opts: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    sideLabel: string;
+    rows: Array<[string, string, string?, string?]>;
+  },
+) {
+  const sideW = 26;
+  const bodyX = opts.x + sideW;
+  const bodyW = opts.width - sideW;
+  const rowH = opts.height / Math.max(opts.rows.length, 1);
+
+  doc
+    .roundedRect(opts.x, opts.y, opts.width, opts.height, 6)
+    .strokeColor(COLORS.border)
+    .lineWidth(0.8)
+    .stroke();
+  doc
+    .moveTo(bodyX, opts.y)
+    .lineTo(bodyX, opts.y + opts.height)
+    .stroke();
+  doc.save();
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(8)
+    .fillColor(COLORS.text)
+    .rotate(-90, { origin: [opts.x + sideW / 2, opts.y + opts.height / 2] })
+    .text(
+      opts.sideLabel,
+      opts.x + sideW / 2 - opts.height / 2,
+      opts.y + opts.height / 2 - 6,
+      {
+        width: opts.height,
+        align: "center",
+        lineBreak: false,
+      },
+    );
+  doc.restore();
+
+  opts.rows.forEach((row, index) => {
+    const rowY = opts.y + index * rowH;
+    if (index > 0) {
+      doc
+        .moveTo(bodyX, rowY)
+        .lineTo(opts.x + opts.width, rowY)
+        .strokeColor("#eef2f7")
+        .lineWidth(0.4)
+        .stroke();
+    }
+
+    const leftX = bodyX + 8;
+    const rightX = bodyX + bodyW / 2 + 8;
+    const textY = rowY + 8;
+    const leftW = bodyW / 2 - 14;
+    const rightW = bodyW / 2 - 14;
+
+    doc
+      .fillColor(COLORS.text)
+      .font("Helvetica")
+      .fontSize(8.5)
+      .text(`${row[0]} ${row[1]}`, leftX, textY, {
+        width: leftW,
+        lineBreak: false,
+        ellipsis: true,
+      });
+
+    if (row[2] && row[3]) {
+      doc.text(`${row[2]} ${row[3]}`, rightX, textY, {
+        width: rightW,
+        align: "right",
+        lineBreak: false,
+        ellipsis: true,
+      });
+    }
+  });
+}
+
 export async function buildOrderPdf(order: OrderPdfInput): Promise<Buffer> {
   return withPdfDoc((doc) => {
     drawOrderPdfContents(doc, order);
@@ -471,6 +629,23 @@ export function drawOrderPdfContents(
     (sum, it) => sum + decToNum(it.unitPrice) * it.quantity,
     0,
   );
+  const totalQty = order.items.reduce((sum, it) => sum + it.quantity, 0);
+  const grossTotal = order.items.reduce((sum, it) => {
+    const basePrice = it.product?.basePrice ? decToNum(it.product.basePrice) : decToNum(it.unitPrice);
+    return sum + basePrice * it.quantity;
+  }, 0);
+  const grossWeight = order.items.reduce((sum, it) => {
+    const itemWeight = it.product?.grossWeightKg
+      ? decToNum(it.product.grossWeightKg) * it.quantity
+      : 0;
+    return sum + itemWeight;
+  }, 0);
+  const netWeight = order.items.reduce((sum, it) => {
+    const itemWeight = it.product?.netWeightKg
+      ? decToNum(it.product.netWeightKg) * it.quantity
+      : 0;
+    return sum + itemWeight;
+  }, 0);
   const generatedAt = new Date().toLocaleString("pt-BR");
   const codeLabel = code.startsWith("#") ? code : `#${code}`;
   const orgName = orgDisplayName(order);
@@ -478,6 +653,7 @@ export function drawOrderPdfContents(
   const payLabel = order.paymentCondition?.label?.trim() || null;
   const showDiscount = comboDiscount > 0;
   const showSubtotal = showDiscount || Math.abs(itemsSubtotal - total) > 0.009;
+  const totalDiscount = Math.max(0, grossTotal - total);
 
   const hasExtraOrg =
     Boolean(org.cnpj) ||
@@ -635,113 +811,86 @@ export function drawOrderPdfContents(
     order.items.forEach((item, i) => drawItemRow(doc, item, i));
   }
 
-  const totalsBlockH =
-    28 + (showSubtotal ? 14 : 0) + (showDiscount ? 14 : 0) + 8;
-  ensureSpace(doc, Math.max(88, totalsBlockH + 24));
+  const notesText = order.notes?.trim() || "";
+  const notesH = notesText
+    ? Math.max(18, doc.heightOfString(notesText, { width: PAGE.width - 20 }))
+    : 0;
+  ensureSpace(doc, 94 + (notesText ? notesH + 24 : 0));
   doc.moveDown(0.6);
-  const totalsW = 240;
-  const totalsX = PAGE.right - totalsW;
-  let ty = doc.y;
+  const boxesY = doc.y;
+  const boxGap = 8;
+  const boxW = (PAGE.width - boxGap) / 2;
+  const boxH = 78;
 
-  const summaryX = PAGE.left;
-  const summaryW = Math.max(120, totalsX - PAGE.left - 16);
-  doc
-    .fillColor(COLORS.muted)
-    .fontSize(8)
-    .font("Helvetica-Bold")
-    .text("RESUMO", summaryX, ty, { width: summaryW, lineBreak: false });
-  let sy = ty + 14;
-  doc
-    .fillColor(COLORS.text)
-    .fontSize(9)
-    .font("Helvetica")
-    .text(`Itens: ${order.items.length}`, summaryX, sy, {
-      width: summaryW,
-      lineBreak: false,
-    });
-  sy += 13;
-  if (payLabel) {
-    doc.text(`Pagamento: ${payLabel}`, summaryX, sy, {
-      width: summaryW,
-      lineBreak: false,
-    });
-    sy += 13;
-  }
-  if (order.paymentCondition && order.paymentCondition.days > 0) {
-    doc
-      .fillColor(COLORS.muted)
-      .fontSize(8)
-      .text(`Prazo: ${order.paymentCondition.days} dias`, summaryX, sy, {
-        width: summaryW,
-        lineBreak: false,
-      });
-    sy += 13;
-  }
-
-  const drawTotalLine = (
-    label: string,
-    value: string,
-    opts?: { bold?: boolean; muted?: boolean; large?: boolean },
-  ) => {
-    doc
-      .fillColor(opts?.muted ? COLORS.muted : COLORS.text)
-      .fontSize(opts?.large ? 12 : 9)
-      .font(opts?.bold || opts?.large ? "Helvetica-Bold" : "Helvetica")
-      .text(label, totalsX, ty, { width: 120, lineBreak: false });
-    doc.text(value, totalsX + 120, ty, {
-      width: 120,
-      align: "right",
-      lineBreak: false,
-    });
-    ty += opts?.large ? 18 : 14;
-  };
-
-  if (showSubtotal) {
-    drawTotalLine("Subtotal itens", money(itemsSubtotal));
-  }
-  if (showDiscount) {
-    drawTotalLine("Descontos", `− ${money(comboDiscount)}`, { muted: true });
-    ty += 2;
-  }
-
-  doc.roundedRect(totalsX - 8, ty - 4, totalsW + 8, 28, 4).fill("#e2e8f0");
-  doc
-    .fillColor(COLORS.text)
-    .fontSize(12)
-    .font("Helvetica-Bold")
-    .text("Total", totalsX, ty + 5, { width: 120, lineBreak: false });
-  doc.text(money(total), totalsX + 120, ty + 5, {
-    width: 120,
-    align: "right",
-    lineBreak: false,
+  drawLabeledGridBox(doc, {
+    x: PAGE.left,
+    y: boxesY,
+    width: boxW,
+    height: boxH,
+    sideLabel: "Condições",
+    rows: [
+      ["Tabela:", paymentTableLabel(order.paymentCondition), "Desc. 1:", "0,00 %"],
+      ["Plano:", payLabel || "—", "Desc. 2:", "0,00 %"],
+      ["Entrega:", "—", "Desc. 3:", "0,00 %"],
+    ],
   });
-  doc.y = Math.max(sy + 8, ty + 36);
+
+  drawLabeledGridBox(doc, {
+    x: PAGE.left + boxW + boxGap,
+    y: boxesY,
+    width: boxW,
+    height: boxH,
+    sideLabel: "Totais",
+    rows: [
+      [
+        "Total itens:",
+        String(order.items.length),
+        "Total bruto:",
+        money(grossTotal),
+      ],
+      [
+        "Peso bruto:",
+        grossWeight > 0 ? formatWeight(grossWeight) : "0,000 kg",
+        "Total desc:",
+        money(totalDiscount),
+      ],
+      [
+        "Peso líq.:",
+        netWeight > 0 ? formatWeight(netWeight) : "0,000 kg",
+        "Total líq.:",
+        money(total),
+      ],
+    ],
+  });
+
+  doc.y = boxesY + boxH + 10;
   doc.font("Helvetica").fillColor(COLORS.text);
 
-  if (order.notes?.trim()) {
-    const notesText = order.notes.trim();
-    doc.fontSize(9).font("Helvetica");
-    const notesH = Math.max(
-      36,
-      doc.heightOfString(notesText, { width: PAGE.width - 20 }) + 16,
-    );
-    ensureSpace(doc, 14 + notesH + 10);
-    doc.moveDown(0.4);
-    drawSectionLabel(doc, "Observações", PAGE.left, doc.y);
-    doc.y += 14;
-    const notesTop = doc.y;
+  if (notesText) {
     doc
-      .roundedRect(PAGE.left, notesTop, PAGE.width, notesH, 4)
-      .fillAndStroke("#f8fafc", COLORS.border);
-    doc
-      .fillColor(COLORS.text)
       .fontSize(9)
-      .font("Helvetica")
-      .text(notesText, PAGE.left + 10, notesTop + 8, {
-        width: PAGE.width - 20,
-        height: notesH - 12,
+      .font("Helvetica-Bold")
+      .text("Observações:", PAGE.left, doc.y, {
+        width: 80,
+        lineBreak: false,
       });
-    doc.y = notesTop + notesH + 10;
+    doc
+      .font("Helvetica")
+      .text(notesText, PAGE.left + 84, doc.y - 1, {
+        width: PAGE.width - 84,
+      });
+    doc.moveDown(0.3);
+  } else if (showSubtotal || totalQty > 0) {
+    doc
+      .fontSize(8)
+      .fillColor(COLORS.muted)
+      .text(
+        `Quantidade total: ${formatQty(totalQty)}${payLabel ? `  ·  ${payLabel}` : ""}`,
+        PAGE.left,
+        doc.y,
+        { width: PAGE.width },
+      );
+    doc.fillColor(COLORS.text);
   }
 
   drawPageFooter(doc, `Gerado em ${generatedAt}`, orgName);

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, LogOut, Menu } from "lucide-react";
+import { Bell, BookOpen, CircleHelp, LogOut, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/auth/AuthContext";
@@ -15,6 +15,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { EnableWebPushButton } from "@/components/EnableWebPushButton";
 import { dashboardBackTarget } from "./dashboardBackTarget";
 import { DashboardSidebar } from "./DashboardSidebar";
+import { QuickSearch } from "./QuickSearch";
 import { AppSelect } from "@/components/ui/app-select";
 
 export function DashboardTopBar() {
@@ -102,7 +103,30 @@ export function DashboardTopBar() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1.5 text-muted-foreground hover:text-foreground"
+          asChild
+        >
+          <Link to="/guia" aria-label="Guia inicial">
+            <BookOpen className="size-4" />
+            <span className="hidden md:inline">Guia inicial</span>
+          </Link>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1.5 text-muted-foreground hover:text-foreground"
+          asChild
+        >
+          <Link to="/ajuda" aria-label="Ajuda">
+            <CircleHelp className="size-4" />
+            <span className="hidden md:inline">Ajuda</span>
+          </Link>
+        </Button>
+        <QuickSearch />
         <ThemeToggle />
         {showAlerts ? (
           <>
