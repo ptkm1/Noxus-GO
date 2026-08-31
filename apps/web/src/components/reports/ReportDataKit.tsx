@@ -75,7 +75,7 @@ export function PeriodPresetBar(props: {
 }
 
 export function ReportKpis(props: {
-  items: Array<{ label: string; value: string; hint?: string }>;
+  items: Array<{ label: string; value: string; hint?: string; negative?: boolean }>;
 }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -85,7 +85,12 @@ export function ReportKpis(props: {
           className="rounded-xl border border-border bg-card p-4"
         >
           <p className="text-sm text-muted-foreground">{k.label}</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+          <p
+            className={cn(
+              "mt-1 text-2xl font-semibold tabular-nums text-foreground",
+              k.negative && "text-destructive",
+            )}
+          >
             {k.value}
           </p>
           {k.hint ? (

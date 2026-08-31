@@ -177,6 +177,8 @@ import { readExtraParams } from "../services/reports/extra-filters.js";
 import { buildOrderItemsPdf } from "../services/reports/order-items-pdf.js";
 import { buildOrdersPdf } from "../services/reports/orders-pdf.js";
 import { buildRouteRomaneioPdf } from "../services/reports/route-romaneio-pdf.js";
+import { buildFinancialResultReport } from "../services/financial-result-report.js";
+import { buildFinancialResultPdf } from "../services/reports/financial-result-pdf.js";
 import { buildSalesDetailedPdf } from "../services/reports/sales-pdf.js";
 import { buildStockPdf } from "../services/reports/stock-pdf.js";
 import { buildStockCountPdf } from "../services/reports/stock-count-pdf.js";
@@ -6555,6 +6557,56 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     });
   });
 
+  app.get("/reports/financial-result", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({
+        error: "Resultado financeiro disponível apenas para admin/gestor",
+      });
+    }
+    const allowedProfit = await canReadEffectiveForUser(
+      auth.organizationId,
+      auth.sub,
+      auth.role,
+      "reports_profit_percent",
+    );
+    if (!allowedProfit) {
+      return reply
+        .status(403)
+        .send({ error: "Sem permissão para visualizar lucro e margem" });
+    }
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        sellerId: z.string().optional(),
+        includeFixedCosts: z
+          .union([z.literal("1"), z.literal("true"), z.literal("0")])
+          .optional(),
+      })
+      .safeParse(req.query);
+    let sellerIds: string[] | undefined;
+    if (auth.role === "MANAGER" && q.success && !q.data.sellerId) {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+    const includeFixedCosts =
+      q.success &&
+      (q.data.includeFixedCosts === "1" ||
+        q.data.includeFixedCosts === "true");
+    return buildFinancialResultReport({
+      organizationId: auth.organizationId,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerId: q.success ? q.data.sellerId : undefined,
+      sellerIds,
+      includeFixedCosts,
+    });
+  });
+
   app.get("/reports/commission-statement", async (req, reply) => {
     const auth = req.auth!;
     if (isTeamLeaderAuth(auth)) {
@@ -7375,6 +7427,63 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       .header(
         "Content-Disposition",
         'attachment; filename="relatorio-vendas.pdf"',
+      )
+      .send(pdf);
+  });
+
+  app.get("/reports/financial-result.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({
+        error: "Resultado financeiro disponível apenas para admin/gestor",
+      });
+    }
+    const allowedProfit = await canReadEffectiveForUser(
+      auth.organizationId,
+      auth.sub,
+      auth.role,
+      "reports_profit_percent",
+    );
+    if (!allowedProfit) {
+      return reply
+        .status(403)
+        .send({ error: "Sem permissão para visualizar lucro e margem" });
+    }
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        sellerId: z.string().optional(),
+        includeFixedCosts: z
+          .union([z.literal("1"), z.literal("true"), z.literal("0")])
+          .optional(),
+      })
+      .safeParse(req.query);
+    const filters = q.success ? q.data : {};
+    let sellerIds: string[] | undefined;
+    if (auth.role === "MANAGER" && !filters.sellerId) {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+    const includeFixedCosts =
+      filters.includeFixedCosts === "1" ||
+      filters.includeFixedCosts === "true";
+    const pdf = await buildFinancialResultPdf({
+      organizationId: auth.organizationId,
+      from: filters.from,
+      to: filters.to,
+      sellerId: filters.sellerId,
+      sellerIds,
+      includeFixedCosts,
+    });
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="resultado-financeiro.pdf"',
       )
       .send(pdf);
   });
