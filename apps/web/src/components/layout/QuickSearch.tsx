@@ -15,7 +15,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { navForRole, type NavItem } from "./navConfig";
@@ -112,7 +112,7 @@ export function QuickSearch({ className }: Props) {
     navigate(to);
   }
 
-  function onInputKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+  function onInputKeyDown(e: ReactKeyboardEvent<HTMLInputElement>) {
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActiveIndex((i) => Math.min(i + 1, Math.max(filtered.length - 1, 0)));
