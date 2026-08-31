@@ -249,6 +249,7 @@ const OFF_NAV_PLAN_FEATURES: { prefix: string; feature: PlanFeature }[] = [
   { prefix: "/relatorios/faturamento", feature: "fiscal_nfe" },
   { prefix: "/relatorios/vendas/resumo", feature: "reports_advanced" },
   { prefix: "/relatorios/vendas/ranking", feature: "reports_advanced" },
+  { prefix: "/relatorios/vendas/resultado-financeiro", feature: "reports_advanced" },
   { prefix: "/relatorios/clientes/carteira", feature: "reports_advanced" },
   { prefix: "/relatorios/clientes/carteira-vendedor", feature: "reports_advanced" },
   { prefix: "/relatorios/clientes/positivacao", feature: "reports_advanced" },

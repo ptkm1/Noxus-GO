@@ -16,6 +16,9 @@ const sora = Sora({
 export const metadata: Metadata = {
   title: `${APP_BRAND_NAME} — Planos`,
   description: `${APP_BRAND_TAGLINE} Gestão de pedidos, equipe e rota para equipes de vendas.`,
+  verification: {
+    google: "GJOepdKDdqgngAJVdXRULU9fqXaZSaI3xj0_g6XLETM",
+  },
 };
 
 export default function RootLayout({

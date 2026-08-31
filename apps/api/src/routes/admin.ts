@@ -6593,6 +6593,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         error: "Resultado financeiro disponível apenas para admin/gestor",
       });
     }
+    const allowedProfit = await canReadEffectiveForUser(
+      auth.organizationId,
+      auth.sub,
+      auth.role,
+      "reports_profit_percent",
+    );
+    if (!allowedProfit) {
+      return reply
+        .status(403)
+        .send({ error: "Sem permissão para visualizar lucro e margem" });
+    }
     const q = z
       .object({
         from: z.string().optional(),
@@ -6638,6 +6649,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(403).send({
         error: "Resultado financeiro disponível apenas para admin/gestor",
       });
+    }
+    const allowedProfit = await canReadEffectiveForUser(
+      auth.organizationId,
+      auth.sub,
+      auth.role,
+      "reports_profit_percent",
+    );
+    if (!allowedProfit) {
+      return reply
+        .status(403)
+        .send({ error: "Sem permissão para visualizar lucro e margem" });
     }
     const q = z
       .object({

@@ -55,6 +55,13 @@ const CATEGORIES: ReportCategory[] = [
         planFeature: "reports_advanced",
       },
       {
+        to: "/relatorios/vendas/resultado-financeiro",
+        title: "Resultado financeiro",
+        description:
+          "Faturamento, custos, comissões e lucro das vendas no período.",
+        planFeature: "reports_advanced",
+      },
+      {
         to: "/relatorios/pedidos",
         title: "Pedidos / Romaneio",
         description: "Lista de pedidos ou romaneio detalhado em PDF.",

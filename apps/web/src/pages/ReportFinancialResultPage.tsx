@@ -1,3 +1,4 @@
+import { useAuth } from "@/auth/AuthContext";
 import { ReportField } from "@/components/reports/ReportFormKit";
 import {
   fmtMoney,
@@ -33,6 +34,7 @@ import {
   ymdToIsoRange,
 } from "@/lib/period-presets";
 import { cn } from "@/lib/utils";
+import { canRead } from "@pedidos/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Printer, FileDown } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -211,6 +213,10 @@ function PctCell({ n }: { n: number }) {
 }
 
 export function ReportFinancialResultPage() {
+  const { user } = useAuth();
+  const canViewProfit = Boolean(
+    user && canRead(user.role, "reports_profit_percent", user.permissions),
+  );
   const { data: sellers = [] } = useReportSellers();
   const [preset, setPreset] = useState<PeriodChoice>("this_month");
   const [customFrom, setCustomFrom] = useState(() => periodRangeYmd("this_month").from);
@@ -258,7 +264,7 @@ export function ReportFinancialResultPage() {
     queryKey: ["admin", "reports", "financial-result", queryPath],
     queryFn: () =>
       apiFetch<FinancialResult>(`/admin/reports/financial-result?${queryPath}`),
-    enabled: queryPath != null,
+    enabled: canViewProfit && queryPath != null,
   });
 
   async function runPdf(kind: "download" | "print") {
@@ -280,6 +286,16 @@ export function ReportFinancialResultPage() {
   const t = data?.totals;
   const profitValue = includeFixedCosts ? t?.finalProfit : t?.profit;
   const marginValue = includeFixedCosts ? t?.finalMarginPct : t?.marginPct;
+
+  if (!canViewProfit) {
+    return (
+      <ReportDataLayout title="Resultado financeiro">
+        <p className="text-sm text-muted-foreground">
+          Você não tem permissão para visualizar lucro e margem nos relatórios.
+        </p>
+      </ReportDataLayout>
+    );
+  }
 
   return (
     <ReportDataLayout

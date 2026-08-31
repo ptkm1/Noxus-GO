@@ -53,6 +53,8 @@ export function adminPathToPlanFeature(routePath: string): PlanFeature | null {
   if (
     p === "/reports/scorecard" ||
     p === "/reports/margin" ||
+    p === "/reports/financial-result" ||
+    p === "/reports/financial-result.pdf" ||
     p === "/reports/stock-health" ||
     p === "/reports/credit-aging" ||
     p === "/reports/fiscal-outbound-summary" ||
