@@ -258,10 +258,16 @@ function isAsaasSubscriptionNotUpdatable(err: unknown): boolean {
  * bloquear o pagamento público — sem token o mesmo intent já é pagável.
  */
 function assertCanPayIntent(
-  intent: { organizationId: string; email: string; ownerUserId: string | null },
+  intent: { organizationId: string | null; email: string; ownerUserId: string | null },
   auth?: { organizationId: string; role: string; userId: string },
   cardHolderEmail?: string,
 ): void {
+  if (!intent.organizationId) {
+    throw Object.assign(new Error("Intenção sem organização"), {
+      code: "NOT_FOUND",
+      http: 404,
+    });
+  }
   if (auth && auth.organizationId === intent.organizationId) {
     const isOwner = Boolean(intent.ownerUserId && auth.userId === intent.ownerUserId);
     if (auth.role !== "ADMIN" && !isOwner) {
