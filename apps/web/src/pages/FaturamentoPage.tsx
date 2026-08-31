@@ -236,7 +236,7 @@ export function FaturamentoPage() {
     justification: "",
   });
 
-  const { data: settings, refetch: refetchSettings } = useQuery({
+  const { data: settings } = useQuery({
     queryKey: ["admin", "fiscal", "settings", activeEstablishmentId],
     queryFn: () => {
       const qs = activeEstablishmentId
