@@ -477,6 +477,10 @@ function AppRoutes() {
               element={<ReportSalesSummaryPage />}
             />
             <Route
+              path="relatorios/vendas/resultado-financeiro"
+              element={<ReportFinancialResultPage />}
+            />
+            <Route
               path="relatorios/vendas/detalhadas"
               element={<ReportSalesDetailedPage />}
             />

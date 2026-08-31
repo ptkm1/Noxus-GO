@@ -1,11 +1,13 @@
 import {
+    capHomeIndicators,
     HOME_CHART_INDICATOR_KEYS,
     HOME_INDICATOR_KEYS,
+    homeIndicatorLimitForPlan,
     isLifecycleSituationCode,
     isReservedSituationCode,
-    MAX_HOME_INDICATORS,
-    normalizeHomeIndicators,
     normalizePurchaseUnitCode,
+    parseHomeIndicators,
+    persistHomeIndicatorsError,
     uniqueIdsPreserveOrder,
     type HomeChartIndicatorKey,
     type HomeIndicatorKey,
@@ -48,6 +50,7 @@ import {
 } from "../services/audit-log.js";
 import { assertAdminPathPlanFeature } from "../services/billing/plan-gate.js";
 import { syncSubscriptionSeats } from "../services/billing/seats.js";
+import { ensureOrgSubscription } from "../services/billing/subscription.js";
 import {
     maybeInactivateStaleCustomersForOrg,
 } from "../services/customer-status.js";
@@ -109,6 +112,11 @@ import {
     buildStockHealthReport,
     buildVisitEffectiveness,
 } from "../services/management-reports.js";
+import {
+    buildFinancialResult,
+    buildFinancialResultPdf,
+    type FinancialPeriodGroup,
+} from "../services/financial-result-report.js";
 import { getOrCreateMorningBrief } from "../services/morning-brief.js";
 import { getWebPushPublicKey, notifyUsers } from "../services/notify.js";
 import {
@@ -177,8 +185,6 @@ import { readExtraParams } from "../services/reports/extra-filters.js";
 import { buildOrderItemsPdf } from "../services/reports/order-items-pdf.js";
 import { buildOrdersPdf } from "../services/reports/orders-pdf.js";
 import { buildRouteRomaneioPdf } from "../services/reports/route-romaneio-pdf.js";
-import { buildFinancialResultReport } from "../services/financial-result-report.js";
-import { buildFinancialResultPdf } from "../services/reports/financial-result-pdf.js";
 import { buildSalesDetailedPdf } from "../services/reports/sales-pdf.js";
 import { buildStockPdf } from "../services/reports/stock-pdf.js";
 import { buildStockCountPdf } from "../services/reports/stock-count-pdf.js";
@@ -505,17 +511,21 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   /** Regras de sistema da org (sync de pedidos, etc.). */
   app.get("/system-settings", async (req) => {
     const auth = req.auth!;
-    const org = await prisma.organization.findUnique({
-      where: { id: auth.organizationId },
-      select: {
-        orderSyncMode: true,
-        sellerShowUnassignedCustomers: true,
-        customerRegistrationMode: true,
-        sellerCanEditQueuedSales: true,
-        autoInactivateCustomersAfterMonths: true,
-        homeIndicators: true,
-      },
-    });
+    const [org, sub] = await Promise.all([
+      prisma.organization.findUnique({
+        where: { id: auth.organizationId },
+        select: {
+          orderSyncMode: true,
+          sellerShowUnassignedCustomers: true,
+          customerRegistrationMode: true,
+          sellerCanEditQueuedSales: true,
+          autoInactivateCustomersAfterMonths: true,
+          homeIndicators: true,
+        },
+      }),
+      ensureOrgSubscription(auth.organizationId),
+    ]);
+    const homeIndicatorLimit = homeIndicatorLimitForPlan(sub.planId);
     return {
       orderSyncMode: org?.orderSyncMode ?? ("AUTO" as const),
       sellerShowUnassignedCustomers: org?.sellerShowUnassignedCustomers ?? true,
@@ -524,7 +534,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       sellerCanEditQueuedSales: org?.sellerCanEditQueuedSales ?? false,
       autoInactivateCustomersAfterMonths:
         org?.autoInactivateCustomersAfterMonths ?? false,
-      homeIndicators: normalizeHomeIndicators(org?.homeIndicators),
+      homeIndicators: parseHomeIndicators(org?.homeIndicators),
+      homeIndicatorLimit,
     };
   });
 
@@ -547,8 +558,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         autoInactivateCustomersAfterMonths: z.boolean().optional(),
         homeIndicators: z
           .array(homeIndicatorKeySchema)
-          .min(1)
-          .max(MAX_HOME_INDICATORS)
+          .min(1, "Selecione pelo menos 1 indicador.")
+          .max(HOME_INDICATOR_KEYS.length)
           .optional(),
       })
       .safeParse(req.body);
@@ -567,10 +578,27 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       return reply.status(400).send({ error: "Nada para atualizar" });
     }
 
-    const homeIndicators =
-      body.data.homeIndicators !== undefined
-        ? normalizeHomeIndicators(body.data.homeIndicators)
-        : undefined;
+    const sub = await ensureOrgSubscription(auth.organizationId);
+    const homeIndicatorLimit = homeIndicatorLimitForPlan(sub.planId);
+
+    let homeIndicators: HomeIndicatorKey[] | undefined;
+    if (body.data.homeIndicators !== undefined) {
+      const currentOrg = await prisma.organization.findUnique({
+        where: { id: auth.organizationId },
+        select: { homeIndicators: true },
+      });
+      const current = parseHomeIndicators(currentOrg?.homeIndicators);
+      const next = parseHomeIndicators(body.data.homeIndicators);
+      const persistError = persistHomeIndicatorsError({
+        next,
+        current,
+        limit: homeIndicatorLimit,
+      });
+      if (persistError) {
+        return reply.status(400).send({ error: persistError });
+      }
+      homeIndicators = next;
+    }
 
     const updated = await prisma.organization.update({
       where: { id: auth.organizationId },
@@ -619,7 +647,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       sellerCanEditQueuedSales: updated.sellerCanEditQueuedSales,
       autoInactivateCustomersAfterMonths:
         updated.autoInactivateCustomersAfterMonths,
-      homeIndicators: normalizeHomeIndicators(updated.homeIndicators),
+      homeIndicators: parseHomeIndicators(updated.homeIndicators),
+      homeIndicatorLimit,
     };
   });
 
@@ -6583,28 +6612,104 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         includeFixedCosts: z
           .union([z.literal("1"), z.literal("true"), z.literal("0")])
           .optional(),
+        periodGroup: z.enum(["day", "week", "month"]).optional(),
       })
       .safeParse(req.query);
     let sellerIds: string[] | undefined;
-    if (auth.role === "MANAGER" && q.success && !q.data.sellerId) {
+    if (auth.role === "MANAGER") {
       const sellers = await prisma.seller.findMany({
         where: sellerScopeWhere(auth),
         select: { id: true },
       });
       sellerIds = sellers.map((s) => s.id);
     }
-    const includeFixedCosts =
-      q.success &&
-      (q.data.includeFixedCosts === "1" ||
-        q.data.includeFixedCosts === "true");
-    return buildFinancialResultReport({
+    if (q.success && q.data.sellerId) {
+      sellerIds = sellerIds
+        ? sellerIds.filter((id) => id === q.data.sellerId)
+        : [q.data.sellerId];
+    }
+    return buildFinancialResult({
       organizationId: auth.organizationId,
       from: q.success ? q.data.from : undefined,
       to: q.success ? q.data.to : undefined,
-      sellerId: q.success ? q.data.sellerId : undefined,
       sellerIds,
-      includeFixedCosts,
+      includeFixedCosts:
+        q.success &&
+        (q.data.includeFixedCosts === "1" ||
+          q.data.includeFixedCosts === "true"),
+      periodGroup: (q.success ? q.data.periodGroup : undefined) as
+        | FinancialPeriodGroup
+        | undefined,
     });
+  });
+
+  app.get("/reports/financial-result.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    if (isTeamLeaderAuth(auth)) {
+      return reply.status(403).send({
+        error: "Resultado financeiro disponível apenas para admin/gestor",
+      });
+    }
+    const allowedProfit = await canReadEffectiveForUser(
+      auth.organizationId,
+      auth.sub,
+      auth.role,
+      "reports_profit_percent",
+    );
+    if (!allowedProfit) {
+      return reply
+        .status(403)
+        .send({ error: "Sem permissão para visualizar lucro e margem" });
+    }
+    const q = z
+      .object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        sellerId: z.string().optional(),
+        includeFixedCosts: z
+          .union([z.literal("1"), z.literal("true"), z.literal("0")])
+          .optional(),
+        periodGroup: z.enum(["day", "week", "month"]).optional(),
+      })
+      .safeParse(req.query);
+    let sellerIds: string[] | undefined;
+    if (auth.role === "MANAGER") {
+      const sellers = await prisma.seller.findMany({
+        where: sellerScopeWhere(auth),
+        select: { id: true },
+      });
+      sellerIds = sellers.map((s) => s.id);
+    }
+    if (q.success && q.data.sellerId) {
+      sellerIds = sellerIds
+        ? sellerIds.filter((id) => id === q.data.sellerId)
+        : [q.data.sellerId];
+    }
+    const org = await prisma.organization.findUnique({
+      where: { id: auth.organizationId },
+      select: { displayName: true, name: true },
+    });
+    const pdf = await buildFinancialResultPdf({
+      organizationId: auth.organizationId,
+      orgName: org?.displayName || org?.name,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      sellerIds,
+      includeFixedCosts:
+        q.success &&
+        (q.data.includeFixedCosts === "1" ||
+          q.data.includeFixedCosts === "true"),
+      periodGroup: (q.success ? q.data.periodGroup : undefined) as
+        | FinancialPeriodGroup
+        | undefined,
+    });
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="resultado-financeiro.pdf"',
+      )
+      .send(pdf);
   });
 
   app.get("/reports/commission-statement", async (req, reply) => {
@@ -6949,12 +7054,20 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   /** Preferências de widgets do painel (leitura para admin/gestor/líder). */
   app.get("/reports/home-dashboard-config", async (req) => {
     const auth = req.auth!;
-    const org = await prisma.organization.findUnique({
-      where: { id: auth.organizationId },
-      select: { homeIndicators: true },
-    });
+    const [org, sub] = await Promise.all([
+      prisma.organization.findUnique({
+        where: { id: auth.organizationId },
+        select: { homeIndicators: true },
+      }),
+      ensureOrgSubscription(auth.organizationId),
+    ]);
+    const homeIndicatorLimit = homeIndicatorLimitForPlan(sub.planId);
+    const stored = parseHomeIndicators(org?.homeIndicators);
     return {
-      homeIndicators: normalizeHomeIndicators(org?.homeIndicators),
+      homeIndicators: capHomeIndicators(stored, homeIndicatorLimit),
+      homeIndicatorLimit,
+      homeIndicatorsOverLimit:
+        homeIndicatorLimit != null && stored.length > homeIndicatorLimit,
     };
   });
 
@@ -6975,32 +7088,48 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         homeIndicators: z
           .array(homeIndicatorKeySchema)
           .min(1)
-          .max(MAX_HOME_INDICATORS),
+          .max(HOME_INDICATOR_KEYS.length),
       })
       .safeParse(req.body);
     if (!body.success) {
       return sendZodError(reply, body.error, req);
     }
 
-    const org = await prisma.organization.findUnique({
-      where: { id: auth.organizationId },
-      select: { homeIndicators: true },
-    });
-    const current = normalizeHomeIndicators(org?.homeIndicators);
-    const requested = normalizeHomeIndicators(body.data.homeIndicators);
+    const [org, sub] = await Promise.all([
+      prisma.organization.findUnique({
+        where: { id: auth.organizationId },
+        select: { homeIndicators: true },
+      }),
+      ensureOrgSubscription(auth.organizationId),
+    ]);
+    const homeIndicatorLimit = homeIndicatorLimitForPlan(sub.planId);
+    const current = parseHomeIndicators(org?.homeIndicators);
+    const requested = parseHomeIndicators(body.data.homeIndicators);
     const requestedSet = new Set(requested);
-    const merged = normalizeHomeIndicators([
+    const merged = parseHomeIndicators([
       ...requested,
       ...current.filter((k) => !requestedSet.has(k)),
     ]);
+    const persistError = persistHomeIndicatorsError({
+      next: merged,
+      current,
+      limit: homeIndicatorLimit,
+    });
+    if (persistError) {
+      return reply.status(400).send({ error: persistError });
+    }
 
     const updated = await prisma.organization.update({
       where: { id: auth.organizationId },
       data: { homeIndicators: merged },
       select: { homeIndicators: true },
     });
+    const stored = parseHomeIndicators(updated.homeIndicators);
     return {
-      homeIndicators: normalizeHomeIndicators(updated.homeIndicators),
+      homeIndicators: capHomeIndicators(stored, homeIndicatorLimit),
+      homeIndicatorLimit,
+      homeIndicatorsOverLimit:
+        homeIndicatorLimit != null && stored.length > homeIndicatorLimit,
     };
   });
 
@@ -7427,63 +7556,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       .header(
         "Content-Disposition",
         'attachment; filename="relatorio-vendas.pdf"',
-      )
-      .send(pdf);
-  });
-
-  app.get("/reports/financial-result.pdf", async (req, reply) => {
-    const auth = req.auth!;
-    if (isTeamLeaderAuth(auth)) {
-      return reply.status(403).send({
-        error: "Resultado financeiro disponível apenas para admin/gestor",
-      });
-    }
-    const allowedProfit = await canReadEffectiveForUser(
-      auth.organizationId,
-      auth.sub,
-      auth.role,
-      "reports_profit_percent",
-    );
-    if (!allowedProfit) {
-      return reply
-        .status(403)
-        .send({ error: "Sem permissão para visualizar lucro e margem" });
-    }
-    const q = z
-      .object({
-        from: z.string().optional(),
-        to: z.string().optional(),
-        sellerId: z.string().optional(),
-        includeFixedCosts: z
-          .union([z.literal("1"), z.literal("true"), z.literal("0")])
-          .optional(),
-      })
-      .safeParse(req.query);
-    const filters = q.success ? q.data : {};
-    let sellerIds: string[] | undefined;
-    if (auth.role === "MANAGER" && !filters.sellerId) {
-      const sellers = await prisma.seller.findMany({
-        where: sellerScopeWhere(auth),
-        select: { id: true },
-      });
-      sellerIds = sellers.map((s) => s.id);
-    }
-    const includeFixedCosts =
-      filters.includeFixedCosts === "1" ||
-      filters.includeFixedCosts === "true";
-    const pdf = await buildFinancialResultPdf({
-      organizationId: auth.organizationId,
-      from: filters.from,
-      to: filters.to,
-      sellerId: filters.sellerId,
-      sellerIds,
-      includeFixedCosts,
-    });
-    return reply
-      .header("Content-Type", "application/pdf")
-      .header(
-        "Content-Disposition",
-        'attachment; filename="resultado-financeiro.pdf"',
       )
       .send(pdf);
   });

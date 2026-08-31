@@ -127,7 +127,7 @@ export function CheckoutForm({
     return (
       <div className="checkout-success" role="status">
         <h3>Redirecionando para o pagamento…</h3>
-        <p>Você será enviado ao formulário seguro de cartão. Não feche esta janela.</p>
+        <p>Você será enviado ao pagamento seguro (cartão, Pix ou boleto). Não feche esta janela.</p>
       </div>
     );
   }

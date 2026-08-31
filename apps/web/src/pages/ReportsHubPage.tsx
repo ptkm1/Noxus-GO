@@ -38,6 +38,12 @@ const CATEGORIES: ReportCategory[] = [
         planFeature: "reports_advanced",
       },
       {
+        to: "/relatorios/vendas/resultado-financeiro",
+        title: "Resultado financeiro",
+        description:
+          "Faturamento, custos, comissões, margem e lucro do período.",
+      },
+      {
         to: "/relatorios/vendas/detalhadas",
         title: "Vendas detalhadas",
         description: "PDF com pedidos confirmados e itens.",

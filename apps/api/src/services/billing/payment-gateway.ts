@@ -93,6 +93,52 @@ export type GatewaySubscriptionWithCardResult = {
   status?: string | null;
 };
 
+export type GatewayChargeBillingType = "PIX" | "BOLETO";
+
+export type GatewayChargeInstructions = {
+  billingType: GatewayChargeBillingType;
+  paymentId: string;
+  pix?: {
+    encodedImage: string;
+    payload: string;
+    expirationDate: string | null;
+  };
+  boleto?: {
+    bankSlipUrl: string | null;
+    invoiceUrl: string | null;
+    identificationField: string | null;
+    barCode: string | null;
+  };
+};
+
+export type GatewaySubscriptionChargeInput = {
+  customerId?: string;
+  customer?: GatewayCustomerInput;
+  customerBilling?: GatewayCustomerBilling;
+  value: number;
+  cycle: "MONTHLY";
+  nextDueDate: string;
+  description: string;
+  externalReference: string;
+  billingType: GatewayChargeBillingType;
+};
+
+export type GatewaySubscriptionChargeResult = {
+  subscriptionId: string;
+  customerId: string;
+  status?: string | null;
+  instructions: GatewayChargeInstructions;
+};
+
+export type GatewaySubscriptionChargeUpdateInput = {
+  subscriptionId: string;
+  customerId: string;
+  value: number;
+  description: string;
+  billingType: GatewayChargeBillingType;
+  updatePendingPayments: boolean;
+};
+
 export type GatewaySubscriptionUpgradeInput = {
   subscriptionId: string;
   customerId: string;
@@ -122,6 +168,12 @@ export type PaymentGateway = {
   upgradeSubscriptionWithCard(
     input: GatewaySubscriptionUpgradeInput,
   ): Promise<GatewaySubscriptionWithCardResult>;
+  createSubscriptionCharge(
+    input: GatewaySubscriptionChargeInput,
+  ): Promise<GatewaySubscriptionChargeResult>;
+  updateSubscriptionCharge(
+    input: GatewaySubscriptionChargeUpdateInput,
+  ): Promise<GatewaySubscriptionChargeResult>;
   updateSubscriptionValue(
     input: GatewaySubscriptionValueUpdateInput,
   ): Promise<void>;

@@ -9,7 +9,15 @@ export type AsaasConfig = {
   gracePeriodDays: number;
 };
 
-export type PaymentGatewayMode = "auto" | "asaas";
+export type PaymentGatewayMode = "auto" | "asaas" | "fake";
+
+/** IDs do gateway fake local — o Asaas responde 404 se forem enviados. */
+export function liveAsaasResourceId(id?: string | null): string | undefined {
+  const v = id?.trim();
+  if (!v) return undefined;
+  if (/^(sub|cus|pay|chk)_fake_/i.test(v)) return undefined;
+  return v;
+}
 
 export type PublicSiteUrls = {
   landingUrl: string;
@@ -19,6 +27,7 @@ export type PublicSiteUrls = {
 export function readPaymentGatewayMode(): PaymentGatewayMode {
   const raw = process.env.PAYMENT_GATEWAY?.trim().toLowerCase();
   if (raw === "asaas") return "asaas";
+  if (raw === "fake" && process.env.NODE_ENV !== "production") return "fake";
   return "auto";
 }
 

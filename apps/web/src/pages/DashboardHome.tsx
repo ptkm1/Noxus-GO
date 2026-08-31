@@ -8,7 +8,7 @@ import { apiFetch } from "@/lib/api";
 import { periodRange } from "@/lib/period-presets";
 import { isWebTeamLeader } from "@/lib/staff";
 import {
-  normalizeHomeIndicators,
+  parseHomeIndicators,
   type HomeIndicatorKey,
 } from "@pedidos/shared";
 import { useQuery } from "@tanstack/react-query";
@@ -78,7 +78,7 @@ export function DashboardHome() {
   });
 
   const sideIndicatorKeys = useMemo(() => {
-    const keys = normalizeHomeIndicators(homeConfig?.homeIndicators);
+    const keys = parseHomeIndicators(homeConfig?.homeIndicators);
     if (!teamLeader) return keys;
     // Líderes não têm indicadores de rentabilidade (API 403).
     return keys.filter((k) => !k.startsWith("profit_"));

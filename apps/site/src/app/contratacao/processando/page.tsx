@@ -142,7 +142,7 @@ function ProcessingInner() {
             className="btn-primary"
             href={`${appUrl()}/pagamento?intentId=${encodeURIComponent(intentId)}`}
           >
-            Concluir pagamento com cartão
+            Concluir pagamento
           </a>
         </p>
       ) : null}
