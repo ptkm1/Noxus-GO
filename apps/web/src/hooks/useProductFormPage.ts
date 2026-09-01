@@ -155,10 +155,16 @@ export function useProductFormPage() {
 
   const markupPercent = useMemo(() => {
     const cost = values.costPrice.trim() ? Number(values.costPrice) : null;
-    const sale = values.basePrice.trim() ? Number(values.basePrice) : 0;
-    if (cost == null || Number.isNaN(cost) || Number.isNaN(sale)) return null;
-    return computeMarkupPercent(cost, sale);
-  }, [values.costPrice, values.basePrice]);
+    const tablePrices = Object.values(priceTablePrices)
+      .map((raw) => raw.trim())
+      .filter(Boolean)
+      .map(Number)
+      .filter((n) => !Number.isNaN(n) && n >= 0);
+    if (tablePrices.length === 0 || cost == null || Number.isNaN(cost)) {
+      return null;
+    }
+    return computeMarkupPercent(cost, Math.min(...tablePrices));
+  }, [values.costPrice, priceTablePrices]);
 
   const create = useMutation({
     mutationFn: (
@@ -212,7 +218,7 @@ export function useProductFormPage() {
         }))
         .filter((row) => !Number.isNaN(row.price) && row.price >= 0);
 
-      if (!isEdit && syncPrices.length === 0) {
+      if (syncPrices.length === 0) {
         setActiveTab("precos");
         setFormError(
           "Na aba Preços, informe o preço em pelo menos uma tabela de preço.",
@@ -235,9 +241,7 @@ export function useProductFormPage() {
           const { stockQty: _stockQty, ...rest } = payload;
           update.mutate({
             ...(rest as typeof payload),
-            ...(syncPrices.length > 0
-              ? { priceTablePrices: syncPrices }
-              : {}),
+            priceTablePrices: syncPrices,
           });
         } else {
           create.mutate({
@@ -278,11 +282,11 @@ export function useProductFormPage() {
       if (prev[addPriceTableId] !== undefined) return prev;
       return {
         ...prev,
-        [addPriceTableId]: values.basePrice || "0",
+        [addPriceTableId]: "",
       };
     });
     setAddPriceTableId("");
-  }, [addPriceTableId, values.basePrice]);
+  }, [addPriceTableId]);
 
   const applyCreatedPriceTable = useCallback(
     (table: { id: string; name: string }) => {
@@ -290,12 +294,12 @@ export function useProductFormPage() {
         if (prev[table.id] !== undefined) return prev;
         return {
           ...prev,
-          [table.id]: values.basePrice || "0",
+          [table.id]: "",
         };
       });
       setAddPriceTableId("");
     },
-    [values.basePrice],
+    [],
   );
 
   const applyCreatedPurchaseUnit = useCallback(

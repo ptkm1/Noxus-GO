@@ -167,6 +167,7 @@ import {
     validateProductAttributes,
 } from "../services/product-attributes.js";
 import {
+    deriveBasePriceFromTablePrices,
     mapProductCadastroPrisma,
     normalizeProductNcm,
     productCadastroFieldsSchema,
@@ -2362,7 +2363,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           .union([z.string().max(2048), z.literal("")])
           .nullable()
           .optional(),
-        basePrice: z.number().nonnegative(),
+        basePrice: z.number().nonnegative().optional(),
         categoryId: z.string().min(1),
         supplierId: z.string().min(1),
         attributes: z.record(z.string(), z.unknown()).optional(),
@@ -2383,7 +2384,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         outboundOperationId: z.string().nullable().optional(),
         stockQty: z.number().int().min(0).optional(),
         blockSaleWhenOutOfStock: z.boolean().optional(),
-        priceTableId: z.string().optional(),
         priceTablePrices: z
           .array(
             z.object({
@@ -2391,7 +2391,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
               price: z.number().nonnegative(),
             }),
           )
-          .optional(),
+          .min(1),
         ...productCadastroFieldsSchema,
       })
       .safeParse(req.body);
@@ -2414,17 +2414,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!supplierOk)
       return reply.status(400).send({ error: "Fornecedor inválido" });
 
-    const createPriceRows =
-      body.data.priceTablePrices && body.data.priceTablePrices.length > 0
-        ? body.data.priceTablePrices
-        : body.data.priceTableId
-          ? [
-              {
-                priceTableId: body.data.priceTableId,
-                price: body.data.basePrice,
-              },
-            ]
-          : [];
+    const createPriceRows = body.data.priceTablePrices;
+    const resolvedBasePrice =
+      body.data.basePrice ??
+      deriveBasePriceFromTablePrices(createPriceRows.map((row) => row.price));
 
     if (createPriceRows.length > 0) {
       const tableIds = createPriceRows.map((p) => p.priceTableId);
@@ -2468,7 +2461,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
             !body.data.imageUrl || body.data.imageUrl === ""
               ? undefined
               : body.data.imageUrl.trim() || undefined,
-          basePrice: body.data.basePrice,
+          basePrice: resolvedBasePrice,
           organizationId: auth.organizationId,
           categoryId: body.data.categoryId,
           supplierId: body.data.supplierId,
@@ -2566,7 +2559,6 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         metadata: {
           name: created.name,
           stockQty: initialQty,
-          priceTableId: body.data.priceTableId ?? null,
           priceTableCount: createPriceRows.length,
         },
       });
@@ -2630,6 +2622,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
               price: z.number().nonnegative(),
             }),
           )
+          .min(1)
           .optional(),
         ...productCadastroFieldsSchema,
       })
@@ -2713,6 +2706,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       validatedAttrs = syncProductAttributesNcm(baseAttrs, ncmCol ?? null);
     }
 
+    const patchBasePrice =
+      body.data.priceTablePrices !== undefined
+        ? (body.data.basePrice ??
+          deriveBasePriceFromTablePrices(
+            body.data.priceTablePrices.map((row) => row.price),
+          ))
+        : body.data.basePrice;
+
     try {
       const updated = await prisma.product.update({
         where: { id },
@@ -2727,7 +2728,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
             body.data.description === undefined
               ? undefined
               : body.data.description,
-          basePrice: body.data.basePrice,
+          basePrice: patchBasePrice,
           featured:
             body.data.featured === undefined ? undefined : body.data.featured,
           ...(body.data.imageUrl !== undefined
@@ -7542,6 +7543,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         from: z.string().optional(),
         to: z.string().optional(),
         sellerId: z.string().optional(),
+        groupOrders: z
+          .union([z.literal("1"), z.literal("true"), z.literal("0")])
+          .optional(),
       })
       .safeParse(req.query);
     const filters = q.success ? q.data : {};
@@ -7550,6 +7554,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       sellerId: filters.sellerId,
       from: filters.from,
       to: filters.to,
+      groupOrders:
+        filters.groupOrders === "1" || filters.groupOrders === "true",
     });
     return reply
       .header("Content-Type", "application/pdf")

@@ -2,15 +2,12 @@ import type { StockValueBasis } from "@pedidos/shared";
 import { STOCK_VALUE_PRICE_COLUMN_LABELS } from "@pedidos/shared";
 import { prisma } from "../../db.js";
 import {
-  COLORS,
   drawEmptyState,
   drawHeader,
   drawTableFooter,
   drawTableHeader,
   drawTableRow,
-  ensureSpace,
   money,
-  PAGE,
   withPdfDoc,
   type PdfTable,
 } from "./pdf-common.js";
@@ -29,13 +26,12 @@ export type StockPdfFilters = {
 
 const TABLE: PdfTable = {
   columns: [
-    { key: "name", label: "Produto", width: 155 },
+    { key: "name", label: "Produto", width: 175 },
     { key: "sku", label: "SKU", width: 70 },
     { key: "stock", label: "Saldo", width: 42, align: "right" },
     { key: "min", label: "Mín.", width: 38, align: "right" },
-    { key: "supplier", label: "Fornecedor", width: 115 },
+    { key: "supplier", label: "Fornecedor", width: 137 },
     { key: "category", label: "Grupo", width: 85 },
-    { key: "expiring", label: "Validade", width: 42, align: "center" },
   ],
   rowHeight: 22,
 };
@@ -44,13 +40,12 @@ const TABLE: PdfTable = {
 function tableWithValue(basis: Exclude<StockValueBasis, "none">): PdfTable {
   return {
     columns: [
-      { key: "name", label: "Produto", width: 110 },
+      { key: "name", label: "Produto", width: 126 },
       { key: "sku", label: "SKU", width: 55 },
       { key: "stock", label: "Saldo", width: 36, align: "right" },
       { key: "min", label: "Mín.", width: 32, align: "right" },
-      { key: "supplier", label: "Fornecedor", width: 80 },
+      { key: "supplier", label: "Fornecedor", width: 96 },
       { key: "category", label: "Grupo", width: 60 },
-      { key: "expiring", label: "Validade", width: 32, align: "center" },
       {
         key: "unitPrice",
         label: STOCK_VALUE_PRICE_COLUMN_LABELS[basis],
@@ -124,7 +119,6 @@ export async function buildStockPdf(filters: StockPdfFilters): Promise<Buffer> {
         min: String(p.minStockQty),
         supplier: p.supplier?.tradeName ?? "—",
         category: p.category?.name ?? "—",
-        expiring: p.hasExpiringSoon ? "⚠" : "—",
       };
 
       if (showValue) {
@@ -142,33 +136,10 @@ export async function buildStockPdf(filters: StockPdfFilters): Promise<Buffer> {
             `${products.length} produto(s)`,
           ),
       });
-
-      if (p.hasExpiringSoon && p.lots.length > 0) {
-        const soon = p.lots
-          .slice(0, 3)
-          .map(
-            (l) =>
-              `${l.lotCode} (${l.qty}) até ${new Date(l.expiresAt).toLocaleDateString("pt-BR")}`,
-          )
-          .join(" · ");
-        ensureSpace(doc, 14);
-        doc
-          .fillColor(COLORS.warn)
-          .fontSize(7)
-          .text(`Lotes próximos: ${soon}`, PAGE.left + 6, doc.y + 2, {
-            width: PAGE.width - 12,
-          });
-        doc.fillColor(COLORS.text);
-        doc.moveDown(0.35);
-      }
     });
 
     const totalUnits = products.reduce((s, p) => s + p.stockQty, 0);
-    const expiringCount = products.filter((p) => p.hasExpiringSoon).length;
-    const leftFooter =
-      expiringCount > 0
-        ? `Produtos: ${products.length} · Com validade em até 30 dias: ${expiringCount} · Total unidades: ${totalUnits}`
-        : `Produtos: ${products.length} · Total unidades: ${totalUnits}`;
+    const leftFooter = `Produtos: ${products.length} · Total unidades: ${totalUnits}`;
 
     const rightFooter = showValue
       ? `Valor Total do Estoque: ${money(totalStockValue)}`

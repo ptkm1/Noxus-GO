@@ -1,17 +1,17 @@
 import { FormSection } from "@/components/forms";
+import { HomeIndicatorCatalogDialog } from "@/components/home/HomeIndicatorCatalogDialog";
 import { SettingsDetailShell } from "@/components/settings/SettingsDetailShell";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useAdminSystemSettings } from "@/hooks/useAdminSystemSettings";
 import {
   cheapestPlanWithHigherHomeIndicatorLimit,
   formatHomeIndicatorLimit,
-  HOME_INDICATOR_KEYS,
   HOME_INDICATOR_LABELS,
   homeIndicatorLimitForPlan,
   type HomeIndicatorKey,
 } from "@pedidos/shared";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, X } from "lucide-react";
+import { useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 
@@ -20,24 +20,28 @@ export function HomePanelSettingsPage() {
   const isAdmin = user?.role === "ADMIN";
   const { settings, isLoading, patch, selectedIndicators } =
     useAdminSystemSettings(Boolean(isAdmin));
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const indicatorLimit =
     settings?.homeIndicatorLimit ??
     homeIndicatorLimitForPlan(user?.subscription?.planId);
   const upgradePlan =
     cheapestPlanWithHigherHomeIndicatorLimit(indicatorLimit);
+  const atCap =
+    indicatorLimit != null && selectedIndicators.length >= indicatorLimit;
+  const controlsDisabled =
+    isLoading || patch.isPending || settings === undefined;
 
-  function toggleIndicator(key: HomeIndicatorKey) {
-    const current = selectedIndicators;
-    const exists = current.includes(key);
-    let next: HomeIndicatorKey[];
-    if (exists) {
-      next = current.filter((k) => k !== key);
-      if (next.length === 0) return;
-    } else {
-      if (indicatorLimit != null && current.length >= indicatorLimit) return;
-      next = [...current, key];
-    }
-    patch.mutate({ homeIndicators: next });
+  function addIndicator(key: HomeIndicatorKey) {
+    if (selectedIndicators.includes(key)) return;
+    if (atCap) return;
+    patch.mutate({ homeIndicators: [...selectedIndicators, key] });
+  }
+
+  function removeIndicator(key: HomeIndicatorKey) {
+    if (selectedIndicators.length <= 1) return;
+    patch.mutate({
+      homeIndicators: selectedIndicators.filter((k) => k !== key),
+    });
   }
 
   function moveIndicator(key: HomeIndicatorKey, direction: -1 | 1) {
@@ -62,17 +66,26 @@ export function HomePanelSettingsPage() {
     >
       <FormSection
         title="Widgets da home"
-        description="Marque e reordene os indicadores da coluna direita."
+        description="Adicione e reordene os indicadores da coluna direita."
       >
         <div className="max-w-xl space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Selecionados: {selectedIndicators.length}
-            {indicatorLimit != null ? `/${indicatorLimit}` : null}
-            {indicatorLimit != null &&
-            selectedIndicators.length >= indicatorLimit
-              ? " — desmarque um para escolher outro."
-              : null}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              Selecionados: {selectedIndicators.length}
+              {indicatorLimit != null ? `/${indicatorLimit}` : null}
+              {atCap ? " — remova um para adicionar outro." : null}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              className="gap-1.5"
+              disabled={controlsDisabled || atCap}
+              onClick={() => setCatalogOpen(true)}
+            >
+              <Plus className="size-4" aria-hidden />
+              Adicionar indicador
+            </Button>
+          </div>
           {indicatorLimit != null &&
           selectedIndicators.length > indicatorLimit ? (
             <p className="rounded-lg border border-amber-300/70 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
@@ -83,70 +96,61 @@ export function HomePanelSettingsPage() {
             </p>
           ) : null}
           <ul className="divide-y divide-border rounded-xl border border-border bg-card">
-            {HOME_INDICATOR_KEYS.map((key) => {
-              const checked = selectedIndicators.includes(key);
-              const orderIdx = selectedIndicators.indexOf(key);
-              const atCap =
-                !checked &&
-                indicatorLimit != null &&
-                selectedIndicators.length >= indicatorLimit;
-              return (
-                <li key={key} className="flex items-center gap-3 px-3 py-2.5">
-                  <Checkbox
-                    checked={checked}
-                    disabled={
-                      isLoading ||
-                      patch.isPending ||
-                      settings === undefined ||
-                      atCap ||
-                      (checked && selectedIndicators.length <= 1)
-                    }
-                    onCheckedChange={() => toggleIndicator(key)}
-                  />
-                  <span className="min-w-0 flex-1 text-sm text-foreground">
-                    {HOME_INDICATOR_LABELS[key]}
-                    {checked ? (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        #{orderIdx + 1}
-                      </span>
-                    ) : null}
+            {selectedIndicators.map((key, orderIdx) => (
+              <li key={key} className="flex items-center gap-3 px-3 py-2.5">
+                <span className="min-w-0 flex-1 text-sm text-foreground">
+                  {HOME_INDICATOR_LABELS[key]}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    #{orderIdx + 1}
                   </span>
-                  {checked ? (
-                    <span className="flex shrink-0 gap-0.5">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
-                        disabled={
-                          orderIdx <= 0 || patch.isPending || isLoading
-                        }
-                        onClick={() => moveIndicator(key, -1)}
-                        aria-label="Mover para cima"
-                      >
-                        <ChevronUp className="size-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
-                        disabled={
-                          orderIdx < 0 ||
-                          orderIdx >= selectedIndicators.length - 1 ||
-                          patch.isPending ||
-                          isLoading
-                        }
-                        onClick={() => moveIndicator(key, 1)}
-                        aria-label="Mover para baixo"
-                      >
-                        <ChevronDown className="size-4" />
-                      </Button>
-                    </span>
-                  ) : null}
-                </li>
-              );
-            })}
+                </span>
+                <span className="flex shrink-0 gap-0.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8"
+                    disabled={
+                      orderIdx <= 0 || patch.isPending || isLoading
+                    }
+                    onClick={() => moveIndicator(key, -1)}
+                    aria-label="Mover para cima"
+                  >
+                    <ChevronUp className="size-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8"
+                    disabled={
+                      orderIdx >= selectedIndicators.length - 1 ||
+                      patch.isPending ||
+                      isLoading
+                    }
+                    onClick={() => moveIndicator(key, 1)}
+                    aria-label="Mover para baixo"
+                  >
+                    <ChevronDown className="size-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 text-muted-foreground hover:text-destructive"
+                    disabled={
+                      selectedIndicators.length <= 1 ||
+                      patch.isPending ||
+                      isLoading
+                    }
+                    onClick={() => removeIndicator(key)}
+                    aria-label="Remover indicador"
+                  >
+                    <X className="size-4" />
+                  </Button>
+                </span>
+              </li>
+            ))}
           </ul>
           <p className="text-xs text-muted-foreground">
             Rentabilidade = receita − custo do produto cadastrado. Itens sem
@@ -154,6 +158,16 @@ export function HomePanelSettingsPage() {
           </p>
         </div>
       </FormSection>
+
+      <HomeIndicatorCatalogDialog
+        open={catalogOpen}
+        onOpenChange={setCatalogOpen}
+        selectedKeys={selectedIndicators}
+        atCap={atCap}
+        disabled={controlsDisabled}
+        onAdd={addIndicator}
+      />
+
       {patch.isError ? (
         <p className="text-sm text-destructive">
           {(patch.error as Error).message || "Não foi possível salvar."}

@@ -13,6 +13,7 @@ import {
   money,
   orderCode,
   shortDateTime,
+  shortName,
   withPdfDoc,
   type PdfTable,
 } from "./pdf-common.js";
@@ -22,6 +23,8 @@ export type SalesPdfFilters = {
   sellerId?: string;
   from?: string;
   to?: string;
+  /** Lista consolidada de pedidos em vez de uma seção por pedido. */
+  groupOrders?: boolean;
 };
 
 const ITEMS_TABLE: PdfTable = {
@@ -34,6 +37,18 @@ const ITEMS_TABLE: PdfTable = {
     { key: "total", label: "Val total", width: 95, align: "right" },
   ],
   rowHeight: 20,
+};
+
+const ORDERS_LIST_TABLE: PdfTable = {
+  columns: [
+    { key: "code", label: "Código", width: 58 },
+    { key: "date", label: "Data", width: 90 },
+    { key: "customer", label: "Cliente", width: 130 },
+    { key: "seller", label: "Vendedor", width: 110 },
+    { key: "items", label: "Itens", width: 40, align: "right" },
+    { key: "total", label: "Total", width: 119, align: "right" },
+  ],
+  rowHeight: 22,
 };
 
 function salesWhere(filters: SalesPdfFilters): Prisma.OrderWhereInput {
@@ -81,6 +96,58 @@ export async function buildSalesDetailedPdf(
 
   const orgName = org?.displayName || org?.name || "";
   const generatedAt = new Date().toLocaleString("pt-BR");
+
+  if (filters.groupOrders) {
+    return withPdfDoc((doc) => {
+      drawHeader(
+        doc,
+        "Vendas detalhadas — Lista de pedidos",
+        orgName,
+        `${orders.length} pedido(s) · Gerado em ${generatedAt}`,
+      );
+
+      if (orders.length === 0) {
+        drawEmptyState(doc, "Nenhum pedido confirmado no período.");
+        return;
+      }
+
+      drawTableHeader(doc, ORDERS_LIST_TABLE);
+
+      let sum = 0;
+      orders.forEach((o, index) => {
+        const amount = decToNum(o.totalAmount);
+        sum += amount;
+        drawTableRow(
+          doc,
+          ORDERS_LIST_TABLE,
+          {
+            code: orderCode(o),
+            date: shortDateTime(o.createdAt),
+            customer: shortName(o.customer?.name ?? "—", 18),
+            seller: shortName(o.seller.user.name, 16),
+            items: String(o.items.length),
+            total: money(amount),
+          },
+          {
+            index,
+            onNewPage: () =>
+              drawHeader(
+                doc,
+                "Vendas detalhadas — Lista de pedidos (cont.)",
+                orgName,
+                `${orders.length} pedido(s)`,
+              ),
+          },
+        );
+      });
+
+      drawTableFooter(
+        doc,
+        `Total de pedidos: ${orders.length}`,
+        `Total geral: ${money(sum)}`,
+      );
+    });
+  }
 
   return withPdfDoc((doc) => {
     if (orders.length === 0) {

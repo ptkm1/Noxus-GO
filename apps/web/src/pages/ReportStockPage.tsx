@@ -124,7 +124,7 @@ export function ReportStockPage() {
         />
       </ReportField>
       <AdditionalFiltersSection
-        catalog={STOCK_EXTRA_FILTERS}
+        catalog={STOCK_EXTRA_FILTERS.filter((f) => f.key !== "hasExpiringSoon")}
         rows={extras}
         onChange={setExtras}
       />

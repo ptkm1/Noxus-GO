@@ -7,7 +7,7 @@ import {
 } from "@pedidos/shared";
 import type { LucideIcon } from "lucide-react";
 import {
-    Activity,
+    BarChart3,
     Bell,
     ClipboardList,
     FileText,
@@ -19,6 +19,7 @@ import {
     Receipt,
     Settings,
     ShoppingCart,
+    Sparkles,
     Truck,
     UserCircle,
     UserCog,
@@ -115,9 +116,15 @@ export const DASHBOARD_NAV: NavItem[] = [
     planFeature: "fiscal_nfe",
   },
   {
-    to: "/indicadores",
-    label: "Indicadores",
-    icon: Activity,
+    to: "/relatorios",
+    label: "Relatórios",
+    icon: BarChart3,
+    resource: "reports",
+  },
+  {
+    to: "/indicadores/ia",
+    label: "Indicadores IA",
+    icon: Sparkles,
     resource: "reports",
   },
   {
@@ -152,11 +159,17 @@ export const TEAM_LEADER_NAV: NavItem[] = [
     resource: "orders",
   },
   {
-    to: "/indicadores",
-    label: "Indicadores",
-    icon: Activity,
+    to: "/relatorios",
+    label: "Relatórios",
+    icon: BarChart3,
     resource: "reports",
     planFeature: "insights",
+  },
+  {
+    to: "/indicadores/ia",
+    label: "Indicadores IA",
+    icon: Sparkles,
+    resource: "reports",
   },
 ];
 
@@ -260,20 +273,17 @@ const OFF_NAV_PLAN_FEATURES: { prefix: string; feature: PlanFeature }[] = [
 ];
 
 export function planFeatureForPath(pathname: string): PlanFeature | null {
-  // Hub de indicadores: não exige feature; cards internos (insights) são filtrados na página.
-  if (pathname === "/indicadores" || pathname === "/indicadores/") {
-    return null;
+  if (pathname === "/insights" || pathname.startsWith("/insights/")) {
+    return "insights";
   }
+  // Prefixos mais específicos (relatórios avançados) antes do item «Relatórios».
+  const offNav = OFF_NAV_PLAN_FEATURES.find(
+    (r) => pathname === r.prefix || pathname.startsWith(`${r.prefix}/`),
+  );
+  if (offNav) return offNav.feature;
   const item = [...DASHBOARD_NAV, ...TEAM_LEADER_NAV].find((nav) => {
     if (nav.end) return pathname === nav.to;
     return pathname === nav.to || pathname.startsWith(`${nav.to}/`);
   });
-  if (item?.planFeature) return item.planFeature;
-  if (pathname === "/insights" || pathname.startsWith("/insights/")) {
-    return "insights";
-  }
-  const offNav = OFF_NAV_PLAN_FEATURES.find(
-    (r) => pathname === r.prefix || pathname.startsWith(`${r.prefix}/`),
-  );
-  return offNav?.feature ?? null;
+  return item?.planFeature ?? null;
 }

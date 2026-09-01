@@ -13,6 +13,7 @@ import {
   useReportSellers,
 } from "@/components/reports/ReportDataKit";
 import { AppSelect } from "@/components/ui/app-select";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -255,6 +256,7 @@ export function ReportSalesDetailedPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [sellerId, setSellerId] = useState("");
+  const [groupOrders, setGroupOrders] = useState(false);
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -267,6 +269,7 @@ export function ReportSalesDetailedPage() {
       if (iso.from) q.set("from", iso.from);
       if (iso.to) q.set("to", iso.to);
       if (sellerId) q.set("sellerId", sellerId);
+      if (groupOrders) q.set("groupOrders", "1");
       await downloadPdf(
         `/admin/reports/sales.pdf?${q.toString()}`,
         "vendas-detalhadas.pdf",
@@ -285,6 +288,7 @@ export function ReportSalesDetailedPage() {
         setFrom("");
         setTo("");
         setSellerId("");
+        setGroupOrders(false);
         setErr(null);
       }}
       onGenerate={() => void generate()}
@@ -311,10 +315,24 @@ export function ReportSalesDetailedPage() {
           }))}
         />
       </ReportField>
+      <ReportField label="Agrupar pedidos">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="flex items-center gap-2">
+            <Checkbox
+              checked={groupOrders}
+              onCheckedChange={(v) => setGroupOrders(v === true)}
+            />
+            Listar pedidos em uma única tabela
+          </span>
+          <span className="text-muted-foreground pl-6">
+            Desmarcado: uma seção por pedido com itens (quebra de página).
+          </span>
+        </label>
+      </ReportField>
       {err ? <p className="text-sm text-destructive">{err}</p> : null}
       <p className="text-sm text-muted-foreground">
-        Gera um PDF com cada pedido confirmado e suas linhas de itens no
-        período.
+        Gera um PDF com pedidos confirmados no período — detalhado por pedido
+        ou em lista consolidada.
       </p>
     </ReportFormLayout>
   );

@@ -383,7 +383,7 @@ export function ProductFormPage() {
         {activeTab === "precos" ? (
           <FormSection
             title="Preços"
-            description="Valores de custo, venda e limites comerciais."
+            description="Valores de custo, limites comerciais e preços por tabela."
           >
             <FormGrid cols={2}>
               <FormField
@@ -398,23 +398,6 @@ export function ProductFormPage() {
                   min="0"
                   value={values.costPrice}
                   onChange={(e) => setField("costPrice", e.target.value)}
-                />
-              </FormField>
-
-              <FormField
-                label="Preço venda (R$)"
-                htmlFor="prod-price"
-                required
-                error={fieldError("basePrice")}
-                hint="Preço base do produto. Usado quando não há preço em tabela de preços."
-              >
-                <Input
-                  id="prod-price"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={values.basePrice}
-                  onChange={(e) => setField("basePrice", e.target.value)}
                 />
               </FormField>
 
@@ -484,7 +467,11 @@ export function ProductFormPage() {
                 />
               </FormField>
 
-              <FormField label="Mark-up (%)" htmlFor="prod-markup">
+              <FormField
+                label="Mark-up (%)"
+                htmlFor="prod-markup"
+                hint="Calculado pelo menor preço de tabela informado."
+              >
                 <Input
                   id="prod-markup"
                   value={

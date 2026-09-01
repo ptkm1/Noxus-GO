@@ -84,6 +84,14 @@ export function syncProductAttributesNcm(
   return next;
 }
 
+/** Menor preço de tabela — espelha `basePrice` legado para relatórios. */
+export function deriveBasePriceFromTablePrices(prices: number[]): number {
+  if (prices.length === 0) {
+    throw new Error("Informe o preço em pelo menos uma tabela de preço.");
+  }
+  return Math.min(...prices);
+}
+
 export function pickProductCadastroData<T extends Record<string, unknown>>(
   body: T,
 ): Record<string, unknown> {

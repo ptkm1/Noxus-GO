@@ -380,7 +380,6 @@ const TAB_FIELDS: Record<ProductFormTab, (keyof ProductFormValues)[]> = {
     "imageUrl",
   ],
   precos: [
-    "basePrice",
     "costPrice",
     "factoryPrice",
     "maxSalePrice",
@@ -452,16 +451,6 @@ export function validateProductForm(
 
   if (!values.supplierId.trim()) {
     errors.supplierId = "Selecione o fornecedor.";
-  }
-
-  const basePriceRaw = values.basePrice.trim();
-  if (basePriceRaw === "") {
-    errors.basePrice = "Informe o preço de venda.";
-  } else {
-    const basePrice = Number(basePriceRaw);
-    if (Number.isNaN(basePrice) || basePrice < 0) {
-      errors.basePrice = "Preço de venda inválido (≥ 0).";
-    }
   }
 
   const stockRaw = values.stockQty.trim();
@@ -592,7 +581,6 @@ export type ProductApiPayload = {
   barcode?: string | null;
   description?: string | null;
   imageUrl?: string | null;
-  basePrice: number;
   categoryId: string;
   supplierId: string;
   productLine?: string | null;
@@ -663,7 +651,6 @@ export function formToProductPayload(
     barcode: strOrNull(values.barcode),
     description: values.name.trim(),
     imageUrl: strOrNull(values.imageUrl),
-    basePrice: Number(values.basePrice),
     categoryId: values.categoryId.trim(),
     supplierId: values.supplierId.trim(),
     productLine: strOrNull(values.productLine),

@@ -194,6 +194,8 @@ export function drawTableRow(
   opts?: {
     index?: number;
     onNewPage?: () => void;
+    /** Linha de totais: fundo destacado e texto em negrito. */
+    emphasize?: boolean;
   },
 ) {
   const h = table.rowHeight ?? 20;
@@ -206,7 +208,11 @@ export function drawTableRow(
 
   const y = doc.y;
   const idx = opts?.index ?? 0;
-  const bg = idx % 2 === 0 ? COLORS.rowEven : COLORS.rowOdd;
+  const bg = opts?.emphasize
+    ? "#e2e8f0"
+    : idx % 2 === 0
+      ? COLORS.rowEven
+      : COLORS.rowOdd;
 
   doc.rect(PAGE.left, y, PAGE.width, h).fill(bg);
   doc
@@ -216,7 +222,10 @@ export function drawTableRow(
     .lineTo(PAGE.right, y + h)
     .stroke();
 
-  doc.fillColor(COLORS.text).fontSize(8).font("Helvetica");
+  doc
+    .fillColor(COLORS.text)
+    .fontSize(8)
+    .font(opts?.emphasize ? "Helvetica-Bold" : "Helvetica");
   table.columns.forEach((col, i) => {
     const pad = 4;
     const text = cells[col.key] ?? "—";
@@ -232,6 +241,7 @@ export function drawTableRow(
   });
 
   doc.y = y + h;
+  if (opts?.emphasize) doc.font("Helvetica");
 }
 
 export function drawTableFooter(

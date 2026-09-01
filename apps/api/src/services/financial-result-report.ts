@@ -2,9 +2,11 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { decToNum } from "../util/money.js";
 import {
+  COLORS,
   drawHeader,
   drawTableHeader,
   drawTableRow,
+  ensureSpace,
   money,
   PAGE,
   withPdfDoc,
@@ -13,6 +15,62 @@ import {
 
 function roundMoney(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/** Brasil sem horário de verão desde 2019: 00:00 BRT = 03:00 UTC. */
+const REPORT_TZ = "America/Sao_Paulo";
+
+type CivilDate = { y: number; m: number; day: number };
+
+function civilInSaoPaulo(d: Date): CivilDate {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: REPORT_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const num = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((p) => p.type === type)?.value);
+  return { y: num("year"), m: num("month"), day: num("day") };
+}
+
+function startOfSaoPauloDay(y: number, month1: number, day: number): Date {
+  return new Date(Date.UTC(y, month1 - 1, day, 3, 0, 0, 0));
+}
+
+function endOfSaoPauloDay(y: number, month1: number, day: number): Date {
+  return new Date(Date.UTC(y, month1 - 1, day + 1, 2, 59, 59, 999));
+}
+
+function daysInMonth(y: number, month1: number): number {
+  return new Date(Date.UTC(y, month1, 0)).getUTCDate();
+}
+
+function civilDayKey(c: CivilDate): string {
+  return `${c.y}-${String(c.m).padStart(2, "0")}-${String(c.day).padStart(2, "0")}`;
+}
+
+function periodDayKey(d: Date): string {
+  return civilDayKey(civilInSaoPaulo(d));
+}
+
+function periodMonthKey(d: Date): string {
+  const c = civilInSaoPaulo(d);
+  return `${c.y}-${String(c.m).padStart(2, "0")}`;
+}
+
+function periodWeekKey(d: Date): string {
+  const c = civilInSaoPaulo(d);
+  const dow = new Date(Date.UTC(c.y, c.m - 1, c.day)).getUTCDay();
+  const offset = dow === 0 ? 6 : dow - 1;
+  const monday = new Date(Date.UTC(c.y, c.m - 1, c.day - offset));
+  return `${monday.getUTCFullYear()}-${String(monday.getUTCMonth() + 1).padStart(2, "0")}-${String(monday.getUTCDate()).padStart(2, "0")}`;
+}
+
+function daysInclusiveCivil(a: CivilDate, b: CivilDate): number {
+  const start = Date.UTC(a.y, a.m - 1, a.day);
+  const end = Date.UTC(b.y, b.m - 1, b.day);
+  return Math.floor((end - start) / 86_400_000) + 1;
 }
 
 function parseOptionalDate(raw: string | undefined): Date | null {
@@ -28,49 +86,33 @@ function resolvePeriod(from?: string, to?: string): { start: Date; end: Date } {
   if (fromDt && toDt) return { start: fromDt, end: toDt };
   if (fromDt && !toDt) return { start: fromDt, end: new Date() };
   if (!fromDt && toDt) {
-    const start = new Date(toDt);
-    start.setUTCDate(1);
-    start.setUTCHours(0, 0, 0, 0);
-    return { start, end: toDt };
+    const c = civilInSaoPaulo(toDt);
+    return { start: startOfSaoPauloDay(c.y, c.m, 1), end: toDt };
   }
   const now = new Date();
-  const start = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0),
-  );
-  return { start, end: now };
+  const c = civilInSaoPaulo(now);
+  return { start: startOfSaoPauloDay(c.y, c.m, 1), end: now };
 }
 
 function previousPeriod(start: Date, end: Date): { start: Date; end: Date } {
+  const s = civilInSaoPaulo(start);
+  const e = civilInSaoPaulo(end);
+  if (s.day === 1) {
+    const prevM = s.m === 1 ? 12 : s.m - 1;
+    const prevY = s.m === 1 ? s.y - 1 : s.y;
+    const prevEndDay = Math.min(e.day, daysInMonth(prevY, prevM));
+    return {
+      start: startOfSaoPauloDay(prevY, prevM, 1),
+      end: endOfSaoPauloDay(prevY, prevM, prevEndDay),
+    };
+  }
   const duration = end.getTime() - start.getTime();
   const prevEnd = new Date(start.getTime() - 1);
   const prevStart = new Date(prevEnd.getTime() - duration);
   return { start: prevStart, end: prevEnd };
 }
 
-function utcDayKey(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-function utcMonthKey(d: Date): string {
-  return d.toISOString().slice(0, 7);
-}
-
-function utcWeekKey(d: Date): string {
-  const day = d.getUTCDay();
-  const offset = day === 0 ? 6 : day - 1;
-  const monday = new Date(
-    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - offset),
-  );
-  return utcDayKey(monday);
-}
-
-function daysInclusiveUtc(a: Date, b: Date): number {
-  const start = Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate());
-  const end = Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate());
-  return Math.floor((end - start) / 86_400_000) + 1;
-}
-
-/** Rateia o valor mensal das despesas fixas ativas pelos dias do período. */
+/** Rateia o valor mensal das despesas fixas ativas pelos dias civis em São Paulo. */
 export async function sumProratedFixedCosts(params: {
   organizationId: string;
   start: Date;
@@ -84,26 +126,26 @@ export async function sumProratedFixedCosts(params: {
   const monthly = templates.reduce((acc, row) => acc + decToNum(row.amount), 0);
   if (monthly <= 0) return 0;
 
+  const startC = civilInSaoPaulo(params.start);
+  const endC = civilInSaoPaulo(params.end);
   let fraction = 0;
-  let cursor = new Date(
-    Date.UTC(params.start.getUTCFullYear(), params.start.getUTCMonth(), 1),
-  );
-  const last = new Date(
-    Date.UTC(params.end.getUTCFullYear(), params.end.getUTCMonth(), 1),
-  );
-  while (cursor <= last) {
-    const y = cursor.getUTCFullYear();
-    const m = cursor.getUTCMonth();
-    const monthStart = new Date(Date.UTC(y, m, 1, 0, 0, 0, 0));
-    const monthEnd = new Date(Date.UTC(y, m + 1, 0, 23, 59, 59, 999));
-    const overlapStart =
-      params.start > monthStart ? params.start : monthStart;
-    const overlapEnd = params.end < monthEnd ? params.end : monthEnd;
-    if (overlapStart <= overlapEnd) {
-      const monthDays = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-      fraction += daysInclusiveUtc(overlapStart, overlapEnd) / monthDays;
+  let y = startC.y;
+  let m = startC.m;
+  while (y < endC.y || (y === endC.y && m <= endC.m)) {
+    const monthDays = daysInMonth(y, m);
+    const overlapStart: CivilDate =
+      y === startC.y && m === startC.m ? startC : { y, m, day: 1 };
+    const overlapEnd: CivilDate =
+      y === endC.y && m === endC.m ? endC : { y, m, day: monthDays };
+    if (daysInclusiveCivil(overlapStart, overlapEnd) > 0) {
+      fraction += daysInclusiveCivil(overlapStart, overlapEnd) / monthDays;
     }
-    cursor = new Date(Date.UTC(y, m + 1, 1));
+    if (m === 12) {
+      m = 1;
+      y += 1;
+    } else {
+      m += 1;
+    }
   }
   return roundMoney(monthly * fraction);
 }
@@ -172,10 +214,15 @@ function totalsFromParts(parts: {
   );
   const marginPct =
     parts.revenue > 0 ? roundMoney((profit / parts.revenue) * 100) : 0;
-  const fixed = parts.includeFixedCosts ? parts.fixedCosts : 0;
-  const finalProfit = roundMoney(profit - fixed);
-  const finalMarginPct =
-    parts.revenue > 0 ? roundMoney((finalProfit / parts.revenue) * 100) : 0;
+  const fixed = parts.fixedCosts;
+  const finalProfit = parts.includeFixedCosts
+    ? roundMoney(profit - fixed)
+    : profit;
+  const finalMarginPct = parts.includeFixedCosts
+    ? parts.revenue > 0
+      ? roundMoney((finalProfit / parts.revenue) * 100)
+      : 0
+    : marginPct;
   return {
     orderCount: parts.orderCount,
     revenue: roundMoney(parts.revenue),
@@ -200,16 +247,17 @@ function evolutionPct(current: number, previous: number): number | null {
 }
 
 const CRITERIA_WITHOUT_FIXED =
-  "Critérios deste relatório: Resultado calculado com base no faturamento das vendas, descontando o custo dos produtos vendidos e as comissões pagas. Não foram considerados impostos, fretes, taxas ou outros custos. Custos fixos não foram considerados neste resultado.";
+  "Critérios deste relatório: faturamento é o valor líquido do pedido (já com desconto de combo). Lucro = faturamento − custo dos produtos − comissões. Não entram impostos, fretes, taxas nem custos fixos.";
 
 const CRITERIA_WITH_FIXED =
-  "Critérios deste relatório: Resultado calculado com base no faturamento das vendas, descontando o custo dos produtos vendidos, as comissões pagas e os custos fixos cadastrados para o período. Não foram considerados impostos, fretes, taxas ou outros custos.";
+  "Critérios deste relatório: faturamento é o valor líquido do pedido (já com desconto de combo). Lucro = faturamento − custo dos produtos − comissões. Lucro final ainda desconta os custos fixos rateados pelos dias do período. Não entram impostos, fretes ou taxas.";
 
 const orderSelect = {
   id: true,
   orderNumber: true,
   sellerId: true,
   createdAt: true,
+  totalAmount: true,
   seller: { select: { user: { select: { name: true } } } },
   customer: { select: { name: true } },
   items: {
@@ -314,42 +362,63 @@ function aggregateOrders(
   }
 
   for (const order of orders) {
+    const billed = roundMoney(decToNum(order.totalAmount));
+    const lineParts = order.items.map((item) => {
+      const lineGross = roundMoney(decToNum(item.unitPrice) * item.quantity);
+      const unitCost =
+        item.product.costPrice != null ? decToNum(item.product.costPrice) : null;
+      if (unitCost == null) linesMissingCost += 1;
+      return {
+        item,
+        lineGross,
+        lineCost:
+          unitCost != null ? roundMoney(unitCost * item.quantity) : 0,
+        lineCommission: item.commissionAmount
+          ? decToNum(item.commissionAmount)
+          : 0,
+      };
+    });
+    const gross = roundMoney(
+      lineParts.reduce((s, p) => s + p.lineGross, 0),
+    );
+
     let orderRevenue = 0;
     let orderCost = 0;
     let orderCommission = 0;
-    for (const item of order.items) {
-      const lineRevenue = decToNum(item.unitPrice) * item.quantity;
-      const unitCost =
-        item.product.costPrice != null ? decToNum(item.product.costPrice) : null;
-      const lineCost = unitCost != null ? unitCost * item.quantity : 0;
-      if (unitCost == null) linesMissingCost += 1;
-      const lineCommission = item.commissionAmount
-        ? decToNum(item.commissionAmount)
-        : 0;
+    let allocatedRevenue = 0;
+
+    lineParts.forEach((part, idx) => {
+      const isLast = idx === lineParts.length - 1;
+      const lineRevenue =
+        gross <= 0
+          ? 0
+          : isLast
+            ? roundMoney(billed - allocatedRevenue)
+            : roundMoney((part.lineGross / gross) * billed);
+      if (!isLast) allocatedRevenue += lineRevenue;
 
       orderRevenue += lineRevenue;
-      orderCost += lineCost;
-      orderCommission += lineCommission;
+      orderCost += part.lineCost;
+      orderCommission += part.lineCommission;
 
       const delta = {
         orderId: order.id,
         revenue: lineRevenue,
-        productCost: lineCost,
-        commission: lineCommission,
+        productCost: part.lineCost,
+        commission: part.lineCommission,
       };
       bump(bySeller, order.sellerId, order.seller.user.name, delta);
-      bump(
-        byProduct,
-        item.productId,
-        item.productName,
-        delta,
-      );
-      const supplierId = item.product.supplierId ?? "_none";
+      bump(byProduct, part.item.productId, part.item.productName, delta);
+      const supplierId = part.item.product.supplierId ?? "_none";
       const supplierLabel =
-        item.product.supplier?.tradeName ??
-        item.product.supplier?.legalName ??
+        part.item.product.supplier?.tradeName ??
+        part.item.product.supplier?.legalName ??
         "Sem fornecedor";
       bump(bySupplier, supplierId, supplierLabel, delta);
+    });
+
+    if (lineParts.length === 0) {
+      orderRevenue = billed;
     }
 
     revenue += orderRevenue;
@@ -375,10 +444,10 @@ function aggregateOrders(
 
     const periodKey =
       periodGroup === "month"
-        ? utcMonthKey(order.createdAt)
+        ? periodMonthKey(order.createdAt)
         : periodGroup === "week"
-          ? utcWeekKey(order.createdAt)
-          : utcDayKey(order.createdAt);
+          ? periodWeekKey(order.createdAt)
+          : periodDayKey(order.createdAt);
     bump(byPeriod, periodKey, periodKey, {
       orderId: order.id,
       revenue: orderRevenue,
@@ -457,20 +526,16 @@ export async function buildFinancialResult(params: {
       end: prev.end,
       sellerIds: params.sellerIds,
     }),
-    includeFixedCosts
-      ? sumProratedFixedCosts({
-          organizationId: params.organizationId,
-          start,
-          end,
-        })
-      : Promise.resolve(0),
-    includeFixedCosts
-      ? sumProratedFixedCosts({
-          organizationId: params.organizationId,
-          start: prev.start,
-          end: prev.end,
-        })
-      : Promise.resolve(0),
+    sumProratedFixedCosts({
+      organizationId: params.organizationId,
+      start,
+      end,
+    }),
+    sumProratedFixedCosts({
+      organizationId: params.organizationId,
+      start: prev.start,
+      end: prev.end,
+    }),
   ]);
 
   const current = aggregateOrders(orders, periodGroup);
@@ -528,9 +593,49 @@ function fmtPct(n: number): string {
 }
 
 function fmtPeriodLabel(fromIso: string, toIso: string): string {
-  const from = new Date(fromIso).toLocaleDateString("pt-BR");
-  const to = new Date(toIso).toLocaleDateString("pt-BR");
+  const opts: Intl.DateTimeFormatOptions = { timeZone: REPORT_TZ };
+  const from = new Date(fromIso).toLocaleDateString("pt-BR", opts);
+  const to = new Date(toIso).toLocaleDateString("pt-BR", opts);
   return `${from} — ${to}`;
+}
+
+function drawSummaryCards(
+  doc: PDFKit.PDFDocument,
+  items: Array<{ label: string; value: string }>,
+) {
+  const cols = 3;
+  const gap = 6;
+  const boxH = 38;
+  const boxW = (PAGE.width - gap * (cols - 1)) / cols;
+  for (let i = 0; i < items.length; i += cols) {
+    ensureSpace(doc, boxH + gap);
+    const y = doc.y;
+    const slice = items.slice(i, i + cols);
+    slice.forEach((item, col) => {
+      const x = PAGE.left + col * (boxW + gap);
+      doc
+        .roundedRect(x, y, boxW, boxH, 3)
+        .fillAndStroke("#f8fafc", COLORS.border);
+      doc
+        .fillColor(COLORS.muted)
+        .fontSize(7)
+        .font("Helvetica")
+        .text(item.label, x + 8, y + 6, {
+          width: boxW - 16,
+          lineBreak: false,
+        });
+      doc
+        .fillColor(COLORS.text)
+        .fontSize(10)
+        .font("Helvetica-Bold")
+        .text(item.value, x + 8, y + 18, {
+          width: boxW - 16,
+          lineBreak: false,
+        });
+    });
+    doc.y = y + boxH + gap;
+  }
+  doc.font("Helvetica").fillColor(COLORS.text);
 }
 
 export async function buildFinancialResultPdf(params: {
@@ -543,6 +648,13 @@ export async function buildFinancialResultPdf(params: {
   periodGroup?: FinancialPeriodGroup;
 }): Promise<Buffer> {
   const report = await buildFinancialResult(params);
+  return renderFinancialResultPdf(report, params.orgName);
+}
+
+export function renderFinancialResultPdf(
+  report: FinancialResultReport,
+  orgName?: string | null,
+): Promise<Buffer> {
   const t = report.totals;
   const p = report.previous;
   const profitKey = report.includeFixedCosts ? "finalProfit" : "profit";
@@ -552,7 +664,7 @@ export async function buildFinancialResultPdf(params: {
     drawHeader(
       doc,
       "Resultado financeiro",
-      params.orgName ?? undefined,
+      orgName ?? undefined,
       fmtPeriodLabel(report.period.from, report.period.to),
     );
     if (report.includeFixedCosts) {
@@ -566,28 +678,20 @@ export async function buildFinancialResultPdf(params: {
       doc.moveDown(0.4);
     }
 
-    const kpis: Array<[string, string]> = [
-      ["Pedidos", String(t.orderCount)],
-      ["Faturamento", money(t.revenue)],
-      ["Ticket médio", money(t.avgTicket)],
-      ["Custo dos produtos", money(t.productCost)],
-      ["Comissões", money(t.commission)],
-      ["Lucro", money(t.profit)],
-      ["Margem", fmtPct(t.marginPct)],
+    const kpis: Array<{ label: string; value: string }> = [
+      { label: "Pedidos", value: String(t.orderCount) },
+      { label: "Faturamento", value: money(t.revenue) },
+      { label: "Ticket médio", value: money(t.avgTicket) },
+      { label: "Custo dos produtos", value: money(t.productCost) },
+      { label: "Comissões", value: money(t.commission) },
+      { label: "Lucro", value: money(t.profit) },
+      { label: "Margem", value: fmtPct(t.marginPct) },
+      { label: "Custos fixos", value: money(t.fixedCosts) },
+      { label: "Lucro final", value: money(t.finalProfit) },
+      { label: "Margem final", value: fmtPct(t.finalMarginPct) },
     ];
-    if (report.includeFixedCosts) {
-      kpis.push(
-        ["Custos fixos", money(t.fixedCosts)],
-        ["Lucro final", money(t.finalProfit)],
-        ["Margem final", fmtPct(t.finalMarginPct)],
-      );
-    }
-
-    doc.fillColor("#0f172a").fontSize(9).font("Helvetica");
-    for (const [label, value] of kpis) {
-      doc.text(`${label}: ${value}`, PAGE.left, doc.y, { width: PAGE.width / 2 });
-    }
-    doc.moveDown(0.6);
+    drawSummaryCards(doc, kpis);
+    doc.moveDown(0.3);
     doc
       .fontSize(8)
       .fillColor("#64748b")
@@ -629,7 +733,9 @@ export async function buildFinancialResultPdf(params: {
         table,
         {
           order: row.orderNumber,
-          date: new Date(row.date).toLocaleDateString("pt-BR"),
+          date: new Date(row.date).toLocaleDateString("pt-BR", {
+            timeZone: REPORT_TZ,
+          }),
           customer: row.customer,
           revenue: money(row.revenue),
           cost: money(row.productCost),
@@ -640,6 +746,23 @@ export async function buildFinancialResultPdf(params: {
         { index },
       );
     });
+    if (report.byOrder.length > 0) {
+      drawTableRow(
+        doc,
+        table,
+        {
+          order: "",
+          date: "",
+          customer: "TOTAL",
+          revenue: money(t.revenue),
+          cost: money(t.productCost),
+          commission: money(t.commission),
+          profit: money(t.profit),
+          margin: fmtPct(t.marginPct),
+        },
+        { emphasize: true },
+      );
+    }
 
     doc.moveDown(1.2);
     doc
