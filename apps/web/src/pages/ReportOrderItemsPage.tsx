@@ -205,7 +205,7 @@ export function ReportOrderItemsPage() {
 
   return (
     <ReportFormLayout
-      title="Relatório de Itens de Pedidos"
+      title="Itens de pedidos"
       onClear={clear}
       onGenerate={() => void generate()}
       generating={pending}

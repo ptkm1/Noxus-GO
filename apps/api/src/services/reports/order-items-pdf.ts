@@ -156,7 +156,7 @@ export async function buildOrderItemsPdf(
 
       drawHeader(
         doc,
-        "Relatório de Itens de Pedidos (agrupado)",
+        "Itens de pedidos (agrupado)",
         orgName,
         `${orders.length} pedido(s) · ${new Date().toLocaleString("pt-BR")}`,
       );
@@ -186,7 +186,7 @@ export async function buildOrderItemsPdf(
             onNewPage: () =>
               drawHeader(
                 doc,
-                "Relatório de Itens de Pedidos (agrupado, cont.)",
+                "Itens de pedidos (agrupado, cont.)",
                 orgName,
               ),
           },
@@ -202,7 +202,7 @@ export async function buildOrderItemsPdf(
 
   return withPdfDoc((doc) => {
     if (orders.length === 0) {
-      drawHeader(doc, "Relatório de Itens de Pedidos", orgName);
+      drawHeader(doc, "Itens de pedidos", orgName);
       drawEmptyState(doc, "Nenhum item encontrado.");
       return;
     }

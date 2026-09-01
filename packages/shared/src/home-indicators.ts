@@ -70,6 +70,116 @@ export const HOME_INDICATOR_DESCRIPTIONS: Record<HomeIndicatorKey, string> = {
     "Clientes que geraram maior margem no período, com base no custo cadastrado.",
 };
 
+/** Estratégia comercial exibida no catálogo de indicadores. */
+export const HOME_INDICATOR_STRATEGY_CATEGORIES = [
+  "aquisicao",
+  "fidelizacao",
+  "expansao",
+] as const;
+
+export type HomeIndicatorStrategyCategory =
+  (typeof HOME_INDICATOR_STRATEGY_CATEGORIES)[number];
+
+export const HOME_INDICATOR_STRATEGY_CATEGORY_LABELS: Record<
+  HomeIndicatorStrategyCategory,
+  string
+> = {
+  aquisicao: "Aquisição",
+  fidelizacao: "Fidelização",
+  expansao: "Expansão",
+};
+
+/** Agrupamento visual no catálogo (VENDAS, CLIENTES, …). */
+export const HOME_INDICATOR_SECTIONS = [
+  "vendas",
+  "clientes",
+  "rentabilidade",
+] as const;
+
+export type HomeIndicatorSection = (typeof HOME_INDICATOR_SECTIONS)[number];
+
+export const HOME_INDICATOR_SECTION_LABELS: Record<HomeIndicatorSection, string> =
+  {
+    vendas: "VENDAS",
+    clientes: "CLIENTES",
+    rentabilidade: "RENTABILIDADE",
+  };
+
+export const HOME_INDICATOR_SECTION_ORDER: Record<HomeIndicatorSection, number> =
+  {
+    vendas: 0,
+    clientes: 1,
+    rentabilidade: 2,
+  };
+
+export const HOME_INDICATOR_PREVIEW_TYPES = ["radial", "bar"] as const;
+
+export type HomeIndicatorPreviewType =
+  (typeof HOME_INDICATOR_PREVIEW_TYPES)[number];
+
+export type HomeIndicatorCatalogMeta = {
+  strategyCategory: HomeIndicatorStrategyCategory;
+  section: HomeIndicatorSection;
+  previewType: HomeIndicatorPreviewType;
+};
+
+export const HOME_INDICATOR_CATALOG_META: Record<
+  HomeIndicatorKey,
+  HomeIndicatorCatalogMeta
+> = {
+  customer_positivacao: {
+    strategyCategory: "fidelizacao",
+    section: "clientes",
+    previewType: "radial",
+  },
+  sales_by_supplier: {
+    strategyCategory: "expansao",
+    section: "vendas",
+    previewType: "bar",
+  },
+  sales_by_seller: {
+    strategyCategory: "aquisicao",
+    section: "vendas",
+    previewType: "bar",
+  },
+  profit_by_city: {
+    strategyCategory: "expansao",
+    section: "rentabilidade",
+    previewType: "bar",
+  },
+  profit_by_product: {
+    strategyCategory: "expansao",
+    section: "rentabilidade",
+    previewType: "bar",
+  },
+  profit_by_customer: {
+    strategyCategory: "fidelizacao",
+    section: "clientes",
+    previewType: "bar",
+  },
+};
+
+export type HomeIndicatorCatalogEntry = {
+  key: HomeIndicatorKey;
+  title: string;
+  description: string;
+} & HomeIndicatorCatalogMeta;
+
+export function getHomeIndicatorCatalogEntry(
+  key: HomeIndicatorKey,
+): HomeIndicatorCatalogEntry {
+  return {
+    key,
+    title: HOME_INDICATOR_LABELS[key],
+    description: HOME_INDICATOR_DESCRIPTIONS[key],
+    ...HOME_INDICATOR_CATALOG_META[key],
+  };
+}
+
+export function listHomeIndicatorCatalogEntries(): HomeIndicatorCatalogEntry[] {
+  return HOME_INDICATOR_KEYS.map(getHomeIndicatorCatalogEntry);
+}
+
 export const HOME_INDICATOR_DATA_INFO: Record<HomeIndicatorKey, string> = {
   customer_positivacao:
     "Conta clientes distintos com pedido confirmado no período. Não considera valor nem margem.",

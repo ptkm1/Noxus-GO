@@ -43,7 +43,7 @@ import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { GuidePage } from "./pages/GuidePage";
 import { HelpPage } from "./pages/HelpPage";
 import { InsightsPage } from "./pages/InsightsPage";
-import { IndicatorsHubPage } from "./pages/IndicatorsHubPage";
+import { IndicatorsAiPage } from "./pages/IndicatorsAiPage";
 import { LegalDocumentPage } from "./pages/LegalDocumentPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
@@ -523,7 +523,11 @@ function AppRoutes() {
             <Route path="vendas" element={<LegacyVendasRedirect />} />
             <Route path="vendas/:orderId" element={<LegacyVendasRedirect />} />
             <Route path="insights" element={<InsightsPage />} />
-            <Route path="indicadores" element={<IndicatorsHubPage />} />
+            <Route path="indicadores/ia" element={<IndicatorsAiPage />} />
+            <Route
+              path="indicadores"
+              element={<Navigate to="/relatorios" replace />}
+            />
           </Route>
         </Route>
       </Route>

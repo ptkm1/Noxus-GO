@@ -11,10 +11,6 @@ export function ReportBreadcrumb({ current }: { current: string }) {
         Início
       </Link>
       <span className="mx-1.5">›</span>
-      <Link to="/indicadores" className="hover:text-foreground">
-        Indicadores
-      </Link>
-      <span className="mx-1.5">›</span>
       <Link to="/relatorios" className="hover:text-foreground">
         Relatórios
       </Link>

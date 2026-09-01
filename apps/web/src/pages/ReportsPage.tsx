@@ -237,12 +237,12 @@ export function ReportsPage() {
         <h1 className="text-2xl font-semibold text-foreground">Relatórios</h1>
         <p className="mt-2 max-w-2xl text-muted-foreground">
           Relatórios gerenciais de vendas, margem, comissão, estoque, crédito,
-          fiscal e visitas. Para indicadores do dia a dia, use{" "}
+          fiscal e visitas. Para o painel analítico do dia a dia, use{" "}
           <Link
-            to="/indicadores"
+            to="/insights"
             className="font-medium text-primary underline-offset-4 hover:underline"
           >
-            Indicadores
+            Insights
           </Link>
           .
         </p>

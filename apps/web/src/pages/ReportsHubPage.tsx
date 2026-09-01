@@ -3,6 +3,7 @@ import { canRead, planHasFeature, type PlanFeature } from "@pedidos/shared";
 import {
   BarChart3,
   ClipboardList,
+  Lightbulb,
   Package,
   Percent,
   Receipt,
@@ -26,6 +27,20 @@ type ReportCategory = {
 };
 
 const CATEGORIES: ReportCategory[] = [
+  {
+    id: "insights",
+    title: "Insights",
+    icon: Lightbulb,
+    items: [
+      {
+        to: "/insights",
+        title: "Insights",
+        description:
+          "Painel analítico do dia a dia: totais, ranking, carteira e giro.",
+        planFeature: "insights",
+      },
+    ],
+  },
   {
     id: "vendas",
     title: "Vendas",
@@ -65,6 +80,11 @@ const CATEGORIES: ReportCategory[] = [
         to: "/relatorios/pedidos",
         title: "Pedidos / Romaneio",
         description: "Lista de pedidos ou romaneio detalhado em PDF.",
+      },
+      {
+        to: "/relatorios/itens",
+        title: "Itens de pedidos",
+        description: "Linhas vendidas com código, preços e totais.",
       },
     ],
   },
@@ -128,14 +148,9 @@ const CATEGORIES: ReportCategory[] = [
         planFeature: "reports_advanced",
       },
       {
-        to: "/relatorios/itens",
-        title: "Produtos por pedido",
-        description: "Linhas vendidas com código, preços e totais.",
-      },
-      {
         to: "/relatorios/estoque",
         title: "Estoque",
-        description: "Saldos, grupos, fornecedores e validade.",
+        description: "Saldos, grupos e fornecedores.",
       },
       {
         to: "/relatorios/estoque/contagem",
@@ -227,30 +242,19 @@ export function ReportsHubPage() {
             Início
           </Link>
           <span className="mx-1.5">›</span>
-          <Link to="/indicadores" className="hover:text-foreground">
-            Indicadores
-          </Link>
-          <span className="mx-1.5">›</span>
           <span className="text-foreground">Relatórios</span>
         </nav>
         <h1 className="text-2xl font-semibold text-foreground">Relatórios</h1>
         <p className="max-w-2xl text-sm text-muted-foreground">
-          Relatórios por categoria. Para o painel analítico do dia a dia, use{" "}
-          <Link
-            to="/insights"
-            className="font-medium text-primary underline-offset-4 hover:underline"
-          >
-            Insights
-          </Link>
+          Insights e relatórios por categoria
           {userHasPlanFeature(user, "reports_advanced") ? (
             <>
-              {" "}
-              ou o{" "}
+              . Painel gerencial em{" "}
               <Link
                 to="/relatorios/gestao"
                 className="font-medium text-primary underline-offset-4 hover:underline"
               >
-                painel gerencial
+                Gestão
               </Link>
             </>
           ) : null}

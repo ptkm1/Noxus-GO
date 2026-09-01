@@ -221,8 +221,8 @@ export function InsightsPage() {
               Início
             </Link>
             <span className="mx-1.5">›</span>
-            <Link to="/indicadores" className="hover:text-foreground">
-              Indicadores
+            <Link to="/relatorios" className="hover:text-foreground">
+              Relatórios
             </Link>
             <span className="mx-1.5">›</span>
             <span className="text-foreground">Insights</span>
@@ -379,8 +379,8 @@ export function InsightsPage() {
                 Início
               </Link>
               <span className="mx-1.5">›</span>
-              <Link to="/indicadores" className="hover:text-foreground">
-                Indicadores
+              <Link to="/relatorios" className="hover:text-foreground">
+                Relatórios
               </Link>
               <span className="mx-1.5">›</span>
               <span className="text-foreground">Insights</span>

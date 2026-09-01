@@ -14,6 +14,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -123,8 +124,14 @@ function fmtBrl(n: number): string {
   return `R$ ${fmtMoney(n)}`;
 }
 
+function fmtDateSp(iso: string): string {
+  return new Date(iso).toLocaleDateString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+  });
+}
+
 function fmtRange(fromIso: string, toIso: string): string {
-  return `${new Date(fromIso).toLocaleDateString("pt-BR")} — ${new Date(toIso).toLocaleDateString("pt-BR")}`;
+  return `${fmtDateSp(fromIso)} — ${fmtDateSp(toIso)}`;
 }
 
 function evoLabel(n: number | null): string {
@@ -300,7 +307,7 @@ export function ReportFinancialResultPage() {
   return (
     <ReportDataLayout
       title="Resultado financeiro"
-      description="Quanto vendeu, quanto custou, quanto pagou de comissão e quanto realmente sobrou no período."
+      description="Faturamento líquido dos pedidos, menos custo dos produtos e comissões. Lucro final só desconta custos fixos se a opção estiver marcada."
       filters={
         <div className="flex w-full flex-col gap-4">
           <div className="flex flex-wrap items-end gap-3">
@@ -440,30 +447,26 @@ export function ReportFinancialResultPage() {
               value={fmtPct(t.marginPct)}
               negative={t.marginPct < 0}
             />
-            {includeFixedCosts ? (
-              <>
-                <KpiCard
-                  label="Custos fixos"
-                  value={fmtBrl(t.fixedCosts)}
-                  emphasize
-                />
-                <KpiCard
-                  label="Lucro final"
-                  value={fmtBrl(t.finalProfit)}
-                  negative={t.finalProfit < 0}
-                  emphasize
-                  hint={
-                    t.finalProfit < 0 ? "Prejuízo após custos fixos" : undefined
-                  }
-                />
-                <KpiCard
-                  label="Margem final"
-                  value={fmtPct(t.finalMarginPct)}
-                  negative={t.finalMarginPct < 0}
-                  emphasize
-                />
-              </>
-            ) : null}
+            <KpiCard
+              label="Custos fixos"
+              value={fmtBrl(t.fixedCosts)}
+              emphasize={includeFixedCosts}
+            />
+            <KpiCard
+              label="Lucro final"
+              value={fmtBrl(t.finalProfit)}
+              negative={t.finalProfit < 0}
+              emphasize={includeFixedCosts}
+              hint={
+                t.finalProfit < 0 ? "Prejuízo após custos fixos" : undefined
+              }
+            />
+            <KpiCard
+              label="Margem final"
+              value={fmtPct(t.finalMarginPct)}
+              negative={t.finalMarginPct < 0}
+              emphasize={includeFixedCosts}
+            />
           </div>
 
           <div className="grid gap-3 lg:grid-cols-2">
@@ -546,19 +549,44 @@ export function ReportFinancialResultPage() {
                 kind="order"
                 orders={data.byOrder}
                 rows={[]}
+                totals={t}
               />
             </TabsContent>
             <TabsContent value="seller">
-              <DetailTable kind="group" firstLabel="Vendedor" rows={data.bySeller} orders={[]} />
+              <DetailTable
+                kind="group"
+                firstLabel="Vendedor"
+                rows={data.bySeller}
+                orders={[]}
+                totals={t}
+              />
             </TabsContent>
             <TabsContent value="supplier">
-              <DetailTable kind="group" firstLabel="Fornecedor" rows={data.bySupplier} orders={[]} />
+              <DetailTable
+                kind="group"
+                firstLabel="Fornecedor"
+                rows={data.bySupplier}
+                orders={[]}
+                totals={t}
+              />
             </TabsContent>
             <TabsContent value="product">
-              <DetailTable kind="group" firstLabel="Produto" rows={data.byProduct} orders={[]} />
+              <DetailTable
+                kind="group"
+                firstLabel="Produto"
+                rows={data.byProduct}
+                orders={[]}
+                totals={t}
+              />
             </TabsContent>
             <TabsContent value="period">
-              <DetailTable kind="group" firstLabel="Período" rows={data.byPeriod} orders={[]} />
+              <DetailTable
+                kind="group"
+                firstLabel="Período"
+                rows={data.byPeriod}
+                orders={[]}
+                totals={t}
+              />
             </TabsContent>
           </Tabs>
 
@@ -576,11 +604,13 @@ function DetailTable({
   firstLabel,
   orders,
   rows,
+  totals,
 }: {
   kind: "order" | "group";
   firstLabel?: string;
   orders: OrderRow[];
   rows: GroupRow[];
+  totals: Totals;
 }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-border bg-card">
@@ -612,7 +642,7 @@ function DetailTable({
                 <TableRow key={row.orderId}>
                   <TableCell className="px-4 py-2">{row.orderNumber}</TableCell>
                   <TableCell className="px-4 py-2">
-                    {new Date(row.date).toLocaleDateString("pt-BR")}
+                    {fmtDateSp(row.date)}
                   </TableCell>
                   <TableCell className="px-4 py-2">{row.customer}</TableCell>
                   <MoneyCell n={row.revenue} />
@@ -650,6 +680,70 @@ function DetailTable({
             </TableRow>
           ) : null}
         </TableBody>
+        {(kind === "order" ? orders.length > 0 : rows.length > 0) ? (
+          <TableFooter>
+            <TableRow className="bg-muted/80 hover:bg-muted/80">
+              {kind === "order" ? (
+                <>
+                  <TableCell className="px-4 py-2" />
+                  <TableCell className="px-4 py-2" />
+                  <TableCell className="px-4 py-2 font-semibold">
+                    TOTAL
+                  </TableCell>
+                </>
+              ) : (
+                <>
+                  <TableCell className="px-4 py-2 font-semibold">
+                    TOTAL
+                  </TableCell>
+                  <TableCell className="px-4 py-2 text-right tabular-nums font-semibold">
+                    {totals.orderCount}
+                  </TableCell>
+                </>
+              )}
+              <TableCell
+                className={cn(
+                  "px-4 py-2 text-right tabular-nums font-semibold",
+                  totals.revenue < 0 && "text-destructive",
+                )}
+              >
+                {fmtBrl(totals.revenue)}
+              </TableCell>
+              <TableCell
+                className={cn(
+                  "px-4 py-2 text-right tabular-nums font-semibold",
+                  totals.productCost < 0 && "text-destructive",
+                )}
+              >
+                {fmtBrl(totals.productCost)}
+              </TableCell>
+              <TableCell
+                className={cn(
+                  "px-4 py-2 text-right tabular-nums font-semibold",
+                  totals.commission < 0 && "text-destructive",
+                )}
+              >
+                {fmtBrl(totals.commission)}
+              </TableCell>
+              <TableCell
+                className={cn(
+                  "px-4 py-2 text-right tabular-nums font-semibold",
+                  totals.profit < 0 && "text-destructive",
+                )}
+              >
+                {fmtBrl(totals.profit)}
+              </TableCell>
+              <TableCell
+                className={cn(
+                  "px-4 py-2 text-right tabular-nums font-semibold",
+                  totals.marginPct < 0 && "text-destructive",
+                )}
+              >
+                {fmtPct(totals.marginPct)}
+              </TableCell>
+            </TableRow>
+          </TableFooter>
+        ) : null}
       </Table>
     </div>
   );
