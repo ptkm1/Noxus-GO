@@ -6,7 +6,7 @@
 
 /* PedixPro — tema claro (padrão) */
 :root {
-  --background: #f8fafc;
+  --background: color-mix(in srgb, #02445c 10%, white);
   --foreground: #111827;
   --card: #ffffff;
   --card-foreground: #111827;
