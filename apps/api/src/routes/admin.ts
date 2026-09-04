@@ -46,6 +46,7 @@ import {
     AUDIT_ACTION,
     AUDIT_ENTITY,
     auditFromAuth,
+    getActorAuditFields,
     writeAuditLog,
 } from "../services/audit-log.js";
 import { assertAdminPathPlanFeature } from "../services/billing/plan-gate.js";
@@ -7569,6 +7570,134 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         'attachment; filename="relatorio-vendas.pdf"',
       )
       .send(pdf);
+  });
+
+  const csvBodySchema = z.object({
+    csvText: z.string().min(1, "CSV obrigatório."),
+    columnMap: z.record(z.string(), z.string()).optional(),
+    fieldDefaults: z.record(z.string(), z.string()).optional(),
+  });
+
+  const sendCsvTemplate = (
+    reply: FastifyReply,
+    filename: string,
+    content: string,
+  ) =>
+    reply
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header("Content-Disposition", `attachment; filename="${filename}"`)
+      .send(content);
+
+  const importCsvError = (reply: FastifyReply, err: unknown) => {
+    const message =
+      err instanceof Error ? err.message : "Falha ao processar CSV.";
+    return reply.status(400).send({ error: message });
+  };
+
+  app.get("/imports/products/template.csv", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { productCsvTemplate } = await import("@pedidos/shared");
+    return sendCsvTemplate(reply, "produtos-modelo.csv", productCsvTemplate());
+  });
+
+  app.post("/imports/products/preview", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const body = csvBodySchema.safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: body.error.issues[0]?.message });
+    }
+    try {
+      const { previewProductImport } = await import(
+        "../services/imports/product-import.js"
+      );
+      return previewProductImport(
+        auth.organizationId,
+        body.data.csvText,
+        body.data.columnMap,
+      );
+    } catch (err) {
+      return importCsvError(reply, err);
+    }
+  });
+
+  app.post("/imports/products/commit", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const body = csvBodySchema.safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: body.error.issues[0]?.message });
+    }
+    try {
+      const { commitProductImport } = await import(
+        "../services/imports/product-import.js"
+      );
+      const actor = await getActorAuditFields(auth.sub);
+      return commitProductImport({
+        organizationId: auth.organizationId,
+        actorUserId: actor.userId,
+        actorMatricula: actor.userMatricula,
+        csvText: body.data.csvText,
+        columnMap: body.data.columnMap,
+      });
+    } catch (err) {
+      return importCsvError(reply, err);
+    }
+  });
+
+  app.get("/imports/customers/template.csv", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { customerCsvTemplate } = await import("@pedidos/shared");
+    return sendCsvTemplate(reply, "clientes-modelo.csv", customerCsvTemplate());
+  });
+
+  app.post("/imports/customers/preview", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const body = csvBodySchema.safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: body.error.issues[0]?.message });
+    }
+    try {
+      const { previewCustomerImport } = await import(
+        "../services/imports/customer-import.js"
+      );
+      return previewCustomerImport(
+        auth.organizationId,
+        body.data.csvText,
+        body.data.columnMap,
+        body.data.fieldDefaults,
+      );
+    } catch (err) {
+      return importCsvError(reply, err);
+    }
+  });
+
+  app.post("/imports/customers/commit", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const body = csvBodySchema.safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: body.error.issues[0]?.message });
+    }
+    try {
+      const { commitCustomerImport } = await import(
+        "../services/imports/customer-import.js"
+      );
+      const actor = await getActorAuditFields(auth.sub);
+      return commitCustomerImport({
+        organizationId: auth.organizationId,
+        actorUserId: actor.userId,
+        actorMatricula: actor.userMatricula,
+        csvText: body.data.csvText,
+        columnMap: body.data.columnMap,
+        fieldDefaults: body.data.fieldDefaults,
+      });
+    } catch (err) {
+      return importCsvError(reply, err);
+    }
   });
 
   await app.register(fiscalRoutes, { prefix: "/fiscal" });

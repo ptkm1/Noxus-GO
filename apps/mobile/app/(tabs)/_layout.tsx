@@ -176,6 +176,7 @@ export default function TabsLayout() {
         <Tabs.Screen name="notifications" options={HIDDEN_TAB} />
         <Tabs.Screen name="profile" options={HIDDEN_TAB} />
         <Tabs.Screen name="reports" options={HIDDEN_TAB} />
+        <Tabs.Screen name="imports" options={HIDDEN_TAB} />
       </Tabs>
       {user.role === "SELLER" ? <QuickSaleFab /> : null}
     </View>

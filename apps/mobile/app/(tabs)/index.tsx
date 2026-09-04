@@ -15,8 +15,8 @@ import { useNetInfoOnline } from "@/hooks/useNetInfoOnline";
 import { useSyncStatusMeta } from "@/hooks/useSyncStatusMeta";
 import { apiFetch } from "@/lib/api";
 import {
-  fetchSellerCommissionDashboard,
-  sellerOfflineStaleTime,
+    fetchSellerCommissionDashboard,
+    sellerOfflineStaleTime,
 } from "@/lib/seller-offline-queries";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
@@ -24,19 +24,20 @@ import { radiiPx } from "@pedidos/design-tokens";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import {
-  Bell,
-  ClipboardList,
-  DollarSign,
-  Eye,
-  EyeOff,
-  FileText,
-  Package,
-  Plus,
-  RefreshCw,
-  RotateCcw,
-  ShoppingCart,
-  TrendingUp,
-  Users,
+    Bell,
+    ClipboardList,
+    DollarSign,
+    Eye,
+    EyeOff,
+    FileText,
+    Package,
+    Plus,
+    RefreshCw,
+    RotateCcw,
+    ShoppingCart,
+    TrendingUp,
+    Upload,
+    Users,
 } from "lucide-react-native";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
@@ -299,6 +300,14 @@ export default function HomeScreen() {
             description="Resumo, clientes e fornecedores em PDF"
             onPress={() => router.push("/(tabs)/reports")}
           />
+          {user?.role === "ADMIN" ? (
+            <QuickAction
+              icon={Upload}
+              label="Importar CSV"
+              description="Produtos e clientes em lote"
+              onPress={() => router.push("/(tabs)/imports")}
+            />
+          ) : null}
           {user?.role === "SELLER" ? (
             <QuickAction
               icon={TrendingUp}

@@ -197,6 +197,39 @@ export {
   isValidCpf,
 } from "./cpf.js";
 export {
+  buildCsvTemplate,
+  CSV_IMPORT_MAX_CHARS,
+  CSV_IMPORT_MAX_ROWS,
+  CUSTOMER_CSV_HEADERS,
+  CUSTOMER_CSV_SAMPLE_ROW,
+  customerCsvTemplate,
+  PRODUCT_CSV_HEADERS,
+  PRODUCT_CSV_REQUIRED,
+  PRODUCT_CSV_SAMPLE_ROW,
+  productCsvTemplate,
+} from "./csv-import.js";
+export type { CustomerCsvHeader, ProductCsvHeader } from "./csv-import.js";
+export {
+  csvColumnMapIsEmpty,
+  csvFieldLabel,
+  CUSTOMER_CSV_ADDRESS_FALLBACK,
+  CUSTOMER_CSV_BULK_FIELDS,
+  CUSTOMER_CSV_FIELD_ALIASES,
+  CUSTOMER_CSV_FIELD_LABELS,
+  normalizeCsvHeader,
+  peekCsvHeaders,
+  PRODUCT_CSV_FIELD_ALIASES,
+  PRODUCT_CSV_FIELD_LABELS,
+  suggestCsvColumnMap,
+} from "./csv-column-map.js";
+export type {
+  CsvColumnMap,
+  CsvHeaderPeek,
+  CsvImportKind,
+  CsvImportRecipe,
+  CustomerCsvBulkField,
+} from "./csv-column-map.js";
+export {
   customerFormErrorStep,
   customerToForm,
   emptyCustomerForm,
