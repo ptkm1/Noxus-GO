@@ -69,13 +69,17 @@ export async function sellerRankingForPeriod(
   organizationId: string,
   start: Date,
   end: Date,
+  opts?: { sellerIds?: string[] },
 ): Promise<RankingRow[]> {
+  if (opts?.sellerIds && opts.sellerIds.length === 0) return [];
+
   const grouped = await prisma.order.groupBy({
     by: ["sellerId"],
     where: {
       organizationId,
       status: "CONFIRMED",
       createdAt: { gte: start, lte: end },
+      ...(opts?.sellerIds ? { sellerId: { in: opts.sellerIds } } : {}),
     },
     _sum: { totalAmount: true },
   });

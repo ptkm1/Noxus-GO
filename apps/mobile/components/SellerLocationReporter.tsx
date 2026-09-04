@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 import { AppState, Platform } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import {
-  isBackgroundLocationNativeAvailable,
-  startSellerBackgroundLocation,
-  stopSellerBackgroundLocation,
+    isBackgroundLocationNativeAvailable,
+    startSellerBackgroundLocation,
+    stopSellerBackgroundLocation,
 } from "../lib/seller-location-background";
 import { pingSellerLocationIfNeeded } from "../lib/seller-location-ping";
 import {
-  isLocationTrackingEnabled,
-  subscribePrivacyPreferences,
+    isLocationTrackingEnabled,
+    subscribePrivacyPreferences,
 } from "../lib/privacy-preferences";
 
 /**
@@ -36,7 +36,13 @@ export function SellerLocationReporter() {
   }, []);
 
   useEffect(() => {
-    if (Platform.OS === "web" || loading || !user || !trackingEnabled) {
+    if (
+      Platform.OS === "web" ||
+      loading ||
+      !user ||
+      user.role !== "SELLER" ||
+      !trackingEnabled
+    ) {
       void stopSellerBackgroundLocation();
       return;
     }

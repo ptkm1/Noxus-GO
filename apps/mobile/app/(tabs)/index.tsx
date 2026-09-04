@@ -1,4 +1,4 @@
-import { fmtMoney } from "@/components/atoms/formatMoney";
+import { displayMoney } from "@/components/atoms/formatMoney";
 import { ThemedText } from "@/components/atoms/ThemedText";
 import { MobileHeader, MobileScreen, SafeScreen } from "@/components/layout";
 import { HeaderIconButton } from "@/components/molecules/HeaderIconButton";
@@ -9,6 +9,7 @@ import { SyncStatusBanner } from "@/components/molecules/SyncStatusBanner";
 import { TopSuppliersBlock } from "@/components/molecules/TopSuppliersBlock";
 import { useAuth } from "@/context/AuthContext";
 import { useSalesListScreen } from "@/hooks/screens/useSalesListScreen";
+import { useHomeValuesHidden } from "@/hooks/useHomeValuesHidden";
 import { useManualSaleSync } from "@/hooks/useManualSaleSync";
 import { useNetInfoOnline } from "@/hooks/useNetInfoOnline";
 import { useSyncStatusMeta } from "@/hooks/useSyncStatusMeta";
@@ -26,6 +27,9 @@ import {
   Bell,
   ClipboardList,
   DollarSign,
+  Eye,
+  EyeOff,
+  FileText,
   Package,
   Plus,
   RefreshCw,
@@ -42,6 +46,7 @@ export default function HomeScreen() {
   const { colors } = useTheme();
   const isOnline = useNetInfoOnline();
   const { lastSync, lastSyncedCount } = useSyncStatusMeta();
+  const { hidden: hideValues, toggleHidden } = useHomeValuesHidden();
   const {
     orders,
     isLoading,
@@ -57,11 +62,13 @@ export default function HomeScreen() {
   const { data: commission, isLoading: commissionLoading } = useQuery({
     queryKey: ["seller", "commission-dashboard"],
     staleTime: sellerOfflineStaleTime,
+    enabled: user?.role === "SELLER" || user?.role === "ADMIN",
     queryFn: fetchSellerCommissionDashboard,
   });
 
   const { data: notifications = [] } = useQuery({
     queryKey: ["seller", "notifications"],
+    enabled: Boolean(user),
     queryFn: () =>
       apiFetch<{ id: string; read: boolean }[]>("/seller/notifications"),
   });
@@ -134,6 +141,20 @@ export default function HomeScreen() {
         }
         rightAction={
           <View style={styles.headerActions}>
+            <HeaderIconButton
+              accessibilityLabel={
+                hideValues
+                  ? "Mostrar valores monetários"
+                  : "Ocultar valores monetários"
+              }
+              onPress={toggleHidden}
+            >
+              {hideValues ? (
+                <EyeOff color={colors.text} size={20} />
+              ) : (
+                <Eye color={colors.text} size={20} />
+              )}
+            </HeaderIconButton>
             {showSyncButton ? (
               <HeaderIconButton
                 badge={queueCount}
@@ -185,7 +206,7 @@ export default function HomeScreen() {
             }
             current={goalCurrent}
             target={goalTarget}
-            formatValue={(v) => `R$ ${fmtMoney(v)}`}
+            formatValue={(v) => displayMoney(hideValues, v)}
           />
         ) : null}
 
@@ -193,20 +214,8 @@ export default function HomeScreen() {
           <View style={styles.statCell}>
             <StatCard
               title="Vendas hoje"
-              value={`R$ ${fmtMoney(todayTotal)}`}
+              value={displayMoney(hideValues, todayTotal)}
               icon={DollarSign}
-            />
-          </View>
-          <View style={styles.statCell}>
-            <StatCard
-              title="Comissão MTD"
-              value={
-                commissionLoading
-                  ? "…"
-                  : `R$ ${fmtMoney(commission?.mtd.commissionRecorded ?? 0)}`
-              }
-              icon={TrendingUp}
-              onPress={() => router.push("/(tabs)/commission")}
             />
           </View>
           <View style={styles.statCell}>
@@ -217,6 +226,36 @@ export default function HomeScreen() {
               onPress={() => router.push("/(tabs)/vendas")}
             />
           </View>
+          {user?.role === "SELLER" ? (
+            <View style={styles.statCell}>
+              <StatCard
+                title="Comissão MTD"
+                value={
+                  commissionLoading
+                    ? "…"
+                    : displayMoney(
+                        hideValues,
+                        commission?.mtd.commissionRecorded ?? 0,
+                      )
+                }
+                icon={TrendingUp}
+                onPress={() => router.push("/(tabs)/commission")}
+              />
+            </View>
+          ) : user?.role === "ADMIN" ? (
+            <View style={styles.statCell}>
+              <StatCard
+                title="Ranking"
+                value={
+                  commissionLoading
+                    ? "…"
+                    : `${commission?.ranking.totalSellers ?? 0}`
+                }
+                icon={TrendingUp}
+                onPress={() => router.push("/(tabs)/commission")}
+              />
+            </View>
+          ) : null}
           <View style={styles.statCell}>
             <StatCard
               title="Pendentes sync"
@@ -227,23 +266,27 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <TopSuppliersBlock />
+        <TopSuppliersBlock hideValues={hideValues} />
 
         <View style={{ gap: 10 }}>
           <ThemedText variant="titleSm">Ações rápidas</ThemedText>
-          <QuickAction
-            icon={Plus}
-            label="Nova venda"
-            description="Montar pedido com cliente e carrinho"
-            variant="primary"
-            onPress={goQuickSale}
-          />
-          <QuickAction
-            icon={RotateCcw}
-            label="Repetir venda"
-            description="Escolher um pedido recente para pré-preencher"
-            onPress={goRepeatSale}
-          />
+          {user?.role === "SELLER" ? (
+            <>
+              <QuickAction
+                icon={Plus}
+                label="Nova venda"
+                description="Montar pedido com cliente e carrinho"
+                variant="primary"
+                onPress={goQuickSale}
+              />
+              <QuickAction
+                icon={RotateCcw}
+                label="Repetir venda"
+                description="Escolher um pedido recente para pré-preencher"
+                onPress={goRepeatSale}
+              />
+            </>
+          ) : null}
           <QuickAction
             icon={Package}
             label="Catálogo"
@@ -251,11 +294,26 @@ export default function HomeScreen() {
             onPress={() => router.push("/(tabs)/products")}
           />
           <QuickAction
-            icon={TrendingUp}
-            label="Comissão"
-            description="Meta, ranking e extrato do mês"
-            onPress={() => router.push("/(tabs)/commission")}
+            icon={FileText}
+            label="Relatórios"
+            description="Resumo, clientes e fornecedores em PDF"
+            onPress={() => router.push("/(tabs)/reports")}
           />
+          {user?.role === "SELLER" ? (
+            <QuickAction
+              icon={TrendingUp}
+              label="Comissão"
+              description="Meta, ranking e extrato do mês"
+              onPress={() => router.push("/(tabs)/commission")}
+            />
+          ) : user?.role === "ADMIN" ? (
+            <QuickAction
+              icon={TrendingUp}
+              label="Ranking"
+              description="Desempenho dos vendedores no mês"
+              onPress={() => router.push("/(tabs)/commission")}
+            />
+          ) : null}
           {(pending > 0 || dead > 0) && (
             <QuickAction
               icon={ClipboardList}
@@ -272,6 +330,7 @@ export default function HomeScreen() {
           orders={orders}
           isLoading={isLoading}
           isRefetching={isRefetching && !isLoading}
+          hideValues={hideValues}
         />
       </MobileScreen>
     </SafeScreen>

@@ -2,8 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  fetchSellerCommissionDashboard,
-  sellerOfflineStaleTime,
+    fetchSellerCommissionDashboard,
+    sellerOfflineStaleTime,
 } from "../../lib/seller-offline-queries";
 
 export type CommissionTierRow = {
@@ -41,6 +41,8 @@ export type CommissionDashboard = {
     achievedAmount: number;
   } | null;
   ranking: {
+    visible: boolean;
+    scope?: "none" | "org" | "team";
     position: number | null;
     totalSellers: number;
     myAmount: number;

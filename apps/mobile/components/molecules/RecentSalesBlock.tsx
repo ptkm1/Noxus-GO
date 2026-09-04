@@ -15,6 +15,7 @@ type Props = {
   isLoading?: boolean;
   isRefetching?: boolean;
   limit?: number;
+  hideValues?: boolean;
 };
 
 export function RecentSalesBlock({
@@ -22,6 +23,7 @@ export function RecentSalesBlock({
   isLoading = false,
   isRefetching = false,
   limit = 5,
+  hideValues = false,
 }: Props) {
   const router = useRouter();
   const { colors } = useTheme();
@@ -78,7 +80,7 @@ export function RecentSalesBlock({
           {visible.map((order, index) => (
             <View key={order.id}>
               {index > 0 ? <RecentSaleDivider color={colors.border} /> : null}
-              <RecentSaleRow order={order} />
+              <RecentSaleRow order={order} hideValues={hideValues} />
             </View>
           ))}
           {isRefetching ? (

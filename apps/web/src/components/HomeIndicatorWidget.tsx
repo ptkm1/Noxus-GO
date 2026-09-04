@@ -141,8 +141,13 @@ export function HomeIndicatorWidget({
     (q.data?.metric ?? indicatorKey.startsWith("profit_")) === "profit";
   const valueLabel = isProfit ? "Margem" : "Vendas";
 
+  /** Truncagem para o eixo (tooltip usa `fullName`). Compact = coluna estreita da home. */
+  const maxLabelChars = compact ? 14 : 22;
   const data = (q.data?.rows ?? []).map((s) => ({
-    name: s.label.length > 18 ? `${s.label.slice(0, 16)}…` : s.label,
+    name:
+      s.label.length > maxLabelChars
+        ? `${s.label.slice(0, maxLabelChars - 1)}…`
+        : s.label,
     fullName: s.label,
     total: Math.round(s.value * 100) / 100,
     orders: s.orderCount ?? 0,
@@ -288,27 +293,45 @@ export function HomeIndicatorWidget({
         ) : (
           <>
             <ResponsiveContainer width="100%" height="100%">
+              {/* Barras horizontais: nomes de categoria legíveis na coluna estreita da home. */}
               <BarChart
+                layout="vertical"
                 data={data}
-                margin={{ top: 8, right: 8, left: 8, bottom: 8 }}
+                margin={{
+                  top: 4,
+                  right: compact ? 8 : 12,
+                  left: 4,
+                  bottom: 4,
+                }}
               >
                 <CartesianGrid
                   strokeDasharray="3 3"
                   className="stroke-border"
+                  horizontal={false}
                 />
                 <XAxis
-                  dataKey="name"
-                  tick={{ fontSize: compact ? 10 : 12 }}
-                  className="fill-muted-foreground"
-                />
-                <YAxis
-                  tick={{ fontSize: compact ? 10 : 12 }}
-                  className="fill-muted-foreground"
+                  type="number"
+                  tick={{
+                    fontSize: compact ? 10 : 12,
+                    fill: "var(--muted-foreground)",
+                  }}
                   tickFormatter={(v: number) =>
                     v >= 1000 || v <= -1000
                       ? `${(v / 1000).toFixed(1)}k`
                       : String(v)
                   }
+                />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={compact ? 88 : 120}
+                  interval={0}
+                  tick={{
+                    fontSize: compact ? 10 : 12,
+                    fill: "var(--muted-foreground)",
+                  }}
+                  tickLine={false}
+                  axisLine={false}
                 />
                 <Tooltip
                   formatter={(value, _name, item) => {
@@ -341,7 +364,7 @@ export function HomeIndicatorWidget({
                   dataKey="total"
                   name={valueLabel}
                   fill="var(--sidebar-primary)"
-                  radius={[4, 4, 0, 0]}
+                  radius={[0, 4, 4, 0]}
                 />
               </BarChart>
             </ResponsiveContainer>

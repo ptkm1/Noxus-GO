@@ -10,7 +10,9 @@ export function useLoginScreen() {
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const shouldRedirectSeller = !loading && user?.role === "SELLER";
+  const shouldRedirectSeller =
+    !loading &&
+    (user?.role === "SELLER" || user?.role === "ADMIN");
 
   async function onSubmit() {
     setErr(null);

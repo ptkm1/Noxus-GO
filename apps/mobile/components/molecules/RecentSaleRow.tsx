@@ -1,4 +1,4 @@
-import { fmtMoney } from "@/components/atoms/formatMoney";
+import { displayMoney } from "@/components/atoms/formatMoney";
 import { ThemedText } from "@/components/atoms/ThemedText";
 import type { SellerOrderListItem } from "@/hooks/screens/useSalesListScreen";
 import { useTheme } from "@/lib/theme";
@@ -15,9 +15,11 @@ type Props = {
   order: SellerOrderListItem;
   /** Se definido, substitui o link para o detalhe da venda. */
   onPress?: () => void;
+  /** Oculta o valor monetário (home / privacidade). */
+  hideValues?: boolean;
 };
 
-export function RecentSaleRow({ order, onPress }: Props) {
+export function RecentSaleRow({ order, onPress, hideValues = false }: Props) {
   const { colors } = useTheme();
   const confirmed = order.status === "CONFIRMED";
   const amountColor = confirmed ? colors.success : colors.text;
@@ -57,7 +59,7 @@ export function RecentSaleRow({ order, onPress }: Props) {
               numberOfLines={1}
               style={[styles.amount, { color: amountColor }]}
             >
-              R$ {fmtMoney(Number(order.totalAmount))}
+              {displayMoney(hideValues, Number(order.totalAmount))}
             </ThemedText>
           </View>
 

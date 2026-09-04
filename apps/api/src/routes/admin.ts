@@ -60,6 +60,7 @@ import {
     parseCompleteCustomerBody,
     toCustomerPrismaData,
 } from "../services/customer-validation.js";
+import { nextCustomerCode } from "../services/customer-code.js";
 import { buildDistributorInsights } from "../services/distributor-insights.js";
 import {
     AccountsPayableError,
@@ -4700,17 +4701,21 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     }
 
     try {
-      const created = await prisma.customer.create({
-        data: {
-          organizationId: auth.organizationId,
-          ...toCustomerPrismaData(body.data, { includeCredit: true }),
-        } as Prisma.CustomerUncheckedCreateInput,
+      const created = await prisma.$transaction(async (tx) => {
+        const code = await nextCustomerCode(tx, auth.organizationId);
+        return tx.customer.create({
+          data: {
+            organizationId: auth.organizationId,
+            code,
+            ...toCustomerPrismaData(body.data, { includeCredit: true }),
+          } as Prisma.CustomerUncheckedCreateInput,
+        });
       });
       await auditFromAuth(auth, {
         action: AUDIT_ACTION.CREATE,
         entityType: AUDIT_ENTITY.Customer,
         entityId: created.id,
-        metadata: { name: created.name },
+        metadata: { name: created.name, code: created.code },
       });
       return created;
     } catch (e) {

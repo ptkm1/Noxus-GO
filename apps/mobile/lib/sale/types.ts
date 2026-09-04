@@ -29,6 +29,7 @@ export type SaleProduct = {
 
 export type SaleCustomer = {
   id: string;
+  code?: number | null;
   name: string;
   email?: string | null;
   phone?: string | null;

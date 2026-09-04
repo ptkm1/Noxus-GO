@@ -1,23 +1,29 @@
 import { ThemedText } from "@/components/atoms/ThemedText";
 import { MobileHeader, MobileScreen, SafeScreen } from "@/components/layout";
 import {
-  RecentSaleDivider,
-  RecentSaleRow,
+    RecentSaleDivider,
+    RecentSaleRow,
 } from "@/components/molecules/RecentSaleRow";
 import { useSalesListScreen } from "@/hooks/screens/useSalesListScreen";
+import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/lib/theme";
 import { radiiPx } from "@pedidos/design-tokens";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 export default function VendasListScreen() {
   const { colors } = useTheme();
+  const { user } = useAuth();
   const { orders, isLoading, isRefetching, refetch } = useSalesListScreen();
 
   return (
     <SafeScreen variant="tab">
       <MobileHeader
         title="Vendas"
-        subtitle={`${orders.length} pedido${orders.length === 1 ? "" : "s"}`}
+        subtitle={
+          user?.role === "ADMIN"
+            ? `${orders.length} pedido${orders.length === 1 ? "" : "s"} da organização`
+            : `${orders.length} pedido${orders.length === 1 ? "" : "s"}`
+        }
       />
       <MobileScreen
         refreshing={isRefetching}

@@ -1,18 +1,21 @@
 import type { Role } from "@pedidos/shared";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useState,
+    type ReactNode,
 } from "react";
 import { apiFetch, clearTokens, getAccessToken, setTokens } from "../lib/api";
 import { isNetworkError } from "../lib/network-error";
 import { unregisterCurrentPushDevice } from "../lib/push";
-import { sellerMobileLoginRejectedMessage } from "../lib/seller-login-messages";
+import {
+    isMobileAppRole,
+    sellerMobileLoginRejectedMessage,
+} from "../lib/seller-login-messages";
 
 export type User = {
   id: string;
@@ -21,6 +24,9 @@ export type User = {
   role: Role;
   organizationId: string;
   sellerId: string | null;
+  isTeamLeader?: boolean;
+  teamId?: string | null;
+  teamName?: string | null;
   accessStatus?: string;
   orgAccessMessage?: string | null;
   canUseApp?: boolean;
@@ -89,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     try {
       const me = await apiFetch<User>("/auth/me");
-      if (me.role !== "SELLER") {
+      if (!isMobileAppRole(me.role)) {
         await unregisterCurrentPushDevice();
         await clearTokens();
         await clearMeSnapshot();
@@ -116,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       if (isNetworkError(e)) {
         const snap = await loadMeSnapshot();
-        if (snap?.role === "SELLER") {
+        if (snap && isMobileAppRole(snap.role)) {
           setSellerAccessBlocked(null);
           setUser(snap);
         }
@@ -147,7 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({ email, password }),
       skipAuth: true,
     });
-    if (res.user.role !== "SELLER") {
+    if (!isMobileAppRole(res.user.role)) {
       throw new Error(sellerMobileLoginRejectedMessage(res.user.role));
     }
     if (isOrgBlocked(res.user)) {

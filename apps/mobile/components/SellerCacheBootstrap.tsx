@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { AppState, Platform } from "react-native";
 import { useAuth } from "../context/AuthContext";
+import { isMobileAppRole } from "../lib/seller-login-messages";
 import { prefetchSellerReadCache } from "../lib/seller-offline-queries";
 
 function isOnlineState(s: {
@@ -19,7 +20,7 @@ export function SellerCacheBootstrap() {
   const running = useRef(false);
 
   useEffect(() => {
-    if (Platform.OS === "web" || loading || !user || user.role !== "SELLER") {
+    if (Platform.OS === "web" || loading || !user || !isMobileAppRole(user.role)) {
       return;
     }
 

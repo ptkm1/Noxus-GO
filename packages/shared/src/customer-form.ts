@@ -32,6 +32,8 @@ export type CustomerStatus = "ACTIVE" | "INACTIVE";
 
 export type CustomerRecord = CustomerFormValues & {
   id: string;
+  /** Código interno numérico sequencial por organização. */
+  code?: number | null;
   sellerId?: string | null;
   creditLimit?: unknown;
   creditBlocked?: boolean;
@@ -45,6 +47,15 @@ export type CustomerRecord = CustomerFormValues & {
   /** Situação comercial (ativo / inativo). */
   status?: CustomerStatus;
 };
+
+/** Código do cliente; "—" se ainda não atribuído. */
+export function formatCustomerCode(customer: {
+  id: string;
+  code?: number | null;
+}): string {
+  if (customer.code != null) return String(customer.code);
+  return "—";
+}
 
 export function emptyCustomerForm(
   documentType: CustomerDocumentType = "CNPJ",

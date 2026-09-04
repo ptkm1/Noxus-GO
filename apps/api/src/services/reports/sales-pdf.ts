@@ -2,25 +2,27 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../../db.js";
 import { decToNum } from "../../util/money.js";
 import {
-  drawEmptyState,
-  drawHeader,
-  drawInfoBar,
-  drawTableFooter,
-  drawTableHeader,
-  drawTableRow,
-  ensureSpace,
-  lineDiscount,
-  money,
-  orderCode,
-  shortDateTime,
-  shortName,
-  withPdfDoc,
-  type PdfTable,
+    drawEmptyState,
+    drawHeader,
+    drawInfoBar,
+    drawTableFooter,
+    drawTableHeader,
+    drawTableRow,
+    ensureSpace,
+    lineDiscount,
+    money,
+    orderCode,
+    shortDateTime,
+    shortName,
+    withPdfDoc,
+    type PdfTable,
 } from "./pdf-common.js";
 
 export type SalesPdfFilters = {
   organizationId: string;
   sellerId?: string;
+  /** Quando definido, filtra por estes vendedores (relatórios mobile/equipe). */
+  sellerIds?: string[];
   from?: string;
   to?: string;
   /** Lista consolidada de pedidos em vez de uma seção por pedido. */
@@ -56,7 +58,11 @@ function salesWhere(filters: SalesPdfFilters): Prisma.OrderWhereInput {
     organizationId: filters.organizationId,
     status: "CONFIRMED",
   };
-  if (filters.sellerId) where.sellerId = filters.sellerId;
+  if (filters.sellerIds?.length) {
+    where.sellerId = { in: filters.sellerIds };
+  } else if (filters.sellerId) {
+    where.sellerId = filters.sellerId;
+  }
   const createdAt: Prisma.DateTimeFilter = {};
   if (filters.from) createdAt.gte = new Date(filters.from);
   if (filters.to) createdAt.lte = new Date(filters.to);
