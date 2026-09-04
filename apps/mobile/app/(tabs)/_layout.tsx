@@ -3,18 +3,18 @@ import { useAuth } from "@/context/AuthContext";
 import type { EventArg, NavigationState } from "@react-navigation/native";
 import { Redirect, Tabs, useRouter } from "expo-router";
 import {
-  ClipboardCheck,
-  LayoutDashboard,
-  MapPin,
-  ShoppingBag,
-  Users,
+    ClipboardCheck,
+    LayoutDashboard,
+    MapPin,
+    ShoppingBag,
+    Users,
 } from "lucide-react-native";
 import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  StyleSheet,
-  View,
+    ActivityIndicator,
+    Platform,
+    Pressable,
+    StyleSheet,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../../lib/theme";
@@ -175,8 +175,9 @@ export default function TabsLayout() {
         <Tabs.Screen name="products" options={HIDDEN_TAB} />
         <Tabs.Screen name="notifications" options={HIDDEN_TAB} />
         <Tabs.Screen name="profile" options={HIDDEN_TAB} />
+        <Tabs.Screen name="reports" options={HIDDEN_TAB} />
       </Tabs>
-      <QuickSaleFab />
+      {user.role === "SELLER" ? <QuickSaleFab /> : null}
     </View>
   );
 }

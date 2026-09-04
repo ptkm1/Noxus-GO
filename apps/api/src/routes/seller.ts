@@ -1,53 +1,66 @@
+import type { AccessPayload } from "../auth/jwt.js";
 import { Prisma } from "@prisma/client";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { notifyAdminsCustomerPendingApproval } from "../services/admin-notifications.js";
 import {
-  AUDIT_ACTION,
-  AUDIT_ENTITY,
-  auditFromAuth,
+    AUDIT_ACTION,
+    AUDIT_ENTITY,
+    auditFromAuth,
 } from "../services/audit-log.js";
-import { buildSellerCommissionDashboard } from "../services/commission-dashboard.js";
+import { buildAdminMobileRankingDashboard, buildSellerCommissionDashboard } from "../services/commission-dashboard.js";
+import { teamMemberSellerIds } from "../auth/org-roles.js";
 import { buildSellerCustomerCreditSnapshot } from "../services/credit.js";
 import {
-  createSaleOrder,
-  findIdempotentSale,
-  replySaleCreateError,
-  sellerAllowedProductIds,
+    createSaleOrder,
+    findIdempotentSale,
+    replySaleCreateError,
+    sellerAllowedProductIds,
 } from "../services/create-sale-order.js";
 import {
-  customerBodySchema,
-  customerPatchSchema,
-  parseCompleteCustomerBody,
-  toCustomerPrismaData,
+    customerBodySchema,
+    customerPatchSchema,
+    parseCompleteCustomerBody,
+    toCustomerPrismaData,
 } from "../services/customer-validation.js";
+import { nextCustomerCode } from "../services/customer-code.js";
 import { isGoogleRoutesConfigured } from "../services/google-routes.js";
 import { getWebPushPublicKey } from "../services/notify.js";
 import {
-  loadOrderForPdf,
-  sendOrderPdf80mmReply,
-  sendOrderPdfReply,
+    loadOrderForPdf,
+    sendOrderPdf80mmReply,
+    sendOrderPdfReply,
 } from "../services/order-pdf-load.js";
 import { resolveEffectiveUnitPrice } from "../services/price-resolve.js";
 import { getProductStockLevels } from "../services/product-stock.js";
+import { buildSalesByCustomerPdf } from "../services/reports/sales-by-customer-pdf.js";
+import { buildSalesBySupplierPdf } from "../services/reports/sales-by-supplier-pdf.js";
+import { buildSalesDetailedPdf } from "../services/reports/sales-pdf.js";
 import { listSellerCatalogProductIds } from "../services/seller-product-catalog.js";
 import {
-  handleRegisterPushDevice,
-  handleUnregisterPushDevice,
+    handleRegisterPushDevice,
+    handleUnregisterPushDevice,
 } from "../services/push-device-routes.js";
 import { canReadEffective } from "../services/role-permissions.js";
 import { buildRouteDirections } from "../services/route-directions.js";
 import { greedyNearestRoute, haversineKm } from "../services/route-plan.js";
 import { buildSalesBySupplier } from "../services/sales-by-supplier.js";
 import {
-  getCustomerRegistrationMode,
-  getSellerShowUnassignedCustomers,
-  sellerCustomerListWhere,
-  sellerCustomerSellableWhere,
+    getCustomerRegistrationMode,
+    getSellerShowUnassignedCustomers,
+    sellerCustomerListWhere,
+    sellerCustomerSellableWhere,
+    mobileCustomerSellableWhere,
 } from "../services/seller-customer-access.js";
 import { recordSellerLocation } from "../services/seller-location-write.js";
 import { decToNum } from "../util/money.js";
+import {
+    canAccessSellerApi,
+    mobileOrderWhere,
+    requireSellerActor,
+} from "../util/mobile-seller-access.js";
+import { resolveMobileReportSellerIds } from "../util/mobile-report-scope.js";
 import { sendZodError } from "../util/zod-reply.js";
 
 const idParam = z.object({ id: z.string().min(1) });
@@ -59,7 +72,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       if (!req.auth || !req.auth.organizationId?.trim()) {
         return reply.status(401).send({ error: "Não autorizado" });
       }
-      if (req.auth.role !== "SELLER" || !req.auth.sellerId) {
+      if (!canAccessSellerApi(req.auth)) {
         return reply.status(403).send({ error: "Apenas vendedores" });
       }
     },
@@ -143,7 +156,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true };
   });
 
-  app.get("/commission-dashboard", async (req) => {
+  app.get("/commission-dashboard", async (req, reply) => {
     const auth = req.auth!;
     const q = z
       .object({
@@ -155,36 +168,163 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       q.success && q.data.year != null && q.data.month != null
         ? new Date(q.data.year, q.data.month - 1, 12)
         : new Date();
-    return buildSellerCommissionDashboard(
-      auth.organizationId,
-      auth.sellerId!,
-      ref,
-    );
+
+    if (auth.role === "ADMIN") {
+      return buildAdminMobileRankingDashboard(auth.organizationId, ref);
+    }
+
+    const sellerId = auth.sellerId;
+    if (!sellerId) {
+      return reply.status(403).send({
+        error:
+          "Comissão individual só está disponível para contas de vendedor.",
+      });
+    }
+
+    const isTeamLeader = Boolean(auth.teamLeaderTeamId);
+    const teamSellerIds = isTeamLeader
+      ? await teamMemberSellerIds(auth.teamLeaderTeamId!)
+      : undefined;
+
+    return buildSellerCommissionDashboard(auth.organizationId, sellerId, ref, {
+      rankingScope: isTeamLeader ? "team" : "none",
+      teamSellerIds,
+    });
   });
 
-  app.get("/reports/sales-by-supplier", async (req) => {
+  app.get("/reports/sales-by-supplier", async (req, reply) => {
     const auth = req.auth!;
     const q = z
       .object({
         from: z.string().optional(),
         to: z.string().optional(),
-        limit: z.coerce.number().int().min(1).max(20).optional(),
+        limit: z.coerce.number().int().min(1).max(50).optional(),
+        scope: z.enum(["own", "team"]).optional(),
       })
       .safeParse(req.query);
 
+    let sellerIds: string[] | undefined;
+    try {
+      ({ sellerIds } = await resolveMobileReportSellerIds(
+        auth,
+        q.success ? q.data.scope : undefined,
+      ));
+    } catch {
+      return reply.status(403).send({ error: "Escopo de relatório inválido" });
+    }
+
     return buildSalesBySupplier({
       organizationId: auth.organizationId,
-      sellerIds: [auth.sellerId!],
+      sellerIds,
       from: q.success ? q.data.from : undefined,
       to: q.success ? q.data.to : undefined,
       limit: q.success ? q.data.limit : undefined,
     });
   });
 
+  const reportQuery = z.object({
+    from: z.string().optional(),
+    to: z.string().optional(),
+    scope: z.enum(["own", "team"]).optional(),
+  });
+
+  async function resolveReportScope(
+    auth: AccessPayload,
+    scope: "own" | "team" | undefined,
+    reply: FastifyReply,
+  ) {
+    try {
+      return await resolveMobileReportSellerIds(auth, scope);
+    } catch {
+      void reply.status(403).send({ error: "Escopo de relatório inválido" });
+      return null;
+    }
+  }
+
+  /** Resumo de vendas (lista consolidada de pedidos confirmados). */
+  app.get("/reports/sales-summary.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    const q = reportQuery.safeParse(req.query);
+    const resolved = await resolveReportScope(
+      auth,
+      q.success ? q.data.scope : undefined,
+      reply,
+    );
+    if (!resolved) return;
+
+    const pdf = await buildSalesDetailedPdf({
+      organizationId: auth.organizationId,
+      sellerIds: resolved.sellerIds,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      groupOrders: true,
+    });
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="resumo-vendas.pdf"',
+      )
+      .send(pdf);
+  });
+
+  /** Vendas agregadas por cliente. */
+  app.get("/reports/sales-by-customer.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    const q = reportQuery.safeParse(req.query);
+    const resolved = await resolveReportScope(
+      auth,
+      q.success ? q.data.scope : undefined,
+      reply,
+    );
+    if (!resolved) return;
+
+    const pdf = await buildSalesByCustomerPdf({
+      organizationId: auth.organizationId,
+      sellerIds: resolved.sellerIds,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+    });
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="vendas-por-cliente.pdf"',
+      )
+      .send(pdf);
+  });
+
+  /** Vendas por fornecedor. */
+  app.get("/reports/sales-by-supplier.pdf", async (req, reply) => {
+    const auth = req.auth!;
+    const q = reportQuery.safeParse(req.query);
+    const resolved = await resolveReportScope(
+      auth,
+      q.success ? q.data.scope : undefined,
+      reply,
+    );
+    if (!resolved) return;
+
+    const pdf = await buildSalesBySupplierPdf({
+      organizationId: auth.organizationId,
+      sellerIds: resolved.sellerIds,
+      from: q.success ? q.data.from : undefined,
+      to: q.success ? q.data.to : undefined,
+      limit: 50,
+    });
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header(
+        "Content-Disposition",
+        'attachment; filename="vendas-por-fornecedor.pdf"',
+      )
+      .send(pdf);
+  });
+
   app.get("/sales", async (req) => {
     const auth = req.auth!;
     return prisma.order.findMany({
-      where: { sellerId: auth.sellerId!, organizationId: auth.organizationId },
+      where: mobileOrderWhere(auth),
       orderBy: { createdAt: "desc" },
       include: {
         customer: true,
@@ -202,8 +342,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     const order = await prisma.order.findFirst({
       where: {
         id,
-        sellerId: auth.sellerId!,
-        organizationId: auth.organizationId,
+        ...mobileOrderWhere(auth),
       },
       include: {
         customer: true,
@@ -222,8 +361,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(req.params);
     const order = await loadOrderForPdf({
       id,
-      organizationId: auth.organizationId,
-      sellerId: auth.sellerId!,
+      ...mobileOrderWhere(auth),
     });
     if (!order) return reply.status(404).send({ error: "Não encontrado" });
     return sendOrderPdfReply(reply, order);
@@ -244,8 +382,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     const { id } = idParam.parse(req.params);
     const order = await loadOrderForPdf({
       id,
-      organizationId: auth.organizationId,
-      sellerId: auth.sellerId!,
+      ...mobileOrderWhere(auth),
     });
     if (!order) return reply.status(404).send({ error: "Não encontrado" });
     return sendOrderPdf80mmReply(reply, order);
@@ -285,6 +422,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
   app.post("/sales", async (req, reply) => {
     const auth = req.auth!;
+    const sellerId = requireSellerActor(auth, reply);
+    if (!sellerId) return;
     const body = z
       .object({
         customerId: z.string().min(1),
@@ -317,7 +456,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         const dup = await findIdempotentSale({
           clientMutationId,
           organizationId: auth.organizationId,
-          sellerId: auth.sellerId!,
+          sellerId,
         });
         if (dup) return dup;
       } catch (e) {
@@ -334,7 +473,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         id: body.data.customerId,
         ...sellerCustomerSellableWhere(
           auth.organizationId,
-          auth.sellerId!,
+          sellerId,
           showUnassigned,
         ),
       },
@@ -344,7 +483,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         where: {
           id: body.data.customerId,
           organizationId: auth.organizationId,
-          sellerId: auth.sellerId!,
+          sellerId,
           approvalStatus: { in: ["PENDING", "REJECTED"] },
         },
         select: { approvalStatus: true },
@@ -366,7 +505,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       return await createSaleOrder({
         organizationId: auth.organizationId,
         actorUserId: auth.sub,
-        sellerId: auth.sellerId!,
+        sellerId,
         customerId: body.data.customerId,
         paymentConditionId: body.data.paymentConditionId,
         establishmentId: body.data.establishmentId,
@@ -382,7 +521,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         source: "seller",
         actorRole: auth.role,
         allowedProductIds: await sellerAllowedProductIds(
-          auth.sellerId!,
+          sellerId,
           auth.organizationId,
         ),
       });
@@ -399,10 +538,18 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       .safeParse(req.query);
     const customerId = q.success ? q.data.customerId : undefined;
 
-    const catalogIds = await listSellerCatalogProductIds(
-      auth.organizationId,
-      auth.sellerId!,
-    );
+    const catalogIds =
+      auth.role === "ADMIN"
+        ? (
+            await prisma.product.findMany({
+              where: { organizationId: auth.organizationId },
+              select: { id: true },
+            })
+          ).map((p) => p.id)
+        : await listSellerCatalogProductIds(
+            auth.organizationId,
+            auth.sellerId!,
+          );
     const products = catalogIds.length
       ? await prisma.product.findMany({
           where: {
@@ -434,29 +581,36 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
     let regionId: string | null = null;
     if (customerId) {
-      const showUnassigned = await getSellerShowUnassignedCustomers(
-        auth.organizationId,
-      );
-      const cust = await prisma.customer.findFirst({
-        where: {
-          id: customerId,
-          ...sellerCustomerSellableWhere(
-            auth.organizationId,
-            auth.sellerId!,
-            showUnassigned,
-          ),
-        },
-        select: { regionId: true },
-      });
-      regionId = cust?.regionId ?? null;
+      if (auth.role === "ADMIN") {
+        const cust = await prisma.customer.findFirst({
+          where: { id: customerId, organizationId: auth.organizationId },
+          select: { regionId: true },
+        });
+        regionId = cust?.regionId ?? null;
+      } else {
+        const showUnassigned = await getSellerShowUnassignedCustomers(
+          auth.organizationId,
+        );
+        const cust = await prisma.customer.findFirst({
+          where: {
+            id: customerId,
+            ...sellerCustomerSellableWhere(
+              auth.organizationId,
+              auth.sellerId!,
+              showUnassigned,
+            ),
+          },
+          select: { regionId: true },
+        });
+        regionId = cust?.regionId ?? null;
+      }
     }
 
     const freqRows = await prisma.orderItem.groupBy({
       by: ["productId"],
       where: {
         order: {
-          sellerId: auth.sellerId!,
-          organizationId: auth.organizationId,
+          ...mobileOrderWhere(auth),
           status: { not: "CANCELLED" },
         },
       },
@@ -473,7 +627,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         auth.organizationId,
         p.id,
         {
-          sellerId: auth.sellerId!,
+          sellerId: auth.sellerId,
           customerId: customerId ?? null,
           regionId,
           quantity: 1,
@@ -539,6 +693,12 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/customers", async (req) => {
     const auth = req.auth!;
+    if (auth.role === "ADMIN") {
+      return prisma.customer.findMany({
+        where: { organizationId: auth.organizationId },
+        orderBy: { name: "asc" },
+      });
+    }
     const showUnassigned = await getSellerShowUnassignedCustomers(
       auth.organizationId,
     );
@@ -555,6 +715,13 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
   app.get("/customers/:id", async (req, reply) => {
     const auth = req.auth!;
     const { id } = idParam.parse(req.params);
+    if (auth.role === "ADMIN") {
+      const customer = await prisma.customer.findFirst({
+        where: { id, organizationId: auth.organizationId },
+      });
+      if (!customer) return reply.status(404).send({ error: "Não encontrado" });
+      return customer;
+    }
     const showUnassigned = await getSellerShowUnassignedCustomers(
       auth.organizationId,
     );
@@ -574,6 +741,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/customers/:id/credit", async (req, reply) => {
     const auth = req.auth!;
+    const sellerId = requireSellerActor(auth, reply);
+    if (!sellerId) return;
     const { id } = idParam.parse(req.params);
     const q = z
       .object({ previewAmount: z.coerce.number().nonnegative().optional() })
@@ -582,7 +751,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       return await buildSellerCustomerCreditSnapshot({
         organizationId: auth.organizationId,
         customerId: id,
-        sellerId: auth.sellerId!,
+        sellerId,
         previewAmount: q.success ? q.data.previewAmount : undefined,
       });
     } catch (e) {
@@ -595,6 +764,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
   app.post("/customers", async (req, reply) => {
     const auth = req.auth!;
+    const sellerId = requireSellerActor(auth, reply);
+    if (!sellerId) return;
     const body = customerBodySchema.safeParse(req.body);
     if (!body.success) {
         return sendZodError(reply, body.error, req);
@@ -607,19 +778,23 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       registrationMode === "REQUIRE_APPROVAL" ? "PENDING" : "APPROVED";
 
     try {
-      const created = await prisma.customer.create({
-        data: {
-          organizationId: auth.organizationId,
-          sellerId: auth.sellerId,
-          approvalStatus,
-          ...(approvalStatus === "APPROVED"
-            ? {
-                approvedAt: new Date(),
-                approvedByUserId: auth.sub,
-              }
-            : {}),
-          ...toCustomerPrismaData(body.data),
-        } as Prisma.CustomerUncheckedCreateInput,
+      const created = await prisma.$transaction(async (tx) => {
+        const code = await nextCustomerCode(tx, auth.organizationId);
+        return tx.customer.create({
+          data: {
+            organizationId: auth.organizationId,
+            code,
+            sellerId,
+            approvalStatus,
+            ...(approvalStatus === "APPROVED"
+              ? {
+                  approvedAt: new Date(),
+                  approvedByUserId: auth.sub,
+                }
+              : {}),
+            ...toCustomerPrismaData(body.data),
+          } as Prisma.CustomerUncheckedCreateInput,
+        });
       });
       await auditFromAuth(auth, {
         action: AUDIT_ACTION.CREATE,
@@ -627,6 +802,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         entityId: created.id,
         metadata: {
           name: created.name,
+          code: created.code,
           source: "seller",
           approvalStatus: created.approvalStatus,
         },
@@ -660,6 +836,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
   app.patch("/customers/:id", async (req, reply) => {
     const auth = req.auth!;
+    const sellerId = requireSellerActor(auth, reply);
+    if (!sellerId) return;
     const { id } = idParam.parse(req.params);
     const body = customerPatchSchema.safeParse(req.body);
     if (!body.success) {
@@ -670,7 +848,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       where: {
         id,
         organizationId: auth.organizationId,
-        sellerId: auth.sellerId,
+        sellerId,
       },
     });
     if (!existing) return reply.status(404).send({ error: "Não encontrado" });
@@ -815,9 +993,10 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
     const rows = await prisma.customer.findMany({
       where: {
-        ...sellerCustomerSellableWhere(
+        ...mobileCustomerSellableWhere(
           auth.organizationId,
-          auth.sellerId!,
+          auth.sellerId,
+          auth.role,
           showUnassigned,
         ),
         latitude: { not: null },
@@ -845,7 +1024,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
           longitude: plng,
           addressNote: c.addressNote,
           distanceKm: Math.round(distanceKm * 100) / 100,
-          assignedToMe: c.sellerId === auth.sellerId,
+          assignedToMe: auth.sellerId != null && c.sellerId === auth.sellerId,
         };
       })
       .filter((x) => x.distanceKm <= radiusKm)
@@ -880,9 +1059,10 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     const rows = await prisma.customer.findMany({
       where: {
         id: { in: body.data.customerIds },
-        ...sellerCustomerSellableWhere(
+        ...mobileCustomerSellableWhere(
           auth.organizationId,
-          auth.sellerId!,
+          auth.sellerId,
+          auth.role,
           showUnassigned,
         ),
         latitude: { not: null },
@@ -952,9 +1132,10 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     const rows = await prisma.customer.findMany({
       where: {
         id: { in: body.data.customerIds },
-        ...sellerCustomerSellableWhere(
+        ...mobileCustomerSellableWhere(
           auth.organizationId,
-          auth.sellerId!,
+          auth.sellerId,
+          auth.role,
           showUnassigned,
         ),
         latitude: { not: null },
@@ -996,8 +1177,9 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/visits/active", async (req) => {
     const auth = req.auth!;
+    if (!auth.sellerId) return null;
     const v = await prisma.sellerCustomerVisit.findFirst({
-      where: { sellerId: auth.sellerId!, checkedOutAt: null },
+      where: { sellerId: auth.sellerId, checkedOutAt: null },
       orderBy: { checkedInAt: "desc" },
       include: { customer: { select: { id: true, name: true } } },
     });
@@ -1006,12 +1188,13 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/visits/recent", async (req) => {
     const auth = req.auth!;
+    if (!auth.sellerId) return [];
     const q = z
       .object({ limit: z.coerce.number().int().min(1).max(100).optional() })
       .safeParse(req.query);
     const limit = q.success ? (q.data.limit ?? 40) : 40;
     const rows = await prisma.sellerCustomerVisit.findMany({
-      where: { sellerId: auth.sellerId! },
+      where: { sellerId: auth.sellerId },
       orderBy: { checkedInAt: "desc" },
       take: limit,
       include: { customer: { select: { id: true, name: true } } },
@@ -1021,6 +1204,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
   app.post("/visits/check-in", async (req, reply) => {
     const auth = req.auth!;
+    const sellerId = requireSellerActor(auth, reply);
+    if (!sellerId) return;
     const body = z
       .object({
         customerId: z.string().min(1),
@@ -1034,7 +1219,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       }
 
     const existingOpen = await prisma.sellerCustomerVisit.findFirst({
-      where: { sellerId: auth.sellerId!, checkedOutAt: null },
+      where: { sellerId, checkedOutAt: null },
     });
     if (existingOpen) {
       return reply.status(409).send({
@@ -1052,7 +1237,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
         id: body.data.customerId,
         ...sellerCustomerSellableWhere(
           auth.organizationId,
-          auth.sellerId!,
+          sellerId,
           showUnassigned,
         ),
       },
@@ -1064,7 +1249,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     const visit = await prisma.sellerCustomerVisit.create({
       data: {
         organizationId: auth.organizationId,
-        sellerId: auth.sellerId!,
+        sellerId,
         customerId: body.data.customerId,
         notes: body.data.notes,
         checkInLat: body.data.latitude,
@@ -1078,6 +1263,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
   app.patch("/visits/:id/check-out", async (req, reply) => {
     const auth = req.auth!;
+    const sellerId = requireSellerActor(auth, reply);
+    if (!sellerId) return;
     const { id } = idParam.parse(req.params);
     const body = z
       .object({
@@ -1093,7 +1280,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
     const visit = await prisma.sellerCustomerVisit.findFirst({
       where: {
         id,
-        sellerId: auth.sellerId!,
+        sellerId,
         organizationId: auth.organizationId,
       },
       include: { customer: { select: { id: true, name: true } } },
@@ -1124,6 +1311,8 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
 
   app.post("/location", async (req, reply) => {
     const auth = req.auth!;
+    const sellerId = requireSellerActor(auth, reply);
+    if (!sellerId) return;
     const body = z
       .object({
         latitude: z.number().gte(-90).lte(90),
@@ -1136,7 +1325,7 @@ export const sellerRoutes: FastifyPluginAsync = async (app) => {
       }
 
     const result = await recordSellerLocation({
-      sellerId: auth.sellerId!,
+      sellerId,
       organizationId: auth.organizationId,
       latitude: body.data.latitude,
       longitude: body.data.longitude,

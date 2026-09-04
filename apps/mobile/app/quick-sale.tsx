@@ -8,6 +8,7 @@ import { CatalogFiltersModal } from "@/components/molecules/CatalogFiltersModal"
 import { CatalogViewModeToggle } from "@/components/molecules/CatalogViewModeToggle";
 import { CATALOG_SEARCH_PLACEHOLDER } from "@/lib/catalog-search";
 import type { QuickSaleTab } from "@/lib/sale/types";
+import { formatCustomerCode } from "@pedidos/shared";
 import {
   ChevronDown,
   ChevronUp,
@@ -192,7 +193,7 @@ export default function QuickSaleScreen() {
                 onChangeText={(code) =>
                   s.setCustomerSearch((prev) => ({ ...prev, code }))
                 }
-                placeholder="ID ou nome"
+                placeholder="Código ou nome"
                 autoCapitalize="none"
               />
             </View>
@@ -290,7 +291,7 @@ export default function QuickSaleScreen() {
               <View style={styles.formFieldHalf}>
                 <Text style={styles.fieldLabel}>Código</Text>
                 <Text style={styles.readonlyValue}>
-                  {s.selectedCustomer.id.slice(-6).toUpperCase()}
+                  {formatCustomerCode(s.selectedCustomer)}
                 </Text>
               </View>
               <View style={styles.formFieldHalf}>

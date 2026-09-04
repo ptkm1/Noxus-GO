@@ -4,14 +4,14 @@ import { decToNum } from "../../util/money.js";
 import { CHURN_CUSTOMER_DAYS } from "../distributor-insights.js";
 import { applyCustomerExtras } from "./extra-filters.js";
 import {
-  drawEmptyState,
-  drawHeader,
-  drawTableFooter,
-  drawTableHeader,
-  drawTableRow,
-  money,
-  type PdfTable,
-  withPdfDoc,
+    drawEmptyState,
+    drawHeader,
+    drawTableFooter,
+    drawTableHeader,
+    drawTableRow,
+    money,
+    type PdfTable,
+    withPdfDoc,
 } from "./pdf-common.js";
 
 export type CustomerSituationFilter =
@@ -23,6 +23,8 @@ export type CustomerSituationFilter =
 export type CustomersPdfFilters = {
   organizationId: string;
   sellerId?: string;
+  /** Carteira / escopo multi-vendedor (líder / admin filtrado). */
+  sellerIds?: string[];
   customerId?: string;
   /** @deprecated use `situation` */
   creditStatus?: "blocked" | "ok";
@@ -92,7 +94,11 @@ export async function buildCustomersPdf(
   const where: Prisma.CustomerWhereInput = {
     organizationId: filters.organizationId,
   };
-  if (filters.sellerId) where.sellerId = filters.sellerId;
+  if (filters.sellerIds?.length) {
+    where.sellerId = { in: filters.sellerIds };
+  } else if (filters.sellerId) {
+    where.sellerId = filters.sellerId;
+  }
   if (filters.customerId) where.id = filters.customerId;
 
   const situation: CustomerSituationFilter | undefined =

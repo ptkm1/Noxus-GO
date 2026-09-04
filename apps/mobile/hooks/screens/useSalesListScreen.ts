@@ -15,7 +15,13 @@ export type SellerOrderListItem = {
   createdAt: string;
   customerId?: string | null;
   paymentConditionId?: string | null;
-  customer: { name: string } | null;
+  customer: {
+    name: string;
+    cnpj?: string | null;
+    legalName?: string | null;
+    tradeName?: string | null;
+    city?: string | null;
+  } | null;
   items: {
     productId?: string;
     quantity: number;

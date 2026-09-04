@@ -52,7 +52,7 @@ export default function LoginScreen() {
               <CommerceProWordmark iconSize={44} />
             </View>
             <Text style={styles.tagline}>{APP_BRAND_TAGLINE}</Text>
-            <Text style={styles.sub}>Acesso vendedor</Text>
+            <Text style={styles.sub}>Acesso vendedor e administrador</Text>
             <ThemedTextInput
               placeholder="Email"
               autoCapitalize="none"

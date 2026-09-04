@@ -201,6 +201,7 @@ export {
   customerToForm,
   emptyCustomerForm,
   FIELD_NOT_APPLICABLE,
+  formatCustomerCode,
   formToCustomerPayload,
   isCustomerFormValid,
   isFieldNotApplicable,

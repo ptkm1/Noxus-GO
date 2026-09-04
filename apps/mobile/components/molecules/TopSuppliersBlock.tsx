@@ -1,4 +1,4 @@
-import { fmtMoney } from "@/components/atoms/formatMoney";
+import { displayMoney } from "@/components/atoms/formatMoney";
 import { ThemedText } from "@/components/atoms/ThemedText";
 import { useSalesBySupplier } from "@/hooks/screens/useSalesBySupplier";
 import { PERIOD_PRESET_LABELS, type PeriodPreset } from "@/lib/period-presets";
@@ -31,18 +31,23 @@ type SupplierBar = {
   frontColor: string;
 };
 
+type Props = {
+  hideValues?: boolean;
+};
+
 function truncateLabel(name: string, max = 14): string {
   return name.length > max ? `${name.slice(0, max - 1)}…` : name;
 }
 
-function formatYAxisValue(value: string): string {
+function formatYAxisValue(value: string, hideValues: boolean): string {
+  if (hideValues) return "••••";
   const n = Number(value);
   if (!Number.isFinite(n)) return value;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(Math.round(n));
 }
 
-export function TopSuppliersBlock() {
+export function TopSuppliersBlock({ hideValues = false }: Props) {
   const { colors } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
   const { preset, setPreset, data, isLoading, isFetching, error } =
@@ -71,7 +76,7 @@ export function TopSuppliersBlock() {
       <ThemedText variant="bodySm" muted style={{ marginTop: 4 }}>
         Suas vendas confirmadas por indústria
         {data
-          ? ` · R$ ${fmtMoney(data.totals.totalAmount)} em ${data.totals.orderCount} pedido(s)`
+          ? ` · ${displayMoney(hideValues, data.totals.totalAmount)} em ${data.totals.orderCount} pedido(s)`
           : ""}
       </ThemedText>
 
@@ -143,7 +148,7 @@ export function TopSuppliersBlock() {
             dashGap={3}
             xAxisThickness={1}
             yAxisThickness={0}
-            formatYLabel={formatYAxisValue}
+            formatYLabel={(value) => formatYAxisValue(value, hideValues)}
             yAxisTextStyle={{ color: colors.textMuted, fontSize: 11 }}
             xAxisLabelTextStyle={{
               color: colors.textMuted,
@@ -171,7 +176,7 @@ export function TopSuppliersBlock() {
                   {item.fullName}
                 </ThemedText>
                 <ThemedText variant="caption" muted style={{ marginTop: 2 }}>
-                  R$ {fmtMoney(item.value)}
+                  {displayMoney(hideValues, item.value)}
                 </ThemedText>
               </View>
             )}

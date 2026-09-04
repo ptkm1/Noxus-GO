@@ -1058,6 +1058,8 @@ model SellerProduct {
 
 model Customer {
   id             String             @id @default(cuid())
+  /// Código interno numérico sequencial por organização (exibido no app/web).
+  code           Int?
   name           String
   email          String?
   phone          String?
@@ -1114,6 +1116,7 @@ model Customer {
 
   @@unique([organizationId, cnpj])
   @@unique([organizationId, cpf])
+  @@unique([organizationId, code])
   @@index([organizationId, state, city])
 }
 

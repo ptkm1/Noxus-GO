@@ -276,12 +276,14 @@ export function useQuickSaleScreen() {
 
     return customers.filter((c) => {
       if (c.approvalStatus && c.approvalStatus !== "APPROVED") return false;
-      if (
-        code &&
-        !c.id.toLowerCase().includes(code) &&
-        !(c.name ?? "").toLowerCase().includes(code)
-      ) {
-        return false;
+      if (code) {
+        const codeDigits = code.replace(/\D/g, "");
+        const matchesNumeric =
+          codeDigits.length > 0 &&
+          c.code != null &&
+          String(c.code).includes(codeDigits);
+        const matchesName = (c.name ?? "").toLowerCase().includes(code);
+        if (!matchesNumeric && !matchesName) return false;
       }
       if (doc) {
         const hay = digitsOnly(`${c.cnpj ?? ""}${c.cpf ?? ""}`);

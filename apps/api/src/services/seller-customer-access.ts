@@ -28,6 +28,19 @@ export function sellerCustomerSellableWhere(
   };
 }
 
+/** Mesmo filtro de venda/rota, com visão org inteira para ADMIN no app mobile. */
+export function mobileCustomerSellableWhere(
+  organizationId: string,
+  sellerId: string | null,
+  role: "ADMIN" | "SELLER" | "MANAGER" | "SUPERVISOR",
+  showUnassigned: boolean,
+): Prisma.CustomerWhereInput {
+  if (role === "ADMIN") {
+    return { organizationId, approvalStatus: "APPROVED" };
+  }
+  return sellerCustomerSellableWhere(organizationId, sellerId!, showUnassigned);
+}
+
 /**
  * Lista do app: aprovados no escopo + pendentes/rejeitados criados pelo próprio vendedor
  * (para acompanhar validação, sem misturar carteira alheia).

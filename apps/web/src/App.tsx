@@ -489,10 +489,6 @@ function AppRoutes() {
               element={<ReportSellerRankingPage />}
             />
             <Route
-              path="relatorios/vendas/resultado-financeiro"
-              element={<ReportFinancialResultPage />}
-            />
-            <Route
               path="relatorios/produtos/mais-vendidos"
               element={<ReportTopProductsPage />}
             />

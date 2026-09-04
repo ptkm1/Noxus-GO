@@ -9,12 +9,13 @@ import { DevToolsVersionTap } from "@/components/molecules/DevToolsVersionTap";
 import { ProgressStat } from "@/components/molecules/StatCard";
 import { SyncStatusBanner } from "@/components/molecules/SyncStatusBanner";
 import { useProfileScreen } from "@/hooks/screens/useProfileScreen";
+import { useAuth } from "@/context/AuthContext";
 import { useLogout } from "@/hooks/useLogout";
 import { useNetInfoOnline } from "@/hooks/useNetInfoOnline";
 import { useSyncStatusMeta } from "@/hooks/useSyncStatusMeta";
 import {
-  fetchSellerCommissionDashboard,
-  sellerOfflineStaleTime,
+    fetchSellerCommissionDashboard,
+    sellerOfflineStaleTime,
 } from "@/lib/seller-offline-queries";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
@@ -22,18 +23,19 @@ import { radiiPx } from "@pedidos/design-tokens";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import {
-  Bell,
-  ChevronRight,
-  Database,
-  HelpCircle,
-  LogOut,
-  Package,
-  Server,
-  Settings,
-  Shield,
-  ShoppingBag,
-  Smartphone,
-  TrendingUp,
+    Bell,
+    ChevronRight,
+    Database,
+    FileText,
+    HelpCircle,
+    LogOut,
+    Package,
+    Server,
+    Settings,
+    Shield,
+    ShoppingBag,
+    Smartphone,
+    TrendingUp,
 } from "lucide-react-native";
 import { Pressable, StyleSheet, View } from "react-native";
 
@@ -78,6 +80,7 @@ const menuStyles = StyleSheet.create({
 export default function ProfileScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const { user } = useAuth();
   const isOnline = useNetInfoOnline();
   const { lastSync, lastSyncedCount } = useSyncStatusMeta();
   const { logoutAndGoLogin, logoutPending } = useLogout();
@@ -87,6 +90,7 @@ export default function ProfileScreen() {
   const { data: commission } = useQuery({
     queryKey: ["seller", "commission-dashboard"],
     staleTime: sellerOfflineStaleTime,
+    enabled: user?.role === "SELLER" || user?.role === "ADMIN",
     queryFn: fetchSellerCommissionDashboard,
   });
 
@@ -101,8 +105,13 @@ export default function ProfileScreen() {
   const mtd = commission?.mtd.confirmedRevenue ?? 0;
   const goalTarget = commission?.goal?.targetAmount ?? 0;
   const goalCurrent = commission?.goal?.achievedAmount ?? mtd;
-  const rank = commission?.ranking.position;
-  const totalSellers = commission?.ranking.totalSellers ?? 0;
+  const rank = commission?.ranking.visible
+    ? commission.ranking.position
+    : null;
+  const totalSellers = commission?.ranking.visible
+    ? commission.ranking.totalSellers
+    : 0;
+  const showRanking = Boolean(commission?.ranking.visible);
 
   return (
     <SafeScreen variant="tab">
@@ -163,22 +172,24 @@ export default function ProfileScreen() {
         ) : null}
 
         <View style={styles.perfGrid}>
-          <View
-            style={[
-              styles.perfCell,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <ThemedText variant="caption" muted>
-              Ranking
-            </ThemedText>
-            <ThemedText variant="titleSm" style={{ marginTop: 4 }}>
-              {rank != null ? `#${rank}` : "—"}
-            </ThemedText>
-            <ThemedText variant="caption" muted>
-              de {totalSellers}
-            </ThemedText>
-          </View>
+          {showRanking ? (
+            <View
+              style={[
+                styles.perfCell,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <ThemedText variant="caption" muted>
+                Ranking
+              </ThemedText>
+              <ThemedText variant="titleSm" style={{ marginTop: 4 }}>
+                {rank != null ? `#${rank}` : "—"}
+              </ThemedText>
+              <ThemedText variant="caption" muted>
+                de {totalSellers}
+              </ThemedText>
+            </View>
+          ) : null}
           <View
             style={[
               styles.perfCell,
@@ -242,8 +253,13 @@ export default function ProfileScreen() {
             onPress={() => router.push("/(tabs)/products")}
           />
           <MenuRow
+            icon={FileText}
+            label="Relatórios"
+            onPress={() => router.push("/(tabs)/reports")}
+          />
+          <MenuRow
             icon={TrendingUp}
-            label="Comissão"
+            label={user?.role === "ADMIN" ? "Ranking" : "Comissão"}
             onPress={() => router.push("/(tabs)/commission")}
           />
           <MenuRow

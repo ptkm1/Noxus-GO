@@ -56,7 +56,8 @@ const CATEGORIES: ReportCategory[] = [
         to: "/relatorios/vendas/resultado-financeiro",
         title: "Resultado financeiro",
         description:
-          "Faturamento, custos, comissões, margem e lucro do período.",
+          "Faturamento, custos, comissões e lucro das vendas no período.",
+        planFeature: "reports_advanced",
       },
       {
         to: "/relatorios/vendas/detalhadas",
@@ -67,13 +68,6 @@ const CATEGORIES: ReportCategory[] = [
         to: "/relatorios/vendas/ranking",
         title: "Ranking de vendedor / Meta",
         description: "Ranking de vendas e progresso das metas.",
-        planFeature: "reports_advanced",
-      },
-      {
-        to: "/relatorios/vendas/resultado-financeiro",
-        title: "Resultado financeiro",
-        description:
-          "Faturamento, custos, comissões e lucro das vendas no período.",
         planFeature: "reports_advanced",
       },
       {
