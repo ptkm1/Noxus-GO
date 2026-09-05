@@ -48,14 +48,22 @@ const PRESETS: PeriodPreset[] = [
 export function useReportsScreen() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
+  const isSeller = user?.role === "SELLER";
   const isTeamLeader = Boolean(user?.isTeamLeader && user.role === "SELLER");
 
-  const [preset, setPreset] = useState<PeriodPreset>("this_month");
+  const [preset, setPreset] = useState<PeriodPreset | null>("this_month");
+  const [customRange, setCustomRangeState] = useState<{
+    from: string;
+    to: string;
+  } | null>(null);
   const [scope, setScope] = useState<ReportScopeChoice>("own");
   const [pendingKind, setPendingKind] = useState<ReportKind | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const range = useMemo(() => periodRange(preset), [preset]);
+  const range = useMemo(
+    () => customRange ?? periodRange(preset ?? "this_month"),
+    [customRange, preset],
+  );
 
   const scopeLabel = useMemo(() => {
     if (isAdmin) return "Todas as vendas da organização";
@@ -90,9 +98,19 @@ export function useReportsScreen() {
 
   return {
     isAdmin,
+    isSeller,
     isTeamLeader,
     preset,
-    setPreset,
+    selectPreset: (next: PeriodPreset) => {
+      setCustomRangeState(null);
+      setPreset(next);
+    },
+    setCustomRange: (next: { from: string; to: string }) => {
+      setPreset(null);
+      setCustomRangeState(next);
+    },
+    isCustomRange: customRange != null,
+    range,
     presets: PRESETS,
     periodLabels: PERIOD_PRESET_LABELS,
     scope,

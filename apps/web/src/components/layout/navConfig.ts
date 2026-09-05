@@ -116,6 +116,12 @@ export const DASHBOARD_NAV: NavItem[] = [
     planFeature: "fiscal_nfe",
   },
   {
+    to: "/emissao-boletos",
+    label: "Boletos",
+    icon: Receipt,
+    resource: "boletos",
+  },
+  {
     to: "/relatorios",
     label: "Relatórios",
     icon: BarChart3,
@@ -194,6 +200,11 @@ export function resourceForPath(pathname: string): PermissionResource | null {
     return "orders";
   if (pathname.startsWith("/romaneio-rota")) return "orders";
   if (pathname.startsWith("/expedicao")) return "expedition";
+  if (
+    pathname.startsWith("/emissao-boletos") ||
+    pathname.startsWith("/financeiro/boletos")
+  )
+    return "boletos";
   if (
     pathname.startsWith("/financeiro") ||
     pathname.startsWith("/fiscal") ||

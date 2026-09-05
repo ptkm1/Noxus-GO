@@ -145,7 +145,15 @@ export const bankingAdminRoutes: FastifyPluginAsync = async (app) => {
       .object({
         customerId: z.string().optional(),
         status: z
-          .enum(["PENDING", "PAID", "PARTIALLY_PAID", "OVERDUE", "CANCELLED"])
+          .enum([
+            "PENDING",
+            "PROCESSING",
+            "PAID",
+            "PARTIALLY_PAID",
+            "OVERDUE",
+            "CANCELLED",
+            "ERROR",
+          ])
           .optional(),
       })
       .safeParse(req.query);
@@ -203,7 +211,7 @@ export const bankingAdminRoutes: FastifyPluginAsync = async (app) => {
       return serializeReceivable(row);
     } catch (err) {
       if (err instanceof BankingProviderError) {
-        return reply.status(err.status ?? 400).send({
+        return reply.status(err.httpStatus ?? 400).send({
           error: err.message,
           code: err.code,
         });
@@ -220,7 +228,7 @@ export const bankingAdminRoutes: FastifyPluginAsync = async (app) => {
       return serializeReceivable(row);
     } catch (err) {
       if (err instanceof BankingProviderError) {
-        return reply.status(err.status ?? 400).send({
+        return reply.status(err.httpStatus ?? 400).send({
           error: err.message,
           code: err.code,
         });

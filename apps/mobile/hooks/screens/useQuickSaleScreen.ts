@@ -104,7 +104,15 @@ export function useQuickSaleScreen() {
     tradeName: "",
     city: "",
   });
+  const [submittedCustomerSearch, setSubmittedCustomerSearch] = useState<{
+    code: string;
+    document: string;
+    legalName: string;
+    tradeName: string;
+    city: string;
+  } | null>(null);
   const [paymentPickerOpen, setPaymentPickerOpen] = useState(false);
+  const [notes, setNotes] = useState("");
   const productTapTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
@@ -184,10 +192,26 @@ export function useQuickSaleScreen() {
     };
   }, [alert, qc, repeatSaleId, showToast]);
 
-  const { data: customers = [] } = useQuery({
+  const { data: customers = [], isLoading: customersLoading } = useQuery({
     queryKey: ["seller", "customers"],
     staleTime: sellerOfflineStaleTime,
     queryFn: () => fetchSellerCustomers() as Promise<SaleCustomer[]>,
+  });
+
+  const {
+    data: searchedCustomers = [],
+    isFetching: customerSearchLoading,
+    error: customerSearchError,
+  } = useQuery({
+    queryKey: ["seller", "customers", "search", submittedCustomerSearch],
+    enabled: submittedCustomerSearch !== null,
+    queryFn: () => {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(submittedCustomerSearch ?? {})) {
+        if (value.trim()) params.set(key, value.trim());
+      }
+      return apiFetch<SaleCustomer[]>(`/seller/customers?${params.toString()}`);
+    },
   });
 
   useEffect(() => {
@@ -267,43 +291,12 @@ export function useQuickSaleScreen() {
     return c;
   }, [customers, lastCustomerId]);
 
-  const filteredCustomers = useMemo(() => {
-    const code = customerSearch.code.trim().toLowerCase();
-    const doc = digitsOnly(customerSearch.document);
-    const legal = customerSearch.legalName.trim().toLowerCase();
-    const trade = customerSearch.tradeName.trim().toLowerCase();
-    const city = customerSearch.city.trim().toLowerCase();
-
-    return customers.filter((c) => {
-      if (c.approvalStatus && c.approvalStatus !== "APPROVED") return false;
-      if (code) {
-        const codeDigits = code.replace(/\D/g, "");
-        const matchesNumeric =
-          codeDigits.length > 0 &&
-          c.code != null &&
-          String(c.code).includes(codeDigits);
-        const matchesName = (c.name ?? "").toLowerCase().includes(code);
-        if (!matchesNumeric && !matchesName) return false;
-      }
-      if (doc) {
-        const hay = digitsOnly(`${c.cnpj ?? ""}${c.cpf ?? ""}`);
-        if (!hay.includes(doc)) return false;
-      }
-      if (legal) {
-        const hay = `${c.legalName ?? ""} ${c.name ?? ""}`.toLowerCase();
-        if (!hay.includes(legal)) return false;
-      }
-      if (trade) {
-        const hay = `${c.tradeName ?? ""} ${c.name ?? ""}`.toLowerCase();
-        if (!hay.includes(trade)) return false;
-      }
-      if (city) {
-        const hay = `${c.city ?? ""} ${c.state ?? ""}`.toLowerCase();
-        if (!hay.includes(city)) return false;
-      }
-      return true;
-    });
-  }, [customers, customerSearch]);
+  const filteredCustomers = useMemo(
+    () => (submittedCustomerSearch ? searchedCustomers : customers).filter(
+      (customer) => !customer.approvalStatus || customer.approvalStatus === "APPROVED",
+    ),
+    [customers, searchedCustomers, submittedCustomerSearch],
+  );
 
   const cartQtyByProductId = useMemo(() => {
     const o: Record<string, number> = {};
@@ -335,6 +328,7 @@ export function useQuickSaleScreen() {
     !!paymentConditionId &&
     cartLines.length > 0 &&
     !creditBlockedCheckout;
+  const canAccessFinalize = !!customerId && cartLines.length > 0;
 
   const bumpQty = useCallback(
     (p: SaleProduct, delta: number): boolean => {
@@ -454,6 +448,7 @@ export function useQuickSaleScreen() {
         paymentConditionId,
         operation: "SALE" as const,
         status: "CONFIRMED" as const,
+        ...(notes.trim() ? { notes: notes.trim() } : {}),
         items: lines.map((l) => ({
           productId: l.productId,
           quantity: l.qty,
@@ -589,6 +584,7 @@ export function useQuickSaleScreen() {
     customerId,
     paymentConditionId,
     products,
+    notes,
   ]);
 
   const openCustomerCredit = useCallback(() => {
@@ -618,13 +614,23 @@ export function useQuickSaleScreen() {
       tradeName: "",
       city: "",
     });
+    setSubmittedCustomerSearch(null);
   }, [setCustomerId]);
+
+  const searchCustomers = useCallback(() => {
+    setSubmittedCustomerSearch({ ...customerSearch });
+  }, [customerSearch]);
 
   const goTab = useCallback(
     (next: QuickSaleTab) => {
       if (next !== "clientes" && !customerId) {
         setErr("Selecione um cliente para continuar.");
         setTab("clientes");
+        return;
+      }
+      if (next === "finalizar" && cartLines.length === 0) {
+        setErr("Adicione pelo menos um produto para continuar.");
+        setTab("produtos");
         return;
       }
       if (next === "finalizar" && !paymentConditionId) {
@@ -635,7 +641,7 @@ export function useQuickSaleScreen() {
       setErr(null);
       setTab(next);
     },
-    [customerId, paymentConditionId],
+    [cartLines.length, customerId, paymentConditionId],
   );
 
   const emptyCatalogMessage =
@@ -655,9 +661,13 @@ export function useQuickSaleScreen() {
     selectedCustomer,
     formatDoc,
     customers,
+    customersLoading,
+    customerSearchLoading,
+    customerSearchError,
     filteredCustomers,
     customerSearch,
     setCustomerSearch,
+    searchCustomers,
     selectCustomer,
     clearCustomer,
     lastCustomerEntity,
@@ -667,6 +677,8 @@ export function useQuickSaleScreen() {
     selectedPaymentCondition,
     paymentPickerOpen,
     setPaymentPickerOpen,
+    notes,
+    setNotes,
     catalog,
     cartLines,
     cartTotal,
@@ -675,6 +687,7 @@ export function useQuickSaleScreen() {
     creditLoading,
     creditBlockedCheckout,
     canAccessProducts,
+    canAccessFinalize,
     canFinalize,
     bumpQty,
     scheduleProductTap,

@@ -173,9 +173,7 @@ export function useRoutePlanScreen() {
       if (data.source === "air_fallback") {
         void alert({
           title: "Rota em linha reta",
-          description:
-            data.disclaimer +
-            "\n\nPara traçado pelas vias: GOOGLE_MAPS_SERVER_API_KEY em apps/api/.env + Routes API no Google Cloud. Reinicie a API.",
+          description: __DEV__ ? `${data.disclaimer}\n\nPara traçado pelas vias: GOOGLE_MAPS_SERVER_API_KEY em apps/api/.env + Routes API no Google Cloud. Reinicie a API.` : data.disclaimer,
         });
       }
     },

@@ -1,7 +1,6 @@
 import { APP_BRAND_NAME } from "@pedidos/shared";
 import Constants from "expo-constants";
-import { Pressable, Text, View } from "react-native";
-import { apiBase } from "../../../lib/api";
+import { Pressable, Text } from "react-native";
 import { useSecretDevToolsGesture } from "../../../lib/devtools/secret-gesture";
 import {
   useDevToolsVersionTapStyles,
@@ -17,16 +16,6 @@ export function DevToolsVersionTap({ variant = "default" }: Props) {
   const { onSecretPress } = useSecretDevToolsGesture();
   const version = Constants.expoConfig?.version ?? "1.0.0";
 
-  if (!__DEV__) {
-    return (
-      <View style={styles.wrap}>
-        <Text style={styles.version}>
-          {APP_BRAND_NAME} v{version}
-        </Text>
-      </View>
-    );
-  }
-
   return (
     <Pressable
       style={styles.wrap}
@@ -35,9 +24,6 @@ export function DevToolsVersionTap({ variant = "default" }: Props) {
     >
       <Text style={styles.version}>
         {APP_BRAND_NAME} v{version}
-      </Text>
-      <Text style={styles.api} numberOfLines={2}>
-        API · {apiBase()}
       </Text>
     </Pressable>
   );

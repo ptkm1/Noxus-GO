@@ -434,7 +434,7 @@ export async function reconcileOpenReceivables(input?: {
   const overdueResult = await prisma.receivable.updateMany({
     where: {
       ...whereOrg,
-      status: { in: ["PENDING", "PARTIALLY_PAID"] },
+      status: { in: ["PENDING", "PARTIALLY_PAID", "PROCESSING"] },
       dueDate: { lt: today0 },
     },
     data: { status: "OVERDUE" },
@@ -446,7 +446,7 @@ export async function reconcileOpenReceivables(input?: {
     const open = await prisma.receivable.findMany({
       where: {
         ...whereOrg,
-        status: { in: ["PENDING", "OVERDUE", "PARTIALLY_PAID"] },
+        status: { in: ["PENDING", "OVERDUE", "PARTIALLY_PAID", "PROCESSING"] },
       },
       orderBy: { dueDate: "asc" },
       take: input.limit ?? 40,
@@ -492,6 +492,7 @@ export function serializeReceivable(r: Receivable & {
     externalId: r.externalId,
     nossoNumero: r.nossoNumero,
     digitableLine: r.digitableLine,
+    barcode: r.barcode,
     amount,
     paidAmount: paid,
     remaining: Math.max(0, roundMoney(amount - paid)),
@@ -500,5 +501,9 @@ export function serializeReceivable(r: Receivable & {
     status: r.status,
     externalStatus: r.externalStatus,
     lastSyncedAt: r.lastSyncedAt?.toISOString() ?? null,
+    installmentIndex: r.installmentIndex,
+    installmentTotal: r.installmentTotal,
+    pdfUrl: r.pdfUrl,
+    instructions: r.instructions,
   };
 }

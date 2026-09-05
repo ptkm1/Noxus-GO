@@ -63,7 +63,7 @@ export default function RoutePlanScreen() {
           pelas vias (Google Routes).
         </Text>
 
-        {s.nearbyQuery.data?.roadRoutingConfigured === false ? (
+        {__DEV__ && s.nearbyQuery.data?.roadRoutingConfigured === false ? (
           <Text style={styles.warn}>
             Servidor sem GOOGLE_MAPS_SERVER_API_KEY — configure em apps/api/.env
             e reinicie a API para rotas por pista.

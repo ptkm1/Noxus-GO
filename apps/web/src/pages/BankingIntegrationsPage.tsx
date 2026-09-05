@@ -158,7 +158,14 @@ export function BankingIntegrationsPage() {
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               Conciliação de boletos dos seus clientes (Itaú, BB, Santander).
               Segredos ficam só no servidor (env / criptografia) — nunca no
-              navegador.
+              navegador.{" "}
+              <Link
+                to="/emissao-boletos"
+                className="font-medium text-primary underline-offset-2 hover:underline"
+              >
+                Ir para emissão de boletos
+              </Link>
+              .
             </p>
           </div>
           <Button

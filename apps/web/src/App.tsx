@@ -39,6 +39,7 @@ import { FiscalAccountsPayablePage } from "./pages/FiscalAccountsPayablePage";
 import { FiscalFixedExpensesPage } from "./pages/FiscalFixedExpensesPage";
 import { FiscalHubPage } from "./pages/FiscalHubPage";
 import { BankingIntegrationsPage } from "./pages/BankingIntegrationsPage";
+import { BoletosPage } from "./pages/BoletosPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { GuidePage } from "./pages/GuidePage";
 import { HelpPage } from "./pages/HelpPage";
@@ -367,6 +368,11 @@ function AppRoutes() {
             <Route
               path="financeiro/integracoes-bancarias"
               element={<BankingIntegrationsPage />}
+            />
+            <Route path="emissao-boletos" element={<BoletosPage />} />
+            <Route
+              path="financeiro/boletos"
+              element={<Navigate to="/emissao-boletos" replace />}
             />
             <Route path="faturamento" element={<FaturamentoPage />} />
             <Route

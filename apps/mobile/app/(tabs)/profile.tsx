@@ -2,7 +2,6 @@ import { fmtMoney } from "@/components/atoms/formatMoney";
 import { ThemedButton } from "@/components/atoms/ThemedButton";
 import { ThemedCard } from "@/components/atoms/ThemedCard";
 import { ThemedText } from "@/components/atoms/ThemedText";
-import { ThemedTextInput } from "@/components/atoms/ThemedTextInput";
 import { KeyboardForm, MobileHeader, SafeScreen } from "@/components/layout";
 import { MOBILE_TAB_SCROLL_BOTTOM } from "@/components/layout/MobileScreen";
 import { DevToolsVersionTap } from "@/components/molecules/DevToolsVersionTap";
@@ -25,18 +24,12 @@ import { useRouter } from "expo-router";
 import {
     Bell,
     ChevronRight,
-    Database,
     FileText,
-    HelpCircle,
     LogOut,
     Package,
-    Server,
     Settings,
-    Shield,
     ShoppingBag,
-    Smartphone,
     TrendingUp,
-    Upload,
 } from "lucide-react-native";
 import { Pressable, StyleSheet, View } from "react-native";
 
@@ -85,8 +78,7 @@ export default function ProfileScreen() {
   const isOnline = useNetInfoOnline();
   const { lastSync, lastSyncedCount } = useSyncStatusMeta();
   const { logoutAndGoLogin, logoutPending } = useLogout();
-  const { me, name, setName, saveName, savePending, goSettings } =
-    useProfileScreen();
+  const { me, goSettings } = useProfileScreen();
 
   const { data: commission } = useQuery({
     queryKey: ["seller", "commission-dashboard"],
@@ -226,22 +218,6 @@ export default function ProfileScreen() {
           pendingItems={0}
         />
 
-        <ThemedCard>
-          <ThemedText variant="label" muted style={{ marginBottom: 8 }}>
-            Nome de exibição
-          </ThemedText>
-          <ThemedTextInput value={name} onChangeText={setName} />
-          <ThemedButton
-            size="lg"
-            style={{ marginTop: 12 }}
-            loading={savePending}
-            loadingLabel="Salvando…"
-            onPress={saveName}
-          >
-            Salvar nome
-          </ThemedButton>
-        </ThemedCard>
-
         <ThemedCard padded={false}>
           <MenuRow
             icon={ShoppingBag}
@@ -258,13 +234,6 @@ export default function ProfileScreen() {
             label="Relatórios"
             onPress={() => router.push("/(tabs)/reports")}
           />
-          {user?.role === "ADMIN" ? (
-            <MenuRow
-              icon={Upload}
-              label="Importar CSV"
-              onPress={() => router.push("/(tabs)/imports")}
-            />
-          ) : null}
           <MenuRow
             icon={TrendingUp}
             label={user?.role === "ADMIN" ? "Ranking" : "Comissão"}
@@ -275,17 +244,6 @@ export default function ProfileScreen() {
             label="Notificações"
             onPress={() => router.push("/(tabs)/notifications")}
           />
-          <MenuRow icon={Shield} label="Privacidade" onPress={goSettings} />
-          <MenuRow icon={Smartphone} label="Dispositivo" onPress={goSettings} />
-          <MenuRow icon={Database} label="Dados locais" onPress={goSettings} />
-          <MenuRow icon={HelpCircle} label="Ajuda" onPress={goSettings} />
-          {__DEV__ ? (
-            <MenuRow
-              icon={Server}
-              label="Servidor da API"
-              onPress={() => router.push("/devtools")}
-            />
-          ) : null}
           <View style={{ borderBottomWidth: 0 }}>
             <MenuRow
               icon={Settings}

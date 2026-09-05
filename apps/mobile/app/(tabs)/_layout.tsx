@@ -14,6 +14,7 @@ import {
     Platform,
     Pressable,
     StyleSheet,
+    Text,
     View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -30,7 +31,7 @@ function QuickSaleFab() {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Venda rápida"
+      accessibilityLabel="Nova venda"
       style={[
         fabStyles.wrap,
         { bottom, backgroundColor: colors.primary, shadowColor: colors.shadow },
@@ -39,9 +40,12 @@ function QuickSaleFab() {
     >
       <ClipboardCheck
         color={colors.primaryForeground}
-        size={26}
+        size={22}
         strokeWidth={2.5}
       />
+      <Text style={{ color: colors.primaryForeground, fontWeight: "700", fontSize: 14 }}>
+        Nova venda
+      </Text>
     </Pressable>
   );
 }
@@ -176,7 +180,6 @@ export default function TabsLayout() {
         <Tabs.Screen name="notifications" options={HIDDEN_TAB} />
         <Tabs.Screen name="profile" options={HIDDEN_TAB} />
         <Tabs.Screen name="reports" options={HIDDEN_TAB} />
-        <Tabs.Screen name="imports" options={HIDDEN_TAB} />
       </Tabs>
       {user.role === "SELLER" ? <QuickSaleFab /> : null}
     </View>
@@ -187,9 +190,11 @@ const fabStyles = StyleSheet.create({
   wrap: {
     position: "absolute",
     right: 18,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    height: 54,
+    borderRadius: 27,
+    paddingHorizontal: 18,
+    flexDirection: "row",
+    gap: 8,
     alignItems: "center",
     justifyContent: "center",
     elevation: 8,

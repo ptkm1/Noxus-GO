@@ -92,6 +92,26 @@ export function ProductCatalogTile(props: {
 
   return (
     <View style={styles.card}>
+      {highlightLabel && variant === "list" ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.highlightChip,
+            styles.listFloatingHighlightChip,
+            {
+              backgroundColor: isPromo ? colors.danger : colors.primary,
+            },
+          ]}
+        >
+          <Text
+            style={styles.highlightChipTxt}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {highlightLabel}
+          </Text>
+        </View>
+      ) : null}
       <Pressable
         hitSlop={6}
         style={styles.favBtn}
@@ -129,7 +149,7 @@ export function ProductCatalogTile(props: {
               />
             </View>
           )}
-          {highlightLabel ? (
+          {highlightLabel && variant !== "list" ? (
             <View
               style={[
                 styles.highlightChip,
@@ -138,7 +158,13 @@ export function ProductCatalogTile(props: {
                 },
               ]}
             >
-              <Text style={styles.highlightChipTxt}>{highlightLabel}</Text>
+              <Text
+                style={styles.highlightChipTxt}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {highlightLabel}
+              </Text>
             </View>
           ) : null}
           {qtyInCart != null && qtyInCart > 0 ? (
@@ -171,7 +197,11 @@ export function ProductCatalogTile(props: {
             {stockLabel}
           </Text>
         </View>
-        {priceNode}
+        {variant === "list" ? (
+          <View style={styles.trailing}>{priceNode}</View>
+        ) : (
+          priceNode
+        )}
       </Pressable>
     </View>
   );

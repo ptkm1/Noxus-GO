@@ -137,6 +137,7 @@ import {
 } from "../services/create-sale-order.js";
 import { checkCustomer, evaluateOrderCredit } from "../services/credit.js";
 import { bankingAdminRoutes } from "./banking-admin.js";
+import { boletosAdminRoutes } from "./boletos-admin.js";
 import { resolveEffectiveUnitPrice } from "../services/price-resolve.js";
 import {
     listAssignedProductsInOrg,
@@ -1251,6 +1252,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         code: z.string().min(1),
         name: z.string().min(1),
         days: z.number().int().min(0).max(3650).optional(),
+        installmentDays: z.array(z.number().int().min(1).max(3650)).max(48).optional(),
         active: z.boolean().optional(),
         sortOrder: z.number().int().min(0).max(9999).optional(),
       })
@@ -1270,6 +1272,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           code,
           name: body.data.name.trim(),
           days: body.data.days ?? 0,
+          installmentDays: body.data.installmentDays ?? [],
           active: body.data.active ?? true,
           sortOrder: body.data.sortOrder ?? 0,
         },
@@ -1289,6 +1292,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         code: z.string().min(1).optional(),
         name: z.string().min(1).optional(),
         days: z.number().int().min(0).max(3650).optional(),
+        installmentDays: z.array(z.number().int().min(1).max(3650)).max(48).optional(),
         active: z.boolean().optional(),
         sortOrder: z.number().int().min(0).max(9999).optional(),
       })
@@ -1306,6 +1310,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       body.data.code === undefined &&
       body.data.name === undefined &&
       body.data.days === undefined &&
+      body.data.installmentDays === undefined &&
       body.data.active === undefined &&
       body.data.sortOrder === undefined
     ) {
@@ -1325,6 +1330,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
             ? { name: body.data.name.trim() }
             : {}),
           ...(body.data.days !== undefined ? { days: body.data.days } : {}),
+          ...(body.data.installmentDays !== undefined
+            ? { installmentDays: body.data.installmentDays }
+            : {}),
           ...(body.data.active !== undefined
             ? { active: body.data.active }
             : {}),
@@ -7703,6 +7711,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   await app.register(fiscalRoutes, { prefix: "/fiscal" });
   await app.register(expeditionRoutes);
   await app.register(bankingAdminRoutes);
+  await app.register(boletosAdminRoutes);
   const { establishmentRoutes } = await import("./establishments.js");
   await app.register(establishmentRoutes, { prefix: "/establishments" });
 };

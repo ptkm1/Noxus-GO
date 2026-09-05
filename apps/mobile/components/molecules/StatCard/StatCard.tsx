@@ -14,6 +14,7 @@ type Props = {
   trend?: { value: number; label?: string };
   onPress?: () => void;
   style?: object;
+  compact?: boolean;
 };
 
 export function StatCard({
@@ -24,6 +25,7 @@ export function StatCard({
   trend,
   onPress,
   style,
+  compact = false,
 }: Props) {
   const { colors } = useTheme();
   const isPositive = trend ? trend.value >= 0 : true;
@@ -33,6 +35,7 @@ export function StatCard({
       onPress={onPress}
       style={({ pressed }) => [
         styles.card,
+        compact && styles.cardCompact,
         {
           backgroundColor: colors.card,
           borderColor: colors.border,
@@ -48,7 +51,10 @@ export function StatCard({
           </ThemedText>
           <ThemedText
             variant="display"
-            style={{ marginTop: 8, fontSize: 28, lineHeight: 32 }}
+            style={[
+              { marginTop: compact ? 5 : 8 },
+              compact && { fontSize: 22, lineHeight: 26 },
+            ]}
           >
             {value}
           </ThemedText>
@@ -159,6 +165,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  cardCompact: { padding: 12 },
   row: {
     flexDirection: "row",
     alignItems: "flex-start",

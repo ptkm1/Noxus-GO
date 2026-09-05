@@ -27,6 +27,7 @@ type PaymentCondition = {
   code: string;
   name: string;
   days: number;
+  installmentDays?: number[];
   active: boolean;
   sortOrder: number;
 };
@@ -44,6 +45,7 @@ export function PaymentConditionsPage() {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [days, setDays] = useState("0");
+  const [installmentDays, setInstallmentDays] = useState("");
   const [sortOrder, setSortOrder] = useState("0");
   const [active, setActive] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
@@ -54,6 +56,7 @@ export function PaymentConditionsPage() {
     setCode("");
     setName("");
     setDays("0");
+    setInstallmentDays("");
     setSortOrder("0");
     setActive(true);
     setFormError(null);
@@ -70,6 +73,9 @@ export function PaymentConditionsPage() {
     setCode(row.code);
     setName(row.name);
     setDays(String(row.days));
+    setInstallmentDays(
+      row.installmentDays?.length ? row.installmentDays.join(",") : "",
+    );
     setSortOrder(String(row.sortOrder));
     setActive(row.active);
     setFormError(null);
@@ -87,10 +93,17 @@ export function PaymentConditionsPage() {
     mutationFn: async () => {
       const daysN = Number(days);
       const sortN = Number(sortOrder);
+      const parsedInstallments = installmentDays
+        .split(/[,;\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((s) => Number(s))
+        .filter((n) => Number.isFinite(n) && n >= 1);
       const payload = {
         code: code.trim(),
         name: name.trim(),
         days: Number.isFinite(daysN) ? Math.max(0, Math.trunc(daysN)) : 0,
+        installmentDays: parsedInstallments,
         sortOrder: Number.isFinite(sortN) ? Math.max(0, Math.trunc(sortN)) : 0,
         active,
       };
@@ -236,6 +249,18 @@ export function PaymentConditionsPage() {
             />
           </FormField>
           <FormField
+            label="Parcelas (dias)"
+            htmlFor="pc-installments"
+            hint="Opcional. Ex.: 30,60,90 — sobrescreve prazo único"
+          >
+            <Input
+              id="pc-installments"
+              placeholder="30,60,90"
+              value={installmentDays}
+              onChange={(e) => setInstallmentDays(e.target.value)}
+            />
+          </FormField>
+          <FormField
             label="Ordem"
             htmlFor="pc-sort"
             hint="Menor número aparece primeiro"
@@ -284,6 +309,7 @@ export function PaymentConditionsPage() {
                 <TableHead className="px-4">Código</TableHead>
                 <TableHead className="px-4">Nome</TableHead>
                 <TableHead className="px-4">Dias</TableHead>
+                <TableHead className="px-4">Parcelas</TableHead>
                 <TableHead className="px-4">Ativa</TableHead>
                 <TableHead className="px-4" />
               </TableRow>
@@ -300,6 +326,11 @@ export function PaymentConditionsPage() {
                   <TableCell className="px-4 py-3">{row.name}</TableCell>
                   <TableCell className="px-4 py-3 text-muted-foreground">
                     {row.days === 0 ? "À vista" : `${row.days} dias`}
+                  </TableCell>
+                  <TableCell className="px-4 py-3 text-muted-foreground font-mono text-xs">
+                    {row.installmentDays?.length
+                      ? row.installmentDays.join(", ")
+                      : "—"}
                   </TableCell>
                   <TableCell className="px-4 py-3">
                     <Checkbox

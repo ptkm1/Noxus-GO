@@ -19,7 +19,8 @@ const STEM_PATH = "M48.021 134.5L12.021 165.5V89.5L48.021 57.5V134.5Z";
 const LOOP_PATH =
   "M72.521 117V84.5H99.021C113.421 80.6415 116.354 66.559 116.021 60C116.021 43.2 102.688 35.6667 96.021 34H1.021L27.021 0.5H96.021C107.221 0.5 114.021 2.83333 116.021 4C142.021 10.8 150.188 42.5 151.021 57.5C151.021 99.5 122.354 114.667 108.021 117H72.521Z";
 
-function iconSvg(size, { background = true, logoScale = 0.52 } = {}) {
+/** Fração da altura do canvas ocupada pelo P (menor = mais padding). */
+function iconSvg(size, { background = true, logoScale = 0.4 } = {}) {
   const logoH = size * logoScale;
   const logoW = logoH * (LOGO_VB_W / LOGO_VB_H);
   const x = (size - logoW) / 2;
@@ -49,13 +50,14 @@ async function writePng(filename, size, opts) {
 
 mkdirSync(assetsDir, { recursive: true });
 
-await writePng("icon.png", 1024, { background: true });
+await writePng("icon.png", 1024, { background: true, logoScale: 0.4 });
 await writePng("adaptive-icon.png", 1024, {
   background: false,
-  logoScale: 0.58,
+  logoScale: 0.42,
 });
-await writePng("splash-icon.png", 512, { background: false, logoScale: 0.62 });
-await writePng("favicon.png", 96, { background: true, logoScale: 0.5 });
+// Splash: Expo faz contain na tela inteira — P menor no canvas = padding visual.
+await writePng("splash-icon.png", 512, { background: false, logoScale: 0.36 });
+await writePng("favicon.png", 96, { background: true, logoScale: 0.42 });
 
 writeFileSync(
   join(assetsDir, "app-icon.svg"),
