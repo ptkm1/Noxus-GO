@@ -11,6 +11,9 @@ const GENERIC: Record<string, ReceivableStatus> = {
   ATIVO: "PENDING",
   REGISTERED: "PENDING",
   EMITIDO: "PENDING",
+  PROCESSING: "PROCESSING",
+  PROCESSANDO: "PROCESSING",
+  EM_PROCESSAMENTO: "PROCESSING",
   PAID: "PAID",
   LIQUIDADO: "PAID",
   SETTLED: "PAID",
@@ -26,6 +29,10 @@ const GENERIC: Record<string, ReceivableStatus> = {
   BAIXADO: "CANCELLED",
   CANCELADO: "CANCELLED",
   WRITE_OFF: "CANCELLED",
+  ERROR: "ERROR",
+  ERRO: "ERROR",
+  FAILED: "ERROR",
+  FALHA: "ERROR",
 };
 
 /** Santander — lista pública: Ativo | Baixado | Liquidado | Liquidado parcialmente */
@@ -83,7 +90,13 @@ export function applyDueDateOverdue(
   dueDate: Date,
   at: Date = new Date(),
 ): ReceivableStatus {
-  if (status !== "PENDING" && status !== "PARTIALLY_PAID") return status;
+  if (
+    status !== "PENDING" &&
+    status !== "PARTIALLY_PAID" &&
+    status !== "PROCESSING"
+  ) {
+    return status;
+  }
   const today0 = new Date(at.getFullYear(), at.getMonth(), at.getDate());
   const due0 = new Date(
     dueDate.getFullYear(),

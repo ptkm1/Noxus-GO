@@ -6,6 +6,11 @@ import {
   PEDIX_PRO_ICON_VIEWBOX,
 } from "@pedidos/shared";
 
+/** Escala do P dentro do squircle (onBrand) — padding ~16% por lado. */
+const ON_BRAND_LOGO_SCALE = 0.68;
+const ON_BRAND_TX = (152 * (1 - ON_BRAND_LOGO_SCALE)) / 2;
+const ON_BRAND_TY = (167 * (1 - ON_BRAND_LOGO_SCALE)) / 2;
+
 type IconProps = {
   size?: number;
   className?: string;
@@ -42,9 +47,13 @@ export function CommerceProIcon({
             rx="28"
             fill={APP_BRAND_PRIMARY}
           />
-          {PEDIX_PRO_ICON_PATHS.map((d) => (
-            <path key={d.slice(0, 24)} d={d} fill="#FFFFFF" />
-          ))}
+          <g
+            transform={`translate(${ON_BRAND_TX} ${ON_BRAND_TY}) scale(${ON_BRAND_LOGO_SCALE})`}
+          >
+            {PEDIX_PRO_ICON_PATHS.map((d) => (
+              <path key={d.slice(0, 24)} d={d} fill="#FFFFFF" />
+            ))}
+          </g>
         </>
       ) : (
         PEDIX_PRO_ICON_PATHS.map((d) => (

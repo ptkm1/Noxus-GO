@@ -1,39 +1,40 @@
 import { AuditLogPanel } from "@/components/AuditLogPanel";
+import { CsvImportSheet } from "@/components/CsvImportSheet";
 import { useConfirm } from "@/components/confirm";
 import {
-  FormField,
-  FormGrid,
-  FormSection,
-  FormSheet,
-  FormSheetActions,
+    FormField,
+    FormGrid,
+    FormSection,
+    FormSheet,
+    FormSheetActions,
 } from "@/components/forms";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
 } from "@/components/ui/table";
 import { useScrollToFirstError } from "@/hooks/useScrollToFirstError";
 import { cn } from "@/lib/utils";
 import type {
-  CustomerFormValues,
-  CustomerRecord,
-  CustomerStatus,
+    CustomerFormValues,
+    CustomerRecord,
+    CustomerStatus,
 } from "@pedidos/shared";
 import {
-  canWrite,
-  customerToForm,
-  emptyCustomerForm,
-  formToCustomerPayload,
-  formatCnpjMask,
-  formatCpfMask,
-  validateCustomerForm,
+    canWrite,
+    customerToForm,
+    emptyCustomerForm,
+    formToCustomerPayload,
+    formatCnpjMask,
+    formatCpfMask,
+    validateCustomerForm,
 } from "@pedidos/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -204,6 +205,7 @@ export function CustomersPage() {
   });
 
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [form, setForm] = useState<CustomerFormValues>(emptyCustomerForm());
   const [showValidation, setShowValidation] = useState(false);
   const [editing, setEditing] = useState<CustomerRecord | null>(null);
@@ -464,10 +466,33 @@ export function CustomersPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <h1 className="text-2xl font-semibold">Clientes</h1>
-        <Button type="button" onClick={openCreate}>
-          Novo cliente
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setImportOpen(true)}
+          >
+            Importar CSV
+          </Button>
+          <Button type="button" onClick={openCreate}>
+            Novo cliente
+          </Button>
+        </div>
       </div>
+
+      <CsvImportSheet
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        kind="customers"
+        title="Importar clientes (CSV)"
+        templatePath="/admin/imports/customers/template.csv"
+        templateFilename="clientes-modelo.csv"
+        previewPath="/admin/imports/customers/preview"
+        commitPath="/admin/imports/customers/commit"
+        onImported={() =>
+          void qc.invalidateQueries({ queryKey: ["admin", "customers"] })
+        }
+      />
 
       {!pendingLoading && pending.length > 0 ? (
         <FormSection

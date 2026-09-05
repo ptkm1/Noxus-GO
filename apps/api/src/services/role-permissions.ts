@@ -450,6 +450,7 @@ export function adminPathToResource(
     path.startsWith("/receivables")
   )
     return "fiscal";
+  if (path.startsWith("/boletos")) return "boletos";
   if (path.startsWith("/customers") || path.startsWith("/credit"))
     return "customers";
   if (/^\/orders\/[^/]+\/pdf-80mm$/.test(path)) return "orders_print_80mm";

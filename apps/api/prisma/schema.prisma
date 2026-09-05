@@ -91,10 +91,12 @@ enum BankConnectionStatus {
 /// Status interno do recebível (boleto) após mapeamento do provedor.
 enum ReceivableStatus {
   PENDING
+  PROCESSING
   PAID
   PARTIALLY_PAID
   OVERDUE
   CANCELLED
+  ERROR
 }
 
 /// Status da assinatura SaaS da organização.
@@ -305,6 +307,7 @@ model Organization {
   customerCreditTitles CustomerCreditTitle[]
   bankConnections      BankConnection[]
   receivables          Receivable[]
+  receivableEvents     ReceivableEvent[]
   sellerCustomerVisits SellerCustomerVisit[]
   sellerLiveLocations  SellerLiveLocation[]
   sellerLocationHistory SellerLocationHistory[]
@@ -521,6 +524,8 @@ model User {
   preferredEstablishment   Establishment? @relation("UserPreferredEstablishment", fields: [preferredEstablishmentId], references: [id], onDelete: SetNull)
   /// null = todos os estabelecimentos; senão lista de IDs permitidos (V1).
   allowedEstablishmentIds  Json?
+  cancelledReceivables     Receivable[]      @relation("ReceivableCancelledBy")
+  receivableEvents         ReceivableEvent[]
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
 
@@ -1188,6 +1193,21 @@ model Receivable {
   externalStatus   String?
   lastSyncedAt     DateTime?
   metadata         Json?
+  /// Parcela 1-based (null = boleto único legado).
+  installmentIndex Int?
+  installmentTotal Int?
+  pdfUrl           String?
+  pdfStoredAt      DateTime?
+  instructions     String?
+  interestPercent  Decimal?          @db.Decimal(5, 2)
+  finePercent      Decimal?          @db.Decimal(5, 2)
+  discountAmount   Decimal?          @db.Decimal(14, 2)
+  discountUntil    DateTime?
+  cancelledAt      DateTime?
+  cancelledByUserId String?
+  cancelledByUser  User?             @relation("ReceivableCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
+  cancelReason     String?
+  events           ReceivableEvent[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -1195,7 +1215,27 @@ model Receivable {
   @@index([organizationId, customerId, status])
   @@index([organizationId, status, dueDate])
   @@index([organizationId, orderId])
+  @@index([organizationId, orderId, installmentIndex])
   @@index([bankConnectionId, nossoNumero])
+}
+
+/// Histórico imutável de operações sobre boleto (emissão, edição, cancelamento…).
+model ReceivableEvent {
+  id             String     @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  receivableId   String
+  receivable     Receivable @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+  actorUserId    String?
+  actorUser      User?      @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  /// EMIT | UPDATE | CANCEL | SYNC | PDF_VIEW | PDF_DOWNLOAD | REISSUE | STATUS
+  action         String
+  message        String
+  metadata       Json?
+  createdAt      DateTime   @default(now())
+
+  @@index([receivableId, createdAt])
+  @@index([organizationId, createdAt])
 }
 
 /// Eventos de webhook bancário (idempotência + auditoria). Separado do Asaas SaaS.
@@ -1251,6 +1291,8 @@ model PaymentCondition {
   name           String
   /// Prazo principal em dias (0 = à vista).
   days           Int          @default(0)
+  /// Dias de cada parcela (ex.: [30,60,90]). Vazio = parcela única usando `days`.
+  installmentDays Int[]       @default([])
   active         Boolean      @default(true)
   sortOrder      Int          @default(0)
   orders         Order[]

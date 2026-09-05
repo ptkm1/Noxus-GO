@@ -15,8 +15,15 @@ export type SalesBySupplierSummary = {
 };
 
 export function useSalesBySupplier(initial: PeriodPreset = "this_month") {
-  const [preset, setPreset] = useState<PeriodPreset>(initial);
-  const range = useMemo(() => periodRange(preset), [preset]);
+  const [preset, setPreset] = useState<PeriodPreset | null>(initial);
+  const [customRange, setCustomRange] = useState<{
+    from: string;
+    to: string;
+  } | null>(null);
+  const range = useMemo(
+    () => customRange ?? periodRange(preset ?? initial),
+    [customRange, initial, preset],
+  );
 
   const query = useQuery({
     queryKey: ["seller", "sales-by-supplier", range.from, range.to],
@@ -36,7 +43,15 @@ export function useSalesBySupplier(initial: PeriodPreset = "this_month") {
 
   return {
     preset,
-    setPreset,
+    selectPreset: (next: PeriodPreset) => {
+      setCustomRange(null);
+      setPreset(next);
+    },
+    setCustomRange: (next: { from: string; to: string }) => {
+      setPreset(null);
+      setCustomRange(next);
+    },
+    isCustomRange: customRange != null,
     data: query.data,
     isLoading: query.isLoading,
     isFetching: query.isFetching,

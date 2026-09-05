@@ -1,7 +1,7 @@
 import { useCallback, useRef } from "react";
 import { useRouter } from "expo-router";
 
-const DEFAULT_TAP_COUNT = 7;
+const DEFAULT_TAP_COUNT = 10;
 const TAP_WINDOW_MS = 2500;
 
 type Options = {

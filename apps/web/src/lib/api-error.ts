@@ -45,6 +45,25 @@ export function getErrorMessage(error: unknown): string {
   return "Ocorreu um erro inesperado. Tente novamente.";
 }
 
+/** Sessão inválida/expirada (não usar para falha de rede). */
+export function isUnauthorizedError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
+
+/** Rede / API inacessível (ex.: "Failed to fetch"). */
+export function isNetworkError(error: unknown): boolean {
+  if (isUnauthorizedError(error)) return false;
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  return (
+    error.name === "TypeError" ||
+    msg.includes("failed to fetch") ||
+    msg.includes("networkerror") ||
+    msg.includes("network request failed") ||
+    msg.includes("load failed")
+  );
+}
+
 export async function errorFromResponse(res: Response): Promise<ApiError> {
   const payload = await res.json().catch(() => ({}));
   const body = payload as {

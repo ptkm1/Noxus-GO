@@ -1,23 +1,29 @@
 import type {
-  PermissionLevel,
-  PermissionResource,
-  PlanFeature,
-  PlanId,
-  PlanLimits,
-  Role,
+    PermissionLevel,
+    PermissionResource,
+    PlanFeature,
+    PlanId,
+    PlanLimits,
+    Role,
 } from "@pedidos/shared";
 import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useState,
+    type ReactNode,
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch, clearTokens, getAccessToken, setTokens } from "../lib/api";
+import {
+    getErrorMessage,
+    isNetworkError,
+    isUnauthorizedError,
+} from "../lib/api-error";
+import { notifyError } from "../lib/app-notifications";
 
 export type UserSubscription = {
   planId: PlanId;
@@ -96,6 +102,26 @@ function clearBrowserStorage() {
   }
 }
 
+async function sleep(ms: number) {
+  await new Promise((r) => setTimeout(r, ms));
+}
+
+/** Busca /auth/me com retries curtos em falha de rede (API reiniciando / HMR). */
+async function fetchMeWithRetry(): Promise<User> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await apiFetch<User>("/auth/me");
+    } catch (err) {
+      lastErr = err;
+      if (isUnauthorizedError(err)) throw err;
+      if (!isNetworkError(err) && !(err instanceof TypeError)) throw err;
+      if (attempt < 2) await sleep(400 * (attempt + 1));
+    }
+  }
+  throw lastErr;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -109,11 +135,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      const me = await apiFetch<User>("/auth/me");
+      const me = await fetchMeWithRetry();
       setUser(me);
-    } catch {
-      clearTokens();
-      setUser(null);
+    } catch (err) {
+      if (isUnauthorizedError(err)) {
+        clearTokens();
+        setUser(null);
+      } else {
+        // Mantém tokens: API fora / rede. Usuário pode F5 quando voltar.
+        console.warn("[auth] /auth/me falhou sem limpar sessão:", err);
+        if (isNetworkError(err) || err instanceof TypeError) {
+          notifyError(
+            "Não foi possível contactar a API. A sessão foi mantida — tente novamente em instantes.",
+            "API indisponível",
+          );
+        } else {
+          notifyError(getErrorMessage(err), "Não foi possível carregar a sessão");
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -128,7 +167,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const me = await apiFetch<User>("/auth/me");
       setUser(me);
       return me;
-    } catch {
+    } catch (err) {
+      if (isUnauthorizedError(err)) {
+        clearTokens();
+        setUser(null);
+      }
       return null;
     }
   }, []);

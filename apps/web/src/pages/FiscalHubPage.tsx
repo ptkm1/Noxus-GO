@@ -1,4 +1,4 @@
-import { Building2, Landmark, Receipt, type LucideIcon } from "lucide-react";
+import { Building2, Landmark, Receipt, Ticket, type LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const CARDS: Array<{
@@ -22,10 +22,17 @@ const CARDS: Array<{
     icon: Receipt,
   },
   {
+    to: "/emissao-boletos",
+    title: "Emissão de boletos",
+    description:
+      "Emita, consulte, cancele e reemita boletos de pedidos a prazo.",
+    icon: Ticket,
+  },
+  {
     to: "/financeiro/integracoes-bancarias",
     title: "Integrações bancárias",
     description:
-      "Conciliação de boletos dos clientes (Itaú, BB, Santander) via API.",
+      "Conexões Itaú, BB e Santander (credenciais e webhook).",
     icon: Building2,
   },
 ];

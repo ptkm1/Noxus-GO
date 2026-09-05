@@ -1,12 +1,13 @@
 import type {
-  BankingConnectionConfig,
-  BoletoResult,
-  CreateBoletoInput,
-  GetBoletoInput,
+    BankingConnectionConfig,
+    BoletoResult,
+    CancelBoletoInput,
+    CreateBoletoInput,
+    GetBoletoInput,
 } from "../banking-provider.js";
 import {
-  BankingProviderError,
-  BankingProviderNotConfiguredError,
+    BankingProviderError,
+    BankingProviderNotConfiguredError,
 } from "../banking-provider.js";
 import { mapBbExternalStatus } from "../map-status.js";
 import { StubBankingProvider } from "./stub-base.js";
@@ -23,8 +24,7 @@ import { StubBankingProvider } from "./stub-base.js";
  * Auth: OAuth2 client_credentials + header gw-dev-app-key (developer_application_key).
  * Spec detalhada de body/campos: Portal Developers BB (login).
  *
- * Implementação: OAuth + GET sonda quando credenciais existem;
- * createBoleto permanece stub até body oficial homologado (não inventamos payload).
+ * Live quando CLIENT_ID + CLIENT_SECRET + APP_KEY: create / get / cancel boleto.
  */
 export class BancoDoBrasilProvider extends StubBankingProvider {
   readonly kind = "BB" as const;
@@ -37,11 +37,14 @@ export class BancoDoBrasilProvider extends StubBankingProvider {
   override capabilities() {
     const live = this.hasCredentials();
     return {
-      createBoleto: false,
+      createBoleto: live,
       getBoleto: live,
-      cancelBoleto: false,
+      cancelBoleto: live,
+      updateBoleto: false,
+      pdf: false,
       webhooks: true,
       liveApi: live,
+      editableFields: [],
     };
   }
 
@@ -117,18 +120,149 @@ export class BancoDoBrasilProvider extends StubBankingProvider {
   }
 
   override async createBoleto(
-    _input: CreateBoletoInput,
+    input: CreateBoletoInput,
   ): Promise<BoletoResult> {
     if (!this.hasCredentials()) {
       throw new BankingProviderNotConfiguredError("BB");
     }
-    // Body de POST /boletos é definido no manual do Portal Developers BB —
-    // não inventamos campos. Após homologação, implementar com a OpenAPI oficial.
-    throw new BankingProviderError(
-      "BB createBoleto: aguardando payload homologado (POST /cobrancas/v2/boletos). Use sync/getBoleto após registro externo.",
-      "STUB_ONLY",
-      501,
+    const convenio =
+      str(this.config.metadata.covenantCode) ||
+      this.config.secrets.CONVENIO ||
+      this.config.secrets.COVENANT_CODE;
+    const numeroConvenio = Number(String(convenio ?? "").replace(/\D/g, ""));
+    if (!numeroConvenio) {
+      throw new BankingProviderNotConfiguredError(
+        "BB",
+        "BB createBoleto exige covenantCode/CONVENIO (número do convênio) nos metadados ou secrets.",
+      );
+    }
+
+    const token = await this.ensureToken();
+    const { api } = this.baseUrls();
+    const doc = input.payer.document.replace(/\D/g, "");
+    const due = input.dueDate.toISOString().slice(0, 10);
+    // Payload alinhado à API Cobrança v2 (campos públicos documentados em integrações BB).
+    const payload: Record<string, unknown> = {
+      numeroConvenio,
+      numeroCarteira: Number(this.config.metadata.wallet ?? this.config.secrets.CARTEIRA ?? 17),
+      numeroVariacaoCarteira: Number(
+        this.config.metadata.walletVariation ??
+          this.config.secrets.VARIACAO_CARTEIRA ??
+          35,
+      ),
+      codigoModalidade: 1,
+      dataEmissao: new Date().toISOString().slice(0, 10),
+      dataVencimento: due,
+      valorOriginal: input.amount,
+      codigoAceite: "N",
+      codigoTipoTitulo: 2,
+      indicadorPermissaoRecebimentoParcial: "N",
+      numeroTituloBeneficiario: (input.nossoNumero || input.externalReference)
+        .replace(/\D/g, "")
+        .slice(0, 15),
+      campoUtilizacaoBeneficiario: input.description?.slice(0, 30) || "PEDIX",
+      numeroTituloCliente: input.externalReference.slice(0, 20),
+      pagador: {
+        tipoInscricao: doc.length > 11 ? 2 : 1,
+        numeroInscricao: Number(doc),
+        nome: input.payer.name.slice(0, 100),
+        endereco: input.payer.address?.street?.slice(0, 60) || "NAO INFORMADO",
+        cep: Number(String(input.payer.address?.postalCode ?? "").replace(/\D/g, "") || 0),
+        cidade: input.payer.address?.city?.slice(0, 40) || "NAO INFORMADO",
+        bairro: input.payer.address?.neighborhood?.slice(0, 40) || "NAO INFORMADO",
+        uf: input.payer.address?.state?.slice(0, 2) || "SP",
+      },
+    };
+    if (input.interestPercent != null) {
+      payload.jurosMora = {
+        tipo: 2,
+        porcentagem: input.interestPercent,
+      };
+    }
+    if (input.finePercent != null) {
+      payload.multa = {
+        tipo: 2,
+        porcentagem: input.finePercent,
+      };
+    }
+
+    const url = new URL(`${api}/boletos`);
+    url.searchParams.set("gw-dev-app-key", this.config.secrets.APP_KEY);
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new BankingProviderError(
+        `BB createBoleto falhou (${res.status}): ${text.slice(0, 300)}`,
+        "API_ERROR",
+        res.status,
+      );
+    }
+    const raw = (await res.json()) as Record<string, unknown>;
+    const situacao =
+      str(raw.situacao) ||
+      str(raw.codigoEstadoTituloCobranca) ||
+      "PENDING";
+    return {
+      externalId:
+        str(raw.numero) ||
+        str(raw.id) ||
+        str(raw.numeroTituloCliente) ||
+        input.externalReference,
+      nossoNumero: str(raw.numero) || str(raw.nossoNumero),
+      digitableLine: str(raw.linhaDigitavel) || str(raw.linhaDigitavelNumerica),
+      barcode: str(raw.codigoBarraNumerico) || str(raw.codigoBarras),
+      status: this.mapExternalStatus(situacao),
+      externalStatus: situacao,
+      raw,
+    };
+  }
+
+  override async cancelBoleto(input: CancelBoletoInput): Promise<BoletoResult> {
+    if (!this.hasCredentials()) {
+      throw new BankingProviderNotConfiguredError("BB");
+    }
+    const token = await this.ensureToken();
+    const { api } = this.baseUrls();
+    const url = new URL(
+      `${api}/boletos/${encodeURIComponent(input.externalId)}/baixar`,
     );
+    url.searchParams.set("gw-dev-app-key", this.config.secrets.APP_KEY);
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        numeroConvenio: Number(
+          String(
+            this.config.metadata.covenantCode ??
+              this.config.secrets.CONVENIO ??
+              "",
+          ).replace(/\D/g, "") || 0,
+        ),
+      }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new BankingProviderError(
+        `BB cancelBoleto falhou (${res.status}): ${text.slice(0, 300)}`,
+        "API_ERROR",
+        res.status,
+      );
+    }
+    return {
+      externalId: input.externalId,
+      status: "CANCELLED",
+      externalStatus: "BAIXADO",
+    };
   }
 
   override async getBoleto(input: GetBoletoInput): Promise<BoletoResult | null> {

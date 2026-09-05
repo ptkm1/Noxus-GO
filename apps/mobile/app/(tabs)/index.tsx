@@ -4,19 +4,17 @@ import { MobileHeader, MobileScreen, SafeScreen } from "@/components/layout";
 import { HeaderIconButton } from "@/components/molecules/HeaderIconButton";
 import { QuickAction } from "@/components/molecules/QuickAction";
 import { RecentSalesBlock } from "@/components/molecules/RecentSalesBlock";
+import { SalesDailyBlock } from "@/components/molecules/SalesDailyBlock";
 import { ProgressStat, StatCard } from "@/components/molecules/StatCard";
-import { SyncStatusBanner } from "@/components/molecules/SyncStatusBanner";
 import { TopSuppliersBlock } from "@/components/molecules/TopSuppliersBlock";
 import { useAuth } from "@/context/AuthContext";
 import { useSalesListScreen } from "@/hooks/screens/useSalesListScreen";
 import { useHomeValuesHidden } from "@/hooks/useHomeValuesHidden";
 import { useManualSaleSync } from "@/hooks/useManualSaleSync";
-import { useNetInfoOnline } from "@/hooks/useNetInfoOnline";
-import { useSyncStatusMeta } from "@/hooks/useSyncStatusMeta";
 import { apiFetch } from "@/lib/api";
 import {
-  fetchSellerCommissionDashboard,
-  sellerOfflineStaleTime,
+    fetchSellerCommissionDashboard,
+    sellerOfflineStaleTime,
 } from "@/lib/seller-offline-queries";
 import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
@@ -24,19 +22,19 @@ import { radiiPx } from "@pedidos/design-tokens";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import {
-  Bell,
-  ClipboardList,
-  DollarSign,
-  Eye,
-  EyeOff,
-  FileText,
-  Package,
-  Plus,
-  RefreshCw,
-  RotateCcw,
-  ShoppingCart,
-  TrendingUp,
-  Users,
+    Bell,
+    ClipboardList,
+    DollarSign,
+    Eye,
+    EyeOff,
+    FileText,
+    Package,
+    Plus,
+    RefreshCw,
+    RotateCcw,
+    ShoppingCart,
+    TrendingUp,
+    Users,
 } from "lucide-react-native";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
@@ -44,8 +42,6 @@ export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { colors } = useTheme();
-  const isOnline = useNetInfoOnline();
-  const { lastSync, lastSyncedCount } = useSyncStatusMeta();
   const { hidden: hideValues, toggleHidden } = useHomeValuesHidden();
   const {
     orders,
@@ -110,6 +106,18 @@ export default function HomeScreen() {
   const mtd = commission?.mtd.confirmedRevenue ?? 0;
   const goalTarget = goal?.targetAmount ?? 0;
   const goalCurrent = goal?.achievedAmount ?? mtd;
+  const goalPercent =
+    goalTarget > 0 ? Math.min(100, (goalCurrent / goalTarget) * 100) : null;
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const monthSales = orders
+    .filter((o) => o.status === "CONFIRMED" && new Date(o.createdAt) >= monthStart)
+    .reduce((sum, o) => sum + Number(o.totalAmount), 0);
+  const monthOrderCount = orders.filter(
+    (o) => o.status === "CONFIRMED" && new Date(o.createdAt) >= monthStart,
+  ).length;
+  const averageTicket = monthOrderCount > 0 ? monthSales / monthOrderCount : 0;
 
   const syncA11yLabel =
     queueCount > 0
@@ -190,13 +198,6 @@ export default function HomeScreen() {
         onRefresh={() => void refetch()}
         contentContainerStyle={{ gap: 20 }}
       >
-        <SyncStatusBanner
-          isOnline={isOnline}
-          lastSync={lastSync}
-          lastSyncedCount={lastSyncedCount}
-          pendingItems={pending + dead}
-        />
-
         {goalTarget > 0 ? (
           <ProgressStat
             title={
@@ -216,6 +217,7 @@ export default function HomeScreen() {
               title="Vendas hoje"
               value={displayMoney(hideValues, todayTotal)}
               icon={DollarSign}
+              compact
             />
           </View>
           <View style={styles.statCell}>
@@ -224,6 +226,7 @@ export default function HomeScreen() {
               value={orders.length}
               icon={ShoppingCart}
               onPress={() => router.push("/(tabs)/vendas")}
+              compact
             />
           </View>
           {user?.role === "SELLER" ? (
@@ -240,6 +243,7 @@ export default function HomeScreen() {
                 }
                 icon={TrendingUp}
                 onPress={() => router.push("/(tabs)/commission")}
+                compact
               />
             </View>
           ) : user?.role === "ADMIN" ? (
@@ -253,6 +257,7 @@ export default function HomeScreen() {
                 }
                 icon={TrendingUp}
                 onPress={() => router.push("/(tabs)/commission")}
+                compact
               />
             </View>
           ) : null}
@@ -262,11 +267,38 @@ export default function HomeScreen() {
               value={pending + dead}
               icon={Users}
               onPress={pending + dead > 0 ? goOfflineQueue : undefined}
+              compact
+            />
+          </View>
+          <View style={styles.statCell}>
+            <StatCard
+              title="Vendas mês"
+              value={displayMoney(hideValues, monthSales)}
+              icon={DollarSign}
+              compact
+            />
+          </View>
+          <View style={styles.statCell}>
+            <StatCard
+              title="Ticket médio"
+              value={displayMoney(hideValues, averageTicket)}
+              icon={TrendingUp}
+              compact
+            />
+          </View>
+          <View style={styles.statCell}>
+            <StatCard
+              title="Meta atingida"
+              value={goalPercent == null ? "—" : `${goalPercent.toFixed(0)}%`}
+              subtitle={goalTarget > 0 ? "no mês" : "Sem meta"}
+              icon={TrendingUp}
+              compact
             />
           </View>
         </View>
 
         <TopSuppliersBlock hideValues={hideValues} />
+        <SalesDailyBlock orders={orders} hideValues={hideValues} />
 
         <View style={{ gap: 10 }}>
           <ThemedText variant="titleSm">Ações rápidas</ThemedText>
@@ -353,9 +385,9 @@ const styles = StyleSheet.create({
   statGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    gap: 10,
   },
   statCell: {
-    width: "47%",
+    width: "48%",
   },
 });

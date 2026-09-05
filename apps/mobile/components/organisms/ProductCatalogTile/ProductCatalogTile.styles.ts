@@ -34,7 +34,7 @@ export function useProductCatalogTileStyles(
           borderWidth: highlighted ? 1.5 : 1,
           borderColor: highlighted ? colors.primary : colors.border,
           overflow: "hidden",
-          marginBottom: 2,
+          marginBottom: variant === "list" ? 10 : 2,
           opacity: disabled ? 0.55 : 1,
         },
         favBtn: {
@@ -102,7 +102,15 @@ export function useProductCatalogTileStyles(
         },
         body: {
           flex: variant === "list" ? 1 : undefined,
-          paddingRight: variant === "list" ? 36 : 0,
+          paddingRight: 0,
+        },
+        trailing: {
+          ...(variant === "list" && {
+            minWidth: 96,
+            alignItems: "flex-end",
+            justifyContent: "flex-end",
+            alignSelf: "stretch",
+          }),
         },
         name: {
           fontSize: variant === "list" ? 14 : 12,
@@ -126,7 +134,6 @@ export function useProductCatalogTileStyles(
         stockLine: { marginTop: 2, fontSize: 11, fontWeight: "700" },
         price: {
           marginTop: 6,
-          ...(variant === "list" && { top: 15 }),
           fontSize: variant === "list" ? 14 : 12,
           fontWeight: "800",
           color: colors.success,
@@ -136,6 +143,13 @@ export function useProductCatalogTileStyles(
           fontSize: 13,
           fontWeight: "600",
           color: colors.textMuted,
+        },
+        listFloatingHighlightChip: {
+          top: 8,
+          left: 8,
+          // Reserva o selo ao espaço da miniatura: nunca alcança o título.
+          maxWidth: 76,
+          zIndex: 3,
         },
       }),
     [

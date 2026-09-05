@@ -1,6 +1,7 @@
 import { ThemedButton } from "@/components/atoms/ThemedButton";
 import { ThemedCard } from "@/components/atoms/ThemedCard";
 import { ThemedText } from "@/components/atoms/ThemedText";
+import { ThemedTextInput } from "@/components/atoms/ThemedTextInput";
 import { MobileHeader, MobileScreen, SafeScreen } from "@/components/layout";
 import {
     useReportsScreen,
@@ -10,7 +11,9 @@ import { useTheme } from "@/lib/theme";
 import { colorWithAlpha } from "@/lib/theme/colorAlpha";
 import { radiiPx } from "@pedidos/design-tokens";
 import { FileText, Share2, Users } from "lucide-react-native";
-import { Pressable, StyleSheet, View } from "react-native";
+import { useRouter } from "expo-router";
+import { useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 const KIND_ORDER: ReportKind[] = [
   "sales-summary",
@@ -20,7 +23,26 @@ const KIND_ORDER: ReportKind[] = [
 
 export default function ReportsScreen() {
   const { colors } = useTheme();
+  const router = useRouter();
   const s = useReportsScreen();
+  const [customOpen, setCustomOpen] = useState(false);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [dateError, setDateError] = useState<string | null>(null);
+  const applyRange = () => {
+    const parse = (value: string, end = false) => {
+      const m = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (!m) return null;
+      const d = new Date(Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1]), end ? 23 : 0, end ? 59 : 0, end ? 59 : 0, end ? 999 : 0));
+      return d.getUTCDate() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 ? d.toISOString() : null;
+    };
+    const start = parse(from);
+    const end = parse(to, true);
+    if (!start || !end || start > end) { setDateError("Informe datas válidas no formato DD/MM/AAAA."); return; }
+    s.setCustomRange({ from: start, to: end });
+    setDateError(null);
+    setCustomOpen(false);
+  };
 
   return (
     <SafeScreen variant="tab">
@@ -40,7 +62,7 @@ export default function ReportsScreen() {
               return (
                 <Pressable
                   key={p}
-                  onPress={() => s.setPreset(p)}
+                  onPress={() => s.selectPreset(p)}
                   style={[
                     styles.chip,
                     {
@@ -63,7 +85,23 @@ export default function ReportsScreen() {
                 </Pressable>
               );
             })}
+            <Pressable
+              onPress={() => setCustomOpen((open) => !open)}
+              style={[styles.chip, { borderColor: s.isCustomRange ? colors.primary : colors.border, backgroundColor: s.isCustomRange ? colorWithAlpha(colors.primary, 0.12) : colors.surfaceMuted }]}
+            >
+              <ThemedText variant="caption" style={{ fontWeight: "600", color: s.isCustomRange ? colors.primary : colors.textSecondary }}>Personalizado</ThemedText>
+            </Pressable>
           </View>
+          {customOpen ? (
+            <View style={[styles.customRange, { borderColor: colors.border }]}>
+              <View style={styles.dateRow}>
+                <View style={styles.dateField}><Text style={[styles.dateLabel, { color: colors.textMuted }]}>De</Text><ThemedTextInput value={from} onChangeText={setFrom} placeholder="DD/MM/AAAA" keyboardType="number-pad" maxLength={10} /></View>
+                <View style={styles.dateField}><Text style={[styles.dateLabel, { color: colors.textMuted }]}>Até</Text><ThemedTextInput value={to} onChangeText={setTo} placeholder="DD/MM/AAAA" keyboardType="number-pad" maxLength={10} /></View>
+              </View>
+              {dateError ? <ThemedText variant="caption" style={{ color: colors.danger }}>{dateError}</ThemedText> : null}
+              <ThemedButton size="sm" style={{ alignSelf: "flex-end" }} onPress={applyRange}>Aplicar período</ThemedButton>
+            </View>
+          ) : null}
         </ThemedCard>
 
         {s.isTeamLeader ? (
@@ -178,6 +216,18 @@ export default function ReportsScreen() {
           );
         })}
 
+        {s.isSeller ? (
+          <ThemedCard>
+            <ThemedText variant="titleSm">Minhas comissões</ThemedText>
+            <ThemedText variant="bodySm" muted style={{ marginTop: 4, marginBottom: 14 }}>
+              Acompanhe suas vendas e comissão no período selecionado.
+            </ThemedText>
+            <ThemedButton size="lg" onPress={() => router.push({ pathname: "/commissions", params: { from: s.range.from, to: s.range.to } })}>
+              <View style={styles.btnInner}><Share2 color={colors.primaryForeground} size={18} /><ThemedText variant="body" style={{ color: colors.primaryForeground, fontWeight: "700" }}>Ver minhas comissões</ThemedText></View>
+            </ThemedButton>
+          </ThemedCard>
+        ) : null}
+
         {s.err ? (
           <ThemedText style={{ color: colors.danger, textAlign: "center" }}>
             {s.err}
@@ -212,4 +262,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
+  customRange: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, gap: 10 },
+  dateRow: { flexDirection: "row", gap: 10 },
+  dateField: { flex: 1, gap: 5 },
+  dateLabel: { fontSize: 12, fontWeight: "700" },
 });

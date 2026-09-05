@@ -8,6 +8,7 @@ export type PermissionResource =
   | "stock"
   | "suppliers"
   | "fiscal"
+  | "boletos"
   | "customers"
   | "orders"
   | "orders_print_80mm"
@@ -31,6 +32,7 @@ export const PERMISSION_RESOURCES: PermissionResource[] = [
   "stock",
   "suppliers",
   "fiscal",
+  "boletos",
   "customers",
   "orders",
   "orders_print_80mm",
@@ -88,6 +90,12 @@ export const ROLE_PERMISSIONS: Record<
     SUPERVISOR: "none",
   },
   fiscal: {
+    ADMIN: "write",
+    MANAGER: "none",
+    SELLER: "none",
+    SUPERVISOR: "none",
+  },
+  boletos: {
     ADMIN: "write",
     MANAGER: "none",
     SELLER: "none",
@@ -197,6 +205,7 @@ export const PERMISSION_RESOURCE_LABELS: Record<PermissionResource, string> = {
   stock: "Estoque",
   suppliers: "Fornecedores",
   fiscal: "Financeiro",
+  boletos: "Emissão de boletos",
   customers: "Clientes",
   orders: "Pedidos / Vendas",
   orders_print_80mm: "Imprimir pedido 80mm",

@@ -1,4 +1,5 @@
 import { ProductCard, type ProductCardItem } from "@/components/ProductCard";
+import { CsvImportSheet } from "@/components/CsvImportSheet";
 import { ProductsHubNav } from "@/components/products/ProductsHubNav";
 import { useConfirm } from "@/components/confirm";
 import { FormField } from "@/components/forms";
@@ -20,6 +21,7 @@ export function ProductsPage() {
   const [supplierId, setSupplierId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [q, setQ] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
 
   const queryParams = useMemo(() => {
     const p = new URLSearchParams();
@@ -76,11 +78,32 @@ export function ProductsPage() {
           <Button variant="outline" asChild>
             <Link to="/fornecedores">Fornecedores</Link>
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setImportOpen(true)}
+          >
+            Importar CSV
+          </Button>
           <Button asChild>
             <Link to="/produtos/novo">Novo produto</Link>
           </Button>
         </div>
       </div>
+
+      <CsvImportSheet
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        kind="products"
+        title="Importar produtos (CSV)"
+        templatePath="/admin/imports/products/template.csv"
+        templateFilename="produtos-modelo.csv"
+        previewPath="/admin/imports/products/preview"
+        commitPath="/admin/imports/products/commit"
+        onImported={() =>
+          void qc.invalidateQueries({ queryKey: ["admin", "products"] })
+        }
+      />
 
       <div className="surface-card grid gap-3 p-4 sm:grid-cols-3">
         <FormField label="Fornecedor" htmlFor="prod-filter-supplier">

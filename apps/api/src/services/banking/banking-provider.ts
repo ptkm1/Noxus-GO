@@ -26,7 +26,23 @@ export type CreateBoletoInput = {
   /** Nosso número / seu número, se a carteira exigir. */
   nossoNumero?: string | null;
   description?: string | null;
+  instructions?: string | null;
+  interestPercent?: number | null;
+  finePercent?: number | null;
+  discountAmount?: number | null;
+  discountUntil?: Date | null;
   metadata?: Record<string, unknown>;
+};
+
+export type UpdateBoletoInput = {
+  externalId: string;
+  amount?: number;
+  dueDate?: Date;
+  instructions?: string | null;
+  interestPercent?: number | null;
+  finePercent?: number | null;
+  discountAmount?: number | null;
+  discountUntil?: Date | null;
 };
 
 export type BoletoResult = {
@@ -34,10 +50,15 @@ export type BoletoResult = {
   nossoNumero?: string | null;
   digitableLine?: string | null;
   barcode?: string | null;
+  pdfUrl?: string | null;
   status: InternalReceivableStatus;
   externalStatus?: string | null;
   raw?: unknown;
 };
+
+export type BoletoPdfResult =
+  | { kind: "url"; url: string }
+  | { kind: "buffer"; data: Buffer; contentType?: string };
 
 export type GetBoletoInput = {
   externalId?: string | null;
@@ -73,13 +94,25 @@ export type BankingConnectionConfig = {
   environment: "sandbox" | "production";
 };
 
+export type BoletoEditableField =
+  | "dueDate"
+  | "amount"
+  | "interestPercent"
+  | "finePercent"
+  | "discountAmount"
+  | "discountUntil"
+  | "instructions";
+
 export type BankingProviderCapabilities = {
   createBoleto: boolean;
   getBoleto: boolean;
   cancelBoleto: boolean;
+  updateBoleto: boolean;
+  pdf: boolean;
   webhooks: boolean;
   /** true = implementação completa; false = stub tipado aguardando homologação. */
   liveApi: boolean;
+  editableFields: BoletoEditableField[];
 };
 
 /**
@@ -93,6 +126,8 @@ export interface BankingProvider {
   createBoleto(input: CreateBoletoInput): Promise<BoletoResult>;
   getBoleto(input: GetBoletoInput): Promise<BoletoResult | null>;
   cancelBoleto?(input: CancelBoletoInput): Promise<BoletoResult>;
+  updateBoleto?(input: UpdateBoletoInput): Promise<BoletoResult>;
+  getBoletoPdf?(input: GetBoletoInput): Promise<BoletoPdfResult | null>;
 
   /**
    * Valida assinatura/token do webhook. Retorna false se inválido.
@@ -119,9 +154,10 @@ export class BankingProviderError extends Error {
       | "NOT_CONFIGURED"
       | "STUB_ONLY"
       | "API_ERROR"
-      | "UNSUPPORTED"
-      | "VALIDATION",
-    readonly status?: number,
+      | "VALIDATION"
+      | "DUPLICATE"
+      | "UNSUPPORTED",
+    readonly httpStatus?: number,
   ) {
     super(message);
     this.name = "BankingProviderError";
@@ -129,10 +165,10 @@ export class BankingProviderError extends Error {
 }
 
 export class BankingProviderNotConfiguredError extends BankingProviderError {
-  constructor(provider: BankingProviderKind, detail?: string) {
+  constructor(provider: string, detail?: string) {
     super(
       detail ??
-        `Provedor ${provider} sem credenciais/homologação. Veja docs/banking-boletos.md.`,
+        `${provider}: conexão sem credenciais/homologação. Veja docs/banking-boletos.md.`,
       "NOT_CONFIGURED",
       503,
     );

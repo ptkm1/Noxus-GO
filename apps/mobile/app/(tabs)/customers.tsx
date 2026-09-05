@@ -11,13 +11,26 @@ import { ClienteCard } from "@/components/molecules/QuickAction";
 import { useCustomersScreen } from "@/hooks/screens/useCustomersScreen";
 import { useTheme } from "@/lib/theme";
 import {
+  type CustomerRecord,
   formatCnpjMask,
   formatCpfMask,
   formatStructuredAddress,
 } from "@pedidos/shared";
 import { Search, UserPlus } from "lucide-react-native";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, StyleSheet, View } from "react-native";
+import { ActivityIndicator, SectionList, StyleSheet, View } from "react-native";
+
+type CustomerSection = { title: string; data: CustomerRecord[] };
+
+function customerInitial(name: string): string {
+  const first = name
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .charAt(0)
+    .toUpperCase();
+  return /^[A-Z]$/.test(first) ? first : "#";
+}
 
 function customerSubtitle(item: {
   city?: string | null;
@@ -71,6 +84,23 @@ export default function CustomersScreen() {
     );
   }, [customers, search]);
 
+  const sections = useMemo<CustomerSection[]>(() => {
+    const collator = new Intl.Collator("pt-BR", { sensitivity: "base" });
+    const grouped = new Map<string, CustomerRecord[]>();
+    for (const customer of filtered) {
+      const title = customerInitial(customer.name);
+      const group = grouped.get(title) ?? [];
+      group.push(customer);
+      grouped.set(title, group);
+    }
+    return [...grouped.entries()]
+      .sort(([a], [b]) => a.localeCompare(b, "pt-BR"))
+      .map(([title, data]) => ({
+        title,
+        data: data.sort((a, b) => collator.compare(a.name, b.name)),
+      }));
+  }, [filtered]);
+
   const listHeader = (
     <View style={styles.header}>
       <View
@@ -114,8 +144,8 @@ export default function CustomersScreen() {
         <ActivityIndicator style={{ marginTop: 24 }} color={colors.primary} />
       ) : (
         <KeyboardAvoidingScreen>
-          <FlatList
-            data={filtered}
+          <SectionList
+            sections={sections}
             keyExtractor={(c) => c.id}
             refreshing={isRefetching}
             onRefresh={() => void refetch()}
@@ -124,6 +154,22 @@ export default function CustomersScreen() {
             ListHeaderComponent={listHeader}
             contentContainerStyle={styles.list}
             ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+            SectionSeparatorComponent={() => <View style={{ height: 8 }} />}
+            renderSectionHeader={({ section }) => (
+              <View
+                style={[
+                  styles.sectionHeader,
+                  { backgroundColor: colors.background },
+                ]}
+              >
+                <ThemedText
+                  variant="caption"
+                  style={{ color: colors.primary, fontWeight: "800" }}
+                >
+                  {section.title}
+                </ThemedText>
+              </View>
+            )}
             ListEmptyComponent={
               <View style={styles.empty}>
                 <ThemedText variant="body" style={{ fontWeight: "600" }}>
@@ -203,4 +249,5 @@ const styles = StyleSheet.create({
     paddingTop: 40,
     paddingHorizontal: 24,
   },
+  sectionHeader: { paddingTop: 10, paddingBottom: 6 },
 });

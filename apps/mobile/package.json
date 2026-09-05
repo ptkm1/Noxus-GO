@@ -53,6 +53,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.14",
+    "node-addon-api": "^8.5.0",
+    "node-gyp": "^11.4.0",
     "sharp": "^0.34.5",
     "typescript": "~6.0.3"
   }

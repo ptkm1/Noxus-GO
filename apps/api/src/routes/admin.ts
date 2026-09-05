@@ -46,6 +46,7 @@ import {
     AUDIT_ACTION,
     AUDIT_ENTITY,
     auditFromAuth,
+    getActorAuditFields,
     writeAuditLog,
 } from "../services/audit-log.js";
 import { assertAdminPathPlanFeature } from "../services/billing/plan-gate.js";
@@ -136,6 +137,7 @@ import {
 } from "../services/create-sale-order.js";
 import { checkCustomer, evaluateOrderCredit } from "../services/credit.js";
 import { bankingAdminRoutes } from "./banking-admin.js";
+import { boletosAdminRoutes } from "./boletos-admin.js";
 import { resolveEffectiveUnitPrice } from "../services/price-resolve.js";
 import {
     listAssignedProductsInOrg,
@@ -1250,6 +1252,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         code: z.string().min(1),
         name: z.string().min(1),
         days: z.number().int().min(0).max(3650).optional(),
+        installmentDays: z.array(z.number().int().min(1).max(3650)).max(48).optional(),
         active: z.boolean().optional(),
         sortOrder: z.number().int().min(0).max(9999).optional(),
       })
@@ -1269,6 +1272,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
           code,
           name: body.data.name.trim(),
           days: body.data.days ?? 0,
+          installmentDays: body.data.installmentDays ?? [],
           active: body.data.active ?? true,
           sortOrder: body.data.sortOrder ?? 0,
         },
@@ -1288,6 +1292,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         code: z.string().min(1).optional(),
         name: z.string().min(1).optional(),
         days: z.number().int().min(0).max(3650).optional(),
+        installmentDays: z.array(z.number().int().min(1).max(3650)).max(48).optional(),
         active: z.boolean().optional(),
         sortOrder: z.number().int().min(0).max(9999).optional(),
       })
@@ -1305,6 +1310,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       body.data.code === undefined &&
       body.data.name === undefined &&
       body.data.days === undefined &&
+      body.data.installmentDays === undefined &&
       body.data.active === undefined &&
       body.data.sortOrder === undefined
     ) {
@@ -1324,6 +1330,9 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
             ? { name: body.data.name.trim() }
             : {}),
           ...(body.data.days !== undefined ? { days: body.data.days } : {}),
+          ...(body.data.installmentDays !== undefined
+            ? { installmentDays: body.data.installmentDays }
+            : {}),
           ...(body.data.active !== undefined
             ? { active: body.data.active }
             : {}),
@@ -7571,9 +7580,138 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       .send(pdf);
   });
 
+  const csvBodySchema = z.object({
+    csvText: z.string().min(1, "CSV obrigatório."),
+    columnMap: z.record(z.string(), z.string()).optional(),
+    fieldDefaults: z.record(z.string(), z.string()).optional(),
+  });
+
+  const sendCsvTemplate = (
+    reply: FastifyReply,
+    filename: string,
+    content: string,
+  ) =>
+    reply
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header("Content-Disposition", `attachment; filename="${filename}"`)
+      .send(content);
+
+  const importCsvError = (reply: FastifyReply, err: unknown) => {
+    const message =
+      err instanceof Error ? err.message : "Falha ao processar CSV.";
+    return reply.status(400).send({ error: message });
+  };
+
+  app.get("/imports/products/template.csv", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { productCsvTemplate } = await import("@pedidos/shared");
+    return sendCsvTemplate(reply, "produtos-modelo.csv", productCsvTemplate());
+  });
+
+  app.post("/imports/products/preview", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const body = csvBodySchema.safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: body.error.issues[0]?.message });
+    }
+    try {
+      const { previewProductImport } = await import(
+        "../services/imports/product-import.js"
+      );
+      return previewProductImport(
+        auth.organizationId,
+        body.data.csvText,
+        body.data.columnMap,
+      );
+    } catch (err) {
+      return importCsvError(reply, err);
+    }
+  });
+
+  app.post("/imports/products/commit", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const body = csvBodySchema.safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: body.error.issues[0]?.message });
+    }
+    try {
+      const { commitProductImport } = await import(
+        "../services/imports/product-import.js"
+      );
+      const actor = await getActorAuditFields(auth.sub);
+      return commitProductImport({
+        organizationId: auth.organizationId,
+        actorUserId: actor.userId,
+        actorMatricula: actor.userMatricula,
+        csvText: body.data.csvText,
+        columnMap: body.data.columnMap,
+      });
+    } catch (err) {
+      return importCsvError(reply, err);
+    }
+  });
+
+  app.get("/imports/customers/template.csv", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const { customerCsvTemplate } = await import("@pedidos/shared");
+    return sendCsvTemplate(reply, "clientes-modelo.csv", customerCsvTemplate());
+  });
+
+  app.post("/imports/customers/preview", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const body = csvBodySchema.safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: body.error.issues[0]?.message });
+    }
+    try {
+      const { previewCustomerImport } = await import(
+        "../services/imports/customer-import.js"
+      );
+      return previewCustomerImport(
+        auth.organizationId,
+        body.data.csvText,
+        body.data.columnMap,
+        body.data.fieldDefaults,
+      );
+    } catch (err) {
+      return importCsvError(reply, err);
+    }
+  });
+
+  app.post("/imports/customers/commit", async (req, reply) => {
+    const auth = req.auth!;
+    if (!requireAdmin(reply, auth)) return;
+    const body = csvBodySchema.safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: body.error.issues[0]?.message });
+    }
+    try {
+      const { commitCustomerImport } = await import(
+        "../services/imports/customer-import.js"
+      );
+      const actor = await getActorAuditFields(auth.sub);
+      return commitCustomerImport({
+        organizationId: auth.organizationId,
+        actorUserId: actor.userId,
+        actorMatricula: actor.userMatricula,
+        csvText: body.data.csvText,
+        columnMap: body.data.columnMap,
+        fieldDefaults: body.data.fieldDefaults,
+      });
+    } catch (err) {
+      return importCsvError(reply, err);
+    }
+  });
+
   await app.register(fiscalRoutes, { prefix: "/fiscal" });
   await app.register(expeditionRoutes);
   await app.register(bankingAdminRoutes);
+  await app.register(boletosAdminRoutes);
   const { establishmentRoutes } = await import("./establishments.js");
   await app.register(establishmentRoutes, { prefix: "/establishments" });
 };

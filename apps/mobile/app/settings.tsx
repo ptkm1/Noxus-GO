@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { ThemePreferencePicker } from "../components/molecules/ThemePreferencePicker";
 import { useSettingsScreen } from "../hooks/screens/useSettingsScreen";
+import { useProfileScreen } from "../hooks/screens/useProfileScreen";
 import { useThemedStyles } from "../hooks/useThemedStyles";
 import { useTheme } from "../lib/theme";
 import type { AppColors } from "../lib/theme/types";
@@ -28,6 +29,7 @@ export default function SettingsScreen() {
     logoutAndGoLogin,
     logoutPending,
   } = useSettingsScreen();
+  const { name, setName, saveName, savePending } = useProfileScreen();
 
   return (
     <SafeScreen>
@@ -100,6 +102,18 @@ export default function SettingsScreen() {
           <ExternalLink color={colors.primary} size={18} />
         </Pressable>
 
+        <Text style={styles.section}>Conta</Text>
+        <Text style={styles.hint}>Nome de exibição</Text>
+        <ThemedTextInput value={name} onChangeText={setName} />
+        <ThemedButton
+          size="lg"
+          loading={savePending}
+          loadingLabel="Salvando…"
+          onPress={saveName}
+        >
+          Salvar nome
+        </ThemedButton>
+
         <Text style={styles.section}>API</Text>
         <Text style={styles.hint}>
           URL atual: {apiUrl}
@@ -107,7 +121,6 @@ export default function SettingsScreen() {
           Para dispositivo físico ou emulador Android, defina
           EXPO_PUBLIC_API_URL (ex.: IP da sua máquina:4000).
         </Text>
-        <Text style={styles.section}>Conta</Text>
         <Pressable
           style={[styles.danger, logoutPending && styles.dangerBusy]}
           disabled={logoutPending}
@@ -197,3 +210,5 @@ function createSettingsStyles(c: AppColors) {
     dangerText: { color: c.danger, fontWeight: "700" },
   });
 }
+import { ThemedButton } from "@/components/atoms/ThemedButton";
+import { ThemedTextInput } from "@/components/atoms/ThemedTextInput";

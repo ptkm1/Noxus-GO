@@ -1,17 +1,19 @@
 import type { BankingProviderKind } from "@prisma/client";
 import type {
-  BankingConnectionConfig,
-  BankingProvider,
-  BankingProviderCapabilities,
-  BoletoResult,
-  CancelBoletoInput,
-  CreateBoletoInput,
-  GetBoletoInput,
-  ParsedWebhookEvent,
+    BankingConnectionConfig,
+    BankingProvider,
+    BankingProviderCapabilities,
+    BoletoPdfResult,
+    BoletoResult,
+    CancelBoletoInput,
+    CreateBoletoInput,
+    GetBoletoInput,
+    ParsedWebhookEvent,
+    UpdateBoletoInput,
 } from "../banking-provider.js";
 import {
-  BankingProviderError,
-  BankingProviderNotConfiguredError,
+    BankingProviderError,
+    BankingProviderNotConfiguredError,
 } from "../banking-provider.js";
 import { safeEqualToken, sha256Hex } from "../credentials.js";
 import { mapGenericExternalStatus } from "../map-status.js";
@@ -30,8 +32,11 @@ export abstract class StubBankingProvider implements BankingProvider {
       createBoleto: false,
       getBoleto: false,
       cancelBoleto: false,
+      updateBoleto: false,
+      pdf: false,
       webhooks: true,
       liveApi: false,
+      editableFields: [],
     };
   }
 
@@ -62,6 +67,15 @@ export abstract class StubBankingProvider implements BankingProvider {
   async cancelBoleto(_input: CancelBoletoInput): Promise<BoletoResult> {
     this.assertSandboxOrConfigured("cancelBoleto");
     throw new BankingProviderError("unreachable", "STUB_ONLY");
+  }
+
+  async updateBoleto(_input: UpdateBoletoInput): Promise<BoletoResult> {
+    this.assertSandboxOrConfigured("updateBoleto");
+    throw new BankingProviderError("unreachable", "STUB_ONLY");
+  }
+
+  async getBoletoPdf(_input: GetBoletoInput): Promise<BoletoPdfResult | null> {
+    return null;
   }
 
   verifyWebhook(input: {

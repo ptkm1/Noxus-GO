@@ -1,16 +1,19 @@
 import type {
-  BankingConnectionConfig,
-  BoletoResult,
-  CreateBoletoInput,
-  GetBoletoInput,
-  ParsedWebhookEvent,
+    BankingConnectionConfig,
+    BoletoPdfResult,
+    BoletoResult,
+    CancelBoletoInput,
+    CreateBoletoInput,
+    GetBoletoInput,
+    ParsedWebhookEvent,
 } from "../banking-provider.js";
 import {
-  BankingProviderError,
-  BankingProviderNotConfiguredError,
+    BankingProviderError,
+    BankingProviderNotConfiguredError,
 } from "../banking-provider.js";
 import { safeEqualToken, sha256Hex } from "../credentials.js";
 import { mapSantanderExternalStatus } from "../map-status.js";
+import { mtlsFetch } from "../mtls-fetch.js";
 import { StubBankingProvider } from "./stub-base.js";
 
 /**
@@ -38,9 +41,12 @@ export class SantanderProvider extends StubBankingProvider {
     return {
       createBoleto: live,
       getBoleto: live,
-      cancelBoleto: false,
+      cancelBoleto: live,
+      updateBoleto: false,
+      pdf: live,
       webhooks: true,
       liveApi: live,
+      editableFields: [],
     };
   }
 
@@ -50,6 +56,42 @@ export class SantanderProvider extends StubBankingProvider {
         this.config.secrets.CLIENT_SECRET &&
         this.workspaceId(),
     );
+  }
+
+  private certPair(): { certPem?: string; keyPem?: string } {
+    const certPem = this.config.secrets.CERT_PEM?.trim();
+    const keyPem = this.config.secrets.KEY_PEM?.trim();
+    if (certPem && keyPem) return { certPem, keyPem };
+    return {};
+  }
+
+  private async http(
+    url: string,
+    init: {
+      method?: string;
+      headers?: Record<string, string>;
+      body?: string | URLSearchParams;
+    },
+  ) {
+    const body =
+      init.body instanceof URLSearchParams
+        ? init.body.toString()
+        : init.body ?? null;
+    const { certPem, keyPem } = this.certPair();
+    if (certPem && keyPem) {
+      return mtlsFetch(url, {
+        method: init.method,
+        headers: init.headers,
+        body,
+        certPem,
+        keyPem,
+      });
+    }
+    return fetch(url, {
+      method: init.method,
+      headers: init.headers,
+      body: body ?? undefined,
+    });
   }
 
   private workspaceId(): string | null {
@@ -94,7 +136,7 @@ export class SantanderProvider extends StubBankingProvider {
       client_id: this.config.secrets.CLIENT_ID,
       client_secret: this.config.secrets.CLIENT_SECRET,
     });
-    const res = await fetch(tokenUrl, {
+    const res = await this.http(tokenUrl, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
@@ -102,7 +144,7 @@ export class SantanderProvider extends StubBankingProvider {
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new BankingProviderError(
-        `Santander OAuth falhou (${res.status}): ${text.slice(0, 200)}. mTLS pode ser exigido — configure CERT_PEM/KEY_PEM no agent.`,
+        `Santander OAuth falhou (${res.status}): ${text.slice(0, 200)}. mTLS pode ser exigido — configure CERT_PEM/KEY_PEM.`,
         "API_ERROR",
         res.status,
       );
@@ -173,7 +215,7 @@ export class SantanderProvider extends StubBankingProvider {
       paymentType: "REGISTRO",
     };
 
-    const res = await fetch(`${api}/workspaces/${workspaceId}/bank_slips`, {
+    const res = await this.http(`${api}/workspaces/${workspaceId}/bank_slips`, {
       method: "POST",
       headers: this.authHeaders(token),
       body: JSON.stringify(payload),
@@ -208,7 +250,7 @@ export class SantanderProvider extends StubBankingProvider {
 
     const token = await this.ensureToken();
     const { api } = this.baseUrls();
-    const res = await fetch(
+    const res = await this.http(
       `${api}/workspaces/${workspaceId}/bank_slips/${encodeURIComponent(bankSlipId)}`,
       { method: "GET", headers: this.authHeaders(token) },
     );
@@ -225,6 +267,61 @@ export class SantanderProvider extends StubBankingProvider {
     return this.mapBankSlip(raw, bankSlipId);
   }
 
+  override async cancelBoleto(input: CancelBoletoInput): Promise<BoletoResult> {
+    const workspaceId = this.workspaceId();
+    if (!workspaceId) {
+      throw new BankingProviderNotConfiguredError(
+        "SANTANDER",
+        "workspaceId obrigatório",
+      );
+    }
+    const token = await this.ensureToken();
+    const { api } = this.baseUrls();
+    const res = await this.http(
+      `${api}/workspaces/${workspaceId}/bank_slips/${encodeURIComponent(input.externalId)}`,
+      {
+        method: "PATCH",
+        headers: this.authHeaders(token),
+        body: JSON.stringify({
+          status: "BAIXADO",
+          reason: input.reason?.slice(0, 200) || "CANCELADO_PELO_BENEFICIARIO",
+        }),
+      },
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new BankingProviderError(
+        `Santander cancelBoleto falhou (${res.status}): ${text.slice(0, 300)}`,
+        "API_ERROR",
+        res.status,
+      );
+    }
+    const raw = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (Object.keys(raw).length === 0) {
+      return {
+        externalId: input.externalId,
+        status: "CANCELLED",
+        externalStatus: "Baixado",
+      };
+    }
+    return this.mapBankSlip(raw, input.externalId);
+  }
+
+  override async getBoletoPdf(
+    input: GetBoletoInput,
+  ): Promise<BoletoPdfResult | null> {
+    const current = await this.getBoleto(input);
+    if (!current) return null;
+    const raw = (current.raw ?? {}) as Record<string, unknown>;
+    const url =
+      (typeof raw.pdfUrl === "string" && raw.pdfUrl) ||
+      (typeof raw.bankSlipUrl === "string" && raw.bankSlipUrl) ||
+      (typeof raw.link === "string" && raw.link) ||
+      null;
+    if (url) return { kind: "url", url };
+    return null;
+  }
+
   private async getByNossoNumero(
     beneficiaryCode: string,
     bankNumber: string,
@@ -234,7 +331,7 @@ export class SantanderProvider extends StubBankingProvider {
     const url = new URL(`${api}/bills`);
     url.searchParams.set("beneficiaryCode", beneficiaryCode);
     url.searchParams.set("bankNumber", bankNumber);
-    const res = await fetch(url, {
+    const res = await this.http(url.toString(), {
       method: "GET",
       headers: this.authHeaders(token),
     });

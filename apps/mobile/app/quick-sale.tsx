@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Keyboard,
   Modal,
   Pressable,
   ScrollView,
@@ -62,6 +63,15 @@ export default function QuickSaleScreen() {
 
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [cartExpanded, setCartExpanded] = useState(false);
+  const [activeSearchField, setActiveSearchField] = useState<string | null>(
+    null,
+  );
+
+  const confirmCustomerSearch = (field: string) => {
+    Keyboard.dismiss();
+    setActiveSearchField(field);
+    s.searchCustomers();
+  };
 
   const cartExpandedMaxH = Math.min(windowHeight * 0.4, 280);
   const hasCart = s.cartLines.length > 0;
@@ -72,6 +82,10 @@ export default function QuickSaleScreen() {
   useEffect(() => {
     if (!hasCart) setCartExpanded(false);
   }, [hasCart]);
+
+  useEffect(() => {
+    if (!s.customerSearchLoading) setActiveSearchField(null);
+  }, [s.customerSearchLoading]);
 
   const footerHeight = useMemo(() => {
     const padBottom = Math.max(s.insets.bottom, 12);
@@ -100,7 +114,7 @@ export default function QuickSaleScreen() {
         const locked =
           t.id !== "clientes" && !s.customerId
             ? true
-            : t.id === "finalizar" && !s.canAccessProducts;
+            : t.id === "finalizar" && !s.canAccessFinalize;
         return (
           <Pressable
             key={t.id}
@@ -188,52 +202,135 @@ export default function QuickSaleScreen() {
           <View style={styles.formGrid}>
             <View style={styles.formFieldHalf}>
               <Text style={styles.fieldLabel}>Código / busca</Text>
-              <ThemedTextInput
-                value={s.customerSearch.code}
-                onChangeText={(code) =>
-                  s.setCustomerSearch((prev) => ({ ...prev, code }))
-                }
-                placeholder="Código ou nome"
-                autoCapitalize="none"
-              />
+              <View style={styles.customerSearchField}>
+                <ThemedTextInput
+                  style={styles.customerSearchInput}
+                  value={s.customerSearch.code}
+                  onChangeText={(code) =>
+                    s.setCustomerSearch((prev) => ({ ...prev, code }))
+                  }
+                  onSubmitEditing={() => confirmCustomerSearch("code")}
+                  returnKeyType="search"
+                  placeholder="Código ou nome"
+                  autoCapitalize="none"
+                />
+                <Pressable
+                  style={styles.customerSearchBtn}
+                  onPress={() => confirmCustomerSearch("code")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Pesquisar por código ou nome"
+                >
+                  {s.customerSearchLoading && activeSearchField === "code" ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Search size={20} color={colors.primary} strokeWidth={2.4} />
+                  )}
+                </Pressable>
+              </View>
             </View>
             <View style={styles.formFieldHalf}>
               <Text style={styles.fieldLabel}>CNPJ / CPF</Text>
-              <ThemedTextInput
-                value={s.customerSearch.document}
-                onChangeText={(document) =>
-                  s.setCustomerSearch((prev) => ({ ...prev, document }))
-                }
-                placeholder="00.000.000/0000-00"
-                keyboardType="number-pad"
-              />
+              <View style={styles.customerSearchField}>
+                <ThemedTextInput
+                  style={styles.customerSearchInput}
+                  value={s.customerSearch.document}
+                  onChangeText={(document) =>
+                    s.setCustomerSearch((prev) => ({ ...prev, document }))
+                  }
+                  placeholder="00.000.000/0000-00"
+                  keyboardType="number-pad"
+                />
+                <Pressable
+                  style={styles.customerSearchBtn}
+                  onPress={() => confirmCustomerSearch("document")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Pesquisar por CNPJ ou CPF"
+                >
+                  {s.customerSearchLoading && activeSearchField === "document" ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Search size={20} color={colors.primary} strokeWidth={2.4} />
+                  )}
+                </Pressable>
+              </View>
             </View>
             <View style={styles.formFieldFull}>
               <Text style={styles.fieldLabel}>Razão social</Text>
-              <ThemedTextInput
-                value={s.customerSearch.legalName}
-                onChangeText={(legalName) =>
-                  s.setCustomerSearch((prev) => ({ ...prev, legalName }))
-                }
-              />
+              <View style={styles.customerSearchField}>
+                <ThemedTextInput
+                  style={styles.customerSearchInput}
+                  value={s.customerSearch.legalName}
+                  onChangeText={(legalName) =>
+                    s.setCustomerSearch((prev) => ({ ...prev, legalName }))
+                  }
+                  onSubmitEditing={() => confirmCustomerSearch("legalName")}
+                  returnKeyType="search"
+                />
+                <Pressable
+                  style={styles.customerSearchBtn}
+                  onPress={() => confirmCustomerSearch("legalName")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Pesquisar por razão social"
+                >
+                  {s.customerSearchLoading && activeSearchField === "legalName" ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Search size={20} color={colors.primary} strokeWidth={2.4} />
+                  )}
+                </Pressable>
+              </View>
             </View>
             <View style={styles.formFieldFull}>
               <Text style={styles.fieldLabel}>Nome fantasia</Text>
-              <ThemedTextInput
-                value={s.customerSearch.tradeName}
-                onChangeText={(tradeName) =>
-                  s.setCustomerSearch((prev) => ({ ...prev, tradeName }))
-                }
-              />
+              <View style={styles.customerSearchField}>
+                <ThemedTextInput
+                  style={styles.customerSearchInput}
+                  value={s.customerSearch.tradeName}
+                  onChangeText={(tradeName) =>
+                    s.setCustomerSearch((prev) => ({ ...prev, tradeName }))
+                  }
+                  onSubmitEditing={() => confirmCustomerSearch("tradeName")}
+                  returnKeyType="search"
+                />
+                <Pressable
+                  style={styles.customerSearchBtn}
+                  onPress={() => confirmCustomerSearch("tradeName")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Pesquisar por nome fantasia"
+                >
+                  {s.customerSearchLoading && activeSearchField === "tradeName" ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Search size={20} color={colors.primary} strokeWidth={2.4} />
+                  )}
+                </Pressable>
+              </View>
             </View>
             <View style={styles.formFieldFull}>
               <Text style={styles.fieldLabel}>Cidade</Text>
-              <ThemedTextInput
-                value={s.customerSearch.city}
-                onChangeText={(city) =>
-                  s.setCustomerSearch((prev) => ({ ...prev, city }))
-                }
-              />
+              <View style={styles.customerSearchField}>
+                <ThemedTextInput
+                  style={styles.customerSearchInput}
+                  value={s.customerSearch.city}
+                  onChangeText={(city) =>
+                    s.setCustomerSearch((prev) => ({ ...prev, city }))
+                  }
+                  onSubmitEditing={() => confirmCustomerSearch("city")}
+                  returnKeyType="search"
+                />
+                <Pressable
+                  style={styles.customerSearchBtn}
+                  onPress={() => confirmCustomerSearch("city")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Pesquisar por cidade"
+                >
+                  {s.customerSearchLoading && activeSearchField === "city" ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Search size={20} color={colors.primary} strokeWidth={2.4} />
+                  )}
+                </Pressable>
+              </View>
             </View>
           </View>
 
@@ -252,7 +349,15 @@ export default function QuickSaleScreen() {
           <Text style={styles.subSection}>
             Resultados ({s.filteredCustomers.length})
           </Text>
-          {s.filteredCustomers.slice(0, 40).map((c) => (
+          {s.customersLoading || s.customerSearchLoading ? (
+            <View style={styles.customerSearchLoading}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.customerSearchLoadingTxt}>
+                Buscando clientes…
+              </Text>
+            </View>
+          ) : (
+            s.filteredCustomers.slice(0, 40).map((c) => (
             <Pressable
               key={c.id}
               style={styles.customerResultRow}
@@ -268,9 +373,19 @@ export default function QuickSaleScreen() {
                 </Text>
               </View>
             </Pressable>
-          ))}
-          {s.filteredCustomers.length === 0 ? (
+            ))
+          )}
+          {!s.customersLoading &&
+          !s.customerSearchLoading &&
+          s.filteredCustomers.length === 0 ? (
             <Text style={styles.warn}>Nenhum cliente encontrado.</Text>
+          ) : null}
+          {s.customerSearchError ? (
+            <Text style={styles.warn}>
+              {s.customerSearchError instanceof Error
+                ? s.customerSearchError.message
+                : "Não foi possível pesquisar clientes."}
+            </Text>
           ) : null}
         </>
       ) : (
@@ -493,6 +608,19 @@ export default function QuickSaleScreen() {
         ))
       )}
       <Text style={styles.cartTotal}>Total R$ {fmtMoney(s.cartTotal)}</Text>
+      <View style={styles.notesField}>
+        <Text style={styles.fieldLabel}>Observação (opcional)</Text>
+        <ThemedTextInput
+          value={s.notes}
+          onChangeText={s.setNotes}
+          placeholder="Ex.: entregar pela manhã"
+          multiline
+          numberOfLines={3}
+          textAlignVertical="top"
+          maxLength={1000}
+          style={styles.notesInput}
+        />
+      </View>
       <View style={{ height: 120 }} />
     </ScrollView>
   );
