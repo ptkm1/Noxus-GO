@@ -63,6 +63,42 @@ export default function RoutePlanScreen() {
           pelas vias (Google Routes).
         </Text>
 
+        <View
+          style={[
+            styles.trackingCard,
+            s.locationTrackingEnabled ? styles.trackingCardActive : undefined,
+          ]}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.trackingTitle}>Rastreamento de rota</Text>
+            <Text style={styles.trackingDescription}>
+              {s.locationTrackingEnabled
+                ? "Ativo: sua localização é atualizada durante a jornada."
+                : "Ative para registrar sua rota e visitas durante a jornada."}
+            </Text>
+          </View>
+          <Pressable
+            style={[
+              styles.trackingButton,
+              s.locationTrackingEnabled
+                ? styles.trackingButtonStop
+                : undefined,
+            ]}
+            onPress={() => void s.setLocationTracking(!s.locationTrackingEnabled)}
+          >
+            <Text
+              style={[
+                styles.trackingButtonText,
+                s.locationTrackingEnabled
+                  ? styles.trackingButtonStopText
+                  : undefined,
+              ]}
+            >
+              {s.locationTrackingEnabled ? "Desativar" : "Ativar"}
+            </Text>
+          </Pressable>
+        </View>
+
         {__DEV__ && s.nearbyQuery.data?.roadRoutingConfigured === false ? (
           <Text style={styles.warn}>
             Servidor sem GOOGLE_MAPS_SERVER_API_KEY — configure em apps/api/.env

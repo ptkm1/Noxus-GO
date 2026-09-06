@@ -13,6 +13,11 @@ import type {
 } from "../../lib/route/types";
 import { formatDurationSeconds } from "../../lib/utils/format-duration";
 import { openNavigationApp } from "../../lib/utils/open-navigation";
+import {
+  isLocationTrackingEnabled,
+  setLocationTrackingEnabled,
+  subscribePrivacyPreferences,
+} from "../../lib/privacy-preferences";
 
 const RADIUS_OPTIONS = [30, 60, 120] as const;
 export type RouteRadiusKm = (typeof RADIUS_OPTIONS)[number];
@@ -37,7 +42,44 @@ export function useRoutePlanScreen() {
   } | null>(null);
   const [checkOutModalOpen, setCheckOutModalOpen] = useState(false);
   const [locPending, setLocPending] = useState(false);
+  const [locationTrackingEnabled, setLocationTrackingState] = useState(false);
   const locPendingRef = useRef(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const refresh = () => {
+      void isLocationTrackingEnabled().then((enabled) => {
+        if (mounted) setLocationTrackingState(enabled);
+      });
+    };
+    refresh();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    return subscribePrivacyPreferences(() => {
+      void isLocationTrackingEnabled().then(setLocationTrackingState);
+    });
+  }, []);
+
+  const setLocationTracking = useCallback(
+    async (enabled: boolean) => {
+      if (enabled) {
+        const accepted = await confirm({
+          title: "Ativar rastreamento de rota?",
+          description:
+            "O PedixPro coletará sua localização precisa e enviará as coordenadas para a gestão da sua organização, para acompanhar suas rotas e visitas de trabalho. A coleta pode continuar em segundo plano, quando o app estiver fechado ou não estiver em uso, até você desativar este recurso.",
+          confirmLabel: "Ativar rastreamento",
+          cancelLabel: "Agora não",
+        });
+        if (!accepted) return;
+      }
+      await setLocationTrackingEnabled(enabled);
+    },
+    [confirm],
+  );
 
   const refreshLocation = useCallback(async () => {
     if (locPendingRef.current) return;
@@ -399,6 +441,8 @@ export function useRoutePlanScreen() {
     myLng,
     refreshLocation,
     locPending,
+    locationTrackingEnabled,
+    setLocationTracking,
     nearbyQuery,
     filteredCustomers,
     radiusKm,

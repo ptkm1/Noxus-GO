@@ -352,7 +352,7 @@ export const PRIVACY_POLICY_DOCUMENT: LegalDocument = {
         {
           id: "5",
           paragraphs: [
-            "Em relação aos dados pessoais e dados pessoais sensíveis de pacientes inseridos pelo usuário no Pedix Pro, a Empresa, em regra, atuará como operadora, tratando tais dados em nome do usuário, que será o controlador responsável pela finalidade do tratamento, definição de bases legais, fornecimento de informações aos titulares, obtenção de consentimentos quando necessários e cumprimento das demais obrigações legais.",
+            "Em relação aos dados cadastrados pela organização contratante, como dados de clientes, contatos, produtos, pedidos e visitas comerciais, a Empresa poderá atuar como operadora, tratando esses dados em nome da organização, que é responsável pela finalidade, base legal e conformidade do tratamento.",
           ],
         },
       ],
@@ -381,7 +381,7 @@ export const PRIVACY_POLICY_DOCUMENT: LegalDocument = {
         {
           id: "9",
           paragraphs: [
-            "O usuário poderá inserir dados de pacientes, incluindo nome, contato, nascimento, histórico de atendimento, observações, imagens, documentos, prontuários, informações clínicas e demais registros. Esses dados podem incluir dados pessoais sensíveis, especialmente dados relacionados à saúde.",
+            "Quando o vendedor ativa voluntariamente o rastreamento de rota, podemos tratar dados de localização precisa, data, hora e precisão aproximada do dispositivo. Esses dados são associados ao usuário e à sua organização para registrar rotas, visitas e atividades comerciais.",
           ],
         },
       ],
@@ -398,7 +398,7 @@ export const PRIVACY_POLICY_DOCUMENT: LegalDocument = {
         {
           id: "11",
           paragraphs: [
-            "Dados de pacientes são tratados para permitir que o usuário organize sua atividade profissional, incluindo cadastro de pacientes, prontuário eletrônico, histórico clínico, agenda, controle de atendimentos, imagens, documentos, relatórios e armazenamento em nuvem, conforme instruções e configurações definidas pelo próprio usuário.",
+            "A localização é tratada exclusivamente para disponibilizar mapa, planejamento de rota, check-in e check-out de visitas e, quando o rastreamento é ativado pelo vendedor, acompanhar a jornada comercial. Não utilizamos dados de localização para publicidade.",
           ],
         },
       ],
@@ -415,7 +415,7 @@ export const PRIVACY_POLICY_DOCUMENT: LegalDocument = {
         {
           id: "13",
           paragraphs: [
-            "Quando dados pessoais sensíveis de pacientes forem inseridos pelo usuário, caberá ao usuário definir e comprovar a base legal aplicável, incluindo, quando cabível, tutela da saúde, cumprimento de obrigação legal, exercício regular de direitos, proteção da vida ou incolumidade física, consentimento específico e destacado ou outra base admitida pela LGPD.",
+            "O rastreamento de rota é opcional e depende de ação voluntária do vendedor no aplicativo. A organização contratante é responsável por informar seus colaboradores sobre a finalidade operacional do recurso e pelas bases legais aplicáveis à sua operação.",
           ],
         },
       ],
@@ -438,7 +438,7 @@ export const PRIVACY_POLICY_DOCUMENT: LegalDocument = {
         {
           id: "16",
           paragraphs: [
-            "A Empresa não vende dados pessoais. Eventual compartilhamento ocorrerá na medida necessária às finalidades informadas, observadas salvaguardas contratuais e técnicas razoáveis.",
+            "A Empresa não vende dados pessoais. Dados de localização do vendedor são disponibilizados apenas à organização à qual ele está vinculado e a usuários autorizados por ela, além dos fornecedores técnicos necessários para operar o serviço.",
           ],
         },
       ],
@@ -455,7 +455,7 @@ export const PRIVACY_POLICY_DOCUMENT: LegalDocument = {
         {
           id: "18",
           paragraphs: [
-            "No aplicativo mobile, determinadas funcionalidades poderão depender de permissões do dispositivo, como câmera, notificações, arquivos, imagens e conexão de rede. O usuário pode gerenciar permissões nas configurações do aparelho, ciente de que a revogação poderá limitar funcionalidades.",
+            "No aplicativo mobile, determinadas funcionalidades poderão depender de permissões do dispositivo, como câmera, notificações, localização, arquivos, imagens e conexão de rede. A localização em segundo plano só é solicitada depois que o vendedor ativa o rastreamento de rota; ela pode ser desativada no app e gerenciada nas configurações do aparelho. A revogação poderá limitar mapa, rotas, check-ins e rastreamento.",
           ],
         },
       ],
@@ -512,7 +512,7 @@ export const PRIVACY_POLICY_DOCUMENT: LegalDocument = {
         {
           id: "25",
           paragraphs: [
-            "Quando a solicitação envolver dados de pacientes tratados em nome do usuário, a Empresa poderá encaminhar a demanda ao usuário controlador ou aguardar suas instruções, salvo quando a lei determinar conduta diversa.",
+            "Quando a solicitação envolver dados de clientes, pedidos, visitas ou localização tratados em nome de uma organização, a Empresa poderá encaminhar a demanda à organização responsável ou aguardar suas instruções, salvo quando a lei determinar conduta diversa.",
           ],
         },
       ],
@@ -534,7 +534,7 @@ export const PRIVACY_POLICY_DOCUMENT: LegalDocument = {
         {
           id: "27",
           paragraphs: [
-            "O Pedix Pro não é destinado ao uso direto por crianças ou adolescentes. Caso o usuário insira dados de pacientes menores de idade, deverá garantir que possui base legal, autorização e responsabilidade profissional adequadas para tal tratamento.",
+            "O Pedix Pro não é destinado ao uso direto por crianças ou adolescentes. A organização contratante deve assegurar que os usuários autorizados tenham vínculo profissional e idade compatível com o uso da plataforma.",
           ],
         },
       ],

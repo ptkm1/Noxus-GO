@@ -2,10 +2,11 @@ import { displayMoney } from "@/components/atoms/formatMoney";
 import { ThemedText } from "@/components/atoms/ThemedText";
 import { MobileHeader, MobileScreen, SafeScreen } from "@/components/layout";
 import { HeaderIconButton } from "@/components/molecules/HeaderIconButton";
+import { GoalGaugeBlock } from "@/components/molecules/GoalGaugeBlock";
 import { QuickAction } from "@/components/molecules/QuickAction";
 import { RecentSalesBlock } from "@/components/molecules/RecentSalesBlock";
 import { SalesDailyBlock } from "@/components/molecules/SalesDailyBlock";
-import { ProgressStat, StatCard } from "@/components/molecules/StatCard";
+import { StatCard } from "@/components/molecules/StatCard";
 import { TopSuppliersBlock } from "@/components/molecules/TopSuppliersBlock";
 import { useAuth } from "@/context/AuthContext";
 import { useSalesListScreen } from "@/hooks/screens/useSalesListScreen";
@@ -34,6 +35,7 @@ import {
     RotateCcw,
     ShoppingCart,
     TrendingUp,
+    Upload,
     Users,
 } from "lucide-react-native";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
@@ -106,8 +108,6 @@ export default function HomeScreen() {
   const mtd = commission?.mtd.confirmedRevenue ?? 0;
   const goalTarget = goal?.targetAmount ?? 0;
   const goalCurrent = goal?.achievedAmount ?? mtd;
-  const goalPercent =
-    goalTarget > 0 ? Math.min(100, (goalCurrent / goalTarget) * 100) : null;
   const monthStart = new Date();
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
@@ -118,6 +118,11 @@ export default function HomeScreen() {
     (o) => o.status === "CONFIRMED" && new Date(o.createdAt) >= monthStart,
   ).length;
   const averageTicket = monthOrderCount > 0 ? monthSales / monthOrderCount : 0;
+
+  const goalTitle =
+    goal?.scopeLabel
+      ? `${goal.title} · ${goal.scopeLabel}`
+      : (goal?.title ?? "Meta do mês");
 
   const syncA11yLabel =
     queueCount > 0
@@ -198,19 +203,6 @@ export default function HomeScreen() {
         onRefresh={() => void refetch()}
         contentContainerStyle={{ gap: 20 }}
       >
-        {goalTarget > 0 ? (
-          <ProgressStat
-            title={
-              goal?.scopeLabel
-                ? `${goal.title} · ${goal.scopeLabel}`
-                : (goal?.title ?? "Meta do mês")
-            }
-            current={goalCurrent}
-            target={goalTarget}
-            formatValue={(v) => displayMoney(hideValues, v)}
-          />
-        ) : null}
-
         <View style={styles.statGrid}>
           <View style={styles.statCell}>
             <StatCard
@@ -286,16 +278,16 @@ export default function HomeScreen() {
               compact
             />
           </View>
-          <View style={styles.statCell}>
-            <StatCard
-              title="Meta atingida"
-              value={goalPercent == null ? "—" : `${goalPercent.toFixed(0)}%`}
-              subtitle={goalTarget > 0 ? "no mês" : "Sem meta"}
-              icon={TrendingUp}
-              compact
-            />
-          </View>
         </View>
+
+        {/* TODO: remover mock — só para validar o gauge visualmente. */}
+        <GoalGaugeBlock
+          title={goalTarget > 0 ? goalTitle : "Meta do mês (mock)"}
+          current={goalTarget > 0 ? goalCurrent : 760}
+          target={goalTarget > 0 ? goalTarget : 1000}
+          hideValues={hideValues}
+          onPress={() => router.push("/(tabs)/commission")}
+        />
 
         <TopSuppliersBlock hideValues={hideValues} />
         <SalesDailyBlock orders={orders} hideValues={hideValues} />
@@ -331,6 +323,14 @@ export default function HomeScreen() {
             description="Resumo, clientes e fornecedores em PDF"
             onPress={() => router.push("/(tabs)/reports")}
           />
+          {user?.role === "ADMIN" ? (
+            <QuickAction
+              icon={Upload}
+              label="Importar CSV"
+              description="Produtos e clientes em lote"
+              onPress={() => router.push("/(tabs)/imports")}
+            />
+          ) : null}
           {user?.role === "SELLER" ? (
             <QuickAction
               icon={TrendingUp}
